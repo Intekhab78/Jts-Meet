@@ -263,26 +263,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                     )}
                 </div>
 
-                {/* Workspace / Org Switcher Dropdown */}
-                {organizations.length > 0 && showFullSidebar && (
-                    <div style={{ marginBottom: 16, padding: '0 8px' }}>
-                        <label style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
-                            Organization
-                        </label>
-                        <select
-                            value={currentOrgId}
-                            onChange={(e) => setCurrentOrgId(e.target.value)}
-                            className="input py-2"
-                            style={{ background: 'var(--color-surface-2)', color: '#fff', outline: 'none', fontSize: '0.8125rem' }}
-                        >
-                            {organizations.map((org: any) => (
-                                <option key={org._id} value={org._id} style={{ background: 'var(--color-surface-1)', color: '#fff' }}>
-                                    🏢 {org.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                )}
+                {/* Workspace / Org Switcher Dropdown is now in the top navbar */}
 
                 {/* Team Switcher Dropdown */}
                 {activeTab === 'channel' && teams.length > 0 && showFullSidebar && (
@@ -371,23 +352,97 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                 {/* Footer sign out */}
                 <button
                     onClick={onLogout}
-                    className="btn btn-ghost"
                     title={!showFullSidebar ? "Sign Out" : undefined}
                     style={{
                         display: 'flex', alignItems: 'center', gap: 10, padding: showFullSidebar ? '10px 14px' : '10px 0',
                         justifyContent: showFullSidebar ? 'flex-start' : 'center',
-                        border: 'none', color: 'var(--color-text-muted)',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                        background: 'rgba(239, 68, 68, 0.05)',
+                        color: '#f87171',
                         borderRadius: 'var(--radius-md)', fontSize: '0.875rem', fontWeight: 600,
-                        cursor: 'pointer', marginTop: joined ? '0' : 'auto', width: '100%'
+                        cursor: 'pointer', marginTop: joined ? '0' : 'auto', width: '100%',
+                        transition: 'all 0.2s ease',
+                        boxSizing: 'border-box'
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+                        e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(239, 68, 68, 0.05)';
+                        e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.2)';
                     }}
                 >
-                    <span>🚪</span>
-                    {showFullSidebar && <span style={{ whiteSpace: 'nowrap' }}>Sign Out</span>}
+                    <span style={{ display: 'flex', color: '#ef4444' }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                            <polyline points="16 17 21 12 16 7" />
+                            <line x1="21" y1="12" x2="9" y2="12" />
+                        </svg>
+                    </span>
+                    {showFullSidebar && <span style={{ whiteSpace: 'nowrap', color: '#f87171' }}>Sign Out</span>}
                 </button>
             </aside>
 
             {/* Main Content Pane */}
             <main id="main-content" tabIndex={-1} style={{ flex: 1, overflowY: activeTab === 'meeting' ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', position: 'relative', outline: 'none' }}>
+                {activeTab !== 'meeting' && (
+                    <header style={{
+                        height: '64px',
+                        minHeight: '64px',
+                        borderBottom: '1px solid var(--color-border)',
+                        background: 'var(--color-surface-1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0 24px',
+                        boxSizing: 'border-box',
+                        zIndex: 30
+                    }}>
+                        {/* Left Side: Active Tab Title */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {activeTab === 'dashboard' ? '📊 Dashboard Overview' : 
+                                 activeTab === 'history' ? '📜 History Log' :
+                                 activeTab === 'scheduled' ? '📅 Scheduled Meetings' :
+                                 activeTab === 'organization' ? '🏢 Organizations Settings' :
+                                 activeTab === 'team' ? '👥 Teams Configuration' :
+                                 activeTab === 'channel' ? '💬 Channels Management' :
+                                 activeTab === 'profile' ? '👤 User Profile' : activeTab}
+                            </span>
+                        </div>
+
+                        {/* Right Side: Organization Switcher */}
+                        {organizations.length > 0 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Workspace:
+                                </span>
+                                <select
+                                    value={currentOrgId}
+                                    onChange={(e) => setCurrentOrgId(e.target.value)}
+                                    style={{
+                                        background: 'var(--color-surface-2)',
+                                        border: '1px solid var(--color-border)',
+                                        borderRadius: 'var(--radius-md)',
+                                        padding: '6px 12px',
+                                        color: '#fff',
+                                        outline: 'none',
+                                        fontSize: '0.8125rem',
+                                        cursor: 'pointer',
+                                        minWidth: '150px'
+                                    }}
+                                >
+                                    {organizations.map((org: any) => (
+                                        <option key={org._id} value={org._id} style={{ background: 'var(--color-surface-1)', color: '#fff' }}>
+                                            🏢 {org.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+                    </header>
+                )}
                 <Suspense fallback={<WorkspaceTabSkeleton />}>
                     {/* MEETING TAB */}
                     {activeTab === 'meeting' && (() => {
