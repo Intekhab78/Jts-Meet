@@ -237,3 +237,17 @@ export async function toggleWaitingRoom(meetingId: string, hostId: string, enabl
     meeting.isWaitingRoomEnabled = enabled
     return meeting.save()
 }
+
+export async function toggleGuestJoin(meetingId: string, hostId: string, enabled: boolean): Promise<IMeeting | null> {
+    const meeting = await Meeting.findOne({ meetingId }).exec()
+    if (!meeting) return null
+
+    const hostObjectId = new Types.ObjectId(hostId)
+    const isAuthorized = meeting.host.equals(hostObjectId) || meeting.coHosts.some((id) => id.equals(hostObjectId))
+    if (!isAuthorized) {
+        throw new Error('Unauthorized host control request')
+    }
+
+    meeting.isGuestJoinEnabled = enabled
+    return meeting.save()
+}

@@ -31,14 +31,49 @@ function WorkspaceTabSkeleton() {
 }
 
 export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'meeting' | 'history' | 'scheduled' | 'organization' | 'team' | 'channel' | 'profile'>('dashboard')
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'meeting' | 'history' | 'scheduled' | 'organization' | 'team' | 'channel' | 'profile'>(() => {
+        const hash = window.location.hash.replace('#', '')
+        const validTabs = ['dashboard', 'meeting', 'history', 'scheduled', 'organization', 'team', 'channel', 'profile']
+        if (validTabs.includes(hash)) {
+            return hash as any
+        }
+        return 'dashboard'
+    })
     const [searchQuery, setSearchQuery] = useState('')
     const [historyFilter, setHistoryFilter] = useState<'all' | 'recorded' | 'regular'>('all')
 
     const { joined } = useMeetingContext()
     const [sidebarExpanded, setSidebarExpanded] = useState(false)
     const [isHovered, setIsHovered] = useState(false)
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const showFullSidebar = !joined || sidebarExpanded || isHovered
+
+    const [windowWidth, setWindowWidth] = useState(window.innerWidth)
+    useEffect(() => {
+        const handleResize = () => setWindowWidth(window.innerWidth)
+        window.addEventListener('resize', handleResize)
+        return () => window.removeEventListener('resize', handleResize)
+    }, [])
+
+    // Sync activeTab state to URL hash
+    useEffect(() => {
+        if (activeTab) {
+            window.history.replaceState(null, '', `/#${activeTab}`)
+        }
+    }, [activeTab])
+
+    // Listen for hash changes (e.g. browser back/forward button)
+    useEffect(() => {
+        const handleHashChange = () => {
+            const hash = window.location.hash.replace('#', '')
+            const validTabs = ['dashboard', 'meeting', 'history', 'scheduled', 'organization', 'team', 'channel', 'profile']
+            if (validTabs.includes(hash)) {
+                setActiveTab(hash as any)
+            }
+        }
+        window.addEventListener('hashchange', handleHashChange)
+        return () => window.removeEventListener('hashchange', handleHashChange)
+    }, [])
 
     // Profile States
     const [profileName, setProfileName] = useState('Team Member')
@@ -217,6 +252,10 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
         }
     }
 
+    useEffect(() => {
+        setMobileMenuOpen(false)
+    }, [activeTab])
+
     const filteredHistory = historyItems.filter(item => {
         const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.id.toLowerCase().includes(searchQuery.toLowerCase())
         if (historyFilter === 'all') return matchesSearch
@@ -228,25 +267,38 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
         <div style={{ display: 'flex', height: '100vh', background: 'var(--color-bg-base)', overflow: 'hidden', position: 'relative' }}>
             <a href="#main-content" className="skip-link">Skip to main content</a>
 
+            {/* Mobile Sidebar Backdrop Overlay */}
+            {mobileMenuOpen && (
+                <div
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[999]"
+                />
+            )}
+
             {/* Sidebar Navigation */}
             <aside
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
+                className="transition-transform duration-300 ease-in-out z-[1000]"
                 style={{
-                    width: showFullSidebar ? 240 : 72,
-                    background: 'rgba(10,11,15,0.95)',
+                    position: windowWidth < 768 ? 'fixed' : 'static',
+                    transform: (windowWidth >= 768 || mobileMenuOpen) ? 'translateX(0)' : 'translateX(-100%)',
+                    width: windowWidth < 768 ? (mobileMenuOpen ? 240 : 0) : ((mobileMenuOpen || showFullSidebar) ? 240 : 72),
+                    background: 'rgba(10,11,15,0.98)',
                     borderRight: '1px solid var(--color-border)',
                     display: 'flex',
                     flexDirection: 'column',
-                    padding: showFullSidebar ? '24px 16px' : '24px 8px',
+                    padding: (mobileMenuOpen || showFullSidebar) ? '24px 16px' : '24px 8px',
                     flexShrink: 0,
-                    transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.25s ease',
-                    alignItems: showFullSidebar ? 'stretch' : 'center',
-                    overflow: 'hidden'
+                    alignItems: (mobileMenuOpen || showFullSidebar) ? 'stretch' : 'center',
+                    overflow: 'hidden',
+                    top: 0,
+                    bottom: 0,
+                    left: 0
                 }}
             >
                 {/* Brand */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28, paddingLeft: showFullSidebar ? 8 : 0, justifyContent: showFullSidebar ? 'flex-start' : 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28, paddingLeft: (mobileMenuOpen || showFullSidebar) ? 8 : 0, justifyContent: (mobileMenuOpen || showFullSidebar) ? 'flex-start' : 'center' }}>
                     <div style={{
                         width: 32, height: 32, background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
                         borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -256,7 +308,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                             <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                         </svg>
                     </div>
-                    {showFullSidebar && (
+                    {(mobileMenuOpen || showFullSidebar) && (
                         <span style={{ fontSize: '1.125rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)', whiteSpace: 'nowrap' }}>
                             JTS<span className="gradient-text">Meet</span>
                         </span>
@@ -266,7 +318,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                 {/* Workspace / Org Switcher Dropdown is now in the top navbar */}
 
                 {/* Team Switcher Dropdown */}
-                {activeTab === 'channel' && teams.length > 0 && showFullSidebar && (
+                {activeTab === 'channel' && teams.length > 0 && (mobileMenuOpen || showFullSidebar) && (
                     <div style={{ marginBottom: 16, padding: '0 8px' }}>
                         <label style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
                             Active Team
@@ -298,10 +350,10 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                         (userMemberEntry && (userMemberEntry.role === 'owner' || userMemberEntry.role === 'admin'))
 
                     return (
-                        <nav style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, overflowY: 'auto', width: '100%', alignItems: showFullSidebar ? 'stretch' : 'center' }}>
+                        <nav style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, overflowY: 'auto', width: '100%', alignItems: (mobileMenuOpen || showFullSidebar) ? 'stretch' : 'center' }}>
                             {[
                                 { id: 'dashboard', label: 'Dashboard', icon: '📊', adminOnly: false },
-                                { id: 'meeting', label: 'Video Lobby', icon: '📹', adminOnly: false },
+                                { id: 'meeting', label: 'Meeting Room', icon: '📹', adminOnly: false },
                                 { id: 'history', label: 'History log', icon: '📜', adminOnly: false },
                                 { id: 'scheduled', label: 'Scheduled', icon: '📅', adminOnly: false },
                                 { id: 'organization', label: 'Organizations', icon: '🏢', adminOnly: true },
@@ -312,10 +364,10 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                 <button
                                     key={item.id}
                                     onClick={() => setActiveTab(item.id as any)}
-                                    title={!showFullSidebar ? item.label : undefined}
+                                    title={!(mobileMenuOpen || showFullSidebar) ? item.label : undefined}
                                     style={{
-                                        display: 'flex', alignItems: 'center', gap: 12, padding: showFullSidebar ? '10px 14px' : '10px 0',
-                                        justifyContent: showFullSidebar ? 'flex-start' : 'center',
+                                        display: 'flex', alignItems: 'center', gap: 12, padding: (mobileMenuOpen || showFullSidebar) ? '10px 14px' : '10px 0',
+                                        justifyContent: (mobileMenuOpen || showFullSidebar) ? 'flex-start' : 'center',
                                         width: '100%',
                                         border: 'none', background: activeTab === item.id ? 'var(--color-accent-light)' : 'transparent',
                                         color: activeTab === item.id ? 'var(--color-accent)' : 'var(--color-text-secondary)',
@@ -324,7 +376,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                     }}
                                 >
                                     <span style={{ fontSize: '1.1rem' }}>{item.icon}</span>
-                                    {showFullSidebar && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
+                                    {(mobileMenuOpen || showFullSidebar) && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
                                 </button>
                             ))}
                         </nav>
@@ -337,25 +389,25 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                         onClick={() => setSidebarExpanded(!sidebarExpanded)}
                         className="btn btn-ghost"
                         style={{
-                            display: 'flex', alignItems: 'center', gap: 10, padding: showFullSidebar ? '10px 14px' : '10px 0',
-                            justifyContent: showFullSidebar ? 'flex-start' : 'center',
+                            display: 'flex', alignItems: 'center', gap: 10, padding: (mobileMenuOpen || showFullSidebar) ? '10px 14px' : '10px 0',
+                            justifyContent: (mobileMenuOpen || showFullSidebar) ? 'flex-start' : 'center',
                             border: 'none', color: 'var(--color-text-muted)',
                             borderRadius: 'var(--radius-md)', fontSize: '0.8125rem', fontWeight: 600,
                             cursor: 'pointer', margin: '8px 0', width: '100%'
                         }}
                         title={sidebarExpanded ? "Collapse Sidebar" : "Pin Sidebar Open"}
                     >
-                        <span>{showFullSidebar ? (sidebarExpanded ? '◀ Collapse' : '📌 Pin Sidebar') : '▶'}</span>
+                        <span>{(mobileMenuOpen || showFullSidebar) ? (sidebarExpanded ? '◀ Collapse' : '📌 Pin Sidebar') : '▶'}</span>
                     </button>
                 )}
 
                 {/* Footer sign out */}
                 <button
                     onClick={onLogout}
-                    title={!showFullSidebar ? "Sign Out" : undefined}
+                    title={!(mobileMenuOpen || showFullSidebar) ? "Sign Out" : undefined}
                     style={{
-                        display: 'flex', alignItems: 'center', gap: 10, padding: showFullSidebar ? '10px 14px' : '10px 0',
-                        justifyContent: showFullSidebar ? 'flex-start' : 'center',
+                        display: 'flex', alignItems: 'center', gap: 10, padding: (mobileMenuOpen || showFullSidebar) ? '10px 14px' : '10px 0',
+                        justifyContent: (mobileMenuOpen || showFullSidebar) ? 'flex-start' : 'center',
                         border: '1px solid rgba(239, 68, 68, 0.2)',
                         background: 'rgba(239, 68, 68, 0.05)',
                         color: '#f87171',
@@ -380,42 +432,56 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                             <line x1="21" y1="12" x2="9" y2="12" />
                         </svg>
                     </span>
-                    {showFullSidebar && <span style={{ whiteSpace: 'nowrap', color: '#f87171' }}>Sign Out</span>}
+                    {(mobileMenuOpen || showFullSidebar) && <span style={{ whiteSpace: 'nowrap', color: '#f87171' }}>Sign Out</span>}
                 </button>
             </aside>
 
             {/* Main Content Pane */}
-            <main id="main-content" tabIndex={-1} style={{ flex: 1, overflowY: activeTab === 'meeting' ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', position: 'relative', outline: 'none' }}>
+            <main id="main-content" tabIndex={-1} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', position: 'relative', outline: 'none' }}>
                 {activeTab !== 'meeting' && (
                     <header style={{
+                        position: 'sticky',
+                        top: 0,
                         height: '64px',
                         minHeight: '64px',
                         borderBottom: '1px solid var(--color-border)',
-                        background: 'var(--color-surface-1)',
+                        background: '#09090B',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '0 24px',
                         boxSizing: 'border-box',
-                        zIndex: 30
+                        zIndex: 50
                     }}>
                         {/* Left Side: Active Tab Title */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                {activeTab === 'dashboard' ? '📊 Dashboard Overview' : 
-                                 activeTab === 'history' ? '📜 History Log' :
-                                 activeTab === 'scheduled' ? '📅 Scheduled Meetings' :
-                                 activeTab === 'organization' ? '🏢 Organizations Settings' :
-                                 activeTab === 'team' ? '👥 Teams Configuration' :
-                                 activeTab === 'channel' ? '💬 Channels Management' :
-                                 activeTab === 'profile' ? '👤 User Profile' : activeTab}
+                            <button
+                                onClick={() => setMobileMenuOpen(true)}
+                                className="btn-ghost"
+                                style={{
+                                    border: 'none', background: 'transparent', color: '#fff', fontSize: '1.25rem',
+                                    cursor: 'pointer', padding: '4px 8px', display: windowWidth < 768 ? 'flex' : 'none', 
+                                    alignItems: 'center', marginRight: 4
+                                }}
+                                aria-label="Open navigation menu"
+                            >
+                                ☰
+                            </button>
+                            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                {activeTab === 'dashboard' ? 'Dashboard' : 
+                                 activeTab === 'history' ? 'History Log' :
+                                 activeTab === 'scheduled' ? 'Scheduled' :
+                                 activeTab === 'organization' ? 'Organizations' :
+                                 activeTab === 'team' ? 'Teams' :
+                                 activeTab === 'channel' ? 'Channels' :
+                                 activeTab === 'profile' ? 'Profile' : activeTab}
                             </span>
                         </div>
 
                         {/* Right Side: Organization Switcher */}
                         {organizations.length > 0 && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span className="hidden sm:inline" style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
                                     Workspace:
                                 </span>
                                 <select
@@ -425,12 +491,13 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                         background: 'var(--color-surface-2)',
                                         border: '1px solid var(--color-border)',
                                         borderRadius: 'var(--radius-md)',
-                                        padding: '6px 12px',
+                                        padding: '4px 8px',
                                         color: '#fff',
                                         outline: 'none',
-                                        fontSize: '0.8125rem',
+                                        fontSize: '0.75rem',
                                         cursor: 'pointer',
-                                        minWidth: '150px'
+                                        maxWidth: '120px',
+                                        textOverflow: 'ellipsis'
                                     }}
                                 >
                                     {organizations.map((org: any) => (
@@ -464,14 +531,14 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                     {/* DASHBOARD TAB */}
                     {activeTab === 'dashboard' && (
-                        <div className="anim-fade-in" style={{ padding: 40, maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32 }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32, boxSizing: 'border-box' }}>
                             {/* Welcome Banner */}
-                            <div className="glass-card" style={{ padding: '28px 36px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div className="glass-card flex flex-col md:flex-row gap-6 md:items-center justify-between" style={{ padding: '28px 36px' }}>
                                 <div>
                                     <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: '0 0 6px', color: '#fff' }}>Welcome back, {profileName}!</h2>
                                     <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', margin: 0 }}>Review scheduled calls, access past session recordings, and host secure instant room calls.</p>
                                 </div>
-                                <button onClick={() => setActiveTab('meeting')} className="btn btn-primary" style={{ padding: '12px 24px' }}>
+                                <button onClick={() => setActiveTab('meeting')} className="btn btn-primary" style={{ padding: '12px 24px', alignSelf: 'flex-start' }}>
                                     Start New Meeting
                                 </button>
                             </div>
@@ -510,12 +577,12 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                             </div>
 
                             {/* Visual Analytics Chart Widget */}
-                            <div style={{ display: 'flex', gap: 20, alignItems: 'stretch' }}>
+                            <div className="flex flex-col lg:flex-row" style={{ gap: 20, alignItems: 'stretch' }}>
                                 <MeetingTrendsChart meetings={historyItems} />
                             </div>
 
                             {/* Two Column Layout */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 28, alignItems: 'start' }}>
+                            <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr]" style={{ gap: 28, alignItems: 'start' }}>
                                 {/* Upcoming Meetings List */}
                                 <div className="glass-card" style={{ padding: 24 }}>
                                     <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 16px', color: '#fff' }}>Upcoming Scheduled Conferences</h3>
@@ -555,7 +622,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                                         </span>
                                                     </div>
                                                     <button onClick={() => setActiveTab('meeting')} className="btn btn-secondary" style={{ padding: '6px 14px', fontSize: '0.75rem' }}>
-                                                        Join Lobby
+                                                        Join Room
                                                     </button>
                                                 </div>
                                             ))}
@@ -604,7 +671,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                     {/* HISTORY LOG TAB */}
                     {activeTab === 'history' && (
-                        <div className="anim-fade-in" style={{ padding: 40, maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24, boxSizing: 'border-box' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div>
                                     <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 4px', color: '#fff' }}>Conference History Log</h2>
@@ -707,18 +774,18 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                     {/* SCHEDULED CALENDAR TAB */}
                     {activeTab === 'scheduled' && (
-                        <div className="anim-fade-in" style={{ padding: 40, maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24, boxSizing: 'border-box' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div>
                                     <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 4px', color: '#fff' }}>Planned Conferences</h2>
-                                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>Review schedules, share invites, and initiate lobby rooms.</p>
+                                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>Review schedules, share invites, and initiate meeting rooms.</p>
                                 </div>
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                                 {scheduledItems.map(item => (
-                                    <div key={item.id} className="glass-card" style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+                                    <div key={item.id} className="glass-card flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ padding: '20px' }}>
+                                        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                                             <div style={{
                                                 width: 48, height: 48, borderRadius: 'var(--radius-md)', background: 'var(--color-accent-light)',
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'
@@ -736,14 +803,14 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                             </div>
                                         </div>
 
-                                        <div style={{ display: 'flex', gap: 10 }}>
+                                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', width: '100%', maxWidth: 'max-content' }} className="w-full sm:w-auto">
                                             <button onClick={() => {
                                                 navigator.clipboard.writeText(`Join meeting "${item.title}" via JTS-Meet session id: ${item.id}`)
                                                 alert('Invite text copied to clipboard!')
-                                            }} className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '0.8125rem' }}>
+                                            }} className="btn btn-secondary flex-1 sm:flex-none" style={{ padding: '8px 14px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                                 Copy Invite
                                             </button>
-                                            <button onClick={() => setActiveTab('meeting')} className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '0.8125rem' }}>
+                                            <button onClick={() => setActiveTab('meeting')} className="btn btn-primary flex-1 sm:flex-none" style={{ padding: '8px 14px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                                 Start Room
                                             </button>
                                         </div>
@@ -755,21 +822,21 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                     {/* ORGANIZATIONS TAB */}
                     {activeTab === 'organization' && (
-                        <div className="anim-fade-in" style={{ padding: 0, width: '100%', maxWidth: '100%', margin: 0 }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32, boxSizing: 'border-box' }}>
                             <OrganizationSettingsPage token={token} organizationId={currentOrgId || undefined} />
                         </div>
                     )}
 
                     {/* TEAMS SETTINGS TAB */}
                     {activeTab === 'team' && (
-                        <div className="anim-fade-in" style={{ padding: 0, width: '100%', maxWidth: '100%', margin: 0 }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32, boxSizing: 'border-box' }}>
                             <TeamSettingsPage token={token} organizationId={currentOrgId || undefined} />
                         </div>
                     )}
 
                     {/* CHANNELS SETTINGS TAB */}
                     {activeTab === 'channel' && (
-                        <div className="anim-fade-in" style={{ padding: 0, width: '100%', maxWidth: '100%', margin: 0 }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32, boxSizing: 'border-box' }}>
                             {currentTeamId ? (
                                 <ChannelSettingsPage token={token} organizationId={currentOrgId || undefined} teamId={currentTeamId} />
                             ) : (
@@ -809,7 +876,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                                 <div style={{ width: '100%', height: 1, background: 'var(--color-border)' }} />
 
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 16 }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                         <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Display Name</label>
                                         <input

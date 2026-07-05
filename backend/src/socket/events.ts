@@ -36,5 +36,25 @@ export const SocketEvents = {
     MEETING_REACTION: 'meeting:reaction',
     MEETING_COHOST_PROMOTE: 'meeting:cohost-promote',
     MEETING_COHOST_DEMOTE: 'meeting:cohost-demote',
-    MEETING_WAITING_APPROVE: 'meeting:waiting-approve'
+    MEETING_WAITING_APPROVE: 'meeting:waiting-approve',
+
+    // Thread events
+    THREAD_CREATED: 'thread:created',
+    THREAD_UPDATED: 'thread:updated',
+
+    // Message reactions events
+    REACTION_ADD: 'reaction:add',
+    REACTION_REMOVE: 'reaction:remove',
+
+    // Meeting Chat reaction events
+    MEETING_CHAT_REACTION_ADD: 'meeting:chat:reaction:add',
+    MEETING_CHAT_REACTION_REMOVE: 'meeting:chat:reaction:remove',
+
+    // Message status events
+    MESSAGE_DELIVERED: 'message:delivered',
+    MESSAGE_READ: 'message:read',
+
+    // Generic Typing indicator events
+    TYPING_START: 'typing:start',
+    TYPING_STOP: 'typing:stop'
 } as const

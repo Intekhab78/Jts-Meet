@@ -7,6 +7,11 @@ export interface IChannelChat extends Document {
     content: string
     replyTo?: Types.ObjectId | null
     reactions: { userId: Types.ObjectId; emoji: string }[]
+    readBy: {
+        userId: Types.ObjectId
+        deliveredAt?: Date
+        readAt?: Date
+    }[]
     edited: boolean
     deleted: boolean
     createdAt: Date
@@ -26,10 +31,19 @@ const ChannelChatSchema = new Schema<IChannelChat>(
                 emoji: { type: String, required: true }
             }
         ],
+        readBy: [
+            {
+                userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+                deliveredAt: { type: Date },
+                readAt: { type: Date }
+            }
+        ],
         edited: { type: Boolean, default: false },
         deleted: { type: Boolean, default: false }
     },
     { timestamps: true }
 )
+
+ChannelChatSchema.index({ channelId: 1, deleted: 1, replyTo: 1, createdAt: -1 })
 
 export const ChannelChat = model<IChannelChat>('ChannelChat', ChannelChatSchema)

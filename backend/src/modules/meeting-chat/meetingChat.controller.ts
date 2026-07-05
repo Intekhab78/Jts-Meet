@@ -1,6 +1,9 @@
 import { Request, Response } from 'express'
+import { Types } from 'mongoose'
+import { MeetingChat } from './meetingChat.model'
 import { createMeetingChat, getMeetingChatHistory, softDeleteMeetingChat } from './meetingChat.service'
 import { sendSuccess, sendError } from '../../utils/responseHelper'
+import { parseCursorQuery, executeCursorQuery } from '../../utils/paginationHelper'
 
 interface AuthRequest extends Request {
     userId?: string
@@ -10,12 +13,31 @@ export const meetingChatController = {
     async getHistory(req: AuthRequest, res: Response) {
         const userId = req.userId
         const meetingId = req.query.meetingId as string
-        const page = Number(req.query.page || '1')
-        const limit = Number(req.query.limit || '50')
 
         if (!userId || !meetingId) {
             return sendError(res, 400, 'Invalid request')
         }
+
+        if (req.query.cursor !== undefined || req.query.pageSize !== undefined || req.query.search !== undefined) {
+            const params = parseCursorQuery(req.query)
+            const result = await executeCursorQuery(
+                MeetingChat,
+                { meetingId, deletedAt: null },
+                params,
+                ['message']
+            )
+            // Populate senderId for frontend roster rendering
+            const populatedData = await MeetingChat.populate(result.data, { path: 'senderId', select: 'fullName email profileImage' })
+            return res.status(200).json({
+                success: true,
+                data: populatedData,
+                nextCursor: result.nextCursor,
+                hasMore: result.hasMore
+            })
+        }
+
+        const page = Number(req.query.page || '1')
+        const limit = Number(req.query.limit || '50')
 
         const history = await getMeetingChatHistory(meetingId, page, limit)
         return sendSuccess(res, history)

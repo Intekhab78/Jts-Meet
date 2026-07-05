@@ -214,7 +214,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
     }, [teams, searchQuery, visibilityFilter, statusFilter])
 
     return (
-        <div style={{ background: '#09090B', minHeight: '100vh', color: '#fff', padding: '24px 32px', fontFamily: 'var(--font-sans)', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div className="px-4 py-6 md:p-8" style={{ background: '#09090B', minHeight: '100vh', color: '#fff', fontFamily: 'var(--font-sans)', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
             {/* Header section */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px' }}>
@@ -225,7 +225,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                         <span>/</span>
                         <span style={{ color: 'var(--color-accent)' }}>Team Management</span>
                     </div>
-                    <h1 style={{ fontSize: '2.5rem', fontWeight: 800, margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(to right, #ffffff, #a1a1aa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold" style={{ margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(to right, #ffffff, #a1a1aa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                         Team Management
                     </h1>
                     <p style={{ fontSize: '0.9375rem', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
@@ -266,7 +266,24 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
             )}
 
             {/* Statistics Dashboard Cards */}
-            <div className="grid grid-cols-5 gap-4">
+            <style>{`
+                .stats-grid-team {
+                    display: grid !important;
+                    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+                    gap: 16px !important;
+                }
+                @media (min-width: 640px) {
+                    .stats-grid-team {
+                        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                    }
+                }
+                @media (min-width: 1024px) {
+                    .stats-grid-team {
+                        grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+                    }
+                }
+            `}</style>
+            <div className="stats-grid-team">
                 {[
                     { title: 'Total Teams', value: stats.total, desc: 'Teams created', icon: '👥', color: '#6366F1' },
                     { title: 'Public Teams', value: stats.publicCount, desc: 'Visible to all', icon: '🌍', color: '#22C55E' },
@@ -311,10 +328,10 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
             </div>
 
             {/* Toolbar section: search + filters */}
-            <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '280px' }}>
+            <div className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '280px', flexWrap: 'wrap' }}>
                     {/* Search Field */}
-                    <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', minWidth: '200px' }}>
                         <span style={{ position: 'absolute', left: '12px', color: 'var(--color-text-muted)', display: 'flex' }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                 <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -404,11 +421,8 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                     {filteredTeams.map((team) => (
                         <div
                             key={team._id}
+                            className="glass-card"
                             style={{
-                                background: '#111827',
-                                border: '1px solid rgba(255,255,255,0.08)',
-                                borderRadius: '18px',
-                                padding: '24px',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: '16px',
@@ -461,8 +475,8 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                 </div>
             ) : (
                 /* List view (Professional SaaS Table) */
-                <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', overflow: 'hidden' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+                <div className="responsive-table-container" style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem', minWidth: '800px' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.01)' }}>
                                 <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Team Name</th>
@@ -553,6 +567,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                     onClick={() => setIsDrawerOpen(false)}
                 >
                     <div
+                        className="responsive-drawer"
                         style={{
                             position: 'absolute',
                             top: 0,
@@ -565,8 +580,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                             transform: isDrawerOpen ? 'translateX(0)' : 'translateX(100%)',
                             transition: 'transform 280ms cubic-bezier(0.16, 1, 0.3, 1)',
                             display: 'flex',
-                            flexDirection: 'column',
-                            padding: '30px'
+                            flexDirection: 'column'
                         }}
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -647,7 +661,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
 
                                         <div style={{ display: 'flex', justifyItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '8px' }}>
                                             <span style={{ color: 'var(--color-text-secondary)' }}>Owner</span>
-                                            <span style={{ fontWeight: 600, color: '#fff', fontFamily: 'monospace' }}>{selectedTeam.ownerId}</span>
+                                            <span style={{ fontWeight: 600, color: '#fff', fontFamily: 'monospace', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '140px' }}>{selectedTeam.ownerId}</span>
                                         </div>
 
                                         <div style={{ display: 'flex', justifyItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem' }}>

@@ -1,6 +1,7 @@
-import { Types } from 'mongoose'
+import mongoose, { Types } from 'mongoose'
 import { Organization, IOrganization, IOrganizationMember, OrganizationRole, OrganizationMemberStatus } from './organization.model'
 import { User } from '../../models/user.model'
+import { NotificationService } from '../notification/notification.service'
 
 export function hasOrganizationRole(member: IOrganizationMember | undefined, roles: OrganizationRole[]) {
     return !!member && roles.includes(member.role)
@@ -39,11 +40,11 @@ export async function createOrganization(
     return organization.save()
 }
 
-export async function getOrganizationById(orgId: string): Promise<IOrganization | null> {
+export async function getOrganizationById(orgId: string, session?: mongoose.ClientSession): Promise<IOrganization | null> {
     if (!Types.ObjectId.isValid(orgId)) {
         return null
     }
-    return Organization.findById(orgId).populate('members.userId', 'fullName email profileImage').exec()
+    return Organization.findById(orgId).populate('members.userId', 'fullName email profileImage').session(session || null).exec()
 }
 
 export async function updateOrganization(
@@ -75,47 +76,107 @@ export async function inviteMember(
     inviterId: string,
     payload: { userId: string; role: OrganizationRole }
 ): Promise<IOrganization | null> {
-    const org = await getOrganizationById(orgId)
-    if (!org) {
-        return null
-    }
+    const session = await mongoose.startSession()
+    session.startTransaction()
 
-    const inviterMember = org.members.find((member) => member.userId.equals(new Types.ObjectId(inviterId)))
-    if (!hasOrganizationRole(inviterMember, ['owner', 'admin'])) {
-        throw new Error('Forbidden')
-    }
-
-    let targetUserId = payload.userId.trim()
-    if (!Types.ObjectId.isValid(targetUserId)) {
-        const user = await User.findOne({ email: targetUserId.toLowerCase() })
-        if (!user) {
-            throw new Error('User not found with this email address')
+    try {
+        const org = await getOrganizationById(orgId, session)
+        if (!org) {
+            await session.commitTransaction()
+            return null
         }
-        targetUserId = user._id.toString()
-    }
 
-    const targetObjectUserId = new Types.ObjectId(targetUserId)
-
-    const existingMember = org.members.find((member) => member.userId.equals(targetObjectUserId))
-    if (existingMember) {
-        if (existingMember.status === 'removed') {
-            existingMember.status = 'pending'
-            existingMember.role = payload.role
-            existingMember.invitedBy = new Types.ObjectId(inviterId)
-            existingMember.joinedAt = null
+        const inviterMember = org.members.find((member) => member.userId.equals(new Types.ObjectId(inviterId)))
+        if (!hasOrganizationRole(inviterMember, ['owner', 'admin'])) {
+            throw new Error('Forbidden')
         }
-        return org.save()
+
+        let targetUserId = payload.userId.trim()
+        let isNewUserPlaceholder = false
+        let targetEmail = ''
+
+        if (!Types.ObjectId.isValid(targetUserId)) {
+            targetEmail = targetUserId.toLowerCase().trim()
+            let user = await User.findOne({ email: targetEmail }).session(session)
+            if (!user) {
+                const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8)
+                user = new User({
+                    fullName: targetEmail.split('@')[0],
+                    email: targetEmail,
+                    password: randomPassword,
+                    status: 'offline',
+                    emailVerified: false
+                })
+                await user.save({ session })
+                isNewUserPlaceholder = true
+            } else {
+                isNewUserPlaceholder = !user.emailVerified
+            }
+            targetUserId = user._id.toString()
+        } else {
+            const user = await User.findById(targetUserId).session(session)
+            if (user) {
+                targetEmail = user.email
+                isNewUserPlaceholder = !user.emailVerified
+            }
+        }
+
+        const targetObjectUserId = new Types.ObjectId(targetUserId)
+
+        const existingMember = org.members.find((member) => member.userId.equals(targetObjectUserId))
+        if (existingMember) {
+            if (existingMember.status === 'removed') {
+                existingMember.status = 'pending'
+                existingMember.role = payload.role
+                existingMember.invitedBy = new Types.ObjectId(inviterId)
+                existingMember.joinedAt = null
+            }
+            await org.save({ session })
+        } else {
+            org.members.push({
+                userId: targetObjectUserId,
+                role: payload.role,
+                joinedAt: null,
+                invitedBy: new Types.ObjectId(inviterId),
+                status: 'pending'
+            })
+            await org.save({ session })
+        }
+
+        await session.commitTransaction()
+
+        // Proactively send invitation in background
+        if (targetEmail) {
+            const inviter = await User.findById(inviterId)
+            const inviterName = inviter ? inviter.fullName : 'A workspace administrator'
+            const appUrl = 'http://localhost:3000'
+
+            const recipientUser = await User.findOne({ email: targetEmail.toLowerCase().trim() })
+            const recipientId = recipientUser ? recipientUser._id.toString() : inviterId
+
+            NotificationService.send({
+                recipientId,
+                title: 'Organization Invitation',
+                body: `${inviterName} has invited you to join the organization "${org.name}"`,
+                type: 'org_invite',
+                metadata: { orgId: org._id.toString(), orgName: org.name, inviterName },
+                emailData: {
+                    to: targetEmail,
+                    template: 'org_invite',
+                    params: { orgName: org.name, inviterName, joinLink: appUrl, isRegistered: !isNewUserPlaceholder }
+                }
+            }).catch((err) => {
+                console.error('Failed to send organization invitation notification:', err)
+            })
+        }
+
+        return org
+    } catch (err) {
+        await session.abortTransaction()
+        throw err
+    } finally {
+        session.endSession()
     }
-
-    org.members.push({
-        userId: targetObjectUserId,
-        role: payload.role,
-        joinedAt: null,
-        invitedBy: new Types.ObjectId(inviterId),
-        status: 'pending'
-    })
-
-    return org.save()
 }
 
 export async function acceptInvitation(orgId: string, userId: string): Promise<IOrganization | null> {
@@ -186,6 +247,87 @@ export async function getOrganizationMembers(orgId: string): Promise<IOrganizati
         return null
     }
     return org.members
+}
+
+export async function getOrganizationMembersPaginated(
+    orgId: string,
+    limit = 20,
+    cursor?: string,
+    search?: string
+): Promise<{ members: any[]; nextCursor: string | null } | null> {
+    if (!Types.ObjectId.isValid(orgId)) {
+        return null
+    }
+
+    const matchStage: any = { _id: new Types.ObjectId(orgId) }
+
+    const pipeline: any[] = [
+        { $match: matchStage },
+        { $unwind: '$members' },
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'members.userId',
+                foreignField: '_id',
+                as: 'userDetails'
+            }
+        },
+        { $unwind: { path: '$userDetails', preserveNullAndEmptyArrays: true } }
+    ]
+
+    if (search && search.trim()) {
+        const searchRegex = new RegExp(search.trim(), 'i')
+        pipeline.push({
+            $match: {
+                $or: [
+                    { 'userDetails.fullName': searchRegex },
+                    { 'userDetails.email': searchRegex }
+                ]
+            }
+        })
+    }
+
+    if (cursor) {
+        pipeline.push({
+            $match: {
+                'members.userId': { $gt: new Types.ObjectId(cursor) }
+            }
+        })
+    }
+
+    pipeline.push({ $sort: { 'members.userId': 1 } })
+    pipeline.push({ $limit: limit + 1 })
+
+    pipeline.push({
+        $project: {
+            _id: 0,
+            userId: '$members.userId',
+            role: '$members.role',
+            joinedAt: '$members.joinedAt',
+            status: '$members.status',
+            user: {
+                _id: '$userDetails._id',
+                fullName: '$userDetails.fullName',
+                email: '$userDetails.email',
+                profileImage: '$userDetails.profileImage'
+            }
+        }
+    })
+
+    const results = await Organization.aggregate(pipeline).exec()
+
+    let nextCursor: string | null = null
+    const hasNextPage = results.length > limit
+    if (hasNextPage) {
+        results.pop()
+        const lastItem = results[results.length - 1]
+        nextCursor = lastItem.userId.toString()
+    }
+
+    return {
+        members: results,
+        nextCursor
+    }
 }
 
 export async function listUserOrganizations(userId: string): Promise<IOrganization[]> {

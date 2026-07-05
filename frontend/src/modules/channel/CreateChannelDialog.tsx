@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { createPortal } from 'react-dom'
 
 interface CreateChannelDialogProps {
     open: boolean
@@ -39,7 +40,7 @@ export function CreateChannelDialog({ open, onClose, onCreate }: CreateChannelDi
         return null
     }
 
-    return (
+    return createPortal(
         <div className="anim-fade-in" style={{
             position: 'fixed',
             top: 0,
@@ -160,6 +161,7 @@ export function CreateChannelDialog({ open, onClose, onCreate }: CreateChannelDi
                     </div>
                 </form>
             </div>
-        </div>
+        </div>,
+        document.body
     )
 }

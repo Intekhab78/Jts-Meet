@@ -13,8 +13,12 @@ import {
     updateUserProfile,
     changeUserPassword,
     listActiveSessions,
-    revokeSession
+    revokeSession,
+    loginOrCreateSsoUser,
+    loginOrCreateGoogleUser,
+    loginOrCreateMicrosoftUser
 } from '../services/auth.service'
+import { Organization } from '../modules/organization/organization.model'
 import { validateRegister, validateLogin } from '../validators/auth.validator'
 import { AuthRequest } from '../middleware/authMiddleware'
 
@@ -220,6 +224,74 @@ export const authController = {
             return sendSuccess(res, null, 'Session revoked successfully')
         } catch (err: any) {
             return sendError(res, err.status || 500, err.message || 'Failed to revoke session')
+        }
+    },
+
+    ssoLogin: async (req: Request, res: Response) => {
+        const orgSlug = req.params.orgSlug as string
+        if (!orgSlug) {
+            return sendError(res, 400, 'Organization slug is required')
+        }
+
+        try {
+            const org = await Organization.findOne({ slug: orgSlug.toLowerCase().trim() })
+            if (!org) {
+                return sendError(res, 404, 'Organization workspace not found')
+            }
+            return sendSuccess(res, { slug: org.slug, name: org.name }, 'Organization found')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'SSO initiation failed')
+        }
+    },
+
+    ssoCallback: async (req: Request, res: Response) => {
+        const { email, orgSlug } = req.body
+        if (!email || !orgSlug) {
+            return sendError(res, 400, 'Email and Organization slug are required')
+        }
+
+        const deviceInfo = req.headers['user-agent'] || ''
+        const ipAddress = req.ip || ''
+
+        try {
+            const authResult = await loginOrCreateSsoUser(email, orgSlug, deviceInfo, ipAddress)
+            return sendSuccess(res, authResult, 'SSO Authentication successful')
+        } catch (err: any) {
+            return sendError(res, err.status || 500, err.message || 'SSO Authentication failed')
+        }
+    },
+
+    googleLogin: async (req: Request, res: Response) => {
+        const { idToken } = req.body
+        if (!idToken) {
+            return sendError(res, 400, 'Google ID Token is required')
+        }
+
+        const deviceInfo = req.headers['user-agent'] || ''
+        const ipAddress = req.ip || ''
+
+        try {
+            const authResult = await loginOrCreateGoogleUser(idToken, deviceInfo, ipAddress)
+            return sendSuccess(res, authResult, 'Google login successful')
+        } catch (err: any) {
+            return sendError(res, err.status || 500, err.message || 'Google login failed')
+        }
+    },
+
+    microsoftLogin: async (req: Request, res: Response) => {
+        const { code, redirectUri } = req.body
+        if (!code || !redirectUri) {
+            return sendError(res, 400, 'Authorization code and redirectUri are required')
+        }
+
+        const deviceInfo = req.headers['user-agent'] || ''
+        const ipAddress = req.ip || ''
+
+        try {
+            const authResult = await loginOrCreateMicrosoftUser(code, redirectUri, deviceInfo, ipAddress)
+            return sendSuccess(res, authResult, 'Microsoft login successful')
+        } catch (err: any) {
+            return sendError(res, err.status || 500, err.message || 'Microsoft login failed')
         }
     }
 }

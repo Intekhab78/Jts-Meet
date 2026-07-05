@@ -1,8 +1,10 @@
-import { Types } from 'mongoose'
+import mongoose, { Types } from 'mongoose'
 import { Channel, IChannel, IChannelMember } from './channel.model'
 import { Team } from '../team/team.model'
 import { getOrganizationById } from '../organization/organization.service'
 import { ChannelTypes, ChannelRoles, ChannelStatuses, GeneralChannelName } from './channel.constants'
+import { User } from '../../models/user.model'
+import { NotificationService } from '../notification/notification.service'
 
 function isChannelOwnerOrModerator(channel: IChannel, userId: string) {
     return channel.members.some(
@@ -14,13 +16,13 @@ function isChannelOwner(channel: IChannel, userId: string) {
     return channel.ownerId.equals(new Types.ObjectId(userId))
 }
 
-async function ensureTeamAndOrganizationExist(organizationId: string, teamId: string) {
-    const organization = await getOrganizationById(organizationId)
+async function ensureTeamAndOrganizationExist(organizationId: string, teamId: string, session?: mongoose.ClientSession) {
+    const organization = await getOrganizationById(organizationId, session)
     if (!organization) {
         throw { status: 404, message: 'Organization not found' }
     }
 
-    const team = await Team.findOne({ _id: teamId, organizationId: organization._id, deletedAt: null }).exec()
+    const team = await Team.findOne({ _id: teamId, organizationId: organization._id, deletedAt: null }).session(session || null).exec()
     if (!team) {
         throw { status: 404, message: 'Team not found' }
     }
@@ -67,10 +69,10 @@ export async function createChannel(userId: string, payload: {
     return channel.save()
 }
 
-export async function createGeneralChannel(userId: string, organizationId: string, teamId: string): Promise<IChannel> {
-    const { team } = await ensureTeamAndOrganizationExist(organizationId, teamId)
+export async function createGeneralChannel(userId: string, organizationId: string, teamId: string, session?: mongoose.ClientSession): Promise<IChannel> {
+    const { team } = await ensureTeamAndOrganizationExist(organizationId, teamId, session)
 
-    const existing = await Channel.findOne({ teamId: team._id, name: GeneralChannelName, deletedAt: null }).exec()
+    const existing = await Channel.findOne({ teamId: team._id, name: GeneralChannelName, deletedAt: null }).session(session || null).exec()
     if (existing) {
         return existing
     }
@@ -96,7 +98,7 @@ export async function createGeneralChannel(userId: string, organizationId: strin
         archived: false
     })
 
-    return channel.save()
+    return channel.save({ session })
 }
 
 export async function getChannel(channelId: string): Promise<IChannel | null> {
@@ -274,7 +276,29 @@ export async function inviteChannelMember(channelId: string, inviterId: string, 
         })
     }
 
-    return channel.save()
+    const savedChannel = await channel.save()
+
+    // Trigger invitation notifications asynchronously
+    if (savedChannel) {
+        (async () => {
+            try {
+                const inviter = await User.findById(inviterId)
+                const inviterName = inviter ? inviter.fullName : 'A channel moderator'
+                
+                await NotificationService.send({
+                    recipientId: payload.userId,
+                    title: 'Channel Invitation',
+                    body: `${inviterName} has added you to the channel "#${channel.name}"`,
+                    type: 'channel_invite',
+                    metadata: { channelId, channelName: channel.name, inviterName }
+                })
+            } catch (err) {
+                console.error('Failed to send channel invitation notification:', err)
+            }
+        })()
+    }
+
+    return savedChannel
 }
 
 export async function removeChannelMember(channelId: string, requesterId: string, targetUserId: string): Promise<IChannel | null> {
@@ -330,3 +354,83 @@ export async function getChannelMembers(channelId: string): Promise<IChannelMemb
     }
     return channel.members
 }
+
+export async function getChannelMembersPaginated(
+    channelId: string,
+    limit = 20,
+    cursor?: string,
+    search?: string
+): Promise<{ members: any[]; nextCursor: string | null } | null> {
+    if (!Types.ObjectId.isValid(channelId)) {
+        return null
+    }
+
+    const pipeline: any[] = [
+        { $match: { _id: new Types.ObjectId(channelId), deletedAt: null } },
+        { $unwind: '$members' },
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'members.userId',
+                foreignField: '_id',
+                as: 'userDetails'
+            }
+        },
+        { $unwind: { path: '$userDetails', preserveNullAndEmptyArrays: true } }
+    ]
+
+    if (search && search.trim()) {
+        const searchRegex = new RegExp(search.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i')
+        pipeline.push({
+            $match: {
+                $or: [
+                    { 'userDetails.fullName': searchRegex },
+                    { 'userDetails.email': searchRegex }
+                ]
+            }
+        })
+    }
+
+    if (cursor && Types.ObjectId.isValid(cursor)) {
+        pipeline.push({
+            $match: {
+                'members.userId': { $gt: new Types.ObjectId(cursor) }
+            }
+        })
+    }
+
+    pipeline.push({ $sort: { 'members.userId': 1 } })
+    pipeline.push({ $limit: limit + 1 })
+
+    pipeline.push({
+        $project: {
+            _id: 0,
+            userId: '$members.userId',
+            role: '$members.role',
+            joinedAt: '$members.joinedAt',
+            status: '$members.status',
+            user: {
+                _id: '$userDetails._id',
+                fullName: '$userDetails.fullName',
+                email: '$userDetails.email',
+                profileImage: '$userDetails.profileImage'
+            }
+        }
+    })
+
+    const results = await Channel.aggregate(pipeline).exec()
+
+    let nextCursor: string | null = null
+    const hasNextPage = results.length > limit
+    if (hasNextPage) {
+        results.pop()
+        const lastItem = results[results.length - 1]
+        nextCursor = lastItem.userId.toString()
+    }
+
+    return {
+        members: results,
+        nextCursor
+    }
+}
+

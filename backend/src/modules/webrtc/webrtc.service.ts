@@ -1,6 +1,16 @@
 import { getMeetingByMeetingId } from '../meeting/meeting.service'
 
-export async function authorizeMeetingJoin(userId: string, meetingId: string): Promise<boolean> {
+export async function authorizeMeetingJoin(
+    userId: string, 
+    meetingId: string, 
+    isGuest?: boolean, 
+    guestMeetingId?: string, 
+    isPending?: boolean
+): Promise<boolean> {
+    if (isGuest) {
+        return !isPending && guestMeetingId === meetingId
+    }
+
     const meeting = await getMeetingByMeetingId(meetingId)
     if (!meeting) {
         return false

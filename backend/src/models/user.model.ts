@@ -8,6 +8,10 @@ export interface IUser extends Document {
     profileImage?: string
     status: 'online' | 'offline'
     emailVerified: boolean
+    googleId?: string | null
+    microsoftId?: string | null
+    tenantId?: string | null
+    provider?: string | null
     lastSeen?: Date | null
     otpCode?: string | null
     otpExpires?: Date | null
@@ -23,12 +27,19 @@ const UserSchema = new Schema<IUser>(
         profileImage: { type: String, default: '' },
         status: { type: String, enum: ['online', 'offline'], default: 'offline' },
         emailVerified: { type: Boolean, default: false },
+        googleId: { type: String, default: null, index: true },
+        microsoftId: { type: String, default: null, index: true },
+        tenantId: { type: String, default: null },
+        provider: { type: String, default: null, index: true },
         lastSeen: { type: Date, default: null },
         otpCode: { type: String, default: null },
         otpExpires: { type: Date, default: null }
     },
     { timestamps: true }
 )
+
+UserSchema.index({ fullName: 1 })
+UserSchema.index({ createdAt: 1 })
 
 UserSchema.pre('save', async function (next) {
     if (!this.isModified('password')) {

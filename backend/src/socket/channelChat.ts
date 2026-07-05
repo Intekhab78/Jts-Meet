@@ -8,15 +8,60 @@ export function registerChannelChatHandlers(io: Server, socket: Socket) {
         }
     })
 
-    socket.on('channel:join', (payload: { channelId: string }) => {
+    socket.on('channel:join', async (payload: { channelId: string }) => {
         if (payload?.channelId) {
             socket.join(payload.channelId)
+            const userId = (socket as any).userId
+            if (userId) {
+                try {
+                    await ChannelChatService.markChannelMessagesRead(payload.channelId, userId)
+                    io.to(payload.channelId).emit('channel:read-receipt:update', {
+                        channelId: payload.channelId,
+                        userId,
+                        readAt: new Date()
+                    })
+                } catch (err) {
+                    console.error('Failed to update read receipts on join:', err)
+                }
+            }
         }
     })
 
     socket.on('channel:leave', (payload: { channelId: string }) => {
         if (payload?.channelId) {
             socket.leave(payload.channelId)
+        }
+    })
+
+    socket.on('channel:read-receipt:read', async (payload: { channelId: string }) => {
+        const userId = (socket as any).userId
+        if (userId && payload?.channelId) {
+            try {
+                await ChannelChatService.markChannelMessagesRead(payload.channelId, userId)
+                io.to(payload.channelId).emit('channel:read-receipt:update', {
+                    channelId: payload.channelId,
+                    userId,
+                    readAt: new Date()
+                })
+            } catch (err) {
+                console.error('Failed to update channel read receipts:', err)
+            }
+        }
+    })
+
+    socket.on('channel:read-receipt:delivered', async (payload: { channelId: string }) => {
+        const userId = (socket as any).userId
+        if (userId && payload?.channelId) {
+            try {
+                await ChannelChatService.markChannelMessagesDelivered(payload.channelId, userId)
+                io.to(payload.channelId).emit('channel:read-receipt:delivered-update', {
+                    channelId: payload.channelId,
+                    userId,
+                    deliveredAt: new Date()
+                })
+            } catch (err) {
+                console.error('Failed to update channel delivered receipts:', err)
+            }
         }
     })
 

@@ -56,10 +56,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     return (
         <div style={{ minHeight: '100dvh', background: 'var(--color-bg-base)', overflowX: 'hidden' }}>
             {/* ── Navigation ── */}
-            <nav style={{
+            <nav className="px-4 md:px-6" style={{
                 position: 'fixed', top: 0, left: 0, right: 0, height: 72,
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '0 24px', background: 'rgba(10,11,15,0.75)',
+                background: 'rgba(10,11,15,0.75)',
                 backdropFilter: 'blur(20px) saturate(1.5)', WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
                 borderBottom: '1px solid var(--color-border)', zIndex: 100
             }}>
@@ -76,17 +76,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                     </span>
                 </div>
 
-                <div className="hidden md:flex" style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
+                <div className="hidden md:flex" style={{ gap: 32, alignItems: 'center' }}>
                     <a href="#features" style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-secondary)', transition: 'color var(--duration-fast)' }} className="hover:text-white">Features</a>
                     <a href="#pricing" style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-secondary)', transition: 'color var(--duration-fast)' }} className="hover:text-white">Pricing</a>
                     <a href="#faq" style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-secondary)', transition: 'color var(--duration-fast)' }} className="hover:text-white">FAQ</a>
                 </div>
 
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <button onClick={() => onNavigate('login')} className="btn btn-ghost" style={{ padding: '8px 16px' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button onClick={() => onNavigate('login')} className="btn btn-ghost px-3 py-2 text-sm">
                         Sign In
                     </button>
-                    <button onClick={() => onNavigate('register')} className="btn btn-primary" style={{ padding: '8px 20px', borderRadius: 'var(--radius-md)' }}>
+                    <button onClick={() => onNavigate('register')} className="btn btn-primary px-4 py-2 text-sm" style={{ borderRadius: 'var(--radius-md)' }}>
                         Sign Up
                     </button>
                 </div>
@@ -175,7 +175,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                                 </div>
                             </div>
                             {/* Mock Sidebar Chat */}
-                            <div style={{ width: 240, borderLeft: '1px solid rgba(255,255,255,0.05)', background: 'rgba(10,11,15,0.5)', padding: 12, display: 'flex', flexDirection: 'column' }}>
+                            <div className="hidden sm:flex" style={{ width: 240, borderLeft: '1px solid rgba(255,255,255,0.05)', background: 'rgba(10,11,15,0.5)', padding: 12, flexDirection: 'column' }}>
                                 <span style={{ fontSize: '0.75rem', fontWeight: 600, marginBottom: 12, display: 'block' }}>Meeting Chat</span>
                                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
                                     <div style={{ background: 'rgba(255,255,255,0.04)', padding: 8, borderRadius: 8, fontSize: '0.7rem' }}>

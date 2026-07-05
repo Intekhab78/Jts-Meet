@@ -54,3 +54,35 @@ export async function softDeleteMeetingChat(messageId: string, userId: string): 
     chat.deletedAt = new Date()
     return chat.save()
 }
+
+export async function addMeetingChatReaction(
+    messageId: string,
+    userId: string,
+    emoji: string
+): Promise<IMeetingChat | null> {
+    const userObjectId = new Types.ObjectId(userId)
+    const chat = await MeetingChat.findById(messageId).exec()
+    if (!chat) return null
+
+    // Prevent duplicate reaction of same emoji from same user
+    const exists = chat.reactions.some(r => r.userId.equals(userObjectId) && r.emoji === emoji)
+    if (exists) {
+        return chat
+    }
+
+    chat.reactions.push({ userId: userObjectId, emoji, createdAt: new Date() })
+    return chat.save()
+}
+
+export async function removeMeetingChatReaction(
+    messageId: string,
+    userId: string,
+    emoji: string
+): Promise<IMeetingChat | null> {
+    const userObjectId = new Types.ObjectId(userId)
+    const chat = await MeetingChat.findById(messageId).exec()
+    if (!chat) return null
+
+    chat.reactions = chat.reactions.filter(r => !(r.userId.equals(userObjectId) && r.emoji === emoji))
+    return chat.save()
+}

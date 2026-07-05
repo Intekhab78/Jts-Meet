@@ -18,5 +18,7 @@ export const SocketEvents = {
     CHANNEL_CHAT_RECEIVE: 'channel:chat:receive',
     CHANNEL_CHAT_TYPING: 'channel:chat:typing',
     CHANNEL_CHAT_STOP_TYPING: 'channel:chat:stopTyping',
-    MEETING_LEAVE: 'meeting:leave'
+    MEETING_LEAVE: 'meeting:leave',
+    MEETING_CHAT_REACTION_ADD: 'meeting:chat:reaction:add',
+    MEETING_CHAT_REACTION_REMOVE: 'meeting:chat:reaction:remove'
 } as const

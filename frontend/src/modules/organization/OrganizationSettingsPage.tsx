@@ -103,7 +103,7 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
     };
 
     return (
-        <div style={{ background: '#09090B', minHeight: '100vh', color: '#fff', padding: '32px 40px', fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        <div className="px-4 py-6 md:p-10" style={{ background: '#09090B', minHeight: '100vh', color: '#fff', fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column', gap: '32px' }}>
             
             {/* Header Section */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px' }}>
@@ -114,7 +114,7 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
                         <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
                         <span style={{ color: '#6366F1' }}>Settings</span>
                     </div>
-                    <h1 style={{ fontSize: '2.625rem', fontWeight: 800, margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(to right, #ffffff, #a1a1aa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold" style={{ margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(to right, #ffffff, #a1a1aa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                         Organization Settings
                     </h1>
                     <p style={{ fontSize: '0.9375rem', color: 'var(--color-text-muted)', margin: '6px 0 0' }}>
@@ -122,10 +122,10 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
                     </p>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div className="w-full sm:w-auto">
                     <button
                         onClick={() => setShowCreateModal(true)}
-                        className="btn"
+                        className="btn w-full sm:w-auto justify-center"
                         style={{
                             height: '42px',
                             borderRadius: '12px',
@@ -275,7 +275,7 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                             
                             {/* SECTION 1: Organization Overview */}
-                            <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '16px' }}>
                                     <div style={{
                                         width: '48px',
@@ -342,7 +342,7 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
                             </div>
 
                             {/* SECTION 3: Workspace Actions */}
-                            <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <h3 style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>Quick Workspace Actions</h3>
                                 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -364,14 +364,14 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
                                             action: () => alert('Scroll to the Roles & Permissions section below to read permissions!')
                                         }
                                     ].map((act, idx) => (
-                                        <div key={idx} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                                        <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '12px', padding: '14px' }}>
                                             <div style={{ minWidth: 0 }}>
                                                 <h4 style={{ margin: 0, fontSize: '0.8125rem', fontWeight: 600, color: '#fff' }}>{act.title}</h4>
                                                 <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{act.desc}</p>
                                             </div>
                                             <button
                                                 onClick={act.action}
-                                                className={`btn ${act.btnClass}`}
+                                                className={`btn ${act.btnClass} w-full sm:w-auto`}
                                                 style={{
                                                     height: '32px',
                                                     borderRadius: '8px',
@@ -395,7 +395,7 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
                         <div className="lg:col-span-2 space-y-6">
                             
                             {/* SECTION 4: Organization Profile */}
-                            <div id="org-profile-form" style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <div id="org-profile-form" className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                 <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#fff', margin: 0 }}>Organization Profile</h3>
                                 <form
                                     onSubmit={async (event) => {
@@ -490,12 +490,12 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
                             </div>
 
                             {/* SECTION 5: Members */}
-                            <MemberList members={organization.members} onRemove={handleRemoveMember} />
+                            <MemberList organizationId={organization._id} token={token} onRemove={handleRemoveMember} />
                         </div>
                     </div>
 
                     {/* SECTION 6: Permissions & Roles */}
-                    <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <div>
                             <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#fff', margin: 0 }}>Roles & Workspace Permissions</h3>
                             <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
@@ -522,7 +522,7 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
                     </div>
 
                     {/* SECTION 7: Danger Zone */}
-                    <div style={{ background: '#111827', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div className="glass-card" style={{ border: '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <div>
                             <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#EF4444', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2.5">

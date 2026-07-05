@@ -14,6 +14,8 @@ router.post('/end', authenticate, asyncWrapper(meetingController.endMeeting))
 
 router.post('/waiting-room/approve', authenticate, asyncWrapper(meetingController.approveWaiting))
 router.post('/waiting-room/toggle', authenticate, asyncWrapper(meetingController.toggleWaiting))
+router.post('/guest-join/toggle', authenticate, asyncWrapper(meetingController.toggleGuestJoin))
+router.post('/invite-email', authenticate, asyncWrapper(meetingController.sendEmailInvite))
 router.post('/cohost/promote', authenticate, asyncWrapper(meetingController.promoteCoHost))
 router.post('/cohost/demote', authenticate, asyncWrapper(meetingController.demoteCoHost))
 router.post('/mute', authenticate, asyncWrapper(meetingController.muteUser))

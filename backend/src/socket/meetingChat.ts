@@ -2,9 +2,8 @@ import { Types } from 'mongoose'
 import { Server, Socket } from 'socket.io'
 import { AuthenticatedSocket } from './auth'
 import { SocketEvents } from './events'
-import { createMeetingChat } from '../modules/meeting-chat/meetingChat.service'
+import { createMeetingChat, addMeetingChatReaction, removeMeetingChatReaction } from '../modules/meeting-chat/meetingChat.service'
 import { getMeetingByMeetingId } from '../modules/meeting/meeting.service'
-import { getUserSocket } from './presence'
 
 export function registerMeetingChatHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
@@ -26,10 +25,7 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
 
             meeting.participants.forEach((participant) => {
                 const participantId = participant.toString()
-                const participantSocketId = getUserSocket(participantId)
-                if (participantSocketId) {
-                    io.to(participantSocketId).emit(SocketEvents.MEETING_CHAT_RECEIVE, chat)
-                }
+                io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_RECEIVE, chat)
             })
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Unable to send meeting chat' })
@@ -57,13 +53,10 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
                 return
             }
 
-            const participantSocketId = getUserSocket(participantId)
-            if (participantSocketId) {
-                io.to(participantSocketId).emit(SocketEvents.MEETING_CHAT_TYPING, {
-                    meetingId: payload.meetingId,
-                    userId
-                })
-            }
+            io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_TYPING, {
+                meetingId: payload.meetingId,
+                userId
+            })
         })
     })
 
@@ -88,13 +81,63 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
                 return
             }
 
-            const participantSocketId = getUserSocket(participantId)
-            if (participantSocketId) {
-                io.to(participantSocketId).emit(SocketEvents.MEETING_CHAT_STOP_TYPING, {
-                    meetingId: payload.meetingId,
-                    userId
-                })
-            }
+            io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_STOP_TYPING, {
+                meetingId: payload.meetingId,
+                userId
+            })
         })
+    })
+
+    socket.on(SocketEvents.MEETING_CHAT_REACTION_ADD, async (payload: { meetingId: string; messageId: string; emoji: string }) => {
+        if (!userId || !payload?.meetingId || !payload?.messageId || !payload?.emoji) {
+            return
+        }
+
+        try {
+            const result = await addMeetingChatReaction(payload.messageId, userId, payload.emoji)
+            if (result) {
+                const meeting = await getMeetingByMeetingId(payload.meetingId)
+                if (meeting) {
+                    meeting.participants.forEach((participant) => {
+                        const participantId = participant.toString()
+                        io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_REACTION_ADD, {
+                            meetingId: payload.meetingId,
+                            messageId: payload.messageId,
+                            userId,
+                            emoji: payload.emoji,
+                            createdAt: new Date()
+                        })
+                    })
+                }
+            }
+        } catch (error: any) {
+            socket.emit('error', { message: error.message || 'Unable to add reaction' })
+        }
+    })
+
+    socket.on(SocketEvents.MEETING_CHAT_REACTION_REMOVE, async (payload: { meetingId: string; messageId: string; emoji: string }) => {
+        if (!userId || !payload?.meetingId || !payload?.messageId || !payload?.emoji) {
+            return
+        }
+
+        try {
+            const result = await removeMeetingChatReaction(payload.messageId, userId, payload.emoji)
+            if (result) {
+                const meeting = await getMeetingByMeetingId(payload.meetingId)
+                if (meeting) {
+                    meeting.participants.forEach((participant) => {
+                        const participantId = participant.toString()
+                        io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_REACTION_REMOVE, {
+                            meetingId: payload.meetingId,
+                            messageId: payload.messageId,
+                            userId,
+                            emoji: payload.emoji
+                        })
+                    })
+                }
+            }
+        } catch (error: any) {
+            socket.emit('error', { message: error.message || 'Unable to remove reaction' })
+        }
     })
 }

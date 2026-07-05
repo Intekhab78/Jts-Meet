@@ -52,5 +52,7 @@ const TeamSchema = new Schema<ITeam>(
 )
 
 TeamSchema.index({ organizationId: 1, name: 1 }, { unique: true })
+TeamSchema.index({ organizationId: 1, deletedAt: 1, visibility: 1, status: 1, createdAt: -1 })
+TeamSchema.index({ organizationId: 1, name: 1, createdAt: -1 })
 
 export const Team = model<ITeam>('Team', TeamSchema)

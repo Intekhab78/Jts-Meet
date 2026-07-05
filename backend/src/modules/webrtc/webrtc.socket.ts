@@ -1,7 +1,7 @@
 import { Server, Socket } from 'socket.io'
 import { SocketEvents } from '../../socket/events'
 import { AuthenticatedSocket } from '../../socket/auth'
-import { addPeerSession, removePeerSessionBySocket, getMeetingParticipantSocketIds, getMeetingSocketId } from './peer.manager'
+import { addPeerSession, removePeerSessionBySocket, getMeetingParticipantSocketIds } from './peer.manager'
 import { authorizeMeetingJoin } from './webrtc.service'
 import { joinMeeting } from '../meeting/meeting.service'
 
@@ -16,26 +16,37 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         }
 
         try {
-            await joinMeeting(payload.meetingId, userId)
+            if (!authSocket.isGuest) {
+                await joinMeeting(payload.meetingId, userId)
+            }
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Failed to join meeting in database' })
             return
         }
 
-        const isAuthorized = await authorizeMeetingJoin(userId, payload.meetingId)
+        const isAuthorized = await authorizeMeetingJoin(
+            userId, 
+            payload.meetingId, 
+            authSocket.isGuest, 
+            authSocket.meetingId, 
+            authSocket.isPending
+        )
         if (!isAuthorized) {
             socket.emit('error', { message: 'Not authorized to join meeting' })
             return
         }
 
+        socket.join(`meeting:${payload.meetingId}`)
+        authSocket.meetingId = payload.meetingId
+
         addPeerSession(userId, payload.meetingId, socket.id)
 
-        const otherSocketIds = getMeetingParticipantSocketIds(payload.meetingId, userId)
-        otherSocketIds.forEach((otherSocketId) => {
-            io.to(otherSocketId).emit(SocketEvents.WEBRTC_USER_JOINED, { userId, meetingId: payload.meetingId })
-        })
+        // Broadcast to other participants in the room across all nodes
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.WEBRTC_USER_JOINED, { userId, meetingId: payload.meetingId })
 
-        socket.emit(SocketEvents.WEBRTC_JOIN, { meetingId: payload.meetingId, participants: otherSocketIds.length + 1 })
+        // Get total participants in the meeting room across the entire Redis cluster
+        const sockets = await io.in(`meeting:${payload.meetingId}`).allSockets()
+        socket.emit(SocketEvents.WEBRTC_JOIN, { meetingId: payload.meetingId, participants: sockets.size })
     })
 
     socket.on(SocketEvents.WEBRTC_OFFER, async (payload: { targetUserId: string; meetingId: string; offer: any }) => {
@@ -44,13 +55,7 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             return
         }
 
-        const targetSocketId = getMeetingSocketId(payload.targetUserId, payload.meetingId)
-        if (!targetSocketId) {
-            socket.emit('error', { message: 'Target user not available' })
-            return
-        }
-
-        io.to(targetSocketId).emit(SocketEvents.WEBRTC_OFFER, {
+        io.to(`user:${payload.targetUserId}`).emit(SocketEvents.WEBRTC_OFFER, {
             fromUserId: userId,
             meetingId: payload.meetingId,
             offer: payload.offer
@@ -63,13 +68,7 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             return
         }
 
-        const targetSocketId = getMeetingSocketId(payload.targetUserId, payload.meetingId)
-        if (!targetSocketId) {
-            socket.emit('error', { message: 'Target user not available' })
-            return
-        }
-
-        io.to(targetSocketId).emit(SocketEvents.WEBRTC_ANSWER, {
+        io.to(`user:${payload.targetUserId}`).emit(SocketEvents.WEBRTC_ANSWER, {
             fromUserId: userId,
             meetingId: payload.meetingId,
             answer: payload.answer
@@ -82,13 +81,7 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             return
         }
 
-        const targetSocketId = getMeetingSocketId(payload.targetUserId, payload.meetingId)
-        if (!targetSocketId) {
-            socket.emit('error', { message: 'Target user not available' })
-            return
-        }
-
-        io.to(targetSocketId).emit(SocketEvents.WEBRTC_ICE_CANDIDATE, {
+        io.to(`user:${payload.targetUserId}`).emit(SocketEvents.WEBRTC_ICE_CANDIDATE, {
             fromUserId: userId,
             meetingId: payload.meetingId,
             candidate: payload.candidate
@@ -101,11 +94,8 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             return
         }
 
-        const otherSocketIds = getMeetingParticipantSocketIds(payload.meetingId, userId)
-        otherSocketIds.forEach((otherSocketId) => {
-            io.to(otherSocketId).emit(SocketEvents.SCREEN_START, { userId, meetingId: payload.meetingId })
-            io.to(otherSocketId).emit(SocketEvents.SCREEN_CHANGED, { userId, meetingId: payload.meetingId, active: true })
-        })
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_START, { userId, meetingId: payload.meetingId })
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_CHANGED, { userId, meetingId: payload.meetingId, active: true })
     })
 
     socket.on(SocketEvents.SCREEN_STOP, async (payload: { meetingId: string }) => {
@@ -114,25 +104,20 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             return
         }
 
-        const otherSocketIds = getMeetingParticipantSocketIds(payload.meetingId, userId)
-        otherSocketIds.forEach((otherSocketId) => {
-            io.to(otherSocketId).emit(SocketEvents.SCREEN_STOP, { userId, meetingId: payload.meetingId })
-            io.to(otherSocketId).emit(SocketEvents.SCREEN_CHANGED, { userId, meetingId: payload.meetingId, active: false })
-        })
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_STOP, { userId, meetingId: payload.meetingId })
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_CHANGED, { userId, meetingId: payload.meetingId, active: false })
     })
 
     socket.on(SocketEvents.DISCONNECT, () => {
         const session = removePeerSessionBySocket(socket.id)
-        if (!session) {
-            return
-        }
+        const meetingId = session?.meetingId || authSocket.meetingId
+        const sUserId = session?.userId || userId
 
-        const otherSocketIds = getMeetingParticipantSocketIds(session.meetingId, session.userId)
-        otherSocketIds.forEach((otherSocketId) => {
-            io.to(otherSocketId).emit(SocketEvents.WEBRTC_USER_LEFT, {
-                userId: session.userId,
-                meetingId: session.meetingId
+        if (meetingId && sUserId) {
+            socket.to(`meeting:${meetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
+                userId: sUserId,
+                meetingId
             })
-        })
+        }
     })
 }

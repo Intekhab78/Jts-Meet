@@ -1,27 +1,84 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import type { OrganizationMember } from './organization.types'
+import { API_BASE } from '../../config'
 
 interface MemberListProps {
-    members: OrganizationMember[]
+    organizationId: string
+    token: string
     onRemove?: (userId: string) => void
 }
 
-export function MemberList({ members, onRemove }: MemberListProps) {
+export function MemberList({ organizationId, token, onRemove }: MemberListProps) {
+    const [members, setMembers] = useState<OrganizationMember[]>([])
     const [searchQuery, setSearchQuery] = useState('')
     const [roleFilter, setRoleFilter] = useState('all')
     const [statusFilter, setStatusFilter] = useState('all')
+    const [nextCursor, setNextCursor] = useState<string | null>(null)
+    const [loading, setLoading] = useState(false)
+    const [loadingMore, setLoadingMore] = useState(false)
 
-    // Filter members in-memory
+    // Debounced search query
+    const [debouncedSearch, setDebouncedSearch] = useState('')
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchQuery)
+        }, 300)
+        return () => clearTimeout(timer)
+    }, [searchQuery])
+
+    const fetchMembers = async (cursorVal?: string, append = false) => {
+        if (!organizationId) return
+
+        if (append) {
+            setLoadingMore(true)
+        } else {
+            setLoading(true)
+        }
+
+        try {
+            let url = `${API_BASE}/api/organization/${organizationId}/members?limit=10`
+            if (debouncedSearch.trim()) {
+                url += `&search=${encodeURIComponent(debouncedSearch.trim())}`
+            }
+            if (cursorVal) {
+                url += `&cursor=${cursorVal}`
+            }
+
+            const res = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            const data = await res.json()
+            if (data.success) {
+                const fetchedList = data.data.members || []
+                setMembers(prev => append ? [...prev, ...fetchedList] : fetchedList)
+                setNextCursor(data.data.nextCursor || null)
+            }
+        } catch (err) {
+            console.error('Failed to fetch org roster:', err)
+        } finally {
+            setLoading(false)
+            setLoadingMore(false)
+        }
+    }
+
+    // Trigger initial fetch when org changes or query changes
+    useEffect(() => {
+        fetchMembers()
+    }, [organizationId, debouncedSearch])
+
+    const handleLoadMore = () => {
+        if (nextCursor && !loadingMore) {
+            fetchMembers(nextCursor, true)
+        }
+    }
+
+    // Local filters for role/status over current fetched page
     const filteredMembers = members.filter((member) => {
-        const userObj = typeof member.userId === 'object' && member.userId ? (member.userId as any) : null;
-        const fullName = (userObj ? userObj.fullName : (member.user?.fullName || '')).toLowerCase();
-        const email = (userObj ? userObj.email : (member.user?.email || '')).toLowerCase();
-        
-        const matchesSearch = fullName.includes(searchQuery.toLowerCase()) || email.includes(searchQuery.toLowerCase());
         const matchesRole = roleFilter === 'all' || member.role === roleFilter;
         const matchesStatus = statusFilter === 'all' || member.status === statusFilter;
-        
-        return matchesSearch && matchesRole && matchesStatus;
+        return matchesRole && matchesStatus;
     });
 
     const getRoleColor = (role: string) => {
@@ -43,7 +100,7 @@ export function MemberList({ members, onRemove }: MemberListProps) {
     };
 
     return (
-        <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
                     <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#fff', margin: 0 }}>Organization Members</h3>
@@ -112,7 +169,7 @@ export function MemberList({ members, onRemove }: MemberListProps) {
             </div>
 
             <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', background: 'rgba(255,255,255,0.01)' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
+                <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
                             <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Member</th>
@@ -123,7 +180,14 @@ export function MemberList({ members, onRemove }: MemberListProps) {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredMembers.length === 0 ? (
+                        {loading && members.length === 0 ? (
+                            <tr>
+                                <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                    <div className="animate-spin" style={{ display: 'inline-block', width: '20px', height: '20px', border: '2px solid rgba(99,102,241,0.2)', borderTopColor: '#6366F1', borderRadius: '50%', marginRight: '8px', verticalAlign: 'middle' }} />
+                                    Loading members list...
+                                </td>
+                            </tr>
+                        ) : filteredMembers.length === 0 ? (
                             <tr>
                                 <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                                     No organization members matched your query.
@@ -131,10 +195,10 @@ export function MemberList({ members, onRemove }: MemberListProps) {
                             </tr>
                         ) : (
                             filteredMembers.map((member) => {
-                                const userObj = typeof member.userId === 'object' && member.userId ? (member.userId as any) : null;
-                                const userIdStr = userObj ? userObj._id : (member.userId as string);
-                                const fullName = userObj ? userObj.fullName : (member.user?.fullName || userIdStr);
-                                const email = userObj ? userObj.email : (member.user?.email || 'No email available');
+                                const userObj = member.user;
+                                const userIdStr = member.userId;
+                                const fullName = userObj ? userObj.fullName : userIdStr;
+                                const email = userObj ? userObj.email : 'No email available';
                                 const roleColors = getRoleColor(member.role);
                                 const joinedStr = member.joinedAt ? new Date(member.joinedAt).toLocaleDateString() : 'N/A';
 
@@ -234,13 +298,30 @@ export function MemberList({ members, onRemove }: MemberListProps) {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                <span>Showing {filteredMembers.length} of {members.length} members</span>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                    <button disabled style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', cursor: 'not-allowed' }}>Prev</button>
-                    <button disabled style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', cursor: 'not-allowed' }}>Next</button>
-                </div>
+                <span>Showing {filteredMembers.length} of {members.length} members loaded</span>
+                {nextCursor && (
+                    <button
+                        onClick={handleLoadMore}
+                        disabled={loadingMore}
+                        style={{
+                            padding: '6px 14px',
+                            background: 'rgba(99, 102, 241, 0.1)',
+                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                            borderRadius: '8px',
+                            color: '#818cf8',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                        }}
+                    >
+                        {loadingMore && <div className="animate-spin" style={{ width: '12px', height: '12px', border: '2px solid rgba(99,102,241,0.2)', borderTopColor: '#6366F1', borderRadius: '50%' }} />}
+                        Load More members
+                    </button>
+                )}
             </div>
         </div>
     )
 }
-

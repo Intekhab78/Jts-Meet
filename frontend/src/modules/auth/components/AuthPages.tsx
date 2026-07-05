@@ -35,7 +35,16 @@ const IconGoogle = () => (
     </svg>
 )
 
-import { API_BASE } from '../../../config'
+const IconMicrosoft = () => (
+    <svg width="18" height="18" viewBox="0 0 23 23" fill="currentColor">
+        <rect x="0" y="0" width="10.5" height="10.5" fill="#f25022" />
+        <rect x="11.5" y="0" width="10.5" height="10.5" fill="#7fba00" />
+        <rect x="0" y="11.5" width="10.5" height="10.5" fill="#00a4ef" />
+        <rect x="11.5" y="11.5" width="10.5" height="10.5" fill="#ffb900" />
+    </svg>
+)
+
+import { API_BASE, AZURE_CLIENT_ID, AZURE_TENANT_ID, GOOGLE_CLIENT_ID } from '../../../config'
 
 interface AuthPagesProps {
     view: 'login' | 'register' | 'forgot-password' | 'reset-password' | 'email-verification' | 'otp-verification'
@@ -52,6 +61,11 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
     const [confirmPassword, setConfirmPassword] = useState('')
     const [resetCode, setResetCode] = useState('')
     const [verifiedToken, setVerifiedToken] = useState('')
+
+    // SSO states
+    const [ssoOrgSlug, setSsoOrgSlug] = useState('')
+    const [ssoEmail, setSsoEmail] = useState('')
+    const [showSsoForm, setShowSsoForm] = useState(false)
 
     // Show/hide passwords
     const [showPassword, setShowPassword] = useState(false)
@@ -104,6 +118,77 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
         } finally {
             setLoading(false)
         }
+    }
+
+    // Handle SSO Login
+    const handleSsoSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!ssoOrgSlug.trim() || !ssoEmail.trim()) {
+            setError('Please enter your Organization Slug and Email')
+            triggerShake()
+            return
+        }
+
+        setError(null)
+        setLoading(true)
+
+        try {
+            const ssoUrl = `${API_BASE}/api/auth/sso/login/${ssoOrgSlug.toLowerCase().trim()}`
+            const checkRes = await fetch(ssoUrl)
+            const checkData = await checkRes.json()
+
+            if (!checkRes.ok) {
+                throw new Error(checkData.error || 'Organization slug not found.')
+            }
+
+            setSuccess('Redirecting to Enterprise Identity Provider...')
+            
+            setTimeout(async () => {
+                try {
+                    const callbackRes = await fetch(`${API_BASE}/api/auth/sso/callback`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: ssoEmail, orgSlug: ssoOrgSlug })
+                    })
+
+                    const callbackData = await callbackRes.json()
+
+                    if (!callbackRes.ok) {
+                        throw new Error(callbackData.error || 'SSO authentication failed.')
+                    }
+
+                    setSuccess(`Welcome to JTS Meet! Signed in via SSO.`)
+                    setTimeout(() => {
+                        onAuthSuccess(callbackData.data.accessToken)
+                    }, 1200)
+                } catch (err: any) {
+                    setError(err?.message || 'Identity Provider authentication failed.')
+                    setLoading(false)
+                    triggerShake()
+                }
+            }, 1500)
+
+        } catch (err: any) {
+            setError(err?.message || 'Failed to initiate SSO login.')
+            setLoading(false)
+            triggerShake()
+        }
+    }
+
+    const handleMicrosoftRedirect = () => {
+        if (!AZURE_CLIENT_ID) {
+            console.error('AZURE_CLIENT_ID is not configured')
+            alert('Microsoft Client ID is not configured in the application environment.')
+            return
+        }
+        const redirectUri = encodeURIComponent(window.location.origin + '/auth/microsoft/callback')
+        const scope = encodeURIComponent('openid profile email User.Read')
+        const authUrl = `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize?client_id=${AZURE_CLIENT_ID}&response_type=code&redirect_uri=${redirectUri}&response_mode=query&scope=${scope}`
+        window.location.href = authUrl
+    }
+
+    const handleGoogleRedirect = () => {
+        window.location.href = `${API_BASE}/api/auth/google`
     }
 
     // Handle Register
@@ -371,95 +456,159 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
             }}>
                 {/* ── 1. LOGIN VIEW ── */}
                 {view === 'login' && (
-                    <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                        <div style={{ textAlign: 'center', marginBottom: 8 }}>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 6px' }}>Sign in to JTS Meet</h2>
-                            <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', margin: 0 }}>
-                                Enter your credentials to access your rooms
-                            </p>
-                        </div>
-
-                        {error && (
-                            <div className="badge badge-danger text-center" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
-                                {error}
+                    !showSsoForm ? (
+                        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                            <div style={{ textAlign: 'center', marginBottom: 8 }}>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 6px' }}>Sign in to JTS Meet</h2>
+                                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+                                    Enter your credentials to access your rooms
+                                </p>
                             </div>
-                        )}
 
-                        {success && (
-                            <div className="badge badge-success text-center" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
-                                {success}
-                            </div>
-                        )}
+                            {error && (
+                                <div className="badge badge-danger text-center" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
+                                    {error}
+                                </div>
+                            )}
 
-                        <div>
-                            <label className="label" htmlFor="auth-email">Email Address</label>
-                            <input
-                                id="auth-email"
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                className="input"
-                                placeholder="name@example.com"
-                                required
-                            />
-                        </div>
+                            {success && (
+                                <div className="badge badge-success text-center" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
+                                    {success}
+                                </div>
+                            )}
 
-                        <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                <label className="label" htmlFor="auth-password" style={{ margin: 0 }}>Password</label>
-                                <span onClick={() => onNavigate('forgot-password')} style={{ fontSize: '0.8125rem', color: '#818cf8', cursor: 'pointer' }} className="hover:underline">
-                                    Forgot password?
-                                </span>
-                            </div>
-                            <div style={{ position: 'relative' }}>
+                            <div>
+                                <label className="label" htmlFor="auth-email">Email Address</label>
                                 <input
-                                    id="auth-password"
-                                    type={showPassword ? 'text' : 'password'}
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
+                                    id="auth-email"
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
                                     className="input"
-                                    placeholder="Enter your password"
+                                    placeholder="name@example.com"
                                     required
-                                    style={{ paddingRight: 40 }}
                                 />
-                                <button type="button" onClick={() => setShowPassword(!showPassword)} style={{
-                                    position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                                    background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer'
-                                }}>
-                                    {showPassword ? <IconEyeOff /> : <IconEye />}
+                            </div>
+
+                            <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                    <label className="label" htmlFor="auth-password" style={{ margin: 0 }}>Password</label>
+                                    <span onClick={() => onNavigate('forgot-password')} style={{ fontSize: '0.8125rem', color: '#818cf8', cursor: 'pointer' }} className="hover:underline">
+                                        Forgot password?
+                                    </span>
+                                </div>
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        id="auth-password"
+                                        type={showPassword ? 'text' : 'password'}
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="input"
+                                        placeholder="Enter your password"
+                                        required
+                                        style={{ paddingRight: 40 }}
+                                    />
+                                    <button type="button" onClick={() => setShowPassword(!showPassword)} style={{
+                                        position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                                        background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer'
+                                    }}>
+                                        {showPassword ? <IconEyeOff /> : <IconEye />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: 10 }}>
+                                {loading ? (
+                                    <>
+                                        <div className="skeleton" style={{ width: 16, height: 16, borderRadius: '50%' }} />
+                                        Signing in...
+                                    </>
+                                ) : 'Sign In'}
+                            </button>
+
+                            <div className="divider" />
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <button type="button" onClick={() => { setShowSsoForm(true); setError(null); }} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', gap: 8, border: '1px dashed rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.02)' }}>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                    </svg>
+                                    Single Sign-On (SSO)
+                                </button>
+                                <button type="button" onClick={handleGoogleRedirect} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', gap: 8 }}>
+                                    <IconGoogle />
+                                    Continue with Google
+                                </button>
+                                <button type="button" onClick={handleMicrosoftRedirect} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', gap: 8 }}>
+                                    <IconMicrosoft />
+                                    Continue with Microsoft
                                 </button>
                             </div>
-                        </div>
 
-                        <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: 10 }}>
-                            {loading ? (
-                                <>
-                                    <div className="skeleton" style={{ width: 16, height: 16, borderRadius: '50%' }} />
-                                    Signing in...
-                                </>
-                            ) : 'Sign In'}
-                        </button>
+                            <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', textAlign: 'center', margin: '12px 0 0' }}>
+                                Don't have an account?{' '}
+                                <span onClick={() => onNavigate('register')} style={{ color: '#818cf8', cursor: 'pointer', fontWeight: 600 }} className="hover:underline">
+                                    Sign up
+                                </span>
+                            </p>
+                        </form>
+                    ) : (
+                        <form onSubmit={handleSsoSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                            <div style={{ textAlign: 'center', marginBottom: 8 }}>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 6px' }}>Enterprise SSO Login</h2>
+                                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+                                    Sign in using your organization identity provider
+                                </p>
+                            </div>
 
-                        <div className="divider" />
+                            {error && (
+                                <div className="badge badge-danger text-center" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
+                                    {error}
+                                </div>
+                            )}
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            <button type="button" onClick={() => onNavigate('app')} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', gap: 8 }}>
-                                <IconGoogle />
-                                Continue with Google
+                            {success && (
+                                <div className="badge badge-success text-center" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
+                                    {success}
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="label" htmlFor="sso-slug">Organization Slug</label>
+                                <input
+                                    id="sso-slug"
+                                    type="text"
+                                    value={ssoOrgSlug}
+                                    onChange={(e) => setSsoOrgSlug(e.target.value)}
+                                    className="input"
+                                    placeholder="e.g. acme-corp"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label className="label" htmlFor="sso-email">Work Email Address</label>
+                                <input
+                                    id="sso-email"
+                                    type="email"
+                                    value={ssoEmail}
+                                    onChange={(e) => setSsoEmail(e.target.value)}
+                                    className="input"
+                                    placeholder="name@company.com"
+                                    required
+                                />
+                            </div>
+
+                            <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: 10 }}>
+                                {loading ? 'Processing SSO Authenticate...' : 'Log in with SSO'}
                             </button>
-                            <button type="button" onClick={() => onNavigate('app')} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', gap: 8 }}>
-                                <IconGithub />
-                                Continue with GitHub
-                            </button>
-                        </div>
 
-                        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', textAlign: 'center', margin: '12px 0 0' }}>
-                            Don't have an account?{' '}
-                            <span onClick={() => onNavigate('register')} style={{ color: '#818cf8', cursor: 'pointer', fontWeight: 600 }} className="hover:underline">
-                                Sign up
-                            </span>
-                        </p>
-                    </form>
+                            <button type="button" onClick={() => { setShowSsoForm(false); setError(null); }} className="btn btn-ghost" style={{ width: '100%', justifyContent: 'center', fontSize: '0.875rem' }}>
+                                Back to regular sign in
+                            </button>
+                        </form>
+                    )
                 )}
 
                 {/* ── 2. REGISTER VIEW ── */}
@@ -540,6 +689,19 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
                                 </>
                             ) : 'Sign Up'}
                         </button>
+
+                        <div className="divider" />
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <button type="button" onClick={handleGoogleRedirect} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', gap: 8 }}>
+                                <IconGoogle />
+                                Continue with Google
+                            </button>
+                            <button type="button" onClick={handleMicrosoftRedirect} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', gap: 8 }}>
+                                <IconMicrosoft />
+                                Continue with Microsoft
+                            </button>
+                        </div>
 
                         <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', textAlign: 'center', margin: '12px 0 0' }}>
                             Already have an account?{' '}

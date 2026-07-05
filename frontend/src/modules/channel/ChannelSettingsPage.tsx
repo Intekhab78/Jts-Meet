@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import type { Channel, UpdateChannelPayload } from './channel.types'
 import {
     createChannel,
@@ -19,6 +19,8 @@ import { CreateChannelDialog } from './CreateChannelDialog'
 import { EditChannelDialog } from './EditChannelDialog'
 import { InviteChannelMemberDialog } from './InviteChannelMemberDialog'
 import { ChannelMembersPage } from './ChannelMembersPage'
+import io from 'socket.io-client'
+import { SOCKET_URL, API_BASE } from '../../config'
 
 interface ChannelSettingsPageProps {
     token: string
@@ -36,6 +38,164 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     const [showInviteDialog, setShowInviteDialog] = useState(false)
     const [showEditDialog, setShowEditDialog] = useState(false)
     const [members, setMembers] = useState<Channel['members']>([])
+
+    const [activePanelTab, setActivePanelTab] = useState<'chat' | 'members' | 'info'>('chat')
+    const [messages, setMessages] = useState<any[]>([])
+    const [chatInput, setChatInput] = useState('')
+    const [activeThreadParent, setActiveThreadParent] = useState<any | null>(null)
+    const [threadMessages, setThreadMessages] = useState<any[]>([])
+    const [threadInput, setThreadInput] = useState('')
+    const [socketInstance, setSocketInstance] = useState<any | null>(null)
+
+    const mainChatEndRef = useRef<HTMLDivElement>(null)
+    const threadChatEndRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        mainChatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }, [messages])
+
+    useEffect(() => {
+        threadChatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }, [threadMessages])
+
+    useEffect(() => {
+        if (!selectedChannel || !token) {
+            setMessages([])
+            return
+        }
+
+        const fetchMessages = async () => {
+            try {
+                const res = await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+                const data = await res.json()
+                if (data.success) {
+                    setMessages(data.data.reverse())
+                }
+            } catch (err) {
+                console.error('Failed to load chat history:', err)
+            }
+        }
+
+        fetchMessages()
+
+        const socket = io(SOCKET_URL, {
+            auth: { token }
+        })
+
+        socket.emit('channel:join', { channelId: selectedChannel._id })
+
+        socket.on('channel:message:receive', (msg: any) => {
+            if (msg.replyTo) {
+                if (activeThreadParent && activeThreadParent._id === msg.replyTo) {
+                    setThreadMessages(prev => {
+                        if (prev.some(m => m._id === msg._id)) return prev
+                        return [...prev, msg]
+                    })
+                }
+                setMessages(prev => prev.map(m => {
+                    if (m._id === msg.replyTo) {
+                        return { ...m, replyCount: (m.replyCount || 0) + 1 }
+                    }
+                    return m
+                }))
+            } else {
+                setMessages(prev => {
+                    if (prev.some(m => m._id === msg._id)) return prev
+                    return [...prev, msg]
+                })
+            }
+        })
+
+        setSocketInstance(socket)
+
+        return () => {
+            socket.emit('channel:leave', { channelId: selectedChannel._id })
+            socket.disconnect()
+        }
+    }, [selectedChannel?._id, token, activeThreadParent?._id])
+
+    useEffect(() => {
+        if (!selectedChannel || !activeThreadParent || !token) {
+            setThreadMessages([])
+            return
+        }
+
+        const fetchThreadMessages = async () => {
+            try {
+                const res = await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat?threadParentId=${activeThreadParent._id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+                const data = await res.json()
+                if (data.success) {
+                    setThreadMessages(data.data.reverse())
+                }
+            } catch (err) {
+                console.error('Failed to load thread history:', err)
+            }
+        }
+
+        fetchThreadMessages()
+    }, [selectedChannel?._id, activeThreadParent?._id, token])
+
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!chatInput.trim() || !selectedChannel) return
+
+        const content = chatInput.trim()
+        setChatInput('')
+
+        try {
+            const res = await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ content })
+            })
+            const data = await res.json()
+            if (data.success && socketInstance) {
+                socketInstance.emit('channel:message:send', data.data)
+                setMessages(prev => {
+                    if (prev.some(m => m._id === data.data._id)) return prev
+                    return [...prev, data.data]
+                })
+            }
+        } catch (err) {
+            console.error('Failed to send message:', err)
+        }
+    }
+
+    const handleSendThreadMessage = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!threadInput.trim() || !selectedChannel || !activeThreadParent) return
+
+        const content = threadInput.trim()
+        setThreadInput('')
+
+        try {
+            const res = await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ content, replyTo: activeThreadParent._id })
+            })
+            const data = await res.json()
+            if (data.success && socketInstance) {
+                socketInstance.emit('channel:message:send', data.data)
+                setThreadMessages(prev => {
+                    if (prev.some(m => m._id === data.data._id)) return prev
+                    return [...prev, data.data]
+                })
+            }
+        } catch (err) {
+            console.error('Failed to send thread reply:', err)
+        }
+    }
 
     const loadChannels = async (teamId: string) => {
         setLoading(true)
@@ -249,7 +409,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }, [selectedChannel])
 
     return (
-        <div style={{ background: '#09090B', minHeight: '100vh', color: '#fff', padding: '32px 40px', fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        <div className="px-4 py-6 md:p-10" style={{ background: '#09090B', minHeight: '100vh', color: '#fff', fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column', gap: '32px' }}>
             
             {/* Header Section */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px' }}>
@@ -260,7 +420,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                         <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
                         <span style={{ color: '#6366F1' }}>Channel Management</span>
                     </div>
-                    <h1 style={{ fontSize: '2.625rem', fontWeight: 800, margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(to right, #ffffff, #a1a1aa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold" style={{ margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(to right, #ffffff, #a1a1aa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                         Channel Management
                     </h1>
                     <p style={{ fontSize: '0.9375rem', color: 'var(--color-text-muted)', margin: '6px 0 0' }}>
@@ -268,33 +428,35 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                     </p>
                 </div>
 
-                <button
-                    onClick={() => setShowCreateDialog(true)}
-                    className="btn"
-                    style={{
-                        height: '42px',
-                        borderRadius: '12px',
-                        padding: '0 20px',
-                        fontWeight: 600,
-                        fontSize: '0.875rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        boxShadow: '0 0 20px rgba(99, 102, 241, 0.2)',
-                        background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
-                        color: '#fff',
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'transform 150ms'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
-                    onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
-                    </svg>
-                    Create Channel
-                </button>
+                <div className="w-full sm:w-auto">
+                    <button
+                        onClick={() => setShowCreateDialog(true)}
+                        className="btn w-full sm:w-auto justify-center"
+                        style={{
+                            height: '42px',
+                            borderRadius: '12px',
+                            padding: '0 20px',
+                            fontWeight: 600,
+                            fontSize: '0.875rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            boxShadow: '0 0 20px rgba(99, 102, 241, 0.2)',
+                            background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
+                            color: '#fff',
+                            border: 'none',
+                            cursor: 'pointer',
+                            transition: 'transform 150ms'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
+                        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Create Channel
+                    </button>
+                </div>
             </div>
 
             {error && (
@@ -326,8 +488,8 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                                 
                                 {/* CHANNEL OVERVIEW SECTION */}
-                                <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
+                                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '20px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                             <div style={{
                                                 width: '46px',
@@ -366,7 +528,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                             </div>
                                         </div>
 
-                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }} className="w-full sm:w-auto justify-start sm:justify-end">
                                             {selectedChannel.type === 'public' && !isMember && (
                                                 <button onClick={handleJoinChannel} className="btn btn-success" style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 14px' }}>
                                                     Join Channel
@@ -377,10 +539,10 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                                     Leave Channel
                                                 </button>
                                             )}
-                                            <button onClick={() => setShowInviteDialog(true)} className="btn btn-primary" style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 14px' }}>
+                                            <button onClick={() => { console.log('Invite Member button clicked!'); setShowInviteDialog(true); }} className="btn btn-primary" style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 14px' }}>
                                                 Invite Member
                                             </button>
-                                            <button onClick={() => setShowEditDialog(true)} className="btn btn-secondary" style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 14px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}>
+                                            <button onClick={() => { console.log('Edit button clicked!'); setShowEditDialog(true); }} className="btn btn-secondary" style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 14px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}>
                                                 Edit
                                             </button>
                                         </div>
@@ -437,13 +599,215 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    
-                                    {/* CHANNEL DETAILS & RECENT ACTIVITY */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                                        
+                                {/* TAB SWITCHER */}
+                                <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', marginBottom: '8px' }}>
+                                    <button
+                                        onClick={() => setActivePanelTab('chat')}
+                                        style={{
+                                            padding: '8px 16px',
+                                            borderRadius: '8px',
+                                            fontSize: '0.875rem',
+                                            fontWeight: 600,
+                                            background: activePanelTab === 'chat' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                                            color: activePanelTab === 'chat' ? '#818cf8' : 'var(--color-text-muted)',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px'
+                                        }}
+                                    >
+                                        💬 Channel Chat
+                                    </button>
+                                    <button
+                                        onClick={() => setActivePanelTab('members')}
+                                        style={{
+                                            padding: '8px 16px',
+                                            borderRadius: '8px',
+                                            fontSize: '0.875rem',
+                                            fontWeight: 600,
+                                            background: activePanelTab === 'members' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                                            color: activePanelTab === 'members' ? '#818cf8' : 'var(--color-text-muted)',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px'
+                                        }}
+                                    >
+                                        👥 Members ({members.length})
+                                    </button>
+                                    <button
+                                        onClick={() => setActivePanelTab('info')}
+                                        style={{
+                                            padding: '8px 16px',
+                                            borderRadius: '8px',
+                                            fontSize: '0.875rem',
+                                            fontWeight: 600,
+                                            background: activePanelTab === 'info' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                                            color: activePanelTab === 'info' ? '#818cf8' : 'var(--color-text-muted)',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px'
+                                        }}
+                                    >
+                                        ⚙ Settings & Info
+                                    </button>
+                                </div>
+
+                                {/* TAB CONTENTS */}
+                                {activePanelTab === 'chat' && (
+                                    <div style={{ display: 'flex', gap: '24px', position: 'relative', width: '100%', height: '550px', background: '#0f0f13', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', overflow: 'hidden' }}>
+                                        {/* Main Chat Area */}
+                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                                            {/* Messages Feed */}
+                                            <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                                {messages.length === 0 ? (
+                                                    <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
+                                                        💬 No messages yet in #{selectedChannel.name}. Type below to start conversing!
+                                                    </div>
+                                                ) : (
+                                                    messages.map((msg) => (
+                                                        <div key={msg._id} className="hover:bg-white/5" style={{ display: 'flex', gap: '12px', padding: '8px', borderRadius: '8px', position: 'relative', transition: 'background 0.15s' }}>
+                                                            {/* User Avatar */}
+                                                            <div style={{
+                                                                width: '36px', height: '36px', borderRadius: '50%',
+                                                                background: 'rgba(99, 102, 241, 0.15)',
+                                                                color: '#818cf8', display: 'flex', alignItems: 'center',
+                                                                justifyContent: 'center', fontWeight: 700, fontSize: '0.875rem',
+                                                                border: '1px solid rgba(99, 102, 241, 0.2)'
+                                                            }}>
+                                                                {msg.senderId?.fullName ? msg.senderId.fullName.charAt(0).toUpperCase() : 'U'}
+                                                            </div>
+                                                            {/* Message Details */}
+                                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                    <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#fff' }}>{msg.senderId?.fullName || 'User'}</span>
+                                                                    <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                                </div>
+                                                                <p style={{ margin: 0, fontSize: '0.875rem', color: '#e5e7eb', lineHeight: 1.4, wordBreak: 'break-word' }}>{msg.content}</p>
+                                                                
+                                                                {/* Thread Reply Trigger */}
+                                                                <div style={{ display: 'flex', gap: '12px', marginTop: '4px' }}>
+                                                                    <button
+                                                                        onClick={() => setActiveThreadParent(msg)}
+                                                                        style={{ background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.75rem', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+                                                                        className="hover:underline"
+                                                                    >
+                                                                        Reply in thread
+                                                                    </button>
+                                                                    {msg.replyCount > 0 && (
+                                                                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                                                            • {msg.replyCount} {msg.replyCount === 1 ? 'reply' : 'replies'}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                )}
+                                                <div ref={mainChatEndRef} />
+                                            </div>
+
+                                            {/* Chat Composer */}
+                                            <form onSubmit={handleSendMessage} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '16px', display: 'flex', gap: '12px', background: '#0c0c0e' }}>
+                                                <input
+                                                    value={chatInput}
+                                                    onChange={(e) => setChatInput(e.target.value)}
+                                                    className="input"
+                                                    placeholder={`Send a message to #${selectedChannel.name}...`}
+                                                    style={{ flex: 1, borderRadius: '10px' }}
+                                                    disabled={selectedChannel.archived}
+                                                />
+                                                <button type="submit" className="btn btn-primary" style={{ padding: '0 20px', borderRadius: '10px' }} disabled={selectedChannel.archived}>
+                                                    Send
+                                                </button>
+                                            </form>
+                                        </div>
+
+                                        {/* Sliding Thread Sidebar Panel */}
+                                        {activeThreadParent && (
+                                            <div style={{ width: '360px', borderLeft: '1px solid rgba(255,255,255,0.05)', background: '#0b0b0d', display: 'flex', flexDirection: 'column', height: '100%', zIndex: 10 }}>
+                                                {/* Thread Header */}
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                                    <span style={{ fontWeight: 800, fontSize: '0.9375rem', color: '#fff' }}>Thread Panel</span>
+                                                    <button onClick={() => setActiveThreadParent(null)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 4 }} className="hover:text-white">
+                                                        ✕
+                                                    </button>
+                                                </div>
+
+                                                {/* Parent Message Reference */}
+                                                <div style={{ padding: '16px', background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid rgba(255,255,255,0.03)', display: 'flex', gap: '10px' }}>
+                                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem', color: '#fff' }}>
+                                                        {activeThreadParent.senderId?.fullName ? activeThreadParent.senderId.fullName.charAt(0).toUpperCase() : 'U'}
+                                                    </div>
+                                                    <div>
+                                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>{activeThreadParent.senderId?.fullName || 'User'}</div>
+                                                        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', marginTop: '2px', wordBreak: 'break-all' }}>{activeThreadParent.content}</div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Thread Replies List */}
+                                                <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                    {threadMessages.length === 0 ? (
+                                                        <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
+                                                            💬 No replies yet. Start the conversation in thread!
+                                                        </div>
+                                                    ) : (
+                                                        threadMessages.map((reply) => (
+                                                            <div key={reply._id} style={{ display: 'flex', gap: '10px', padding: '6px', borderRadius: '6px' }}>
+                                                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem', color: '#818cf8', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                                    {reply.senderId?.fullName ? reply.senderId.fullName.charAt(0).toUpperCase() : 'U'}
+                                                                </div>
+                                                                <div style={{ flex: 1 }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                        <span style={{ fontWeight: 700, fontSize: '0.75rem', color: '#fff' }}>{reply.senderId?.fullName || 'User'}</span>
+                                                                        <span style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)' }}>{new Date(reply.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                                    </div>
+                                                                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#d1d5db', marginTop: '2px', wordBreak: 'break-word' }}>{reply.content}</p>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                    <div ref={threadChatEndRef} />
+                                                </div>
+
+                                                {/* Thread Reply Composer */}
+                                                <form onSubmit={handleSendThreadMessage} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '12px', display: 'flex', gap: '8px', background: '#070709' }}>
+                                                    <input
+                                                        value={threadInput}
+                                                        onChange={(e) => setThreadInput(e.target.value)}
+                                                        className="input text-xs"
+                                                        placeholder="Reply..."
+                                                        style={{ flex: 1, borderRadius: '8px', height: '32px' }}
+                                                        disabled={selectedChannel.archived}
+                                                    />
+                                                    <button type="submit" className="btn btn-primary text-xs" style={{ padding: '0 12px', borderRadius: '8px', height: '32px' }} disabled={selectedChannel.archived}>
+                                                        Send
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {activePanelTab === 'members' && (
+                                    <div className="grid grid-cols-1 gap-8">
+                                        <ChannelMembersPage
+                                            members={members}
+                                            currentUserId={currentUserId}
+                                            onRemove={handleRemoveMember}
+                                            onRoleChange={handleUpdateMemberRole}
+                                        />
+                                    </div>
+                                )}
+
+                                {activePanelTab === 'info' && (
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                         {/* Channel Details Card */}
-                                        <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                             <h3 style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>Channel Details</h3>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.8125rem' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '8px' }}>
@@ -472,7 +836,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                         </div>
 
                                         {/* Recent Activity Timeline */}
-                                        <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                             <h3 style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>Recent Activity</h3>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', position: 'relative', paddingLeft: '12px', borderLeft: '2px solid rgba(255,255,255,0.06)' }}>
                                                 {dynamicRecentActivities.map((act, idx) => (
@@ -485,18 +849,10 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                             </div>
                                         </div>
                                     </div>
-
-                                    {/* CHANNEL MEMBERS TABLE */}
-                                    <ChannelMembersPage
-                                        members={members}
-                                        currentUserId={currentUserId}
-                                        onRemove={handleRemoveMember}
-                                        onRoleChange={handleUpdateMemberRole}
-                                    />
-                                </div>
+                                )}
 
                                 {/* PERMISSIONS SECTION */}
-                                <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                     <div>
                                         <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#fff', margin: 0 }}>Channel Permissions & Roles</h3>
                                         <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
@@ -521,7 +877,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                 </div>
 
                                 {/* DANGER ZONE */}
-                                <div style={{ background: '#111827', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                <div className="glass-card" style={{ border: '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                     <div>
                                         <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#EF4444', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2.5">

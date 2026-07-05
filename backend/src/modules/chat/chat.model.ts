@@ -7,7 +7,10 @@ export interface IMessage extends Document {
     message: string
     isDelivered: boolean
     isSeen: boolean
-    reactions: { userId: Types.ObjectId; emoji: string }[]
+    reactions: { userId: Types.ObjectId; emoji: string; createdAt: Date }[]
+    parentMessageId?: Types.ObjectId | null
+    threadCount?: number
+    lastReplyAt?: Date | null
     createdAt: Date
     updatedAt: Date
 }
@@ -23,11 +26,19 @@ const ChatSchema = new Schema<IMessage>(
         reactions: [
             {
                 userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-                emoji: { type: String, required: true }
+                emoji: { type: String, required: true },
+                createdAt: { type: Date, default: Date.now }
             }
-        ]
+        ],
+        parentMessageId: { type: Schema.Types.ObjectId, ref: 'Message', default: null },
+        threadCount: { type: Number, default: 0 },
+        lastReplyAt: { type: Date, default: null }
     },
     { timestamps: true }
 )
+
+ChatSchema.index({ sender: 1, receiver: 1, createdAt: -1 })
+ChatSchema.index({ receiver: 1, sender: 1, createdAt: -1 })
+ChatSchema.index({ parentMessageId: 1 })
 
 export const Message = model<IMessage>('Message', ChatSchema)

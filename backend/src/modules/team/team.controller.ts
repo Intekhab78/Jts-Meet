@@ -1,4 +1,6 @@
 import { Request, Response } from 'express'
+import { Types } from 'mongoose'
+import { Team } from './team.model'
 import {
     createTeam,
     getTeam,
@@ -10,7 +12,8 @@ import {
     leaveTeam,
     removeTeamMember,
     updateTeamMemberRole,
-    getTeamMembers
+    getTeamMembers,
+    getTeamMembersPaginated
 } from './team.service'
 import {
     validateCreateTeam,
@@ -21,6 +24,7 @@ import {
 } from './team.validator'
 import { sendError, sendSuccess } from '../../utils/responseHelper'
 import { AuthRequest } from '../../middleware/authMiddleware'
+import { parseCursorQuery, executeCursorQuery } from '../../utils/paginationHelper'
 
 export const teamController = {
     createTeam: async (req: AuthRequest, res: Response) => {
@@ -59,6 +63,23 @@ export const teamController = {
         const organizationId = Array.isArray(req.params.organizationId) ? req.params.organizationId[0] : req.params.organizationId
         if (!organizationId) {
             return sendError(res, 400, 'organizationId is required')
+        }
+
+        if (req.query.cursor !== undefined || req.query.pageSize !== undefined || req.query.search !== undefined || req.query.visibility !== undefined || req.query.status !== undefined) {
+            const params = parseCursorQuery(req.query)
+            const result = await executeCursorQuery(
+                Team,
+                { organizationId: new Types.ObjectId(organizationId), deletedAt: null },
+                params,
+                ['name', 'description'],
+                { visibility: req.query.visibility, status: req.query.status }
+            )
+            return res.status(200).json({
+                success: true,
+                data: result.data,
+                nextCursor: result.nextCursor,
+                hasMore: result.hasMore
+            })
         }
 
         const teams = await listOrganizationTeams(organizationId)
@@ -221,6 +242,22 @@ export const teamController = {
         const teamId = Array.isArray(req.params.teamId) ? req.params.teamId[0] : req.params.teamId
         if (!teamId) {
             return sendError(res, 400, 'teamId is required')
+        }
+
+        if (req.query.cursor !== undefined || req.query.pageSize !== undefined || req.query.search !== undefined) {
+            const limit = Math.min(100, Number(req.query.pageSize || req.query.limit) || 20)
+            const cursor = req.query.cursor ? String(req.query.cursor) : undefined
+            const search = req.query.search ? String(req.query.search) : undefined
+            const result = await getTeamMembersPaginated(teamId, limit, cursor, search)
+            if (!result) {
+                return sendError(res, 404, 'Team not found')
+            }
+            return res.status(200).json({
+                success: true,
+                data: result.members,
+                nextCursor: result.nextCursor,
+                hasMore: !!result.nextCursor
+            })
         }
 
         const members = await getTeamMembers(teamId)

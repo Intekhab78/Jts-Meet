@@ -7,6 +7,14 @@ import { useMeetingChat } from '../hooks/useMeetingChat'
 import { FileUploader } from '../../file/components/FileUploader'
 import { API_BASE } from '../../../config'
 
+const parseJwt = (token: string) => {
+    try {
+        return JSON.parse(atob(token.split('.')[1]))
+    } catch (e) {
+        return null
+    }
+}
+
 /* ──────────────────────────────────────────────────────────
    Inline SVG Icons (no external dependency)
 ────────────────────────────────────────────────────────── */
@@ -136,9 +144,10 @@ interface VideoTileProps {
     isPrimary?: boolean
     isHandRaised?: boolean
     isHost?: boolean
+    isGuest?: boolean
 }
 
-function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrimary = false, isHandRaised = false, isHost = false }: VideoTileProps) {
+function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrimary = false, isHandRaised = false, isHost = false, isGuest = false }: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const [isMuted, setIsMuted] = useState(false)
     const [isVideoOff, setIsVideoOff] = useState(false)
@@ -272,7 +281,7 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
 
     const isLocalUser = label.toLowerCase().includes('you') || label === 'me'
     const cleanLabel = isLocalUser ? 'You' : label
-    const formattedLabel = cleanLabel + (isHost ? ' (Host)' : '')
+    const formattedLabel = cleanLabel + (isHost ? ' (Host)' : '') + (isGuest ? ' (Guest)' : '')
 
     // Connection quality indicator based on name hash (90% Good, 10% Poor to look highly realistic)
     const isGoodConnection = (name: string) => {
@@ -739,10 +748,18 @@ interface SettingsPanelProps {
     localStream: MediaStream | null
     onClose: () => void
     addToast: (msg: string, type?: 'info' | 'success' | 'warning') => void
+    isHost: boolean
+    isGuestJoinEnabled: boolean
+    onToggleGuestJoin: (enabled: boolean) => void
+    isWaitingRoomEnabled: boolean
+    onToggleWaitingRoom: (enabled: boolean) => void
 }
 
-function SettingsPanel({ localStream, onClose, addToast }: SettingsPanelProps) {
-    const [activeTab, setActiveTab] = useState<'audio' | 'video' | 'background' | 'accessibility' | 'shortcuts' | 'theme'>('audio')
+function SettingsPanel({
+    localStream, onClose, addToast, isHost,
+    isGuestJoinEnabled, onToggleGuestJoin, isWaitingRoomEnabled, onToggleWaitingRoom
+}: SettingsPanelProps) {
+    const [activeTab, setActiveTab] = useState<'audio' | 'video' | 'background' | 'accessibility' | 'shortcuts' | 'theme' | 'host'>('audio')
     const [micTesting, setMicTesting] = useState(false)
     const [selectedMic, setSelectedMic] = useState('default')
     const [selectedCam, setSelectedCam] = useState('default')
@@ -867,14 +884,20 @@ function SettingsPanel({ localStream, onClose, addToast }: SettingsPanelProps) {
                     width: 72, background: 'rgba(0,0,0,0.15)', borderRight: '1px solid var(--color-border)',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '12px 0', gap: 16
                 }}>
-                    {[
-                        { id: 'audio', icon: '🎤', label: 'Audio' },
-                        { id: 'video', icon: '📹', label: 'Video' },
-                        { id: 'background', icon: '🖼', label: 'Virtual' },
-                        { id: 'accessibility', icon: '♿', label: 'Access' },
-                        { id: 'shortcuts', icon: '⌨', label: 'Keys' },
-                        { id: 'theme', icon: '🎨', label: 'Theme' }
-                    ].map(tab => (
+                    {(() => {
+                        const tabs = [
+                            { id: 'audio', icon: '🎤', label: 'Audio' },
+                            { id: 'video', icon: '📹', label: 'Video' },
+                            { id: 'background', icon: '🖼', label: 'Virtual' },
+                            { id: 'accessibility', icon: '♿', label: 'Access' },
+                            { id: 'shortcuts', icon: '⌨', label: 'Keys' },
+                            { id: 'theme', icon: '🎨', label: 'Theme' }
+                        ];
+                        if (isHost) {
+                            tabs.push({ id: 'host', icon: '🛡️', label: 'Host' });
+                        }
+                        return tabs;
+                    })().map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
@@ -1143,6 +1166,39 @@ function SettingsPanel({ localStream, onClose, addToast }: SettingsPanelProps) {
                                     <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#f8fafc', border: '1px solid #00000010' }} />
                                     <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#333' }}>Light Theme</span>
                                 </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* HOST CONTROLS TAB */}
+                    {activeTab === 'host' && isHost && (
+                        <div className="anim-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                            <h4 style={{ fontSize: '0.9375rem', fontWeight: 700, margin: 0 }}>Host Room Control</h4>
+                            
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600 }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                        <span>Organization Guest Join</span>
+                                        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>Allow external guest links to join</span>
+                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        checked={isGuestJoinEnabled}
+                                        onChange={(e) => onToggleGuestJoin(e.target.checked)}
+                                    />
+                                </label>
+
+                                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600 }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                        <span>Admission Waiting Room</span>
+                                        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>Place guests in lobby before admitting</span>
+                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        checked={isWaitingRoomEnabled}
+                                        onChange={(e) => onToggleWaitingRoom(e.target.checked)}
+                                    />
+                                </label>
                             </div>
                         </div>
                     )}
@@ -1572,17 +1628,40 @@ function SetupScreen({
 
                 {/* Header Logo */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{
-                            width: 36, height: 36, background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                            borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            boxShadow: 'var(--shadow-glow-accent)', color: '#fff'
-                        }}>
-                            <IconVideo />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <button
+                            onClick={() => window.location.href = '/'}
+                            style={{
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: 'var(--radius-md)',
+                                padding: '6px 12px',
+                                color: '#fff',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                transition: 'background var(--duration-fast)'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                        >
+                            ◀ Back
+                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{
+                                width: 36, height: 36, background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                                borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                boxShadow: 'var(--shadow-glow-accent)', color: '#fff'
+                            }}>
+                                <IconVideo />
+                            </div>
+                            <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
+                                JTS<span className="gradient-text">Meet</span>
+                            </span>
                         </div>
-                        <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
-                            JTS<span className="gradient-text">Meet</span>
-                        </span>
                     </div>
 
                     <span className="badge badge-success">
@@ -1798,11 +1877,58 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         startScreenShare, stopScreenShare, screenSharingUserId,
         screenError, mediaError, mediaLoading,
     } = useWebRTCContext()
-    const { messages, typingUsers, sendMessage, emitTyping, emitStopTyping } = useMeetingChat()
+    const { messages, typingUsers, sendMessage, emitTyping, emitStopTyping, toggleChatReaction } = useMeetingChat()
 
     const [token, setToken] = useState(initialToken)
     const [meetingInput, setMeetingInput] = useState('')
     const [activePanel, setActivePanel] = useState<ActivePanel>(null)
+
+    const [inviteEmail, setInviteEmail] = useState('')
+    const [sendingInvite, setSendingInvite] = useState(false)
+    const [invitePhone, setInvitePhone] = useState('')
+
+    const handleSendEmailInvite = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!inviteEmail.trim()) return
+
+        setSendingInvite(true)
+        try {
+            const response = await fetch(`${API_BASE}/api/meeting/invite-email`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    meetingId: meetingId || meetingInput,
+                    toEmail: inviteEmail.trim()
+                })
+            })
+            const data = await response.json()
+            if (response.ok && data?.success) {
+                addToast('Invitation sent successfully!', 'success')
+                setInviteEmail('')
+            } else {
+                addToast(data.message || 'Failed to send invitation', 'warning')
+            }
+        } catch (err) {
+            addToast('Connection error sending email', 'warning')
+        } finally {
+            setSendingInvite(false)
+        }
+    }
+
+    const handleApproveGuest = (socketId: string) => {
+        socket?.emit('guest:approve', { socketId })
+        setWaitingGuests(prev => prev.filter(g => g.socketId !== socketId))
+        addToast('Guest admitted successfully', 'success')
+    }
+
+    const handleDenyGuest = (socketId: string) => {
+        socket?.emit('guest:deny', { socketId })
+        setWaitingGuests(prev => prev.filter(g => g.socketId !== socketId))
+        addToast('Guest request declined', 'info')
+    }
 
     // Meeting timer
     const timerStr = useMeetingTimer()
@@ -1828,6 +1954,8 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     const [windowWidth, setWindowWidth] = useState(window.innerWidth)
     const [hoveredTile, setHoveredTile] = useState<string | null>(null)
     const [fullScreenUserId, setFullScreenUserId] = useState<string | null>(null)
+    const [waitingGuests, setWaitingGuests] = useState<any[]>([])
+    const [isInviteOpen, setIsInviteOpen] = useState(false)
 
     // Window resize listener
     useEffect(() => {
@@ -1862,6 +1990,30 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         socket.on('meeting:raise-hand', handleRemoteRaiseHand)
         return () => {
             socket.off('meeting:raise-hand', handleRemoteRaiseHand)
+        }
+    }, [socket])
+
+    // Socket guest admission waiting room listeners
+    useEffect(() => {
+        if (!socket) return
+
+        const handleNewWaiting = (guest: any) => {
+            setWaitingGuests(prev => {
+                if (prev.some(g => g.socketId === guest.socketId)) return prev
+                return [...prev, guest]
+            })
+        }
+
+        const handleLeftWaiting = ({ socketId }: { socketId: string }) => {
+            setWaitingGuests(prev => prev.filter(g => g.socketId !== socketId))
+        }
+
+        socket.on('guest:new-waiting', handleNewWaiting)
+        socket.on('guest:left-waiting', handleLeftWaiting)
+
+        return () => {
+            socket.off('guest:new-waiting', handleNewWaiting)
+            socket.off('guest:left-waiting', handleLeftWaiting)
         }
     }, [socket])
 
@@ -2069,6 +2221,16 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         setJoined(true)
     }
 
+    // Auto-join meeting if guest token is authorized and connected
+    useEffect(() => {
+        if (connected && !joined) {
+            const decoded = parseJwt(initialToken || token)
+            if (decoded?.isGuest && decoded?.meetingId) {
+                handleJoinMeeting(decoded.meetingId)
+            }
+        }
+    }, [connected, joined, initialToken, token])
+
     const togglePanel = (panel: ActivePanel) => {
         setActivePanel((prev) => (prev === panel ? null : panel))
     }
@@ -2168,6 +2330,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     isPrimary={isEnlarged}
                     isHandRaised={isUserHandRaised}
                     isHost={meetingInfo && meetingInfo.host && (meetingInfo.host._id === userId || meetingInfo.host === userId)}
+                    isGuest={userId.startsWith('guest_')}
                 />
 
                 {/* Indicators Panel (Mic/Hand) */}
@@ -2338,7 +2501,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                         }}>
                             <IconVideo />
                         </div>
-                        <span style={{
+                        <span className="hidden sm:inline" style={{
                             fontSize: '1rem', fontWeight: 800,
                             letterSpacing: '-0.02em',
                             color: 'var(--color-text-primary)',
@@ -2347,7 +2510,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                         </span>
                     </div>
 
-                    <div style={{ width: 1, height: 16, background: 'var(--color-border)' }} />
+                    <div style={{ width: 1, height: 16, background: 'var(--color-border)' }} className="hidden sm:block" />
 
                     {/* Recording Badge */}
                     <span className="badge badge-danger" style={{ display: 'inline-flex', gap: 6, padding: '4px 10px', fontSize: '0.6875rem' }}>
@@ -2358,13 +2521,24 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
 
                 {/* Center: meeting details */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{
+                    <span className="hidden md:inline-block" style={{
                         fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-primary)',
                         fontFamily: 'monospace', background: 'rgba(255,255,255,0.04)',
                         padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)'
                     }}>
                         {meetingId || meetingInput}
                     </span>
+                    <button
+                        onClick={() => setIsInviteOpen(true)}
+                        style={{
+                            padding: '4px 10px', fontSize: '0.75rem', fontWeight: 700,
+                            borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: 4,
+                            background: 'rgba(99, 102, 241, 0.12)', color: 'var(--color-accent)',
+                            border: '1px solid rgba(99, 102, 241, 0.25)', cursor: 'pointer'
+                        }}
+                    >
+                        ➕ Invite
+                    </button>
                     {isScreenShareActive && (
                         <span className="badge badge-accent anim-fade-in" style={{ padding: '4px 10px' }}>
                             <span className="badge-dot accent pulse" />
@@ -2474,16 +2648,20 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                     {/* Participants Strip (Right / Bottom) - hidden in fullScreenUserId mode */}
                                     {!fullScreenUserId && (
                                         <div style={{
-                                            flex: isMobile ? '0 0 auto' : isTablet ? '0 0 160px' : '0 0 240px',
+                                            flex: (isMobile || isTablet) ? '0 0 110px' : '0 0 240px',
                                             display: 'flex',
-                                            flexDirection: isTablet ? 'row' : 'column',
+                                            flexDirection: (isMobile || isTablet) ? 'row' : 'column',
                                             gap: 12,
-                                            overflowX: isTablet ? 'auto' : 'hidden',
-                                            overflowY: isTablet ? 'hidden' : 'auto',
+                                            overflowX: (isMobile || isTablet) ? 'auto' : 'hidden',
+                                            overflowY: (isMobile || isTablet) ? 'hidden' : 'auto',
                                             padding: '4px',
                                             boxSizing: 'border-box'
                                         }}>
-                                            {stripUsers.map((userId) => renderMeetingTile(userId, false))}
+                                            {stripUsers.map((userId) => (
+                                                <div key={userId} style={{ height: '100%', aspectRatio: '16/9', flexShrink: 0 }}>
+                                                    {renderMeetingTile(userId, false)}
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
@@ -2526,6 +2704,8 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                     onTyping={emitTyping}
                                     onStopTyping={emitStopTyping}
                                     disabled={!connected || !joined}
+                                    onToggleChatReaction={toggleChatReaction}
+                                    currentUserId={parseJwt(token)?.userId || 'me'}
                                 />
                             </div>
                         </div>
@@ -2542,6 +2722,57 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                             localStream={localStream}
                             onClose={() => setActivePanel(null)}
                             addToast={addToast}
+                            isHost={isLocalHost || isAdminOrOwner}
+                            isGuestJoinEnabled={meetingInfo?.isGuestJoinEnabled !== false}
+                            onToggleGuestJoin={async (enabled) => {
+                                try {
+                                    const response = await fetch(`${API_BASE}/api/meeting/guest-join/toggle`, {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'Authorization': `Bearer ${token}`
+                                        },
+                                        body: JSON.stringify({
+                                            meetingId: meetingId || meetingInput,
+                                            enabled
+                                        })
+                                    })
+                                    const data = await response.json()
+                                    if (response.ok && data?.success) {
+                                        setMeetingInfo(data.data)
+                                        addToast(`Guest Join ${enabled ? 'enabled' : 'disabled'}`, 'success')
+                                    } else {
+                                        addToast(data.message || 'Failed to update setting', 'warning')
+                                    }
+                                } catch (e) {
+                                    addToast('Network error updating setting', 'warning')
+                                }
+                            }}
+                            isWaitingRoomEnabled={!!meetingInfo?.isWaitingRoomEnabled}
+                            onToggleWaitingRoom={async (enabled) => {
+                                try {
+                                    const response = await fetch(`${API_BASE}/api/meeting/waiting-room/toggle`, {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'Authorization': `Bearer ${token}`
+                                        },
+                                        body: JSON.stringify({
+                                            meetingId: meetingId || meetingInput,
+                                            enabled
+                                        })
+                                    })
+                                    const data = await response.json()
+                                    if (response.ok && data?.success) {
+                                        setMeetingInfo(data.data)
+                                        addToast(`Waiting Room ${enabled ? 'enabled' : 'disabled'}`, 'success')
+                                    } else {
+                                        addToast(data.message || 'Failed to update setting', 'warning')
+                                    }
+                                } catch (e) {
+                                    addToast('Network error updating setting', 'warning')
+                                }
+                            }}
                         />
                     )}
                 </div>
@@ -2784,6 +3015,198 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     }
                 }
             ` }} />
+
+            {/* Guest Admission Popup Notifications */}
+            {waitingGuests.length > 0 && (
+                <div style={{ position: 'fixed', bottom: 90, right: 24, zIndex: 10000, display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 360, width: '100%', pointerEvents: 'auto' }}>
+                    {waitingGuests.map((guest) => (
+                        <div key={guest.socketId} className="glass-card" style={{ padding: '20px 24px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 14, background: 'rgba(15, 17, 23, 0.96)', backdropFilter: 'blur(16px)' }}>
+                            <div>
+                                <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                                    Guest Admission Request
+                                </span>
+                                <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff' }}>
+                                    {guest.guestName}
+                                </span>
+                                {guest.company && (
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'block', marginTop: 2 }}>
+                                        🏢 {guest.company}
+                                    </span>
+                                )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                                <button
+                                    onClick={() => handleDenyGuest(guest.socketId)}
+                                    className="btn"
+                                    style={{ padding: '6px 12px', fontSize: '0.8125rem', color: '#f87171', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                                >
+                                    Deny
+                                </button>
+                                <button
+                                    onClick={() => handleApproveGuest(guest.socketId)}
+                                    className="btn btn-primary"
+                                    style={{ padding: '6px 16px', fontSize: '0.8125rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
+                                >
+                                    Admit
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {/* Invite Participants Modal */}
+            {isInviteOpen && (() => {
+                const meetLink = `${window.location.origin}/meet/${meetingId || meetingInput}`;
+                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(meetLink)}`;
+                const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=JTS-Meet%20Session&details=Join%20the%20video%20call:%20${encodeURIComponent(meetLink)}`;
+                const outlookUrl = `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=JTS-Meet%20Session&body=Join%20the%20video%20call:%20${encodeURIComponent(meetLink)}`;
+
+                return (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(8px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                        <div className="glass-card anim-scale-in" style={{ width: '100%', maxWidth: 540, background: 'rgba(15, 17, 23, 0.95)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90dvh' }}>
+                            {/* Modal Header */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid var(--color-border)' }}>
+                                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fff', margin: 0 }}>Invite Participants</h3>
+                                <button
+                                    onClick={() => setIsInviteOpen(false)}
+                                    className="btn-icon"
+                                    style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', display: 'flex' }}
+                                >
+                                    <IconX />
+                                </button>
+                            </div>
+
+                            {/* Modal Body */}
+                            <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+                                
+                                {/* Link Copy Section */}
+                                <div>
+                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+                                        Meeting Invite Link
+                                    </label>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <input
+                                            type="text"
+                                            readOnly
+                                            value={meetLink}
+                                            style={{ flex: 1, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', color: '#a5b4fc', fontFamily: 'monospace', fontSize: '0.8125rem', outline: 'none' }}
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(meetLink);
+                                                addToast('Meeting link copied to clipboard!', 'success');
+                                            }}
+                                            className="btn btn-secondary"
+                                            style={{ padding: '0 16px', fontSize: '0.8125rem', fontWeight: 600 }}
+                                        >
+                                            Copy Link
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Email Invite Section */}
+                                <form onSubmit={handleSendEmailInvite}>
+                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+                                        Email Invitation
+                                    </label>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <input
+                                            type="email"
+                                            required
+                                            value={inviteEmail}
+                                            onChange={(e) => setInviteEmail(e.target.value)}
+                                            placeholder="Enter recipient email address"
+                                            style={{ flex: 1, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', color: '#fff', fontSize: '0.8125rem', outline: 'none' }}
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={sendingInvite || !inviteEmail}
+                                            className="btn btn-primary"
+                                            style={{ padding: '0 16px', fontSize: '0.8125rem', fontWeight: 700 }}
+                                        >
+                                            {sendingInvite ? 'Sending...' : 'Send Email'}
+                                        </button>
+                                    </div>
+                                </form>
+
+                                {/* SMS Invite Section */}
+                                <div>
+                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+                                        SMS Invite <span style={{ color: 'var(--color-text-muted)', fontSize: '0.6875rem' }}>(Future-ready Demo)</span>
+                                    </label>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <input
+                                            type="tel"
+                                            value={invitePhone}
+                                            onChange={(e) => setInvitePhone(e.target.value)}
+                                            placeholder="+1 (555) 000-0000"
+                                            style={{ flex: 1, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', color: '#fff', fontSize: '0.8125rem', outline: 'none' }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                addToast('SMS Gateway Integration configured (future-ready mock trigger).', 'info');
+                                                setInvitePhone('');
+                                            }}
+                                            className="btn btn-secondary"
+                                            style={{ padding: '0 16px', fontSize: '0.8125rem', fontWeight: 600 }}
+                                        >
+                                            Send SMS
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* QR Code & Quick Shares */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'center', marginTop: 8 }}>
+                                    {/* QR Code graphic */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                                        <img
+                                            src={qrUrl}
+                                            alt="Meeting Invite QR Code"
+                                            style={{ width: 120, height: 120, borderRadius: 'var(--radius-sm)', background: '#fff', padding: 6 }}
+                                        />
+                                        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Scan QR to Join Session</span>
+                                    </div>
+
+                                    {/* WhatsApp & Calendars */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        <a
+                                            href={`https://api.whatsapp.com/send?text=Join%20my%20JTS-Meet%20session:%20${encodeURIComponent(meetLink)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn"
+                                            style={{ background: '#25d366', color: '#fff', padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', fontWeight: 700, textDecoration: 'none' }}
+                                        >
+                                            💬 Share on WhatsApp
+                                        </a>
+
+                                        <a
+                                            href={gCalUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn btn-secondary"
+                                            style={{ padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: '0.8125rem', fontWeight: 600, textDecoration: 'none' }}
+                                        >
+                                            📅 Google Calendar
+                                        </a>
+
+                                        <a
+                                            href={outlookUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn btn-secondary"
+                                            style={{ padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: '0.8125rem', fontWeight: 600, textDecoration: 'none' }}
+                                        >
+                                            📅 Outlook Calendar
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     )
 }

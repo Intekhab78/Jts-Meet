@@ -8,6 +8,7 @@ import {
     removeMember,
     leaveOrganization,
     getOrganizationMembers,
+    getOrganizationMembersPaginated,
     listUserOrganizations
 } from './organization.service'
 import {
@@ -182,11 +183,29 @@ export const organizationController = {
             return sendError(res, 400, 'organizationId is required')
         }
 
-        const members = await getOrganizationMembers(organizationId)
-        if (!members) {
+        const limit = Number(req.query.limit) || 20
+        const cursor = req.query.cursor ? String(req.query.cursor) : undefined
+        const search = req.query.search ? String(req.query.search) : undefined
+
+        if (req.query.cursor !== undefined || req.query.pageSize !== undefined || req.query.search !== undefined) {
+            const pageSizeVal = Math.min(100, Number(req.query.pageSize || req.query.limit) || 20)
+            const result = await getOrganizationMembersPaginated(organizationId, pageSizeVal, cursor, search)
+            if (!result) {
+                return sendError(res, 404, 'Organization not found')
+            }
+            return res.status(200).json({
+                success: true,
+                data: result.members,
+                nextCursor: result.nextCursor,
+                hasMore: !!result.nextCursor
+            })
+        }
+
+        const result = await getOrganizationMembersPaginated(organizationId, limit, cursor, search)
+        if (!result) {
             return sendError(res, 404, 'Organization not found')
         }
 
-        return sendSuccess(res, members, 'Organization members retrieved')
+        return sendSuccess(res, result, 'Organization members retrieved')
     }
 }

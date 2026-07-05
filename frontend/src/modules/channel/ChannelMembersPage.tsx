@@ -25,7 +25,7 @@ export function ChannelMembersPage({ members, currentUserId, onRemove, onRoleCha
     });
 
     return (
-        <div style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }} className="lg:col-span-2">
+        <div className="glass-card lg:col-span-2" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
                     <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#fff', margin: 0 }}>Channel Members</h3>
@@ -74,7 +74,7 @@ export function ChannelMembersPage({ members, currentUserId, onRemove, onRoleCha
             </div>
 
             <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', background: 'rgba(255,255,255,0.01)' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
+                <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
                             <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>User</th>

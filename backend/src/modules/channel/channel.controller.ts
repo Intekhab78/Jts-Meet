@@ -1,4 +1,6 @@
 import { Response } from 'express'
+import { Types } from 'mongoose'
+import { Channel } from './channel.model'
 import { AuthRequest } from '../../middleware/authMiddleware'
 import {
     createChannel,
@@ -14,7 +16,8 @@ import {
     removeChannelMember,
     updateChannelMemberRole,
     getChannelMembers,
-    createGeneralChannel
+    createGeneralChannel,
+    getChannelMembersPaginated
 } from './channel.service'
 import {
     validateCreateChannel,
@@ -24,6 +27,7 @@ import {
     validateUpdateChannelMemberRole
 } from './channel.validator'
 import { sendError, sendSuccess } from '../../utils/responseHelper'
+import { parseCursorQuery, executeCursorQuery } from '../../utils/paginationHelper'
 
 export const channelController = {
     createChannel: async (req: AuthRequest, res: Response) => {
@@ -62,6 +66,23 @@ export const channelController = {
         const teamId = Array.isArray(req.params.teamId) ? req.params.teamId[0] : req.params.teamId
         if (!teamId) {
             return sendError(res, 400, 'teamId is required')
+        }
+
+        if (req.query.cursor !== undefined || req.query.pageSize !== undefined || req.query.search !== undefined || req.query.type !== undefined || req.query.archived !== undefined) {
+            const params = parseCursorQuery(req.query)
+            const result = await executeCursorQuery(
+                Channel,
+                { teamId: new Types.ObjectId(teamId), deletedAt: null },
+                params,
+                ['name', 'description'],
+                { type: req.query.type, archived: req.query.archived === 'true' ? true : req.query.archived === 'false' ? false : undefined }
+            )
+            return res.status(200).json({
+                success: true,
+                data: result.data,
+                nextCursor: result.nextCursor,
+                hasMore: result.hasMore
+            })
         }
 
         const channels = await listTeamChannels(teamId)
@@ -266,6 +287,22 @@ export const channelController = {
         const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId
         if (!channelId) {
             return sendError(res, 400, 'channelId is required')
+        }
+
+        if (req.query.cursor !== undefined || req.query.pageSize !== undefined || req.query.search !== undefined) {
+            const limit = Math.min(100, Number(req.query.pageSize || req.query.limit) || 20)
+            const cursor = req.query.cursor ? String(req.query.cursor) : undefined
+            const search = req.query.search ? String(req.query.search) : undefined
+            const result = await getChannelMembersPaginated(channelId, limit, cursor, search)
+            if (!result) {
+                return sendError(res, 404, 'Channel not found')
+            }
+            return res.status(200).json({
+                success: true,
+                data: result.members,
+                nextCursor: result.nextCursor,
+                hasMore: !!result.nextCursor
+            })
         }
 
         const members = await getChannelMembers(channelId)

@@ -10,6 +10,7 @@ export interface IMeeting extends Document {
     mutedUsers: Types.ObjectId[]
     blockedUsers: Types.ObjectId[]
     isWaitingRoomEnabled: boolean
+    isGuestJoinEnabled: boolean
     screenShareBy?: Types.ObjectId | null
     isRecordingActive: boolean
     recordingUrl?: string
@@ -31,6 +32,7 @@ const MeetingSchema = new Schema<IMeeting>(
         mutedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         blockedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         isWaitingRoomEnabled: { type: Boolean, default: false },
+        isGuestJoinEnabled: { type: Boolean, default: true },
         screenShareBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
         isRecordingActive: { type: Boolean, default: false },
         recordingUrl: { type: String, default: '' },
@@ -40,5 +42,9 @@ const MeetingSchema = new Schema<IMeeting>(
     },
     { timestamps: true }
 )
+
+MeetingSchema.index({ participants: 1, status: 1, createdAt: -1 })
+MeetingSchema.index({ status: 1, createdAt: -1 })
+MeetingSchema.index({ title: 1 })
 
 export const Meeting = model<IMeeting>('Meeting', MeetingSchema)

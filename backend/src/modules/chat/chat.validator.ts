@@ -2,6 +2,7 @@ export interface SendMessagePayload {
     receiverId: string
     message: string
     messageType?: string
+    parentMessageId?: string
 }
 
 export interface PaginationParams {
@@ -36,6 +37,10 @@ export function validateSendMessage(payload: any): ValidationResult {
 
     if (payload.messageType && payload.messageType !== 'text') {
         errors.push('messageType must be text')
+    }
+
+    if (payload.parentMessageId !== undefined && !isObjectId(payload.parentMessageId)) {
+        errors.push('parentMessageId must be a valid message id')
     }
 
     return { valid: errors.length === 0, errors }

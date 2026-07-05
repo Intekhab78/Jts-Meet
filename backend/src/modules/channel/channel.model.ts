@@ -52,5 +52,6 @@ const ChannelSchema = new Schema<IChannel>(
 )
 
 ChannelSchema.index({ teamId: 1, name: 1 }, { unique: true })
+ChannelSchema.index({ teamId: 1, deletedAt: 1, type: 1, archived: 1, createdAt: 1 })
 
 export const Channel = model<IChannel>('Channel', ChannelSchema)
