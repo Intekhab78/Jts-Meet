@@ -2384,10 +2384,18 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                 e.stopPropagation();
                                 setFullScreenUserId(fullScreenUserId === userId ? null : userId);
                             }}
-                            style={{ background: fullScreenUserId === userId ? 'var(--color-accent)' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.875rem' }}
+                            style={{ background: fullScreenUserId === userId ? 'var(--color-accent)' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
                             title={fullScreenUserId === userId ? "Exit Full Screen" : "Enter Full Screen"}
                         >
-                            🔍
+                            {fullScreenUserId === userId ? (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7" />
+                                </svg>
+                            ) : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                </svg>
+                            )}
                         </button>
 
                         {/* Remote Mute (Only if local user has manage permissions and target is not local) */}
@@ -2460,14 +2468,15 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     }
 
     const layoutStyle: React.CSSProperties = isMobile 
-        ? { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)', width: '100%', gap: 12, overflow: 'hidden' }
+        ? { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 84px)', width: '100%', gap: 12, overflow: 'hidden' }
         : isTablet
-        ? { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)', width: '100%', gap: 16, overflow: 'hidden' }
-        : { display: 'flex', flexDirection: 'row', height: 'calc(100vh - 140px)', width: '100%', gap: 20, overflow: 'hidden' }
+        ? { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 84px)', width: '100%', gap: 16, overflow: 'hidden' }
+        : { display: 'flex', flexDirection: 'row', height: 'calc(100vh - 84px)', width: '100%', gap: 20, overflow: 'hidden' }
 
     return (
         <div style={{
-            minHeight: '100dvh',
+            height: '100vh',
+            maxHeight: '100vh',
             background: 'var(--color-bg-base)',
             display: 'flex',
             flexDirection: 'column',
@@ -2568,8 +2577,8 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
             {/* ── Main Content Area ── */}
             <main style={{
                 flex: 1,
-                paddingTop: 72,
-                paddingBottom: 96,
+                paddingTop: 64,
+                paddingBottom: 20,
                 display: 'flex',
                 overflow: 'hidden',
                 boxSizing: 'border-box'

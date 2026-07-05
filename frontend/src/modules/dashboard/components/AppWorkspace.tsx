@@ -437,7 +437,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
             </aside>
 
             {/* Main Content Pane */}
-            <main id="main-content" tabIndex={-1} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', position: 'relative', outline: 'none' }}>
+            <main id="main-content" tabIndex={-1} style={{ flex: 1, overflowY: activeTab === 'meeting' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', position: 'relative', outline: 'none' }}>
                 {activeTab !== 'meeting' && (
                     <header style={{
                         position: 'sticky',
@@ -805,8 +805,9 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                                         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', width: '100%', maxWidth: 'max-content' }} className="w-full sm:w-auto">
                                             <button onClick={() => {
-                                                navigator.clipboard.writeText(`Join meeting "${item.title}" via JTS-Meet session id: ${item.id}`)
-                                                alert('Invite text copied to clipboard!')
+                                                const joinLink = `${window.location.origin}/meet/${item.id}`
+                                                navigator.clipboard.writeText(`Join meeting "${item.title}" via JTS-Meet: ${joinLink}`)
+                                                alert('Invite link copied to clipboard!')
                                             }} className="btn btn-secondary flex-1 sm:flex-none" style={{ padding: '8px 14px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                                 Copy Invite
                                             </button>

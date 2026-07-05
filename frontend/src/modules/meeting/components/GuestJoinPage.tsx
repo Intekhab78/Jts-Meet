@@ -32,6 +32,13 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
     const [selectedVideoId, setSelectedVideoId] = useState('')
     const [selectedAudioId, setSelectedAudioId] = useState('')
 
+    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1000)
+    useEffect(() => {
+        const handleResize = () => setWindowWidth(window.innerWidth)
+        window.addEventListener('resize', handleResize)
+        return () => window.removeEventListener('resize', handleResize)
+    }, [])
+
     // Fetch meeting details
     useEffect(() => {
         const fetchMeetingDetails = async () => {
@@ -56,6 +63,21 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
         fetchMeetingDetails()
     }, [meetingId])
 
+    // Load available hardware devices
+    const getDevices = async () => {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices()
+            const video = devices.filter(d => d.kind === 'videoinput')
+            const audio = devices.filter(d => d.kind === 'audioinput')
+            setVideoDevices(video)
+            setAudioDevices(audio)
+            if (video.length > 0 && !selectedVideoId) setSelectedVideoId(video[0].deviceId)
+            if (audio.length > 0 && !selectedAudioId) setSelectedAudioId(audio[0].deviceId)
+        } catch (err) {
+            // Ignore
+        }
+    }
+
     // Setup local media stream preview
     const startPreview = async (videoDeviceId = '', audioDeviceId = '') => {
         if (stream) {
@@ -71,6 +93,8 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
             if (videoRef.current && cameraOn) {
                 videoRef.current.srcObject = media
             }
+            // Update the device lists now that permission is active
+            getDevices()
         } catch (err) {
             console.error('Failed to get media stream preview:', err)
         }
@@ -85,23 +109,16 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
         }
     }, [cameraOn, micOn])
 
-    // Load available hardware devices
     useEffect(() => {
-        const getDevices = async () => {
+        const initDevices = async () => {
             try {
                 await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-                const devices = await navigator.mediaDevices.enumerateDevices()
-                const video = devices.filter(d => d.kind === 'videoinput')
-                const audio = devices.filter(d => d.kind === 'audioinput')
-                setVideoDevices(video)
-                setAudioDevices(audio)
-                if (video.length > 0) setSelectedVideoId(video[0].deviceId)
-                if (audio.length > 0) setSelectedAudioId(audio[0].deviceId)
+                await getDevices()
             } catch (err) {
-                // Ignore device listing issues if permissions blocked
+                await getDevices()
             }
         }
-        getDevices()
+        initDevices()
     }, [])
 
     const handleJoinRequest = async (e: React.FormEvent) => {
@@ -185,18 +202,47 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
         )
     }
 
+    const isMobile = windowWidth < 768
+
     return (
-        <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-bg-base)', color: '#fff', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 40, width: '100%', maxWidth: 1000 }} className="md:grid-cols-2">
+        <div style={{
+            display: 'flex',
+            minHeight: '100vh',
+            background: 'radial-gradient(circle at top left, #12131a 0%, #08090d 100%)',
+            color: '#fff',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: isMobile ? '20px 16px' : '30px 24px',
+            boxSizing: 'border-box'
+        }}>
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : '1.10fr 0.90fr',
+                gap: isMobile ? 20 : 28,
+                width: '100%',
+                maxWidth: 960,
+                alignItems: 'center'
+            }}>
                 
                 {/* Left Side: Video Preview */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                    <div className="glass-card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            Device Preview
-                        </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 16 }}>
+                    <div className="glass-card" style={{
+                        padding: isMobile ? 16 : 20,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 16,
+                        background: 'rgba(30, 30, 35, 0.55)',
+                        backdropFilter: 'blur(16px)',
+                        borderRadius: 16,
+                        border: '1px solid rgba(255, 255, 255, 0.05)'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h4 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
+                                Device Preview
+                            </h4>
+                        </div>
                         
-                        <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#0a0b0f', borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--color-border)' }}>
+                        <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#050508', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
                             {cameraOn ? (
                                 <video
                                     ref={videoRef}
@@ -207,14 +253,14 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                                 />
                             ) : (
                                 <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
-                                    <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'var(--color-surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.75rem' }}>📷</div>
-                                    <span style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>Camera is turned off</span>
+                                    <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>📷</div>
+                                    <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>Camera is turned off</span>
                                 </div>
                             )}
 
                             {/* Mic indicator */}
-                            <div style={{ position: 'absolute', bottom: 12, left: 12, background: 'rgba(0,0,0,0.65)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', fontWeight: 600 }}>
-                                <span>{micOn ? '🎙️ Microphone Live' : '🔇 Muted'}</span>
+                            <div style={{ position: 'absolute', bottom: 12, left: 12, background: 'rgba(0,0,0,0.7)', padding: '6px 10px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', fontWeight: 600 }}>
+                                <span>{micOn ? '🎙️ Mic Active' : '🔇 Muted'}</span>
                             </div>
                         </div>
 
@@ -224,10 +270,11 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                                 onClick={() => setCameraOn(!cameraOn)}
                                 className={`btn ${cameraOn ? 'btn-ghost' : 'btn-primary'}`}
                                 style={{
-                                    borderRadius: '50%', width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                                    background: cameraOn ? 'var(--color-surface-2)' : 'rgba(239, 68, 68, 0.2)',
+                                    borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                                    background: cameraOn ? 'rgba(255, 255, 255, 0.05)' : 'rgba(239, 68, 68, 0.2)',
                                     color: cameraOn ? '#fff' : '#f87171',
-                                    border: 'none', cursor: 'pointer'
+                                    border: '1px solid ' + (cameraOn ? 'rgba(255,255,255,0.08)' : 'rgba(239,68,68,0.3)'),
+                                    cursor: 'pointer', transition: 'all 0.2s'
                                 }}
                             >
                                 🎥
@@ -236,10 +283,11 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                                 onClick={() => setMicOn(!micOn)}
                                 className={`btn ${micOn ? 'btn-ghost' : 'btn-primary'}`}
                                 style={{
-                                    borderRadius: '50%', width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                                    background: micOn ? 'var(--color-surface-2)' : 'rgba(239, 68, 68, 0.2)',
+                                    borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                                    background: micOn ? 'rgba(255, 255, 255, 0.05)' : 'rgba(239, 68, 68, 0.2)',
                                     color: micOn ? '#fff' : '#f87171',
-                                    border: 'none', cursor: 'pointer'
+                                    border: '1px solid ' + (micOn ? 'rgba(255,255,255,0.08)' : 'rgba(239,68,68,0.3)'),
+                                    cursor: 'pointer', transition: 'all 0.2s'
                                 }}
                             >
                                 🎙️
@@ -248,36 +296,53 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                     </div>
 
                     {/* Hardware Selectors */}
-                    <div className="glass-card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div className="glass-card" style={{
+                        padding: 16,
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                        gap: 12,
+                        background: 'rgba(30, 30, 35, 0.55)',
+                        backdropFilter: 'blur(16px)',
+                        borderRadius: 16,
+                        border: '1px solid rgba(255, 255, 255, 0.05)'
+                    }}>
                         <div>
-                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Camera Device</label>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Camera Device</label>
                             <select
                                 value={selectedVideoId}
                                 onChange={(e) => {
                                     setSelectedVideoId(e.target.value)
                                     startPreview(e.target.value, selectedAudioId)
                                 }}
-                                style={{ width: '100%', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 8, color: '#fff', fontSize: '0.8125rem', outline: 'none' }}
+                                style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', color: '#fff', fontSize: '0.8125rem', outline: 'none' }}
                             >
-                                {videoDevices.map(d => (
-                                    <option key={d.deviceId} value={d.deviceId}>{d.label || `Camera ${d.deviceId.slice(0, 5)}`}</option>
-                                ))}
+                                {videoDevices.length === 0 ? (
+                                    <option value="" style={{ background: '#12131a' }}>No Camera Found / Blocked</option>
+                                ) : (
+                                    videoDevices.map(d => (
+                                        <option key={d.deviceId} value={d.deviceId} style={{ background: '#12131a' }}>{d.label || `Camera ${d.deviceId.slice(0, 5)}`}</option>
+                                    ))
+                                )}
                             </select>
                         </div>
 
                         <div>
-                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Microphone Device</label>
+                            <label style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Microphone Device</label>
                             <select
                                 value={selectedAudioId}
                                 onChange={(e) => {
                                     setSelectedAudioId(e.target.value)
                                     startPreview(selectedVideoId, e.target.value)
                                 }}
-                                style={{ width: '100%', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 8, color: '#fff', fontSize: '0.8125rem', outline: 'none' }}
+                                style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', color: '#fff', fontSize: '0.8125rem', outline: 'none' }}
                             >
-                                {audioDevices.map(d => (
-                                    <option key={d.deviceId} value={d.deviceId}>{d.label || `Microphone ${d.deviceId.slice(0, 5)}`}</option>
-                                ))}
+                                {audioDevices.length === 0 ? (
+                                    <option value="" style={{ background: '#12131a' }}>No Microphone Found / Blocked</option>
+                                ) : (
+                                    audioDevices.map(d => (
+                                        <option key={d.deviceId} value={d.deviceId} style={{ background: '#12131a' }}>{d.label || `Microphone ${d.deviceId.slice(0, 5)}`}</option>
+                                    ))
+                                )}
                             </select>
                         </div>
                     </div>
@@ -285,20 +350,29 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
 
                 {/* Right Side: Welcome Details and Join form */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                    <div className="glass-card" style={{ padding: 36, display: 'flex', flexDirection: 'column', gap: 24 }}>
+                    <div className="glass-card" style={{
+                        padding: isMobile ? 24 : 32,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 20,
+                        background: 'rgba(30, 30, 35, 0.55)',
+                        backdropFilter: 'blur(16px)',
+                        borderRadius: 16,
+                        border: '1px solid rgba(255, 255, 255, 0.05)'
+                    }}>
                         <div>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'inline-block', padding: '4px 8px', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-sm)', marginBottom: 12 }}>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'inline-block', padding: '4px 8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 6, marginBottom: 8 }}>
                                 Guest Lobby
                             </span>
-                            <h2 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 8 }}>{meetingTitle}</h2>
-                            <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+                            <h2 style={{ fontSize: isMobile ? '1.35rem' : '1.6rem', fontWeight: 800, color: '#fff', lineHeight: 1.2, margin: '0 0 6px' }}>{meetingTitle}</h2>
+                            <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>
                                 Organized by: <span style={{ color: '#fff', fontWeight: 600 }}>{hostName}</span>
                             </p>
                         </div>
 
-                        <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)' }} />
+                        <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.05)', margin: '4px 0' }} />
 
-                        <form onSubmit={handleJoinRequest} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <form onSubmit={handleJoinRequest} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                             <div>
                                 <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 6 }}>
                                     Your Full Name <span style={{ color: '#ef4444' }}>*</span>
@@ -309,41 +383,43 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                                     placeholder="Enter your name to show in call"
                                     value={guestName}
                                     onChange={(e) => setGuestName(e.target.value)}
-                                    style={{ width: '100%', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 12, color: '#fff', fontSize: '0.875rem', outline: 'none' }}
+                                    style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, color: '#fff', fontSize: '0.875rem', outline: 'none' }}
                                 />
                             </div>
 
-                            <div>
-                                <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 6 }}>
-                                    Email Address <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>(Optional)</span>
-                                </label>
-                                <input
-                                    type="email"
-                                    placeholder="your@email.com"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    style={{ width: '100%', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 12, color: '#fff', fontSize: '0.875rem', outline: 'none' }}
-                                />
-                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+                                <div>
+                                    <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 6 }}>
+                                        Email <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>(Optional)</span>
+                                    </label>
+                                    <input
+                                        type="email"
+                                        placeholder="your@email.com"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, color: '#fff', fontSize: '0.875rem', outline: 'none' }}
+                                    />
+                                </div>
 
-                            <div>
-                                <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 6 }}>
-                                    Company/Organization <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>(Optional)</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. ABC Technologies"
-                                    value={company}
-                                    onChange={(e) => setCompany(e.target.value)}
-                                    style={{ width: '100%', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 12, color: '#fff', fontSize: '0.875rem', outline: 'none' }}
-                                />
+                                <div>
+                                    <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 6 }}>
+                                        Company <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>(Optional)</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. ABC Tech"
+                                        value={company}
+                                        onChange={(e) => setCompany(e.target.value)}
+                                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, color: '#fff', fontSize: '0.875rem', outline: 'none' }}
+                                    />
+                                </div>
                             </div>
 
                             <button
                                 type="submit"
                                 disabled={requesting || !guestName.trim()}
                                 className="btn btn-primary"
-                                style={{ width: '100%', padding: '14px', borderRadius: 'var(--radius-md)', fontSize: '0.9375rem', fontWeight: 700, cursor: 'pointer', marginTop: 12 }}
+                                style={{ width: '100%', padding: '12px', borderRadius: 8, fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', marginTop: 10 }}
                             >
                                 {requesting ? 'Requesting Admission...' : 'Ask to Join'}
                             </button>
