@@ -156,13 +156,15 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
     useEffect(() => {
         const el = videoRef.current
         if (!el) return
-        if (stream && !isVideoOff) {
-            el.srcObject = stream
+        if (stream) {
+            if (el.srcObject !== stream) {
+                el.srcObject = stream
+            }
             el.play().catch(() => { })
         } else {
             el.srcObject = null
         }
-    }, [stream, isVideoOff])
+    }, [stream])
 
     useEffect(() => {
         if (!stream) {
@@ -175,19 +177,10 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
             const videoTracks = stream.getVideoTracks()
             const audioTracks = stream.getAudioTracks()
 
-            let videoActive = videoTracks.length > 0 && 
-                              videoTracks[0].enabled && 
-                              videoTracks[0].readyState === 'live' && 
-                              !videoTracks[0].muted
-
-            // If video track is active, also ensure the video element actually has valid display width and height
-            // (Chromium receiver tracks remain 'live' and enabled=true even when sender track is disabled)
-            if (videoActive && videoRef.current) {
-                const el = videoRef.current
-                if (el.videoWidth === 0 || el.videoHeight === 0) {
-                    videoActive = false
-                }
-            }
+            const videoActive = videoTracks.length > 0 && 
+                                videoTracks[0].enabled && 
+                                videoTracks[0].readyState === 'live' && 
+                                !videoTracks[0].muted
 
             const audioActive = audioTracks.length > 0 && 
                                 audioTracks[0].enabled
@@ -295,11 +288,15 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
         <div
             className={`video-tile ${isSpeaking ? 'speaking' : ''}`}
             style={{
+                width: '100%',
+                height: '100%',
+                aspectRatio: 'auto',
                 borderRadius: isPrimary ? 'var(--radius-xl)' : 'var(--radius-lg)',
                 minHeight: isPrimary ? 0 : undefined,
                 transition: 'border-color var(--duration-normal), box-shadow var(--duration-normal)',
-                border: isSpeaking ? '2.5px solid var(--color-accent)' : '1.5px solid var(--color-border)',
-                boxShadow: isSpeaking ? 'var(--shadow-glow-accent)' : 'var(--shadow-sm)'
+                border: 'none',
+                boxShadow: 'none',
+                background: 'transparent'
             }}
         >
             {isHandRaised && (
@@ -2468,20 +2465,21 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     }
 
     const layoutStyle: React.CSSProperties = isMobile 
-        ? { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 84px)', width: '100%', gap: 12, overflow: 'hidden' }
+        ? { display: 'flex', flexDirection: 'column', height: '100%', width: '100%', gap: 12, overflow: 'hidden' }
         : isTablet
-        ? { display: 'flex', flexDirection: 'column', height: 'calc(100vh - 84px)', width: '100%', gap: 16, overflow: 'hidden' }
-        : { display: 'flex', flexDirection: 'row', height: 'calc(100vh - 84px)', width: '100%', gap: 20, overflow: 'hidden' }
+        ? { display: 'flex', flexDirection: 'column', height: '100%', width: '100%', gap: 16, overflow: 'hidden' }
+        : { display: 'flex', flexDirection: 'row', height: '100%', width: '100%', gap: 20, overflow: 'hidden' }
 
     return (
         <div style={{
-            height: '100vh',
-            maxHeight: '100vh',
+            height: '100%',
+            maxHeight: '100%',
             background: 'var(--color-bg-base)',
             display: 'flex',
             flexDirection: 'column',
             position: 'relative',
             overflow: 'hidden',
+            width: '100%',
         }}>
 
             {/* ── Header Bar ── */}
