@@ -2,6 +2,7 @@ import mongoose, { Types } from 'mongoose'
 import { Organization, IOrganization, IOrganizationMember, OrganizationRole, OrganizationMemberStatus } from './organization.model'
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
+import { FRONTEND_URL } from '../../config'
 
 export function hasOrganizationRole(member: IOrganizationMember | undefined, roles: OrganizationRole[]) {
     return !!member && roles.includes(member.role)
@@ -149,7 +150,7 @@ export async function inviteMember(
         if (targetEmail) {
             const inviter = await User.findById(inviterId)
             const inviterName = inviter ? inviter.fullName : 'A workspace administrator'
-            const appUrl = 'http://localhost:3000'
+            const appUrl = FRONTEND_URL
 
             const recipientUser = await User.findOne({ email: targetEmail.toLowerCase().trim() })
             const recipientId = recipientUser ? recipientUser._id.toString() : inviterId
