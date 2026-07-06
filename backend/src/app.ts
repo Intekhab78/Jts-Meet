@@ -41,7 +41,7 @@ app.get('/api/health', (req, res) => {
 })
 
 // Register auth routes with strict limits
-app.use('/api/auth', rateLimiter(15 * 60 * 1000, 30), authRoutes)
+app.use('/api/auth', rateLimiter(15 * 60 * 1000, 100), authRoutes)
 app.use('/api', rateLimiter(15 * 60 * 1000, 200))
 
 app.use('/api/chat', chatRoutes)
