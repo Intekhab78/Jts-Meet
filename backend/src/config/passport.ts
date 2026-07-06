@@ -1,14 +1,12 @@
 import passport from 'passport'
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20'
-import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, NODE_ENV } from './index'
+import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, BACKEND_API_URL } from './index'
 import { User } from '../models/user.model'
 import { createSession } from '../services/auth.service'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
 
-const callbackURL = NODE_ENV === 'production'
-    ? 'https://meetapi.jtsonline.shop/api/auth/google/callback'
-    : 'http://localhost:4000/api/auth/google/callback'
+const callbackURL = `${BACKEND_API_URL}/api/auth/google/callback`
 
 passport.use(new GoogleStrategy({
     clientID: GOOGLE_CLIENT_ID,
