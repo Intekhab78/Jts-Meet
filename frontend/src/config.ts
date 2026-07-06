@@ -1,5 +1,5 @@
 const LOCAL_URL = 'http://localhost:4000'
-const ONLINE_URL = 'https://meetapi.jtsonline.shop'
+const ONLINE_URL = 'https://meet.jtsonline.shop'
 
 const envUrl = import.meta.env.VITE_API_URL
 
