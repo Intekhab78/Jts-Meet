@@ -2311,8 +2311,8 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     height: '100%',
                     position: 'relative',
                     borderRadius: 'var(--radius-lg)',
-                    border: isUserSpeaking ? '2.5px solid var(--color-accent)' : '1.5px solid var(--color-border)',
-                    boxShadow: isUserSpeaking ? 'var(--shadow-glow-accent)' : 'var(--shadow-sm)',
+                    border: isUserSpeaking ? '2px solid var(--color-accent)' : '2px solid var(--color-border)',
+                    boxShadow: 'var(--shadow-sm)',
                     overflow: 'hidden',
                     background: 'var(--color-surface-2)',
                     transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -2330,26 +2330,6 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     isGuest={userId.startsWith('guest_')}
                 />
 
-                {/* Indicators Panel (Mic/Hand) */}
-                <div style={{
-                    position: 'absolute',
-                    top: 8,
-                    right: 8,
-                    display: 'flex',
-                    gap: 6,
-                    pointerEvents: 'none'
-                }}>
-                    {isMutedUser && (
-                        <div style={{ background: 'rgba(239, 68, 68, 0.9)', padding: 5, borderRadius: '50%', color: '#fff', display: 'flex' }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 11a5 5 0 0 1-8 4"/></svg>
-                        </div>
-                    )}
-                    {isUserHandRaised && (
-                        <div style={{ background: 'var(--color-warning)', padding: '3px 8px', borderRadius: 'var(--radius-full)', color: '#fff', fontSize: '0.6875rem', fontWeight: 700 }}>
-                            ✋
-                        </div>
-                    )}
-                </div>
 
                 {/* Hover Actions Controls */}
                 {hoveredTile === userId && (
@@ -2613,9 +2593,9 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                         position: 'relative',
                                         borderRadius: 'var(--radius-xl)',
                                         overflow: 'hidden',
-                                        border: activeSpeaker === primaryUser ? '2.5px solid var(--color-accent)' : '1px solid var(--color-border)',
-                                        boxShadow: activeSpeaker === primaryUser ? 'var(--shadow-glow-accent)' : 'var(--shadow-sm)',
-                                        transition: 'border-color 0.3s ease, box-shadow 0.3s ease'
+                                        border: activeSpeaker === primaryUser ? '2px solid var(--color-accent)' : '2px solid var(--color-border)',
+                                        boxShadow: 'var(--shadow-sm)',
+                                        transition: 'border-color 0.3s ease'
                                     }}>
                                         <VideoTile
                                             stream={primaryStream}

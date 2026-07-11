@@ -786,9 +786,6 @@
   }
   .video-tile.speaking {
     border-color: rgba(99,102,241,0.85);
-    box-shadow: var(--shadow-glow-accent);
-    animation: jts-speaking-ring 2s ease-in-out infinite;
-    transform: scale(1.015);
   }
   .video-tile video {
     width: 100%;
