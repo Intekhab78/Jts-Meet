@@ -502,11 +502,10 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
                                 Details of access tiers and responsibilities assigned inside the organization.
                             </p>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                             {[
                                 { title: 'Owner', desc: 'Full administration, billing management, deletion, and credentials allocation.', color: '#F59E0B' },
                                 { title: 'Admin', desc: 'Can manage workspace channels, invites, team settings, and member moderation.', color: '#8B5CF6' },
-                                { title: 'Moderator', desc: 'Assigned to moderate channels, mute participants, and invite team members.', color: '#6366F1' },
                                 { title: 'Member', desc: 'Standard access, joining authorized rooms, chat flow, and screen sharing.', color: '#22C55E' },
                                 { title: 'Guest', desc: 'External collaborators, restricted view, read-only logs, and meeting joins.', color: '#A1A1AA' }
                             ].map((role, idx) => (
