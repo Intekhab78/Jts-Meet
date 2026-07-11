@@ -18,6 +18,19 @@ const parseJwt = (token: string) => {
 /* ──────────────────────────────────────────────────────────
    Inline SVG Icons (no external dependency)
 ────────────────────────────────────────────────────────── */
+const IconRecord = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <circle cx="12" cy="12" r="3" fill="currentColor" />
+    </svg>
+)
+const IconStopRecord = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" />
+    </svg>
+)
+
 const IconMonitor = () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <rect x="2" y="3" width="20" height="14" rx="2" />
@@ -1867,7 +1880,27 @@ function useMeetingTimer() {
    Main MeetingRoom Component
 ────────────────────────────────────────────────────────── */
 export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { initialToken?: string; isAdminOrOwner?: boolean }) {
+    const [isRecording, setIsRecording] = useState(false)
+    const [isRemoteRecording, setIsRemoteRecording] = useState(false)
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+    const recordedChunksRef = useRef<Blob[]>([])
+    const recordingStreamRef = useRef<MediaStream | null>(null)
+
     const { socket, connectSocket, connected } = useSocketContext()
+    useEffect(() => {
+        if (!socket) return
+        
+        const handleRecordToggle = (data: { userId: string; isRecording: boolean }) => {
+            setIsRemoteRecording(data.isRecording)
+            addToast(`Meeting recording has been ${data.isRecording ? 'started' : 'stopped'} by another participant.`, 'info')
+        }
+        
+        socket.on('meeting:record-toggle', handleRecordToggle)
+        return () => {
+            socket.off('meeting:record-toggle', handleRecordToggle)
+        }
+    }, [socket])
+
     const { meetingId, setMeetingId, joined, setJoined, participants } = useMeetingContext()
     const {
         localStream, remoteStreams, connectToMeeting, leaveMeeting,
@@ -2291,6 +2324,109 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     const isMobile = windowWidth < 640
     const isTablet = windowWidth >= 640 && windowWidth < 1024
 
+
+    const startRecording = async () => {
+        try {
+            const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30 }
+                },
+                audio: true
+            });
+
+            let combinedStream = displayStream;
+            if (localStream && localStream.getAudioTracks().length > 0) {
+                try {
+                    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                    const destination = audioCtx.createMediaStreamDestination();
+                    let hasAudioSources = false;
+                    
+                    if (displayStream.getAudioTracks().length > 0) {
+                        const tabAudioSource = audioCtx.createMediaStreamSource(new MediaStream([displayStream.getAudioTracks()[0]]));
+                        tabAudioSource.connect(destination);
+                        hasAudioSources = true;
+                    }
+                    
+                    const micAudioSource = audioCtx.createMediaStreamSource(new MediaStream([localStream.getAudioTracks()[0]]));
+                    micAudioSource.connect(destination);
+                    hasAudioSources = true;
+
+                    if (hasAudioSources) {
+                        const tracks = [
+                            ...displayStream.getVideoTracks(),
+                            ...destination.stream.getAudioTracks()
+                        ];
+                        combinedStream = new MediaStream(tracks);
+                    }
+                } catch (audioErr) {
+                    console.warn('Failed to mix audio tracks, falling back to display audio:', audioErr);
+                }
+            }
+
+            let options = { mimeType: 'video/webm;codecs=vp9,opus' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'video/webm;codecs=vp8,opus' };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = { mimeType: 'video/webm' };
+                }
+            }
+
+            const recorder = new MediaRecorder(combinedStream, options);
+            recordedChunksRef.current = [];
+
+            recorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    recordedChunksRef.current.push(e.data);
+                }
+            };
+
+            recorder.onstop = () => {
+                const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `JTS-Meet-Recording-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                displayStream.getTracks().forEach(t => t.stop());
+                setIsRecording(false);
+                addToast('Meeting recording saved and downloaded successfully!', 'success');
+            };
+
+            displayStream.getVideoTracks()[0].onended = () => {
+                if (recorder && recorder.state !== 'inactive') {
+                    recorder.stop();
+                }
+            };
+
+            recorder.start(1000);
+            mediaRecorderRef.current = recorder;
+            recordingStreamRef.current = displayStream;
+            setIsRecording(true);
+            addToast('Recording started! Select the meeting tab with "Share tab audio" for best results.', 'success');
+            
+            socket?.emit('meeting:record-toggle', { meetingId: meetingId || meetingInput, isRecording: true });
+
+        } catch (err: any) {
+            if (err.name !== 'NotAllowedError') {
+                console.error('Failed to start recording:', err);
+                addToast('Could not start screen capture for recording.', 'warning');
+            }
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+            socket?.emit('meeting:record-toggle', { meetingId: meetingId || meetingInput, isRecording: false });
+        }
+    };
+
     // Render a single participant video tile with standard controls, click (pin) and double click (full screen)
     const renderMeetingTile = (userId: string, isEnlarged: boolean) => {
         const displayName = renamedUsers[userId] || (userId === 'me' ? 'You' : userId)
@@ -2500,10 +2636,12 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     <div style={{ width: 1, height: 16, background: 'var(--color-border)' }} className="hidden sm:block" />
 
                     {/* Recording Badge */}
-                    <span className="badge badge-danger" style={{ display: 'inline-flex', gap: 6, padding: '4px 10px', fontSize: '0.6875rem' }}>
-                        <span className="badge-dot danger pulse" style={{ width: 6, height: 6 }} />
-                        REC
-                    </span>
+                    {(isRecording || isRemoteRecording) && (
+                        <span className="badge badge-danger anim-fade-in" style={{ display: 'inline-flex', gap: 6, padding: '4px 10px', fontSize: '0.6875rem' }}>
+                            <span className="badge-dot danger pulse" style={{ width: 6, height: 6 }} />
+                            REC
+                        </span>
+                    )}
                 </div>
 
                 {/* Center: meeting details */}
@@ -2861,6 +2999,29 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     title={handRaised ? "Lower hand" : "Raise hand"}
                 >
                     ✋
+                </button>
+
+                {/* Recording Trigger */}
+                <button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={!connected || !joined}
+                    style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: '50%',
+                        border: 'none',
+                        background: isRecording ? 'var(--color-danger)' : 'rgba(255,255,255,0.08)',
+                        color: isRecording ? '#fff' : '#ef4444',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease'
+                    }}
+                    className={isRecording ? 'pulse' : ''}
+                    title={isRecording ? "Stop Recording Meeting" : "Record Meeting"}
+                >
+                    {isRecording ? <IconStopRecord /> : <IconRecord />}
                 </button>
 
                 <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)' }} />

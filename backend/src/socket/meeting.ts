@@ -88,6 +88,11 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_RAISE_HAND, { userId, meetingId: payload.meetingId, raised: payload.raised })
     })
 
+    socket.on('meeting:record-toggle', (payload: { meetingId: string; isRecording: boolean }) => {
+        if (!userId || !payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:record-toggle', { userId, isRecording: payload.isRecording })
+    })
+
     socket.on(SocketEvents.MEETING_REACTION, (payload: { meetingId: string; emoji: string }) => {
         if (!userId || !payload?.meetingId || !payload?.emoji) return
 
