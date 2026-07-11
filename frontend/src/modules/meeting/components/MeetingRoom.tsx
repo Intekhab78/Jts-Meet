@@ -2632,41 +2632,44 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                         )}
 
                                         {/* Floating Unpin Button */}
-                                        {pinnedUserId && (
-                                            <button
-                                                onClick={() => setPinnedUserId(null)}
-                                                style={{
-                                                    position: 'absolute',
-                                                    top: 16,
-                                                    left: 16,
-                                                    background: 'rgba(10, 11, 15, 0.75)',
-                                                    backdropFilter: 'blur(8px)',
-                                                    border: '1px solid rgba(255,255,255,0.1)',
-                                                    borderRadius: 'var(--radius-full)',
-                                                    padding: '6px 14px',
-                                                    color: '#fff',
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: 600,
-                                                    cursor: 'pointer',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: 6,
-                                                    zIndex: 10,
-                                                    boxShadow: 'var(--shadow-md)',
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                                onMouseEnter={(e) => {
-                                                    e.currentTarget.style.background = 'var(--color-accent)';
-                                                    e.currentTarget.style.borderColor = 'transparent';
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                    e.currentTarget.style.background = 'rgba(10, 11, 15, 0.75)';
-                                                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
-                                                }}
-                                            >
-                                                📌 Unpin Screen
-                                            </button>
-                                        )}
+                                        {pinnedUserId && (() => {
+                                            const isPrimaryHandRaised = primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser];
+                                            return (
+                                                <button
+                                                    onClick={() => setPinnedUserId(null)}
+                                                    style={{
+                                                        position: 'absolute',
+                                                        top: 16,
+                                                        left: isPrimaryHandRaised ? 125 : 16,
+                                                        background: 'rgba(10, 11, 15, 0.75)',
+                                                        backdropFilter: 'blur(8px)',
+                                                        border: '1px solid rgba(255,255,255,0.1)',
+                                                        borderRadius: 'var(--radius-full)',
+                                                        padding: '6px 14px',
+                                                        color: '#fff',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 6,
+                                                        zIndex: 10,
+                                                        boxShadow: 'var(--shadow-md)',
+                                                        transition: 'all 0.2s ease'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.background = 'var(--color-accent)';
+                                                        e.currentTarget.style.borderColor = 'transparent';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.background = 'rgba(10, 11, 15, 0.75)';
+                                                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+                                                    }}
+                                                >
+                                                    📌 Unpin Screen
+                                                </button>
+                                            );
+                                        })()}
                                     </div>
 
                                     {/* Participants Strip (Right / Bottom) - hidden in fullScreenUserId mode */}
