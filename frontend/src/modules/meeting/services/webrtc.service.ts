@@ -20,6 +20,16 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
 
     if (localStream) {
         localStream.getTracks().forEach((track) => pc.addTrack(track, localStream))
+        
+        // Ensure video sender/transceiver is present even if camera was off on join
+        const hasVideo = localStream.getVideoTracks().length > 0
+        if (!hasVideo) {
+            try {
+                pc.addTransceiver('video', { direction: 'sendrecv' })
+            } catch (e) {
+                console.warn('Failed to add video transceiver:', e)
+            }
+        }
     }
 
     return pc

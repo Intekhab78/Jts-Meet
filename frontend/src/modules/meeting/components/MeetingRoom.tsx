@@ -174,6 +174,22 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                 el.srcObject = stream
             }
             el.play().catch(() => { })
+
+            const handleTrackChange = () => {
+                if (el) {
+                    el.srcObject = null
+                    el.srcObject = stream
+                    el.play().catch(() => { })
+                }
+            }
+
+            stream.addEventListener('addtrack', handleTrackChange)
+            stream.addEventListener('removetrack', handleTrackChange)
+
+            return () => {
+                stream.removeEventListener('addtrack', handleTrackChange)
+                stream.removeEventListener('removetrack', handleTrackChange)
+            }
         } else {
             el.srcObject = null
         }
@@ -1420,13 +1436,29 @@ function SetupScreen({
         setIsMuted(!isMuted)
     }
 
-    const toggleVideo = () => {
-        if (localStream) {
+    const toggleVideo = async () => {
+        if (!localStream) return
+        if (!isVideoOff) {
             localStream.getVideoTracks().forEach(track => {
-                track.enabled = isVideoOff
+                track.stop()
             })
+            setIsVideoOff(true)
+        } else {
+            try {
+                const freshStream = await navigator.mediaDevices.getUserMedia({ video: true })
+                const videoTrack = freshStream.getVideoTracks()[0]
+                if (videoTrack) {
+                    localStream.getVideoTracks().forEach(t => {
+                        t.stop()
+                        localStream.removeTrack(t)
+                    })
+                    localStream.addTrack(videoTrack)
+                }
+                setIsVideoOff(false)
+            } catch (err) {
+                console.error("Setup camera enable failed:", err)
+            }
         }
-        setIsVideoOff(!isVideoOff)
     }
 
     const handleCopy = () => {
@@ -1905,9 +1937,42 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     const {
         localStream, remoteStreams, connectToMeeting, leaveMeeting,
         startScreenShare, stopScreenShare, screenSharingUserId,
-        screenError, mediaError, mediaLoading,
+        screenError, mediaError, mediaLoading, replaceTrackOnPeers
     } = useWebRTCContext()
     const { messages, typingUsers, sendMessage, emitTyping, emitStopTyping, toggleChatReaction } = useMeetingChat()
+    // Listen to guest display names sharing from signaling
+    useEffect(() => {
+        if (!socket) return
+        
+        const handleUserJoinedName = (data: { userId: string; displayName?: string }) => {
+            if (data.displayName) {
+                setRenamedUsers(prev => {
+                    const next = { ...prev }
+                    next[data.userId] = data.displayName as string
+                    return next
+                })
+            }
+        }
+
+        const handleOfferName = (data: { fromUserId: string; displayName?: string }) => {
+            if (data.displayName) {
+                setRenamedUsers(prev => {
+                    const next = { ...prev }
+                    next[data.fromUserId] = data.displayName as string
+                    return next
+                })
+            }
+        }
+        
+        socket.on('webrtc:user-joined', handleUserJoinedName)
+        socket.on('webrtc:offer', handleOfferName)
+        
+        return () => {
+            socket.off('webrtc:user-joined', handleUserJoinedName)
+            socket.off('webrtc:offer', handleOfferName)
+        }
+    }, [socket])
+
 
     const [token, setToken] = useState(initialToken)
     const [meetingInput, setMeetingInput] = useState('')
@@ -2221,13 +2286,33 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         setIsMuted(!isMuted)
     }
 
-    const toggleVideo = () => {
-        if (localStream) {
+    const toggleVideo = async () => {
+        if (!localStream) return
+        if (!isVideoOff) {
             localStream.getVideoTracks().forEach(track => {
-                track.enabled = isVideoOff
+                track.stop()
+                localStream.removeTrack(track)
             })
+            replaceTrackOnPeers(null)
+            setIsVideoOff(true)
+        } else {
+            try {
+                const freshStream = await navigator.mediaDevices.getUserMedia({ video: true })
+                const videoTrack = freshStream.getVideoTracks()[0]
+                if (videoTrack) {
+                    localStream.getVideoTracks().forEach(t => {
+                        t.stop()
+                        localStream.removeTrack(t)
+                    })
+                    localStream.addTrack(videoTrack)
+                    replaceTrackOnPeers(videoTrack)
+                }
+                setIsVideoOff(false)
+            } catch (err) {
+                console.error("Camera enable failed:", err)
+                addToast("Could not access camera device.", "warning")
+            }
         }
-        setIsVideoOff(!isVideoOff)
     }
 
     // Auto-connect if initialToken is provided
@@ -2247,7 +2332,16 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         const id = (typeof customId === 'string' ? customId : meetingInput).trim()
         if (!socket || !id) return
         setMeetingId(id)
-        connectToMeeting(id)
+        
+        let myName = ''
+        try {
+            const decoded = parseJwt(token)
+            if (decoded && decoded.isGuest) {
+                myName = decoded.guestName
+            }
+        } catch (e) {}
+
+        connectToMeeting(id, myName)
         setJoined(true)
     }
 

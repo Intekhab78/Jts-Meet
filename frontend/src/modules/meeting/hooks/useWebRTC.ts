@@ -6,12 +6,13 @@ import { getScreenShareStream, stopScreenShareStream } from '../services/screen.
 
 interface UseWebRTCResult {
     remoteStreams: Record<string, MediaStream>
-    connectToMeeting: (meetingId: string) => void
+    connectToMeeting: (meetingId: string, displayName?: string) => void
     leaveMeeting: () => void
     startScreenShare: () => Promise<void>
     stopScreenShare: () => void
     screenSharingUserId: string | null
     screenError: string | null
+    replaceTrackOnPeers: (newTrack: MediaStreamTrack | null) => void
 }
 
 interface InternalPeerConnections {
@@ -58,13 +59,16 @@ export function useWebRTC(
     }, [cleanupPeer, meetingId, peerConnections, setJoined, socket])
 
     const connectToMeeting = useCallback(
-        (targetMeetingId: string) => {
+        (targetMeetingId: string, displayName?: string) => {
             if (!socket) {
                 return
             }
 
             setMeetingId(targetMeetingId)
-            socket.emit(SocketEvents.WEBRTC_JOIN, { meetingId: targetMeetingId })
+            socket.emit(SocketEvents.WEBRTC_JOIN, { 
+                meetingId: targetMeetingId,
+                displayName
+            })
         },
         [socket]
     )
@@ -72,7 +76,11 @@ export function useWebRTC(
     const replaceTrackOnPeers = useCallback(
         (newTrack: MediaStreamTrack | null) => {
             Object.values(peerConnections).forEach((pc) => {
-                const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
+                const sender = pc.getSenders().find((s) => {
+                    if (s.track) return s.track.kind === 'video'
+                    const tc = pc.getTransceivers().find(t => t.sender === s)
+                    return tc && tc.receiver.track && tc.receiver.track.kind === 'video'
+                })
                 if (sender) {
                     sender.replaceTrack(newTrack)
                 }
@@ -153,10 +161,25 @@ export function useWebRTC(
 
             pc.createOffer().then((offer) => {
                 return pc.setLocalDescription(offer).then(() => {
+                    let myName = '';
+                    try {
+                        const token = localStorage.getItem('jts_token') || '';
+                        if (token) {
+                            const parts = token.split('.');
+                            if (parts.length === 3) {
+                                const decoded = JSON.parse(atob(parts[1]));
+                                if (decoded && decoded.isGuest) {
+                                    myName = decoded.guestName;
+                                }
+                            }
+                        }
+                    } catch (e) {}
+
                     socket.emit(SocketEvents.WEBRTC_OFFER, {
                         targetUserId: payload.userId,
                         meetingId: payload.meetingId,
-                        offer
+                        offer,
+                        displayName: myName
                     })
                 })
             })
@@ -251,7 +274,7 @@ export function useWebRTC(
     }, [socket, localStream, addParticipant, removeParticipant, peerConnections, cleanupPeer, screenSharingUserId])
 
     return useMemo(
-        () => ({ remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError }),
-        [remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError]
+        () => ({ remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, replaceTrackOnPeers }),
+        [remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, replaceTrackOnPeers]
     )
 }

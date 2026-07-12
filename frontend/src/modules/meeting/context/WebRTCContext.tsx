@@ -7,7 +7,7 @@ import { useWebRTC } from '../hooks/useWebRTC'
 interface WebRTCContextValue {
     localStream: MediaStream | null
     remoteStreams: Record<string, MediaStream>
-    connectToMeeting: (meetingId: string) => void
+    connectToMeeting: (meetingId: string, displayName?: string) => void
     leaveMeeting: () => void
     startScreenShare: () => Promise<void>
     stopScreenShare: () => void
@@ -15,6 +15,7 @@ interface WebRTCContextValue {
     screenError: string | null
     mediaError: string | null
     mediaLoading: boolean
+    replaceTrackOnPeers: (newTrack: MediaStreamTrack | null) => void
 }
 
 const WebRTCContext = createContext<WebRTCContextValue | undefined>(undefined)
@@ -23,7 +24,7 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     const { socket } = useSocketContext()
     const { meetingId, setJoined, addParticipant, removeParticipant } = useMeetingContext()
     const { localStream, cameraStream, mediaError, mediaLoading, requestMedia, stopMedia, replaceLocalStream, restoreCameraStream } = useMediaDevices()
-    const { remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError } = useWebRTC(
+    const { remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, replaceTrackOnPeers } = useWebRTC(
         socket,
         localStream,
         cameraStream,
@@ -53,7 +54,7 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     }, [])
 
     return (
-        <WebRTCContext.Provider value={{ localStream, remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, mediaError, mediaLoading }}>
+        <WebRTCContext.Provider value={{ localStream, remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, mediaError, mediaLoading, replaceTrackOnPeers }}>
             {children}
         </WebRTCContext.Provider>
     )

@@ -9,7 +9,7 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
     const userId = authSocket.userId
 
-    socket.on(SocketEvents.WEBRTC_JOIN, async (payload: { meetingId: string }) => {
+    socket.on(SocketEvents.WEBRTC_JOIN, async (payload: { meetingId: string; displayName?: string }) => {
         if (!userId || !payload?.meetingId) {
             socket.emit('error', { message: 'Unauthorized or invalid meetingId' })
             return
@@ -41,15 +41,23 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
 
         addPeerSession(userId, payload.meetingId, socket.id)
 
+        if (payload.displayName) {
+            authSocket.guestName = payload.displayName;
+        }
+
         // Broadcast to other participants in the room across all nodes
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.WEBRTC_USER_JOINED, { userId, meetingId: payload.meetingId })
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.WEBRTC_USER_JOINED, { 
+            userId, 
+            meetingId: payload.meetingId,
+            displayName: authSocket.guestName || payload.displayName
+        })
 
         // Get total participants in the meeting room across the entire Redis cluster
         const sockets = await io.in(`meeting:${payload.meetingId}`).allSockets()
         socket.emit(SocketEvents.WEBRTC_JOIN, { meetingId: payload.meetingId, participants: sockets.size })
     })
 
-    socket.on(SocketEvents.WEBRTC_OFFER, async (payload: { targetUserId: string; meetingId: string; offer: any }) => {
+    socket.on(SocketEvents.WEBRTC_OFFER, async (payload: { targetUserId: string; meetingId: string; offer: any; displayName?: string }) => {
         if (!userId || !payload?.targetUserId || !payload?.meetingId || !payload?.offer) {
             socket.emit('error', { message: 'Invalid offer payload' })
             return
@@ -58,7 +66,8 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         io.to(`user:${payload.targetUserId}`).emit(SocketEvents.WEBRTC_OFFER, {
             fromUserId: userId,
             meetingId: payload.meetingId,
-            offer: payload.offer
+            offer: payload.offer,
+            displayName: payload.displayName || authSocket.guestName
         })
     })
 
