@@ -10,6 +10,8 @@ import { registerMeetingChatHandlers } from './meetingChat'
 import { registerChannelChatHandlers } from './channelChat'
 import { registerWebRTCHandlers } from '../modules/webrtc/webrtc.socket'
 import { getMeetingByMeetingId } from '../modules/meeting/meeting.service'
+import jwt from 'jsonwebtoken'
+import { JWT_SECRET } from '../config'
 import { getMeetingSocketId } from '../modules/webrtc/peer.manager'
 import { RedisService } from '../services/redis.service'
 import { User } from '../models/user.model'
@@ -58,7 +60,21 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         if (guestSocket) {
             guestSocket.isPending = false
             guestSocket.leave(`lobby:${guestSocket.meetingId}`)
-            guestSocket.emit('guest:approved')
+            
+            // Generate a NEW guest token with isPending: false to prevent pending limbo on reconnect
+            const token = jwt.sign(
+                {
+                    userId: guestSocket.userId,
+                    isGuest: true,
+                    guestName: guestSocket.guestName,
+                    meetingId: guestSocket.meetingId,
+                    isPending: false
+                },
+                JWT_SECRET,
+                { expiresIn: '6h' }
+            )
+            
+            guestSocket.emit('guest:approved', { token })
             
             // Broadcast status change to meeting participants
             io.to(`meeting:${guestSocket.meetingId}`).emit('guest:status-changed', { socketId, status: 'approved' })
@@ -120,8 +136,9 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
                 return
             }
 
-            // Approved/public guest: Register only meeting and WebRTC handlers (no workspaces/chat)
+            // Approved/public guest: Register meeting, chat and WebRTC handlers
             registerMeetingHandlers(io, socket)
+            registerMeetingChatHandlers(io, socket)
             registerWebRTCHandlers(io, socket)
 
             socket.on(SocketEvents.DISCONNECT, () => {

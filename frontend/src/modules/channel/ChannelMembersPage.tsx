@@ -54,8 +54,8 @@ export function ChannelMembersPage({ members, currentUserId, onRemove, onRoleCha
                         value={roleFilter}
                         onChange={(e) => setRoleFilter(e.target.value)}
                         style={{
-                            background: '#1F2937',
-                            border: '1px solid rgba(255,255,255,0.08)',
+                            background: 'var(--color-surface-2)',
+                            border: '1px solid var(--color-border)',
                             borderRadius: '10px',
                             padding: '8px 12px',
                             fontSize: '0.8125rem',
@@ -135,8 +135,8 @@ export function ChannelMembersPage({ members, currentUserId, onRemove, onRoleCha
                                                         await onRoleChange(userIdStr, event.target.value as Exclude<ChannelRole, 'owner'>);
                                                     }}
                                                     style={{
-                                                        background: '#1F2937',
-                                                        border: '1px solid rgba(255,255,255,0.08)',
+                                                        background: 'var(--color-surface-2)',
+                                                        border: '1px solid var(--color-border)',
                                                         borderRadius: '8px',
                                                         padding: '4px 8px',
                                                         fontSize: '0.75rem',

@@ -99,6 +99,23 @@ type ActivePanel = 'participants' | 'chat' | 'files' | 'settings' | null
 /* ──────────────────────────────────────────────────────────
    Helper: get initials from a fullName string
    ────────────────────────────────────────────────────────── */
+function createDummyVideoTrack(): MediaStreamTrack {
+    const canvas = document.createElement('canvas')
+    canvas.width = 640
+    canvas.height = 480
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+        ctx.fillStyle = '#0a0b0f'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+    }
+    const stream = (canvas as any).captureStream(1)
+    const track = stream.getVideoTracks()[0]
+    if (track) {
+        ;(track as any).isDummy = true
+    }
+    return track
+}
+
 function getInitials(name: string): string {
     if (!name) return '?'
     const parts = name.replace(/[^a-zA-Z0-9\s]/g, '').trim().split(/\s+/)
@@ -158,12 +175,14 @@ interface VideoTileProps {
     isHandRaised?: boolean
     isHost?: boolean
     isGuest?: boolean
+    isVideoOffProp?: boolean
 }
 
-function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrimary = false, isHandRaised = false, isHost = false, isGuest = false }: VideoTileProps) {
+function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrimary = false, isHandRaised = false, isHost = false, isGuest = false, isVideoOffProp }: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const [isMuted, setIsMuted] = useState(false)
-    const [isVideoOff, setIsVideoOff] = useState(false)
+    const [isVideoOffInternal, setIsVideoOffInternal] = useState(false)
+    const isVideoOff = isVideoOffProp !== undefined ? isVideoOffProp : isVideoOffInternal
     const [isSpeaking, setIsSpeaking] = useState(false)
 
     useEffect(() => {
@@ -197,7 +216,7 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
 
     useEffect(() => {
         if (!stream) {
-            setIsVideoOff(true)
+            setIsVideoOffInternal(true)
             setIsMuted(true)
             return
         }
@@ -208,14 +227,29 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
 
             const videoActive = videoTracks.length > 0 && 
                                 videoTracks[0].enabled && 
-                                videoTracks[0].readyState === 'live' && 
-                                !videoTracks[0].muted
+                                videoTracks[0].readyState === 'live'
 
             const audioActive = audioTracks.length > 0 && 
                                 audioTracks[0].enabled
 
-            setIsVideoOff(!videoActive)
+            setIsVideoOffInternal(!videoActive)
             setIsMuted(!audioActive)
+
+            console.log('VideoTile Diagnostic:', {
+                label,
+                streamId: stream ? stream.id : 'null',
+                hasStream: !!stream,
+                videoTracksCount: videoTracks.length,
+                videoTrackDetails: videoTracks.map(t => ({
+                    id: t.id,
+                    enabled: t.enabled,
+                    readyState: t.readyState,
+                    muted: t.muted,
+                    label: t.label
+                })),
+                isVideoOffProp,
+                finalIsVideoOff: isVideoOffProp !== undefined ? isVideoOffProp : !videoActive
+            });
         }
 
         checkTracks()
@@ -503,11 +537,14 @@ interface ParticipantsPanelProps {
     renamedUsers: { [key: string]: string }
     setRenamedUsers: (users: { [key: string]: string }) => void
     addToast: (msg: string, type?: 'info' | 'success' | 'warning') => void
+    hostId: string | null
+    isLocalHost: boolean
 }
 
 function ParticipantsPanel({
     participants, onClose, spotlightUserId, setSpotlightUserId,
-    coHostIds, setCoHostIds, renamedUsers, setRenamedUsers, addToast
+    coHostIds, setCoHostIds, renamedUsers, setRenamedUsers, addToast,
+    hostId, isLocalHost
 }: ParticipantsPanelProps) {
     const [search, setSearch] = useState('')
     const [activeMenu, setActiveMenu] = useState<string | null>(null)
@@ -596,7 +633,9 @@ function ParticipantsPanel({
                         <div className="avatar avatar-md" style={{ background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', color: '#fff', fontWeight: 700 }}>ME</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>You</span>
-                            <span className="badge badge-accent" style={{ marginLeft: 6, fontSize: '0.625rem', padding: '1px 5px' }}>Host</span>
+                            {isLocalHost && (
+                                <span className="badge badge-accent" style={{ marginLeft: 6, fontSize: '0.625rem', padding: '1px 5px' }}>Host</span>
+                            )}
                         </div>
                         <span className="badge-dot success" style={{ width: 8, height: 8 }} />
                     </li>
@@ -667,6 +706,9 @@ function ParticipantsPanel({
                                             }}>
                                                 {displayName}
                                             </span>
+                                        )}
+                                        {hostId && p === hostId && (
+                                            <span className="badge badge-accent" style={{ fontSize: '0.625rem', padding: '1px 5px' }}>Host</span>
                                         )}
                                         {isCoHost && (
                                             <span className="badge badge-neutral" style={{ fontSize: '0.625rem', padding: '1px 5px' }}>Co-Host</span>
@@ -1441,7 +1483,10 @@ function SetupScreen({
         if (!isVideoOff) {
             localStream.getVideoTracks().forEach(track => {
                 track.stop()
+                localStream.removeTrack(track)
             })
+            const dummyTrack = createDummyVideoTrack()
+            localStream.addTrack(dummyTrack)
             setIsVideoOff(true)
         } else {
             try {
@@ -1940,11 +1985,13 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         screenError, mediaError, mediaLoading, replaceTrackOnPeers
     } = useWebRTCContext()
     const { messages, typingUsers, sendMessage, emitTyping, emitStopTyping, toggleChatReaction } = useMeetingChat()
-    // Listen to guest display names sharing from signaling
+
+
+    // Listen to guest display names and camera states sharing from signaling
     useEffect(() => {
         if (!socket) return
         
-        const handleUserJoinedName = (data: { userId: string; displayName?: string }) => {
+        const handleUserJoinedName = (data: { userId: string; displayName?: string; isVideoOff?: boolean }) => {
             if (data.displayName) {
                 setRenamedUsers(prev => {
                     const next = { ...prev }
@@ -1952,9 +1999,16 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     return next
                 })
             }
+            if (data.isVideoOff !== undefined) {
+                setRemoteVideoStates(prev => {
+                    const next = { ...prev }
+                    next[data.userId] = data.isVideoOff as boolean
+                    return next
+                })
+            }
         }
 
-        const handleOfferName = (data: { fromUserId: string; displayName?: string }) => {
+        const handleOfferName = (data: { fromUserId: string; displayName?: string; isVideoOff?: boolean }) => {
             if (data.displayName) {
                 setRenamedUsers(prev => {
                     const next = { ...prev }
@@ -1962,21 +2016,53 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     return next
                 })
             }
+            if (data.isVideoOff !== undefined) {
+                setRemoteVideoStates(prev => {
+                    const next = { ...prev }
+                    next[data.fromUserId] = data.isVideoOff as boolean
+                    return next
+                })
+            }
+        }
+
+        const handleCameraToggle = (data: { userId: string; isVideoOff: boolean }) => {
+            setRemoteVideoStates(prev => {
+                const next = { ...prev }
+                next[data.userId] = data.isVideoOff
+                return next
+            })
         }
         
         socket.on('webrtc:user-joined', handleUserJoinedName)
         socket.on('webrtc:offer', handleOfferName)
+        socket.on('meeting:camera-toggle', handleCameraToggle)
         
         return () => {
             socket.off('webrtc:user-joined', handleUserJoinedName)
             socket.off('webrtc:offer', handleOfferName)
+            socket.off('meeting:camera-toggle', handleCameraToggle)
         }
     }, [socket])
 
 
+    const [remoteVideoStates, setRemoteVideoStates] = useState<Record<string, boolean>>({})
     const [token, setToken] = useState(initialToken)
     const [meetingInput, setMeetingInput] = useState('')
     const [activePanel, setActivePanel] = useState<ActivePanel>(null)
+
+    // Auto-rejoin meeting room if socket reconnects while joined to recover room channels
+    useEffect(() => {
+        if (connected && joined && meetingId) {
+            let myName = ''
+            try {
+                const decoded = parseJwt(token)
+                if (decoded && decoded.isGuest) {
+                    myName = decoded.guestName
+                }
+            } catch (e) {}
+            connectToMeeting(meetingId, myName)
+        }
+    }, [connected, joined, meetingId, connectToMeeting, token])
 
     const [inviteEmail, setInviteEmail] = useState('')
     const [sendingInvite, setSendingInvite] = useState(false)
@@ -2293,8 +2379,11 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                 track.stop()
                 localStream.removeTrack(track)
             })
-            replaceTrackOnPeers(null)
+            const dummyTrack = createDummyVideoTrack()
+            localStream.addTrack(dummyTrack)
+            replaceTrackOnPeers(dummyTrack)
             setIsVideoOff(true)
+            socket?.emit('meeting:camera-toggle', { meetingId: meetingId || meetingInput, isVideoOff: true })
         } else {
             try {
                 const freshStream = await navigator.mediaDevices.getUserMedia({ video: true })
@@ -2308,6 +2397,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     replaceTrackOnPeers(videoTrack)
                 }
                 setIsVideoOff(false)
+                socket?.emit('meeting:camera-toggle', { meetingId: meetingId || meetingInput, isVideoOff: false })
             } catch (err) {
                 console.error("Camera enable failed:", err)
                 addToast("Could not access camera device.", "warning")
@@ -2345,15 +2435,15 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         setJoined(true)
     }
 
-    // Auto-join meeting if guest token is authorized and connected
+    // Auto-join meeting if guest token is authorized, connected, and media device initialization is complete
     useEffect(() => {
-        if (connected && !joined) {
+        if (connected && !joined && !mediaLoading) {
             const decoded = parseJwt(initialToken || token)
             if (decoded?.isGuest && decoded?.meetingId) {
                 handleJoinMeeting(decoded.meetingId)
             }
         }
-    }, [connected, joined, initialToken, token])
+    }, [connected, joined, initialToken, token, mediaLoading])
 
     const togglePanel = (panel: ActivePanel) => {
         setActivePanel((prev) => (prev === panel ? null : panel))
@@ -2558,6 +2648,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     isHandRaised={isUserHandRaised}
                     isHost={meetingInfo && meetingInfo.host && (meetingInfo.host._id === userId || meetingInfo.host === userId)}
                     isGuest={userId.startsWith('guest_')}
+                    isVideoOffProp={userId === 'me' ? isVideoOff : remoteVideoStates[userId]}
                 />
 
 
@@ -2837,6 +2928,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                             isPrimary={true}
                                             isHandRaised={primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser]}
                                             isHost={meetingInfo && meetingInfo.host && (meetingInfo.host._id === primaryUser || meetingInfo.host === primaryUser)}
+                                            isVideoOffProp={primaryUser === 'me' ? isVideoOff : remoteVideoStates[primaryUser]}
                                         />
 
                                         {/* Exit Full Screen Button Overlay */}
@@ -2945,6 +3037,8 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                             renamedUsers={renamedUsers}
                             setRenamedUsers={setRenamedUsers}
                             addToast={addToast}
+                            hostId={meetingInfo && meetingInfo.host ? (typeof meetingInfo.host === 'object' ? meetingInfo.host._id : meetingInfo.host) : null}
+                            isLocalHost={isLocalHost}
                         />
                     )}
                     {activePanel === 'chat' && (
@@ -2965,6 +3059,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                     disabled={!connected || !joined}
                                     onToggleChatReaction={toggleChatReaction}
                                     currentUserId={parseJwt(token)?.userId || 'me'}
+                                    renamedUsers={renamedUsers}
                                 />
                             </div>
                         </div>

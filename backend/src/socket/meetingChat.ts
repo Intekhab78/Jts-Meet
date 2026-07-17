@@ -5,6 +5,20 @@ import { SocketEvents } from './events'
 import { createMeetingChat, addMeetingChatReaction, removeMeetingChatReaction } from '../modules/meeting-chat/meetingChat.service'
 import { getMeetingByMeetingId } from '../modules/meeting/meeting.service'
 
+function getMeetingRecipientIds(meeting: any): string[] {
+    const ids = new Set<string>()
+    if (meeting.host) {
+        ids.add(typeof meeting.host === 'object' ? meeting.host._id.toString() : meeting.host.toString())
+    }
+    if (meeting.coHosts && Array.isArray(meeting.coHosts)) {
+        meeting.coHosts.forEach((ch: any) => ids.add(ch.toString()))
+    }
+    if (meeting.participants && Array.isArray(meeting.participants)) {
+        meeting.participants.forEach((p: any) => ids.add(p.toString()))
+    }
+    return Array.from(ids)
+}
+
 export function registerMeetingChatHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
     const userId = authSocket.userId
@@ -23,8 +37,8 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
                 return
             }
 
-            meeting.participants.forEach((participant) => {
-                const participantId = participant.toString()
+            const recipientIds = getMeetingRecipientIds(meeting)
+            recipientIds.forEach((participantId) => {
                 io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_RECEIVE, chat)
             })
         } catch (error: any) {
@@ -42,13 +56,12 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
             return
         }
 
-        const currentUserId = new Types.ObjectId(userId)
-        if (!meeting.participants.some((participant) => participant.equals(currentUserId))) {
+        const recipientIds = getMeetingRecipientIds(meeting)
+        if (!recipientIds.includes(userId)) {
             return
         }
 
-        meeting.participants.forEach((participant) => {
-            const participantId = participant.toString()
+        recipientIds.forEach((participantId) => {
             if (participantId === userId) {
                 return
             }
@@ -70,13 +83,12 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
             return
         }
 
-        const currentUserId = new Types.ObjectId(userId)
-        if (!meeting.participants.some((participant) => participant.equals(currentUserId))) {
+        const recipientIds = getMeetingRecipientIds(meeting)
+        if (!recipientIds.includes(userId)) {
             return
         }
 
-        meeting.participants.forEach((participant) => {
-            const participantId = participant.toString()
+        recipientIds.forEach((participantId) => {
             if (participantId === userId) {
                 return
             }
@@ -98,8 +110,8 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
             if (result) {
                 const meeting = await getMeetingByMeetingId(payload.meetingId)
                 if (meeting) {
-                    meeting.participants.forEach((participant) => {
-                        const participantId = participant.toString()
+                    const recipientIds = getMeetingRecipientIds(meeting)
+                    recipientIds.forEach((participantId) => {
                         io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_REACTION_ADD, {
                             meetingId: payload.meetingId,
                             messageId: payload.messageId,
@@ -125,8 +137,8 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
             if (result) {
                 const meeting = await getMeetingByMeetingId(payload.meetingId)
                 if (meeting) {
-                    meeting.participants.forEach((participant) => {
-                        const participantId = participant.toString()
+                    const recipientIds = getMeetingRecipientIds(meeting)
+                    recipientIds.forEach((participantId) => {
                         io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_REACTION_REMOVE, {
                             meetingId: payload.meetingId,
                             messageId: payload.messageId,

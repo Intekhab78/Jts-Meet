@@ -409,7 +409,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }, [selectedChannel])
 
     return (
-        <div className="px-4 py-6 md:p-10" style={{ background: '#09090B', minHeight: '100vh', color: '#fff', fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        <div className="px-4 py-6 md:p-10" style={{ background: 'var(--color-bg-base)', minHeight: '100vh', color: '#fff', fontFamily: 'var(--font-sans)', display: 'flex', flexDirection: 'column', gap: '32px' }}>
             
             {/* Header Section */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px' }}>
@@ -471,7 +471,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                     Loading channels list...
                 </div>
             ) : !teamId ? (
-                <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '18px', background: '#111827' }}>
+                <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '18px', background: 'var(--color-surface)' }}>
                     💬 No team selected. Choose a team in the workspace switcher sidebar.
                 </div>
             ) : (
@@ -659,7 +659,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
 
                                 {/* TAB CONTENTS */}
                                 {activePanelTab === 'chat' && (
-                                    <div style={{ display: 'flex', gap: '24px', position: 'relative', width: '100%', height: '550px', background: '#0f0f13', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', overflow: 'hidden' }}>
+                                    <div style={{ display: 'flex', gap: '24px', position: 'relative', width: '100%', height: '550px', background: 'var(--color-surface)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', overflow: 'hidden' }}>
                                         {/* Main Chat Area */}
                                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
                                             {/* Messages Feed */}
@@ -712,7 +712,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                             </div>
 
                                             {/* Chat Composer */}
-                                            <form onSubmit={handleSendMessage} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '16px', display: 'flex', gap: '12px', background: '#0c0c0e' }}>
+                                            <form onSubmit={handleSendMessage} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '16px', display: 'flex', gap: '12px', background: 'var(--color-bg-base)' }}>
                                                 <input
                                                     value={chatInput}
                                                     onChange={(e) => setChatInput(e.target.value)}
@@ -729,7 +729,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
 
                                         {/* Sliding Thread Sidebar Panel */}
                                         {activeThreadParent && (
-                                            <div style={{ width: '360px', borderLeft: '1px solid rgba(255,255,255,0.05)', background: '#0b0b0d', display: 'flex', flexDirection: 'column', height: '100%', zIndex: 10 }}>
+                                            <div style={{ width: '360px', borderLeft: '1px solid rgba(255,255,255,0.05)', background: 'var(--color-bg-base)', display: 'flex', flexDirection: 'column', height: '100%', zIndex: 10 }}>
                                                 {/* Thread Header */}
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                                     <span style={{ fontWeight: 800, fontSize: '0.9375rem', color: '#fff' }}>Thread Panel</span>
@@ -775,7 +775,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                                 </div>
 
                                                 {/* Thread Reply Composer */}
-                                                <form onSubmit={handleSendThreadMessage} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '12px', display: 'flex', gap: '8px', background: '#070709' }}>
+                                                <form onSubmit={handleSendThreadMessage} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '12px', display: 'flex', gap: '8px', background: 'var(--color-bg-base)' }}>
                                                     <input
                                                         value={threadInput}
                                                         onChange={(e) => setThreadInput(e.target.value)}
@@ -841,7 +841,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', position: 'relative', paddingLeft: '12px', borderLeft: '2px solid rgba(255,255,255,0.06)' }}>
                                                 {dynamicRecentActivities.map((act, idx) => (
                                                     <div key={idx} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                        <span style={{ position: 'absolute', left: '-17px', top: '5px', width: '8px', height: '8px', borderRadius: '50%', background: '#6366F1', border: '2px solid #111827' }} />
+                                                        <span style={{ position: 'absolute', left: '-17px', top: '5px', width: '8px', height: '8px', borderRadius: '50%', background: '#6366F1', border: '2px solid var(--color-surface)' }} />
                                                         <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#E5E7EB' }}>{act.title}</span>
                                                         <span style={{ fontSize: '0.725rem', color: 'var(--color-text-muted)' }}>{act.time}</span>
                                                     </div>
@@ -940,7 +940,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
 
                             </div>
                         ) : (
-                            <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '18px', background: '#111827' }}>
+                            <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '18px', background: 'var(--color-surface)' }}>
                                 💬 Select a channel from the left sidebar to view config and manage members.
                             </div>
                         )}

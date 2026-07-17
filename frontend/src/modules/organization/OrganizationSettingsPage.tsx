@@ -103,7 +103,7 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
     };
 
     return (
-        <div className="px-4 py-6 md:p-10" style={{ background: '#09090B', minHeight: '100vh', color: '#fff', fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        <div className="px-4 py-6 md:p-10" style={{ background: 'var(--color-bg-base)', minHeight: '100vh', color: '#fff', fontFamily: 'var(--font-sans)', display: 'flex', flexDirection: 'column', gap: '32px' }}>
             
             {/* Header Section */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px' }}>
@@ -236,8 +236,8 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
                             <div
                                 key={idx}
                                 style={{
-                                    background: '#111827',
-                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    background: 'var(--color-surface)',
+                                    border: '1px solid var(--color-border)',
                                     borderRadius: '18px',
                                     padding: '20px 24px',
                                     display: 'flex',
@@ -566,7 +566,7 @@ export function OrganizationSettingsPage({ token, organizationId }: Organization
 
                 </div>
             ) : (
-                <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '18px', background: '#111827' }}>
+                <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)', borderRadius: '18px', background: 'var(--color-surface)' }}>
                     🏢 No organization selected. Choose an organization in the workspace switcher sidebar.
                 </div>
             )}

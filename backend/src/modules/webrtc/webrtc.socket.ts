@@ -9,7 +9,7 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
     const userId = authSocket.userId
 
-    socket.on(SocketEvents.WEBRTC_JOIN, async (payload: { meetingId: string; displayName?: string }) => {
+    socket.on(SocketEvents.WEBRTC_JOIN, async (payload: { meetingId: string; displayName?: string; isVideoOff?: boolean }) => {
         if (!userId || !payload?.meetingId) {
             socket.emit('error', { message: 'Unauthorized or invalid meetingId' })
             return
@@ -49,7 +49,8 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.WEBRTC_USER_JOINED, { 
             userId, 
             meetingId: payload.meetingId,
-            displayName: authSocket.guestName || payload.displayName
+            displayName: authSocket.guestName || payload.displayName,
+            isVideoOff: payload.isVideoOff
         })
 
         // Get total participants in the meeting room across the entire Redis cluster
@@ -57,7 +58,7 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         socket.emit(SocketEvents.WEBRTC_JOIN, { meetingId: payload.meetingId, participants: sockets.size })
     })
 
-    socket.on(SocketEvents.WEBRTC_OFFER, async (payload: { targetUserId: string; meetingId: string; offer: any; displayName?: string }) => {
+    socket.on(SocketEvents.WEBRTC_OFFER, async (payload: { targetUserId: string; meetingId: string; offer: any; displayName?: string; isVideoOff?: boolean }) => {
         if (!userId || !payload?.targetUserId || !payload?.meetingId || !payload?.offer) {
             socket.emit('error', { message: 'Invalid offer payload' })
             return
@@ -67,7 +68,8 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             fromUserId: userId,
             meetingId: payload.meetingId,
             offer: payload.offer,
-            displayName: payload.displayName || authSocket.guestName
+            displayName: payload.displayName || authSocket.guestName,
+            isVideoOff: payload.isVideoOff
         })
     })
 

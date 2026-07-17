@@ -1,4 +1,6 @@
 import { Server, Socket } from 'socket.io'
+import jwt from 'jsonwebtoken'
+import { JWT_SECRET } from '../config'
 import { AuthenticatedSocket } from './auth'
 import {
     createMeeting,
@@ -119,11 +121,52 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
     socket.on('guest:approve', (payload: { socketId: string }) => {
         if (!userId || !payload?.socketId) return
+        
+        // Handle locally first (supports single-node in-memory dev fallback)
+        const guestSocket = io.sockets.sockets.get(payload.socketId) as AuthenticatedSocket
+        if (guestSocket) {
+            guestSocket.isPending = false
+            guestSocket.leave(`lobby:${guestSocket.meetingId}`)
+            
+            // Generate updated token
+            const token = jwt.sign(
+                {
+                    userId: guestSocket.userId,
+                    isGuest: true,
+                    guestName: guestSocket.guestName,
+                    meetingId: guestSocket.meetingId,
+                    isPending: false
+                },
+                JWT_SECRET,
+                { expiresIn: '6h' }
+            )
+            guestSocket.emit('guest:approved', { token })
+            io.to(`meeting:${guestSocket.meetingId}`).emit('guest:status-changed', { socketId: payload.socketId, status: 'approved' })
+        }
+
+        // Also emit to cluster
         io.serverSideEmit("internal:guest:approve-cluster", payload.socketId)
     })
 
     socket.on('guest:deny', (payload: { socketId: string }) => {
         if (!userId || !payload?.socketId) return
+        
+        // Handle locally first
+        const guestSocket = io.sockets.sockets.get(payload.socketId) as AuthenticatedSocket
+        if (guestSocket) {
+            guestSocket.emit('guest:denied')
+            guestSocket.disconnect(true)
+        }
+
+        // Also emit to cluster
         io.serverSideEmit("internal:guest:deny-cluster", payload.socketId)
+    })
+
+    socket.on('meeting:camera-toggle', (payload: { meetingId: string; isVideoOff: boolean }) => {
+        if (!userId || !payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:camera-toggle', {
+            userId,
+            isVideoOff: payload.isVideoOff
+        })
     })
 }

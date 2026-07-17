@@ -20,7 +20,10 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({ meetingId, guestToken,
             transports: ['websocket']
         })
 
-        socket.on('guest:approved', () => {
+        socket.on('guest:approved', (data?: { token?: string }) => {
+            if (data?.token) {
+                localStorage.setItem('jts_token', data.token)
+            }
             socket.disconnect()
             onApproved()
         })

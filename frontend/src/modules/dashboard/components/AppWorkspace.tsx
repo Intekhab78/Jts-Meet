@@ -445,7 +445,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                         height: '64px',
                         minHeight: '64px',
                         borderBottom: '1px solid var(--color-border)',
-                        background: '#09090B',
+                        background: 'var(--color-bg-base)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
@@ -711,7 +711,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                             </div>
 
                             {/* Log Table */}
-                            <div className="glass-card" style={{ overflow: 'hidden', padding: 0 }}>
+                            <div className="responsive-table-container" style={{ margin: 0 }}>
                                 <table className="premium-table">
                                     <thead>
                                         <tr>

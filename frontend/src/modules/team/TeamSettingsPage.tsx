@@ -214,7 +214,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
     }, [teams, searchQuery, visibilityFilter, statusFilter])
 
     return (
-        <div className="px-4 py-6 md:p-8" style={{ background: '#09090B', minHeight: '100vh', color: '#fff', fontFamily: 'var(--font-sans)', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div className="px-4 py-6 md:p-8" style={{ background: 'var(--color-bg-base)', minHeight: '100vh', color: '#fff', fontFamily: 'var(--font-sans)', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
             {/* Header section */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px' }}>
@@ -297,8 +297,8 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                         style={{
                             padding: '16px 20px',
                             borderRadius: '14px',
-                            background: '#111827',
-                            border: '1px solid rgba(255,255,255,0.08)',
+                            background: 'var(--color-surface)',
+                            border: '1px solid var(--color-border)',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '14px',
@@ -410,7 +410,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                     No active organization selected. Please select one in the sidebar switch.
                 </div>
             ) : filteredTeams.length === 0 ? (
-                <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '18px', background: '#111827' }}>
+                <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '18px', background: 'var(--color-surface)' }}>
                     <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '12px' }}>👥</span>
                     <h3 style={{ fontSize: '1rem', color: '#fff', margin: '0 0 4px', fontWeight: 700 }}>No Teams Found</h3>
                     <p style={{ fontSize: '0.8125rem', margin: 0 }}>Try clearing filters or search queries to locate your organization teams.</p>
@@ -475,7 +475,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                 </div>
             ) : (
                 /* List view (Professional SaaS Table) */
-                <div className="responsive-table-container" style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', overflow: 'hidden' }}>
+                <div className="responsive-table-container" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '18px', overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem', minWidth: '800px' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.01)' }}>
@@ -574,8 +574,8 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                             right: 0,
                             bottom: 0,
                             width: 'min(520px, 95vw)',
-                            background: '#111827',
-                            borderLeft: '1px solid rgba(255,255,255,0.08)',
+                            background: 'var(--color-surface)',
+                            borderLeft: '1px solid var(--color-border)',
                             boxShadow: 'var(--shadow-xl)',
                             transform: isDrawerOpen ? 'translateX(0)' : 'translateX(100%)',
                             transition: 'transform 280ms cubic-bezier(0.16, 1, 0.3, 1)',
@@ -768,9 +768,9 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                                         cursor: 'pointer'
                                                                     }}
                                                                 >
-                                                                    <option value="admin" style={{ background: '#111827' }}>Admin</option>
-                                                                    <option value="member" style={{ background: '#111827' }}>Member</option>
-                                                                    <option value="guest" style={{ background: '#111827' }}>Guest</option>
+                                                                    <option value="admin" style={{ background: 'var(--color-surface-2)' }}>Admin</option>
+                                                                    <option value="member" style={{ background: 'var(--color-surface-2)' }}>Member</option>
+                                                                    <option value="guest" style={{ background: 'var(--color-surface-2)' }}>Guest</option>
                                                                 </select>
                                                             )}
                                                             {userIdStr !== currentUserId && member.role !== 'owner' && (
@@ -851,8 +851,8 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                     cursor: 'pointer'
                                                 }}
                                             >
-                                                <option value="private" style={{ background: '#111827' }}>🔒 Private</option>
-                                                <option value="public" style={{ background: '#111827' }}>🌍 Public</option>
+                                                <option value="private" style={{ background: 'var(--color-surface-2)' }}>🔒 Private</option>
+                                                <option value="public" style={{ background: 'var(--color-surface-2)' }}>🌍 Public</option>
                                             </select>
                                         </div>
 

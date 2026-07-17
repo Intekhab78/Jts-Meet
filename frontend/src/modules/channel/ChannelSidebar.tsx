@@ -11,8 +11,8 @@ interface ChannelSidebarProps {
 export function ChannelSidebar({ channels, selectedChannelId, onSelectChannel }: ChannelSidebarProps) {
     return (
         <div style={{
-            background: '#111827',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
             borderRadius: '18px',
             padding: '20px',
             color: '#fff',

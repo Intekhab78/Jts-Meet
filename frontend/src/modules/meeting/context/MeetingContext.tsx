@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext } from 'react'
+import React, { createContext, useState, useContext, useCallback } from 'react'
 
 interface MeetingContextValue {
     meetingId: string
@@ -17,13 +17,13 @@ export const MeetingProvider: React.FC<React.PropsWithChildren> = ({ children })
     const [joined, setJoined] = useState(false)
     const [participants, setParticipants] = useState<string[]>([])
 
-    const addParticipant = (userId: string) => {
+    const addParticipant = useCallback((userId: string) => {
         setParticipants((prev) => (prev.includes(userId) ? prev : [...prev, userId]))
-    }
+    }, [])
 
-    const removeParticipant = (userId: string) => {
+    const removeParticipant = useCallback((userId: string) => {
         setParticipants((prev) => prev.filter((id) => id !== userId))
-    }
+    }, [])
 
     return (
         <MeetingContext.Provider

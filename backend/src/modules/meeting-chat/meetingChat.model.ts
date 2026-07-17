@@ -2,10 +2,11 @@ import { Schema, model, Document, Types } from 'mongoose'
 
 export interface IMeetingChat extends Document {
     meetingId: string
-    senderId: Types.ObjectId
+    senderId: any
+    senderName?: string
     message: string
     messageType: 'text'
-    reactions: { userId: Types.ObjectId; emoji: string; createdAt: Date }[]
+    reactions: { userId: any; emoji: string; createdAt: Date }[]
     createdAt: Date
     updatedAt: Date
     deletedAt?: Date | null
@@ -14,13 +15,14 @@ export interface IMeetingChat extends Document {
 const MeetingChatSchema = new Schema<IMeetingChat>(
     {
         meetingId: { type: String, required: true, index: true },
-        senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        senderId: { type: Schema.Types.Mixed, ref: 'User', required: true },
+        senderName: { type: String, default: '' },
         message: { type: String, required: true, trim: true },
         messageType: { type: String, enum: ['text'], default: 'text' },
         deletedAt: { type: Date, default: null },
         reactions: [
             {
-                userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+                userId: { type: Schema.Types.Mixed, ref: 'User', required: true },
                 emoji: { type: String, required: true },
                 createdAt: { type: Date, default: Date.now }
             }

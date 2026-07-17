@@ -14,7 +14,7 @@ interface UseMediaDevicesResult {
 export function useMediaDevices(): UseMediaDevicesResult {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null)
     const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
-    const [mediaLoading, setMediaLoading] = useState(false)
+    const [mediaLoading, setMediaLoading] = useState(true)
     const [mediaError, setMediaError] = useState<string | null>(null)
 
     const requestMedia = useCallback(async () => {

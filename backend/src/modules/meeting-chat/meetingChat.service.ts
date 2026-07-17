@@ -5,23 +5,40 @@ import { getMeetingByMeetingId } from '../meeting/meeting.service'
 export async function createMeetingChat(
     meetingId: string,
     senderId: string,
-    message: string
+    message: string,
+    senderNameParam?: string
 ): Promise<IMeetingChat> {
     const meeting = await getMeetingByMeetingId(meetingId)
     if (!meeting || meeting.status !== 'active') {
         throw new Error('Meeting not active')
     }
 
-    const isParticipant = meeting.participants.some((participant) => participant.equals(new Types.ObjectId(senderId)))
+    const isGuest = senderId.startsWith('guest_')
+    const isHostObj = meeting.host._id.toString() === senderId || meeting.host.toString() === senderId
+    const isParticipant = isGuest || isHostObj || meeting.participants.some((p) => p._id.toString() === senderId)
+
     if (!isParticipant) {
         throw new Error('User not a participant of this meeting')
     }
 
+    let senderName = 'Participant'
+    if (isGuest) {
+        senderName = senderNameParam || 'Guest'
+    } else if (isHostObj) {
+        senderName = (meeting.host as any).fullName || 'Host'
+    } else {
+        const found = meeting.participants.find(p => p._id.toString() === senderId)
+        if (found) {
+            senderName = (found as any).fullName || 'Participant'
+        }
+    }
+
     const chat = new MeetingChat({
         meetingId,
-        senderId: new Types.ObjectId(senderId),
+        senderId,
         message: message.trim(),
-        messageType: 'text'
+        messageType: 'text',
+        senderName
     })
     await chat.save()
     return chat
@@ -47,7 +64,8 @@ export async function softDeleteMeetingChat(messageId: string, userId: string): 
         return null
     }
 
-    if (!chat.senderId.equals(new Types.ObjectId(userId))) {
+    const isOwner = chat.senderId.equals ? chat.senderId.equals(new Types.ObjectId(userId)) : chat.senderId.toString() === userId;
+    if (!isOwner) {
         throw new Error('Cannot delete message you do not own')
     }
 
@@ -60,17 +78,20 @@ export async function addMeetingChatReaction(
     userId: string,
     emoji: string
 ): Promise<IMeetingChat | null> {
-    const userObjectId = new Types.ObjectId(userId)
+
     const chat = await MeetingChat.findById(messageId).exec()
     if (!chat) return null
 
     // Prevent duplicate reaction of same emoji from same user
-    const exists = chat.reactions.some(r => r.userId.equals(userObjectId) && r.emoji === emoji)
+    const exists = chat.reactions.some(r => {
+        const match = r.userId.equals ? r.userId.equals(new Types.ObjectId(userId)) : r.userId.toString() === userId
+        return match && r.emoji === emoji
+    })
     if (exists) {
         return chat
     }
 
-    chat.reactions.push({ userId: userObjectId, emoji, createdAt: new Date() })
+    chat.reactions.push({ userId: userId as any, emoji, createdAt: new Date() })
     return chat.save()
 }
 
@@ -79,10 +100,13 @@ export async function removeMeetingChatReaction(
     userId: string,
     emoji: string
 ): Promise<IMeetingChat | null> {
-    const userObjectId = new Types.ObjectId(userId)
+
     const chat = await MeetingChat.findById(messageId).exec()
     if (!chat) return null
 
-    chat.reactions = chat.reactions.filter(r => !(r.userId.equals(userObjectId) && r.emoji === emoji))
+    chat.reactions = chat.reactions.filter(r => {
+        const match = r.userId.equals ? r.userId.equals(new Types.ObjectId(userId)) : r.userId.toString() === userId
+        return !(match && r.emoji === emoji)
+    })
     return chat.save()
 }

@@ -129,8 +129,8 @@ export function MemberList({ organizationId, token, onRemove }: MemberListProps)
                         value={roleFilter}
                         onChange={(e) => setRoleFilter(e.target.value)}
                         style={{
-                            background: '#1F2937',
-                            border: '1px solid rgba(255,255,255,0.08)',
+                            background: 'var(--color-surface-2)',
+                            border: '1px solid var(--color-border)',
                             borderRadius: '10px',
                             padding: '8px 12px',
                             fontSize: '0.8125rem',
@@ -150,8 +150,8 @@ export function MemberList({ organizationId, token, onRemove }: MemberListProps)
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value)}
                         style={{
-                            background: '#1F2937',
-                            border: '1px solid rgba(255,255,255,0.08)',
+                            background: 'var(--color-surface-2)',
+                            border: '1px solid var(--color-border)',
                             borderRadius: '10px',
                             padding: '8px 12px',
                             fontSize: '0.8125rem',

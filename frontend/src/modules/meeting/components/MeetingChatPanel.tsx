@@ -10,6 +10,7 @@ interface MeetingChatPanelProps {
     disabled?: boolean
     onToggleChatReaction?: (messageId: string, emoji: string, userId: string) => void
     currentUserId?: string
+    renamedUsers?: { [key: string]: string }
 }
 
 const IconSend = () => (
@@ -68,7 +69,7 @@ function formatTime(dateStr: string): string {
 }
 
 export function MeetingChatPanel({
-    messages, typingUsers, onSendMessage, onTyping, onStopTyping, disabled, onToggleChatReaction, currentUserId,
+    messages, typingUsers, onSendMessage, onTyping, onStopTyping, disabled, onToggleChatReaction, currentUserId, renamedUsers,
 }: MeetingChatPanelProps) {
     const [message, setMessage] = useState('')
     const [searchQuery, setSearchQuery] = useState('')
@@ -194,10 +195,11 @@ export function MeetingChatPanel({
         setShowEmojis(false)
     }
 
-    const filteredParentMessages = parentMessages.filter(msg => 
-        msg.displayMessage.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        msg.senderId.toLowerCase().includes(searchQuery.toLowerCase())
-    )
+    const filteredParentMessages = parentMessages.filter(msg => {
+        const name = msg.senderId === 'me' ? 'You' : (renamedUsers?.[msg.senderId] || msg.senderId)
+        return msg.displayMessage.toLowerCase().includes(searchQuery.toLowerCase()) ||
+               name.toLowerCase().includes(searchQuery.toLowerCase())
+    })
 
     const renderMessageItem = (msg: any, isParentInThreadView = false) => {
         const isMe = msg.senderId === 'me'
@@ -284,7 +286,7 @@ export function MeetingChatPanel({
                         boxShadow: 'var(--shadow-sm)'
                     }}
                 >
-                    {getInitials(msg.senderId)}
+                    {getInitials(isMe ? 'You' : (renamedUsers?.[msg.senderId] || msg.senderId))}
                 </div>
 
                 {/* Right Content */}
@@ -295,7 +297,7 @@ export function MeetingChatPanel({
                             fontWeight: 600,
                             color: 'var(--color-text-primary)'
                         }}>
-                            {isMe ? 'You' : msg.senderId}
+                            {isMe ? 'You' : (renamedUsers?.[msg.senderId] || msg.senderId)}
                         </span>
                         {msg.createdAt && (
                             <span style={{
@@ -393,7 +395,7 @@ export function MeetingChatPanel({
                                                 border: '1px solid var(--color-border-strong)'
                                             }}
                                         >
-                                            {userIds.map((uid: string) => uid === (currentUserId || 'me') ? 'You' : (uid === msg.senderId ? (msg.senderId === 'me' ? 'You' : msg.senderId) : uid)).join(', ')}
+                                            {userIds.map((uid: string) => uid === (currentUserId || 'me') ? 'You' : (renamedUsers?.[uid] || uid)).join(', ')}
                                         </div>
                                     </div>
                                 )

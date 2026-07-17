@@ -33,30 +33,28 @@ export function useWebRTC(
     const [meetingId, setMeetingId] = useState<string>('')
     const [screenSharingUserId, setScreenSharingUserId] = useState<string | null>(null)
     const [screenError, setScreenError] = useState<string | null>(null)
-    const [peerConnections, setPeerConnections] = useState<InternalPeerConnections>({})
+    const peerConnectionsRef = useRef<InternalPeerConnections>({})
     const localStreamRef = useRef<MediaStream | null>(null)
 
     const cleanupPeer = useCallback((userId: string) => {
-        const pc = peerConnections[userId]
+        const pc = peerConnectionsRef.current[userId]
         if (pc) {
             pc.close()
-            const next = { ...peerConnections }
-            delete next[userId]
-            setPeerConnections(next)
+            delete peerConnectionsRef.current[userId]
             setRemoteStreams((prev) => {
                 const nextStreams = { ...prev }
                 delete nextStreams[userId]
                 return nextStreams
             })
         }
-    }, [peerConnections])
+    }, [])
 
     const leaveMeeting = useCallback(() => {
         setMeetingId('')
         setJoined(false)
-        Object.keys(peerConnections).forEach((userId) => cleanupPeer(userId))
+        Object.keys(peerConnectionsRef.current).forEach((userId) => cleanupPeer(userId))
         socket?.emit(SocketEvents.MEETING_LEAVE, { meetingId })
-    }, [cleanupPeer, meetingId, peerConnections, setJoined, socket])
+    }, [cleanupPeer, meetingId, setJoined, socket])
 
     const connectToMeeting = useCallback(
         (targetMeetingId: string, displayName?: string) => {
@@ -65,9 +63,20 @@ export function useWebRTC(
             }
 
             setMeetingId(targetMeetingId)
+            const isLocalVideoOff = !localStreamRef.current || 
+                localStreamRef.current.getVideoTracks().length === 0 || 
+                !!(localStreamRef.current.getVideoTracks()[0] as any).isDummy;
+
+            console.log('useWebRTC connectToMeeting isLocalVideoOff check:', {
+                localStreamExists: !!localStreamRef.current,
+                tracksCount: localStreamRef.current ? localStreamRef.current.getVideoTracks().length : 0,
+                isDummyTrack: localStreamRef.current && localStreamRef.current.getVideoTracks()[0] ? !!(localStreamRef.current.getVideoTracks()[0] as any).isDummy : false,
+                isLocalVideoOff
+            });
             socket.emit(SocketEvents.WEBRTC_JOIN, { 
                 meetingId: targetMeetingId,
-                displayName
+                displayName,
+                isVideoOff: isLocalVideoOff
             })
         },
         [socket]
@@ -75,7 +84,7 @@ export function useWebRTC(
 
     const replaceTrackOnPeers = useCallback(
         (newTrack: MediaStreamTrack | null) => {
-            Object.values(peerConnections).forEach((pc) => {
+            Object.values(peerConnectionsRef.current).forEach((pc) => {
                 const sender = pc.getSenders().find((s) => {
                     if (s.track) return s.track.kind === 'video'
                     const tc = pc.getTransceivers().find(t => t.sender === s)
@@ -86,7 +95,7 @@ export function useWebRTC(
                 }
             })
         },
-        [peerConnections]
+        []
     )
 
     const stopScreenShare = useCallback(() => {
@@ -141,7 +150,7 @@ export function useWebRTC(
             addParticipant(payload.userId)
             const pc = createPeerConnection(
                 payload.userId,
-                localStream,
+                localStreamRef.current,
                 {
                     onTrack: (stream) => {
                         setRemoteStreams((prev) => ({ ...prev, [payload.userId]: stream }))
@@ -156,8 +165,7 @@ export function useWebRTC(
                 }
             )
 
-            const nextPeers = { ...peerConnections, [payload.userId]: pc }
-            setPeerConnections(nextPeers)
+            peerConnectionsRef.current[payload.userId] = pc
 
             pc.createOffer().then((offer) => {
                 return pc.setLocalDescription(offer).then(() => {
@@ -175,11 +183,23 @@ export function useWebRTC(
                         }
                     } catch (e) {}
 
+                    const isLocalVideoOff = !localStreamRef.current || 
+                        localStreamRef.current.getVideoTracks().length === 0 || 
+                        !!(localStreamRef.current.getVideoTracks()[0] as any).isDummy;
+
+                    console.log('useWebRTC WEBRTC_OFFER isLocalVideoOff check:', {
+                        targetUserId: payload.userId,
+                        localStreamExists: !!localStreamRef.current,
+                        tracksCount: localStreamRef.current ? localStreamRef.current.getVideoTracks().length : 0,
+                        isDummyTrack: localStreamRef.current && localStreamRef.current.getVideoTracks()[0] ? !!(localStreamRef.current.getVideoTracks()[0] as any).isDummy : false,
+                        isLocalVideoOff
+                    });
                     socket.emit(SocketEvents.WEBRTC_OFFER, {
                         targetUserId: payload.userId,
                         meetingId: payload.meetingId,
                         offer,
-                        displayName: myName
+                        displayName: myName,
+                        isVideoOff: isLocalVideoOff
                     })
                 })
             })
@@ -189,7 +209,7 @@ export function useWebRTC(
             addParticipant(payload.fromUserId)
             const pc = createPeerConnection(
                 payload.fromUserId,
-                localStream,
+                localStreamRef.current,
                 {
                     onTrack: (stream) => {
                         setRemoteStreams((prev) => ({ ...prev, [payload.fromUserId]: stream }))
@@ -204,6 +224,8 @@ export function useWebRTC(
                 }
             )
 
+            peerConnectionsRef.current[payload.fromUserId] = pc
+
             await pc.setRemoteDescription(new RTCSessionDescription(payload.offer))
             const answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
@@ -213,21 +235,21 @@ export function useWebRTC(
                 meetingId: payload.meetingId,
                 answer
             })
-
-            setPeerConnections((prev) => ({ ...prev, [payload.fromUserId]: pc }))
         }
 
         const handleAnswer = async (payload: { fromUserId: string; meetingId: string; answer: RTCSessionDescriptionInit }) => {
-            const pc = peerConnections[payload.fromUserId]
+            const pc = peerConnectionsRef.current[payload.fromUserId]
             if (!pc) {
+                console.warn('handleAnswer: PeerConnection not found for user', payload.fromUserId)
                 return
             }
             await pc.setRemoteDescription(new RTCSessionDescription(payload.answer))
         }
 
         const handleIceCandidate = async (payload: { fromUserId: string; meetingId: string; candidate: RTCIceCandidateInit }) => {
-            const pc = peerConnections[payload.fromUserId]
+            const pc = peerConnectionsRef.current[payload.fromUserId]
             if (!pc) {
+                console.warn('handleIceCandidate: PeerConnection not found for user', payload.fromUserId)
                 return
             }
             await pc.addIceCandidate(new RTCIceCandidate(payload.candidate))
@@ -243,9 +265,7 @@ export function useWebRTC(
         }
 
         const handleScreenStop = (payload: { userId: string; meetingId: string; }) => {
-            if (screenSharingUserId === payload.userId) {
-                setScreenSharingUserId(null)
-            }
+            setScreenSharingUserId((prev) => (prev === payload.userId ? null : prev))
         }
 
         const handleScreenChanged = (payload: { userId: string; meetingId: string; active: boolean }) => {
@@ -271,7 +291,7 @@ export function useWebRTC(
             socket.off(SocketEvents.SCREEN_STOP, handleScreenStop)
             socket.off(SocketEvents.SCREEN_CHANGED, handleScreenChanged)
         }
-    }, [socket, localStream, addParticipant, removeParticipant, peerConnections, cleanupPeer, screenSharingUserId])
+    }, [socket, addParticipant, removeParticipant, cleanupPeer])
 
     return useMemo(
         () => ({ remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, replaceTrackOnPeers }),
