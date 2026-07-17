@@ -363,7 +363,10 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                             ].filter(item => !item.adminOnly || isOrgAdminOrOwner).map(item => (
                                 <button
                                     key={item.id}
-                                    onClick={() => setActiveTab(item.id as any)}
+                                    onClick={() => {
+                                        setActiveTab(item.id as any)
+                                        setMobileMenuOpen(false)
+                                    }}
                                     title={!(mobileMenuOpen || showFullSidebar) ? item.label : undefined}
                                     style={{
                                         display: 'flex', alignItems: 'center', gap: 12, padding: (mobileMenuOpen || showFullSidebar) ? '10px 14px' : '10px 0',
@@ -449,19 +452,19 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '0 24px',
+                        padding: windowWidth < 480 ? '0 12px' : '0 24px',
                         boxSizing: 'border-box',
                         zIndex: 50
                     }}>
                         {/* Left Side: Active Tab Title */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <button
                                 onClick={() => setMobileMenuOpen(true)}
                                 className="btn-ghost"
                                 style={{
                                     border: 'none', background: 'transparent', color: '#fff', fontSize: '1.25rem',
                                     cursor: 'pointer', padding: '4px 8px', display: windowWidth < 768 ? 'flex' : 'none', 
-                                    alignItems: 'center', marginRight: 4
+                                    alignItems: 'center', marginRight: 2
                                 }}
                                 aria-label="Open navigation menu"
                             >
@@ -480,7 +483,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                         {/* Right Side: Organization Switcher */}
                         {organizations.length > 0 && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <span className="hidden sm:inline" style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
                                     Workspace:
                                 </span>
@@ -496,7 +499,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                         outline: 'none',
                                         fontSize: '0.75rem',
                                         cursor: 'pointer',
-                                        maxWidth: '120px',
+                                        maxWidth: windowWidth < 360 ? '85px' : '120px',
                                         textOverflow: 'ellipsis'
                                     }}
                                 >

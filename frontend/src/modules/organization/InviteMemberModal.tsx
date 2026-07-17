@@ -37,33 +37,8 @@ export function InviteMemberModal({ open, onClose, onInvite }: InviteMemberModal
     }
 
     return (
-        <div className="anim-fade-in" style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 1000,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '24px'
-        }}>
-            <div className="anim-scale-in" style={{
-                width: '100%',
-                maxWidth: '440px',
-                background: 'rgba(15, 17, 24, 0.98)',
-                border: '1px solid var(--color-border-strong)',
-                borderRadius: 'var(--radius-lg)',
-                padding: '28px',
-                boxShadow: 'var(--shadow-xl)',
-                color: '#fff',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '20px'
-            }}>
+        <div className="anim-fade-in modal-overlay">
+            <div className="anim-scale-in modal-container">
                 {/* Modal Header */}
                 <div style={{
                     display: 'flex',
