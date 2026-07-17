@@ -4,6 +4,7 @@ import { useMeetingContext } from '../context/MeetingContext'
 import { useWebRTCContext } from '../context/WebRTCContext'
 import { MeetingChatPanel } from './MeetingChatPanel'
 import { useMeetingChat } from '../hooks/useMeetingChat'
+import { isScreenShareSupported } from '../services/screen.service'
 import { FileUploader } from '../../file/components/FileUploader'
 import { API_BASE } from '../../../config'
 
@@ -3169,14 +3170,16 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                 </button>
 
                 {/* Screen Share Trigger */}
-                <button
-                    onClick={screenSharingUserId === 'me' ? stopScreenShare : startScreenShare}
-                    disabled={!connected || !joined}
-                    style={{ width: 44, height: 44, borderRadius: '50%', border: 'none', background: screenSharingUserId === 'me' ? 'var(--color-accent)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    title={screenSharingUserId === 'me' ? "Stop sharing screen" : "Share screen"}
-                >
-                    <IconMonitor />
-                </button>
+                {isScreenShareSupported() && (
+                    <button
+                        onClick={screenSharingUserId === 'me' ? stopScreenShare : startScreenShare}
+                        disabled={!connected || !joined}
+                        style={{ width: 44, height: 44, borderRadius: '50%', border: 'none', background: screenSharingUserId === 'me' ? 'var(--color-accent)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        title={screenSharingUserId === 'me' ? "Stop sharing screen" : "Share screen"}
+                    >
+                        <IconMonitor />
+                    </button>
+                )}
 
                 {/* Hand Raise Trigger */}
                 <button
@@ -3191,27 +3194,29 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                 </button>
 
                 {/* Recording Trigger */}
-                <button
-                    onClick={isRecording ? stopRecording : startRecording}
-                    disabled={!connected || !joined}
-                    style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: '50%',
-                        border: 'none',
-                        background: isRecording ? 'var(--color-danger)' : 'rgba(255,255,255,0.08)',
-                        color: isRecording ? '#fff' : '#ef4444',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 0.2s ease'
-                    }}
-                    className={isRecording ? 'pulse' : ''}
-                    title={isRecording ? "Stop Recording Meeting" : "Record Meeting"}
-                >
-                    {isRecording ? <IconStopRecord /> : <IconRecord />}
-                </button>
+                {isScreenShareSupported() && (
+                    <button
+                        onClick={isRecording ? stopRecording : startRecording}
+                        disabled={!connected || !joined}
+                        style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: '50%',
+                            border: 'none',
+                            background: isRecording ? 'var(--color-danger)' : 'rgba(255,255,255,0.08)',
+                            color: isRecording ? '#fff' : '#ef4444',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.2s ease'
+                        }}
+                        className={isRecording ? 'pulse' : ''}
+                        title={isRecording ? "Stop Recording Meeting" : "Record Meeting"}
+                    >
+                        {isRecording ? <IconStopRecord /> : <IconRecord />}
+                    </button>
+                )}
 
                 <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)' }} />
 
