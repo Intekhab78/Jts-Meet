@@ -7,6 +7,13 @@ import { useMeetingChat } from '../hooks/useMeetingChat'
 import { isScreenShareSupported } from '../services/screen.service'
 import { FileUploader } from '../../file/components/FileUploader'
 import { API_BASE } from '../../../config'
+import { DeviceSettingsModal } from './DeviceSettingsModal'
+import { KeyboardShortcutsModal } from './KeyboardShortcutsModal'
+import { MeetingWhiteboard } from './MeetingWhiteboard'
+import { MeetingPollsModal } from './MeetingPollsModal'
+import { MeetingCaptionsBanner } from './MeetingCaptionsBanner'
+import { MeetingSummaryModal } from './MeetingSummaryModal'
+import { playJoinChime, playLeaveChime } from '../services/chime.service'
 
 const parseJwt = (token: string) => {
     try {
@@ -164,6 +171,15 @@ function getAvatarGradient(name: string): string {
     return gradients[index]
 }
 
+function getFirstName(label: string): string {
+    if (!label) return 'User'
+    const clean = label.replace(/\s*\((Host|Guest|You)\)\s*/gi, '').trim()
+    if (!clean || clean.toLowerCase() === 'me' || clean.toLowerCase() === 'you') return 'You'
+    if (clean.toLowerCase().startsWith('guest_')) return 'Guest'
+    const parts = clean.split(/\s+/)
+    return parts[0] || clean
+}
+
 /* ──────────────────────────────────────────────────────────
    VideoTile component
 ────────────────────────────────────────────────────────── */
@@ -177,13 +193,17 @@ interface VideoTileProps {
     isHost?: boolean
     isGuest?: boolean
     isVideoOffProp?: boolean
+    isBlurred?: boolean
 }
 
-function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrimary = false, isHandRaised = false, isHost = false, isGuest = false, isVideoOffProp }: VideoTileProps) {
+function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrimary = false, isHandRaised = false, isHost = false, isGuest = false, isVideoOffProp, isBlurred = false }: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
+    const isLocalUser = label.toLowerCase().includes('you') || label === 'me'
     const [isMuted, setIsMuted] = useState(false)
     const [isVideoOffInternal, setIsVideoOffInternal] = useState(false)
-    const isVideoOff = isVideoOffProp !== undefined ? isVideoOffProp : isVideoOffInternal
+    const isVideoOff = isVideoOffProp !== undefined 
+        ? isVideoOffProp 
+        : (!stream || stream.getVideoTracks().length === 0 || isVideoOffInternal)
     const [isSpeaking, setIsSpeaking] = useState(false)
 
     useEffect(() => {
@@ -226,62 +246,86 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
             const videoTracks = stream.getVideoTracks()
             const audioTracks = stream.getAudioTracks()
 
-            const videoActive = videoTracks.length > 0 && 
-                                videoTracks[0].enabled && 
-                                videoTracks[0].readyState === 'live'
+            const vTrack = videoTracks[0]
+            const isDummy = vTrack ? !!(vTrack as any).isDummy : false
+            const isTrackMuted = vTrack ? vTrack.muted : false
+
+            // Video is considered actively rendering if track is present, enabled, live, not muted, and not dummy
+            const videoActive = !!vTrack && 
+                                vTrack.enabled && 
+                                vTrack.readyState === 'live' && 
+                                !isTrackMuted && 
+                                !isDummy
 
             const audioActive = audioTracks.length > 0 && 
-                                audioTracks[0].enabled
+                                audioTracks[0].enabled &&
+                                !audioTracks[0].muted
 
             setIsVideoOffInternal(!videoActive)
             setIsMuted(!audioActive)
-
-            console.log('VideoTile Diagnostic:', {
-                label,
-                streamId: stream ? stream.id : 'null',
-                hasStream: !!stream,
-                videoTracksCount: videoTracks.length,
-                videoTrackDetails: videoTracks.map(t => ({
-                    id: t.id,
-                    enabled: t.enabled,
-                    readyState: t.readyState,
-                    muted: t.muted,
-                    label: t.label
-                })),
-                isVideoOffProp,
-                finalIsVideoOff: isVideoOffProp !== undefined ? isVideoOffProp : !videoActive
-            });
         }
 
         checkTracks()
+
+        const handleUnmute = () => {
+            const el = videoRef.current
+            if (el && el.paused) {
+                el.play().catch(() => {})
+            }
+            checkTracks()
+        }
+
+        const handleWindowActive = () => {
+            const el = videoRef.current
+            if (el && el.paused) {
+                el.play().catch(() => {})
+            }
+            checkTracks()
+        }
+
+        window.addEventListener('focus', handleWindowActive)
+        document.addEventListener('visibilitychange', handleWindowActive)
         
-        // Listen to WebRTC track level mute events to react immediately when peer starts/stops camera
+        // Listen to WebRTC track level mute/unmute/ended events
         const vTracks = stream.getVideoTracks()
         vTracks.forEach(t => {
             t.addEventListener('mute', checkTracks)
-            t.addEventListener('unmute', checkTracks)
+            t.addEventListener('unmute', handleUnmute)
+            t.addEventListener('ended', checkTracks)
         })
 
         const aTracks = stream.getAudioTracks()
         aTracks.forEach(t => {
             t.addEventListener('mute', checkTracks)
             t.addEventListener('unmute', checkTracks)
+            t.addEventListener('ended', checkTracks)
         })
 
         // Also listen to video element events to handle chromium resolution change (when stream resumes/stops)
         const videoEl = videoRef.current
         if (videoEl) {
             videoEl.addEventListener('resize', checkTracks)
-            videoEl.addEventListener('loadedmetadata', checkTracks)
+            videoEl.addEventListener('loadedmetadata', () => {
+                videoEl.play().catch(() => {})
+                checkTracks()
+            })
             videoEl.addEventListener('play', checkTracks)
+            videoEl.addEventListener('pause', () => {
+                if (stream && document.visibilityState === 'visible') {
+                    videoEl.play().catch(() => {})
+                }
+                checkTracks()
+            })
+            videoEl.addEventListener('playing', checkTracks)
         }
 
         const timer = setInterval(checkTracks, 1000)
 
-        // Web Audio analyser for speaking detection
+        // Modern Web Audio AnalyserNode for high-performance speaking detection without deprecation
         let audioCtx: AudioContext | null = null
         let source: MediaStreamAudioSourceNode | null = null
-        let processor: ScriptProcessorNode | null = null
+        let analyser: AnalyserNode | null = null
+        let animId: number | null = null
 
         const startAnalyser = () => {
             const audioTracks = stream.getAudioTracks()
@@ -294,20 +338,24 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                 const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext
                 audioCtx = new AudioCtxClass()
                 source = audioCtx.createMediaStreamSource(stream)
-                processor = audioCtx.createScriptProcessor(1024, 1, 1)
+                analyser = audioCtx.createAnalyser()
+                analyser.fftSize = 256
+                analyser.smoothingTimeConstant = 0.5
+                source.connect(analyser)
 
-                source.connect(processor)
-                processor.connect(audioCtx.destination)
-
-                processor.onaudioprocess = (e) => {
-                    const input = e.inputBuffer.getChannelData(0)
+                const dataArray = new Uint8Array(analyser.frequencyBinCount)
+                const checkAudio = () => {
+                    if (!analyser) return
+                    analyser.getByteFrequencyData(dataArray)
                     let sum = 0
-                    for (let i = 0; i < input.length; i++) {
-                        sum += input[i] * input[i]
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i]
                     }
-                    const rms = Math.sqrt(sum / input.length)
-                    setIsSpeaking(rms > 0.04)
+                    const avg = sum / dataArray.length
+                    setIsSpeaking(avg > 12)
+                    animId = requestAnimationFrame(checkAudio)
                 }
+                checkAudio()
             } catch (err) {
                 // Ignore audio ctx issues
             }
@@ -317,26 +365,32 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
 
         return () => {
             clearInterval(timer)
+            window.removeEventListener('focus', handleWindowActive)
+            document.removeEventListener('visibilitychange', handleWindowActive)
             vTracks.forEach(t => {
                 t.removeEventListener('mute', checkTracks)
-                t.removeEventListener('unmute', checkTracks)
+                t.removeEventListener('unmute', handleUnmute)
+                t.removeEventListener('ended', checkTracks)
             })
             aTracks.forEach(t => {
                 t.removeEventListener('mute', checkTracks)
                 t.removeEventListener('unmute', checkTracks)
+                t.removeEventListener('ended', checkTracks)
             })
             if (videoEl) {
                 videoEl.removeEventListener('resize', checkTracks)
                 videoEl.removeEventListener('loadedmetadata', checkTracks)
                 videoEl.removeEventListener('play', checkTracks)
+                videoEl.removeEventListener('pause', checkTracks)
+                videoEl.removeEventListener('playing', checkTracks)
             }
-            if (processor) processor.disconnect()
+            if (animId) cancelAnimationFrame(animId)
+            if (analyser) analyser.disconnect()
             if (source) source.disconnect()
             if (audioCtx) audioCtx.close().catch(() => { })
         }
     }, [stream])
 
-    const isLocalUser = label.toLowerCase().includes('you') || label === 'me'
     const cleanLabel = isLocalUser ? 'You' : label
     const formattedLabel = cleanLabel + (isHost ? ' (Host)' : '') + (isGuest ? ' (Guest)' : '')
 
@@ -376,6 +430,20 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                 </div>
             )}
 
+            {/* Dedicated Remote Audio element to guarantee voice works even if video stalls */}
+            {!muted && stream && (
+                <audio
+                    ref={(el) => {
+                        if (el && el.srcObject !== stream) {
+                            el.srcObject = stream
+                            el.play().catch(() => {})
+                        }
+                    }}
+                    autoPlay
+                    playsInline
+                />
+            )}
+
             {/* Video Feed with Smooth Fade Transitions */}
             <video
                 ref={videoRef}
@@ -389,14 +457,15 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     display: 'block',
                     position: 'absolute',
                     inset: 0,
-                    opacity: stream && !isVideoOff ? 1 : 0,
-                    transition: 'opacity 0.4s ease-in-out',
-                    pointerEvents: stream && !isVideoOff ? 'auto' : 'none',
+                    opacity: isVideoOff ? 0 : 1,
+                    filter: isBlurred ? 'blur(12px) contrast(1.05)' : 'none',
+                    transition: 'opacity 0.3s ease-in-out, filter 0.3s ease',
+                    pointerEvents: isVideoOff ? 'none' : 'auto',
                     zIndex: 1
                 }}
             />
 
-            {/* Premium Avatar Placeholder with Smooth Fade Transitions */}
+            {/* Center Avatar & First Name Placeholder (Active when Camera is OFF) */}
             <div 
                 className="video-avatar-placeholder" 
                 style={{
@@ -409,17 +478,17 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     justifyContent: 'center',
                     position: 'absolute',
                     inset: 0,
-                    opacity: stream && !isVideoOff ? 0 : 1,
-                    transition: 'opacity 0.4s ease-in-out',
-                    pointerEvents: stream && !isVideoOff ? 'none' : 'auto',
-                    zIndex: 0
+                    opacity: isVideoOff ? 1 : 0,
+                    transition: 'opacity 0.3s ease-in-out',
+                    pointerEvents: isVideoOff ? 'auto' : 'none',
+                    zIndex: 2
                 }}
             >
                 <div
                     className="avatar avatar-xl"
                     style={{
-                        width: 110,
-                        height: 110,
+                        width: 100,
+                        height: 100,
                         borderRadius: '50%',
                         background: getAvatarGradient(label),
                         border: '2px solid rgba(255,255,255,0.15)',
@@ -428,16 +497,17 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                         alignItems: 'center',
                         justifyContent: 'center',
                         color: '#fff',
-                        fontSize: '44px',
+                        fontSize: '38px',
                         fontWeight: 700,
-                        marginBottom: 16,
+                        marginBottom: 14,
                         textTransform: 'uppercase'
                     }}
                 >
                     {getInitials(label)}
                 </div>
-                <span style={{ fontSize: '1.05rem', color: '#fff', fontWeight: 600, marginBottom: 6 }}>
-                    {cleanLabel}
+                {/* Center First Name display */}
+                <span style={{ fontSize: '1.25rem', color: '#fff', fontWeight: 700, marginBottom: 8, letterSpacing: '-0.01em' }}>
+                    {getFirstName(label)}
                 </span>
                 <div style={{
                     display: 'flex',
@@ -445,8 +515,8 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     gap: 8,
                     color: 'var(--color-text-muted)',
                     fontSize: '0.8125rem',
-                    background: 'rgba(255,255,255,0.03)',
-                    padding: '4px 10px',
+                    background: 'rgba(255,255,255,0.04)',
+                    padding: '4px 12px',
                     borderRadius: 'var(--radius-full)',
                     border: '1px solid var(--color-border)'
                 }}>
@@ -466,11 +536,50 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                 </div>
             </div>
 
-            {/* Top Right Status indicators */}
+            {/* Top Right: Status indicators & Name (Name shown in top right when camera is ON) */}
             <div style={{
                 position: 'absolute', top: 12, right: 12,
-                display: 'flex', gap: 6, zIndex: 10
+                display: 'flex', alignItems: 'center', gap: 6, zIndex: 10
             }}>
+                {/* Name Badge in Top Right Corner (Only shown when Camera is ON) */}
+                {!isVideoOff && (
+                    <div style={{
+                        background: 'rgba(10, 11, 15, 0.75)',
+                        backdropFilter: 'blur(10px)',
+                        WebkitBackdropFilter: 'blur(10px)',
+                        padding: '4px 10px',
+                        borderRadius: 'var(--radius-full)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        color: '#fff',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        boxShadow: 'var(--shadow-sm)'
+                    }}>
+                        {isScreenShare && (
+                            <span style={{
+                                background: 'rgba(99,102,241,0.85)',
+                                borderRadius: 'var(--radius-xs)',
+                                padding: '1px 5px',
+                                fontSize: '0.6rem',
+                                fontWeight: 700
+                            }}>
+                                SCREEN
+                            </span>
+                        )}
+                        {isSpeaking && (
+                            <span style={{ display: 'inline-flex', gap: 2, alignItems: 'center' }}>
+                                <span className="typing-dot" style={{ width: 4, height: 4, background: 'var(--color-accent)' }} />
+                                <span className="typing-dot" style={{ width: 4, height: 4, background: 'var(--color-accent)', animationDelay: '0.15s' }} />
+                                <span className="typing-dot" style={{ width: 4, height: 4, background: 'var(--color-accent)', animationDelay: '0.3s' }} />
+                            </span>
+                        )}
+                        <span>{getFirstName(label)}</span>
+                    </div>
+                )}
+
                 {isMuted && (
                     <div style={{
                         background: 'rgba(239, 68, 68, 0.9)', padding: 6, borderRadius: '50%',
@@ -497,32 +606,6 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     </svg>
                     <span>{connectionQuality}</span>
                 </div>
-            </div>
-
-            {/* Bottom Left participant name overlay */}
-            <div className="video-overlay" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%)', padding: '16px 12px 8px' }}>
-                <span className="video-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
-                    {isScreenShare && (
-                        <span style={{
-                            background: 'rgba(99,102,241,0.85)',
-                            borderRadius: 'var(--radius-xs)',
-                            padding: '2px 6px',
-                            fontSize: '0.625rem',
-                            letterSpacing: '0.02em',
-                            fontWeight: 700
-                        }}>
-                            SCREEN
-                        </span>
-                    )}
-                    {isSpeaking && (
-                        <span style={{ display: 'inline-flex', gap: 2, alignItems: 'center', marginRight: 4 }}>
-                            <span className="typing-dot" style={{ width: 4, height: 4, background: 'var(--color-accent)' }} />
-                            <span className="typing-dot" style={{ width: 4, height: 4, background: 'var(--color-accent)', animationDelay: '0.15s' }} />
-                            <span className="typing-dot" style={{ width: 4, height: 4, background: 'var(--color-accent)', animationDelay: '0.3s' }} />
-                        </span>
-                    )}
-                    {formattedLabel}
-                </span>
             </div>
         </div>
     )
@@ -2034,13 +2117,40 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
             })
         }
         
+        const handleWebrtcJoinAck = (data: { meetingId: string; participants: number; peers?: Array<{ userId: string; displayName?: string; isVideoOff?: boolean }> }) => {
+            if (data.peers && Array.isArray(data.peers)) {
+                setRenamedUsers(prev => {
+                    const next = { ...prev }
+                    data.peers!.forEach(p => {
+                        if (p.displayName) {
+                            next[p.userId] = p.displayName
+                        }
+                    })
+                    return next
+                })
+                setRemoteVideoStates(prev => {
+                    const next = { ...prev }
+                    data.peers!.forEach(p => {
+                        if (p.isVideoOff !== undefined) {
+                            next[p.userId] = p.isVideoOff
+                        }
+                    })
+                    return next
+                })
+            }
+        }
+
         socket.on('webrtc:user-joined', handleUserJoinedName)
         socket.on('webrtc:offer', handleOfferName)
+        socket.on('webrtc:answer', handleOfferName)
+        socket.on('webrtc:join', handleWebrtcJoinAck)
         socket.on('meeting:camera-toggle', handleCameraToggle)
         
         return () => {
             socket.off('webrtc:user-joined', handleUserJoinedName)
             socket.off('webrtc:offer', handleOfferName)
+            socket.off('webrtc:answer', handleOfferName)
+            socket.off('webrtc:join', handleWebrtcJoinAck)
             socket.off('meeting:camera-toggle', handleCameraToggle)
         }
     }, [socket])
@@ -2051,19 +2161,26 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     const [meetingInput, setMeetingInput] = useState('')
     const [activePanel, setActivePanel] = useState<ActivePanel>(null)
 
-    // Auto-rejoin meeting room if socket reconnects while joined to recover room channels
+    const connectToMeetingRef = useRef(connectToMeeting)
     useEffect(() => {
-        if (connected && joined && meetingId) {
-            let myName = ''
+        connectToMeetingRef.current = connectToMeeting
+    }, [connectToMeeting])
+
+    // Auto-rejoin meeting room ONLY if socket was disconnected and re-established while joined
+    const wasConnectedRef = useRef(connected)
+    useEffect(() => {
+        if (!wasConnectedRef.current && connected && joined && meetingId) {
+            let myName = localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || ''
             try {
-                const decoded = parseJwt(token)
-                if (decoded && decoded.isGuest) {
-                    myName = decoded.guestName
+                const decoded = parseJwt(token || initialToken)
+                if (decoded) {
+                    myName = decoded.guestName || decoded.fullName || myName
                 }
             } catch (e) {}
-            connectToMeeting(meetingId, myName)
+            connectToMeetingRef.current(meetingId, myName)
         }
-    }, [connected, joined, meetingId, connectToMeeting, token])
+        wasConnectedRef.current = connected
+    }, [connected, joined, meetingId, token])
 
     const [inviteEmail, setInviteEmail] = useState('')
     const [sendingInvite, setSendingInvite] = useState(false)
@@ -2138,6 +2255,17 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     const [fullScreenUserId, setFullScreenUserId] = useState<string | null>(null)
     const [waitingGuests, setWaitingGuests] = useState<any[]>([])
     const [isInviteOpen, setIsInviteOpen] = useState(false)
+
+    // Professional Suite states: Whiteboard, Polls, Captions, Devices, AI Summary, Shortcuts
+    const [showWhiteboard, setShowWhiteboard] = useState(false)
+    const [showPolls, setShowPolls] = useState(false)
+    const [showCaptions, setShowCaptions] = useState(false)
+    const [showDeviceSettings, setShowDeviceSettings] = useState(false)
+    const [showSummary, setShowSummary] = useState(false)
+    const [showShortcuts, setShowShortcuts] = useState(false)
+    const [transcripts, setTranscripts] = useState<Array<{ speaker: string; text: string; timestamp: Date }>>([])
+    const [isBlurEnabled, setIsBlurEnabled] = useState(false)
+    const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = useState(true)
 
     // Window resize listener
     useEffect(() => {
@@ -2341,12 +2469,14 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                 const joinedUser = participants.find(p => !prev.includes(p))
                 if (joinedUser) {
                     const cleanName = renamedUsers[joinedUser] || joinedUser
+                    playJoinChime()
                     addToast(`${cleanName} joined the meeting`, 'success')
                 }
             } else if (participants.length < prev.length) {
                 const leftUser = prev.find(p => !participants.includes(p))
                 if (leftUser) {
                     const cleanName = renamedUsers[leftUser] || leftUser
+                    playLeaveChime()
                     addToast(`${cleanName} left the meeting`, 'info')
                 }
             }
@@ -2406,6 +2536,191 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         }
     }
 
+    // Device switching handlers
+    const handleVideoSourceChange = async (deviceId: string) => {
+        if (!localStream) return
+        try {
+            const newStream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: deviceId } }
+            })
+            const newTrack = newStream.getVideoTracks()[0]
+            if (newTrack) {
+                const oldTrack = localStream.getVideoTracks()[0]
+                if (oldTrack) {
+                    oldTrack.stop()
+                    localStream.removeTrack(oldTrack)
+                }
+                localStream.addTrack(newTrack)
+                replaceTrackOnPeers(newTrack)
+                setIsVideoOff(false)
+                addToast('Camera switched successfully', 'info')
+            }
+        } catch (err: any) {
+            addToast('Failed to switch camera: ' + (err?.message || 'Device error'), 'warning')
+        }
+    }
+
+    const handleAudioSourceChange = async (deviceId: string) => {
+        if (!localStream) return
+        try {
+            const newStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    deviceId: { exact: deviceId },
+                    noiseSuppression: isNoiseSuppressionEnabled,
+                    echoCancellation: true
+                }
+            })
+            const newTrack = newStream.getAudioTracks()[0]
+            if (newTrack) {
+                const oldTrack = localStream.getAudioTracks()[0]
+                if (oldTrack) {
+                    oldTrack.stop()
+                    localStream.removeTrack(oldTrack)
+                }
+                localStream.addTrack(newTrack)
+                replaceTrackOnPeers(newTrack)
+                newTrack.enabled = !isMuted
+                addToast('Microphone switched successfully', 'info')
+            }
+        } catch (err: any) {
+            addToast('Failed to switch microphone: ' + (err?.message || 'Device error'), 'warning')
+        }
+    }
+
+    const handleAudioOutputChange = async (deviceId: string) => {
+        try {
+            const audioElements = document.querySelectorAll('audio, video')
+            for (const el of Array.from(audioElements) as any[]) {
+                if (typeof el.setSinkId === 'function') {
+                    await el.setSinkId(deviceId)
+                }
+            }
+            addToast('Speaker output set', 'info')
+        } catch (err: any) {
+            addToast('Failed to set speaker output: ' + (err?.message || 'Unsupported'), 'warning')
+        }
+    }
+
+    const handleToggleBlur = () => {
+        setIsBlurEnabled(prev => {
+            const next = !prev
+            addToast(next ? 'Background blur enabled' : 'Background blur disabled', 'info')
+            return next
+        })
+    }
+
+    const handleToggleNoiseSuppression = async () => {
+        const next = !isNoiseSuppressionEnabled
+        setIsNoiseSuppressionEnabled(next)
+        if (localStream) {
+            const audioTrack = localStream.getAudioTracks()[0]
+            if (audioTrack) {
+                try {
+                    await audioTrack.applyConstraints({
+                        noiseSuppression: next,
+                        echoCancellation: true
+                    })
+                    addToast(next ? 'Noise suppression enabled' : 'Noise suppression disabled', 'info')
+                } catch (e) {}
+            }
+        }
+    }
+
+    // Global keyboard shortcuts & Push-to-Talk listener
+    useEffect(() => {
+        if (!joined) return
+        let spaceDown = false
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+                return
+            }
+
+            // Push-to-talk Spacebar (while muted)
+            if (e.code === 'Space' && !spaceDown && isMuted) {
+                e.preventDefault()
+                spaceDown = true
+                if (localStream) {
+                    localStream.getAudioTracks().forEach(t => { t.enabled = true })
+                    setIsMuted(false)
+                }
+                return
+            }
+
+            // Ctrl+D or Cmd+D -> Toggle Mic
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+                e.preventDefault()
+                toggleMute()
+                return
+            }
+
+            // Ctrl+E or Cmd+E -> Toggle Camera
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+                e.preventDefault()
+                toggleVideo()
+                return
+            }
+
+            // Ctrl+Shift+W -> Toggle Whiteboard
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'w') {
+                e.preventDefault()
+                setShowWhiteboard(prev => !prev)
+                return
+            }
+
+            // Ctrl+Shift+C -> Toggle Captions
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
+                e.preventDefault()
+                setShowCaptions(prev => !prev)
+                return
+            }
+
+            // Ctrl+Shift+P -> Toggle Polls
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
+                e.preventDefault()
+                setShowPolls(prev => !prev)
+                return
+            }
+
+            // Ctrl+Shift+S -> Open AI Summary
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+                e.preventDefault()
+                setShowSummary(prev => !prev)
+                return
+            }
+
+            // ? -> Toggle Shortcuts Modal
+            if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault()
+                setShowShortcuts(prev => !prev)
+                return
+            }
+        }
+
+        const handleKeyUp = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+                return
+            }
+            if (e.code === 'Space' && spaceDown) {
+                e.preventDefault()
+                spaceDown = false
+                if (localStream) {
+                    localStream.getAudioTracks().forEach(t => { t.enabled = false })
+                    setIsMuted(true)
+                }
+            }
+        }
+
+        window.addEventListener('keydown', handleKeyDown)
+        window.addEventListener('keyup', handleKeyUp)
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown)
+            window.removeEventListener('keyup', handleKeyUp)
+        }
+    }, [joined, isMuted, localStream])
+
     // Auto-connect if initialToken is provided
     useEffect(() => {
         if (initialToken && !connected) {
@@ -2424,11 +2739,11 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         if (!socket || !id) return
         setMeetingId(id)
         
-        let myName = ''
+        let myName = localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || ''
         try {
-            const decoded = parseJwt(token)
-            if (decoded && decoded.isGuest) {
-                myName = decoded.guestName
+            const decoded = parseJwt(token || initialToken)
+            if (decoded) {
+                myName = decoded.guestName || decoded.fullName || myName
             }
         } catch (e) {}
 
@@ -2491,7 +2806,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     const canManageParticipants = isLocalHost || isAdminOrOwner
     
     // Presenter details
-    const presenterName = primaryUser === 'me' ? 'You' : (renamedUsers[primaryUser] || primaryUser)
+    const presenterName = primaryUser === 'me' ? 'You' : (renamedUsers[primaryUser] || (primaryUser.startsWith('guest_') ? 'Guest' : primaryUser))
 
     // All active users in the room
     const allUsers = ['me', ...participants]
@@ -2614,7 +2929,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
 
     // Render a single participant video tile with standard controls, click (pin) and double click (full screen)
     const renderMeetingTile = (userId: string, isEnlarged: boolean) => {
-        const displayName = renamedUsers[userId] || (userId === 'me' ? 'You' : userId)
+        const displayName = renamedUsers[userId] || (userId === 'me' ? 'You' : (userId.startsWith('guest_') ? 'Guest' : userId))
         const stream = userId === 'me' ? localStream : remoteStreams[userId]
         const isMutedUser = userId === 'me' ? isMuted : !stream?.getAudioTracks()[0]?.enabled
         const isUserHandRaised = userId === 'me' ? handRaised : handsRaisedMap[userId]
@@ -2650,6 +2965,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     isHost={meetingInfo && meetingInfo.host && (meetingInfo.host._id === userId || meetingInfo.host === userId)}
                     isGuest={userId.startsWith('guest_')}
                     isVideoOffProp={userId === 'me' ? isVideoOff : remoteVideoStates[userId]}
+                    isBlurred={userId === 'me' && isBlurEnabled}
                 />
 
 
@@ -2930,6 +3246,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                             isHandRaised={primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser]}
                                             isHost={meetingInfo && meetingInfo.host && (meetingInfo.host._id === primaryUser || meetingInfo.host === primaryUser)}
                                             isVideoOffProp={primaryUser === 'me' ? isVideoOff : remoteVideoStates[primaryUser]}
+                                            isBlurred={primaryUser === 'me' && isBlurEnabled}
                                         />
 
                                         {/* Exit Full Screen Button Overlay */}
@@ -3134,26 +3451,34 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
             </main>
 
             {/* ── Bottom Control Bar ── */}
-            <footer style={{
-                position: 'fixed', bottom: 20, left: '50%', transform: `translateX(-50%) translateY(${toolbarVisible ? '0px' : '100px'})`,
-                height: 64,
-                display: 'flex', alignItems: 'center', gap: 16,
-                padding: '0 24px',
-                background: 'rgba(10,11,15,0.8)',
+            <footer className="meeting-toolbar" style={{
+                position: 'fixed',
+                bottom: windowWidth < 640 ? 12 : 20,
+                left: '50%',
+                transform: `translateX(-50%) translateY(${toolbarVisible ? '0px' : '100px'})`,
+                height: windowWidth < 640 ? 54 : 64,
+                display: 'flex',
+                alignItems: 'center',
+                gap: windowWidth < 640 ? 8 : 12,
+                padding: windowWidth < 640 ? '0 12px' : '0 20px',
+                background: 'rgba(10,11,15,0.88)',
                 backdropFilter: 'blur(24px) saturate(1.8)',
                 WebkitBackdropFilter: 'blur(24px) saturate(1.8)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: '40px',
                 boxShadow: '0 10px 40px rgba(0,0,0,0.6)',
                 zIndex: 'var(--z-toolbar)' as any,
                 opacity: toolbarVisible ? 1 : 0,
+                maxWidth: 'calc(100vw - 16px)',
+                overflowX: 'auto',
+                scrollbarWidth: 'none',
                 transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease',
             }}>
                 {/* Mic Trigger */}
                 <button
                     onClick={toggleMute}
                     className={`btn-toolbar ${isMuted ? 'active leave' : ''}`}
-                    style={{ width: 44, height: 44, borderRadius: '50%', border: 'none', background: isMuted ? 'var(--color-danger)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: isMuted ? 'var(--color-danger)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                     title={isMuted ? "Unmute Mic" : "Mute Mic"}
                 >
                     {isMuted ? <IconMicOff /> : <IconMic />}
@@ -3163,7 +3488,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                 <button
                     onClick={toggleVideo}
                     className={`btn-toolbar ${isVideoOff ? 'active leave' : ''}`}
-                    style={{ width: 44, height: 44, borderRadius: '50%', border: 'none', background: isVideoOff ? 'var(--color-danger)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: isVideoOff ? 'var(--color-danger)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                     title={isVideoOff ? "Turn on Camera" : "Turn off Camera"}
                 >
                     {isVideoOff ? <IconCameraOff /> : <IconCamera />}
@@ -3174,7 +3499,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     <button
                         onClick={screenSharingUserId === 'me' ? stopScreenShare : startScreenShare}
                         disabled={!connected || !joined}
-                        style={{ width: 44, height: 44, borderRadius: '50%', border: 'none', background: screenSharingUserId === 'me' ? 'var(--color-accent)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: screenSharingUserId === 'me' ? 'var(--color-accent)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                         title={screenSharingUserId === 'me' ? "Stop sharing screen" : "Share screen"}
                     >
                         <IconMonitor />
@@ -3187,7 +3512,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                         socket?.emit('meeting:raise-hand', { meetingId: meetingId || meetingInput, raised: !handRaised })
                         setHandRaised(!handRaised)
                     }}
-                    style={{ width: 44, height: 44, borderRadius: '50%', border: 'none', background: handRaised ? 'var(--color-warning)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}
+                    style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: handRaised ? 'var(--color-warning)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', flexShrink: 0 }}
                     title={handRaised ? "Lower hand" : "Raise hand"}
                 >
                     ✋
@@ -3199,8 +3524,8 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                         onClick={isRecording ? stopRecording : startRecording}
                         disabled={!connected || !joined}
                         style={{
-                            width: 44,
-                            height: 44,
+                            width: windowWidth < 640 ? 38 : 44,
+                            height: windowWidth < 640 ? 38 : 44,
                             borderRadius: '50%',
                             border: 'none',
                             background: isRecording ? 'var(--color-danger)' : 'rgba(255,255,255,0.08)',
@@ -3209,7 +3534,8 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            transition: 'all 0.2s ease'
+                            transition: 'all 0.2s ease',
+                            flexShrink: 0
                         }}
                         className={isRecording ? 'pulse' : ''}
                         title={isRecording ? "Stop Recording Meeting" : "Record Meeting"}
@@ -3218,14 +3544,14 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     </button>
                 )}
 
-                <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)' }} />
+                <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
 
                 {/* Participants drawer toggle */}
                 <button
                     className={`btn-icon ${activePanel === 'participants' ? 'active' : ''}`}
                     onClick={() => togglePanel('participants')}
                     title="Show participants list"
-                    style={{ width: 40, height: 40, border: 'none', borderRadius: '50%', background: activePanel === 'participants' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'participants' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'participants' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'participants' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}
                 >
                     <IconUsers />
                     {participants.length > 0 && (
@@ -3249,7 +3575,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     className={`btn-icon ${activePanel === 'chat' ? 'active' : ''}`}
                     onClick={() => togglePanel('chat')}
                     title="Meeting chat window"
-                    style={{ width: 40, height: 40, border: 'none', borderRadius: '50%', background: activePanel === 'chat' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'chat' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'chat' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'chat' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}
                 >
                     <IconChat />
                     {messages.length > 0 && activePanel !== 'chat' && (
@@ -3267,17 +3593,17 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     className={`btn-icon ${activePanel === 'files' ? 'active' : ''}`}
                     onClick={() => togglePanel('files')}
                     title="Shared session files"
-                    style={{ width: 40, height: 40, border: 'none', borderRadius: '50%', background: activePanel === 'files' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'files' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'files' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'files' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                 >
                     <IconFiles />
                 </button>
 
-                {/* Settings drawer toggle */}
+                {/* Settings & Devices modal toggle */}
                 <button
-                    className={`btn-icon ${activePanel === 'settings' ? 'active' : ''}`}
-                    onClick={() => togglePanel('settings')}
-                    title="Hardware settings"
-                    style={{ width: 40, height: 40, border: 'none', borderRadius: '50%', background: activePanel === 'settings' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'settings' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    className={`btn-icon ${showDeviceSettings ? 'active' : ''}`}
+                    onClick={() => setShowDeviceSettings(true)}
+                    title="Audio, Video & Hardware Settings"
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showDeviceSettings ? 'var(--color-accent-light)' : 'transparent', color: showDeviceSettings ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                 >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <circle cx="12" cy="12" r="3" />
@@ -3285,18 +3611,138 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     </svg>
                 </button>
 
-                <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)' }} />
+                {/* Whiteboard trigger */}
+                <button
+                    className={`btn-icon ${showWhiteboard ? 'active' : ''}`}
+                    onClick={() => setShowWhiteboard(prev => !prev)}
+                    title="Collaborative Whiteboard (Ctrl+Shift+W)"
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showWhiteboard ? 'rgba(99, 102, 241, 0.25)' : 'transparent', color: showWhiteboard ? '#818cf8' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                        <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                        <path d="M2 2l7.586 7.586" />
+                        <circle cx="11" cy="11" r="2" />
+                    </svg>
+                </button>
+
+                {/* Polls trigger */}
+                <button
+                    className={`btn-icon ${showPolls ? 'active' : ''}`}
+                    onClick={() => setShowPolls(prev => !prev)}
+                    title="In-Call Live Polls (Ctrl+Shift+P)"
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showPolls ? 'rgba(99, 102, 241, 0.25)' : 'transparent', color: showPolls ? '#818cf8' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="20" x2="18" y2="10" />
+                        <line x1="12" y1="20" x2="12" y2="4" />
+                        <line x1="6" y1="20" x2="6" y2="14" />
+                    </svg>
+                </button>
+
+                {/* Live Captions trigger */}
+                <button
+                    className={`btn-icon ${showCaptions ? 'active' : ''}`}
+                    onClick={() => setShowCaptions(prev => !prev)}
+                    title="Live Captions (Ctrl+Shift+C)"
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showCaptions ? 'rgba(16, 185, 129, 0.25)' : 'transparent', color: showCaptions ? '#34d399' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.75rem', flexShrink: 0 }}
+                >
+                    CC
+                </button>
+
+                {/* AI Summary trigger */}
+                <button
+                    className={`btn-icon ${showSummary ? 'active' : ''}`}
+                    onClick={() => setShowSummary(prev => !prev)}
+                    title="AI Smart Meeting Summary (Ctrl+Shift+S)"
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showSummary ? 'rgba(236, 72, 153, 0.25)' : 'transparent', color: showSummary ? '#f472b6' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                    </svg>
+                </button>
+
+                {/* Keyboard Shortcuts trigger */}
+                <button
+                    className={`btn-icon ${showShortcuts ? 'active' : ''}`}
+                    onClick={() => setShowShortcuts(prev => !prev)}
+                    title="Keyboard Shortcuts Cheatsheet (?)"
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showShortcuts ? 'rgba(255, 255, 255, 0.2)' : 'transparent', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.9rem', flexShrink: 0 }}
+                >
+                    ?
+                </button>
+
+                <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
 
                 {/* Hang up leave meeting */}
                 <button
                     onClick={leaveMeeting}
-                    style={{ background: 'var(--color-danger)', border: 'none', borderRadius: '20px', padding: '8px 18px', color: '#fff', fontWeight: 700, fontSize: '0.8125rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                    style={{ background: 'var(--color-danger)', border: 'none', borderRadius: '20px', padding: windowWidth < 640 ? '6px 12px' : '8px 18px', color: '#fff', fontWeight: 700, fontSize: windowWidth < 640 ? '0.75rem' : '0.8125rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}
                     title="Leave Meeting Room"
                 >
                     <IconPhoneOff />
                     Leave
                 </button>
             </footer>
+
+            {/* Live Captions Subtitle Banner */}
+            <MeetingCaptionsBanner
+                isEnabled={showCaptions}
+                speakerName={renamedUsers['me'] || 'You'}
+                onTranscriptUpdate={(newTranscripts) => setTranscripts(newTranscripts)}
+            />
+
+            {/* Collaborative Whiteboard Canvas */}
+            <MeetingWhiteboard
+                isOpen={showWhiteboard}
+                onClose={() => setShowWhiteboard(false)}
+                meetingId={meetingId || meetingInput}
+                socket={socket}
+            />
+
+            {/* In-Call Live Polls Modal */}
+            <MeetingPollsModal
+                isOpen={showPolls}
+                onClose={() => setShowPolls(false)}
+                meetingId={meetingId || meetingInput}
+                currentUserId="me"
+                isHostOrCoHost={isAdminOrOwner || (meetingInfo?.host?._id === 'me')}
+                socket={socket}
+            />
+
+            {/* Device & Hardware Settings Modal */}
+            <DeviceSettingsModal
+                isOpen={showDeviceSettings}
+                onClose={() => setShowDeviceSettings(false)}
+                localStream={localStream}
+                onDeviceChange={async (kind, deviceId) => {
+                    if (kind === 'video') {
+                        await handleVideoSourceChange(deviceId)
+                    } else {
+                        await handleAudioSourceChange(deviceId)
+                    }
+                }}
+                isBlurEnabled={isBlurEnabled}
+                onToggleBlur={handleToggleBlur}
+                isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
+                onToggleNoiseSuppression={handleToggleNoiseSuppression}
+            />
+
+            {/* AI Smart Summary Modal */}
+            <MeetingSummaryModal
+                isOpen={showSummary}
+                onClose={() => setShowSummary(false)}
+                meetingTitle={meetingInfo?.title || `Session ${meetingId || meetingInput}`}
+                meetingId={meetingId || meetingInput}
+                transcripts={transcripts}
+                participantsCount={participants.length + 1}
+            />
+
+            {/* Keyboard Shortcuts Cheatsheet */}
+            <KeyboardShortcutsModal
+                isOpen={showShortcuts}
+                onClose={() => setShowShortcuts(false)}
+            />
 
             {/* Floating Reactions Container */}
             <div style={{

@@ -414,53 +414,54 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
     return (
         <div style={{
             minHeight: '100dvh', background: 'var(--color-bg-base)', display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', padding: '24px', position: 'relative', overflow: 'hidden'
+            alignItems: 'center', justifyContent: 'center', padding: 'clamp(16px, 3.5vw, 24px)',
+            paddingTop: 'clamp(56px, 8vw, 32px)', position: 'relative', overflow: 'hidden'
         }}>
             {/* Background blur blobs */}
             <div aria-hidden="true" style={{
-                position: 'absolute', width: 500, height: 500, borderRadius: '50%',
-                background: 'radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%)',
+                position: 'absolute', width: 'clamp(280px, 50vw, 500px)', height: 'clamp(280px, 50vw, 500px)', borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%)',
                 top: '-10%', left: '-10%', pointerEvents: 'none'
             }} />
             <div aria-hidden="true" style={{
-                position: 'absolute', width: 500, height: 500, borderRadius: '50%',
-                background: 'radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)',
+                position: 'absolute', width: 'clamp(280px, 50vw, 500px)', height: 'clamp(280px, 50vw, 500px)', borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)',
                 bottom: '-10%', right: '-10%', pointerEvents: 'none'
             }} />
 
             {/* Back to Home Button */}
             <button onClick={() => onNavigate('landing')} className="btn btn-ghost" style={{
-                position: 'absolute', top: 24, left: 24, gap: 8, fontSize: '0.8125rem'
+                position: 'absolute', top: 'clamp(12px, 2.5vw, 20px)', left: 'clamp(12px, 2.5vw, 20px)', gap: 6, fontSize: '0.8125rem', padding: '6px 10px'
             }}>
                 <IconArrowLeft />
                 Back to Home
             </button>
 
             {/* Brand Logo */}
-            <div style={{ textAlign: 'center', marginBottom: 28, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => onNavigate('landing')}>
+            <div style={{ textAlign: 'center', marginBottom: 'clamp(14px, 3vw, 22px)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => onNavigate('landing')}>
                 <div style={{
-                    width: 40, height: 40, background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                    width: 36, height: 36, background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
                     borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     boxShadow: 'var(--shadow-glow-accent)', color: '#fff'
                 }}>
                     <IconVideo />
                 </div>
-                <h1 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)', margin: 0 }}>
+                <h1 style={{ fontSize: '1.35rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)', margin: 0 }}>
                     JTS<span className="gradient-text">Meet</span>
                 </h1>
             </div>
 
             {/* Main Auth Card Container */}
             <div className={`glass-card anim-scale-in ${shake ? 'shake-animation' : ''}`} style={{
-                width: '100%', maxWidth: 440, padding: 36, position: 'relative', zIndex: 1
+                width: '100%', maxWidth: 440, padding: 'clamp(18px, 4vw, 28px)', position: 'relative', zIndex: 1
             }}>
                 {/* ── 1. LOGIN VIEW ── */}
                 {view === 'login' && (
                     !showSsoForm ? (
-                        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                            <div style={{ textAlign: 'center', marginBottom: 8 }}>
-                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 6px' }}>Sign in to JTS Meet</h2>
-                                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+                        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            <div style={{ textAlign: 'center', marginBottom: 4 }}>
+                                <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 4px' }}>Sign in to JTS Meet</h2>
+                                <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', margin: 0 }}>
                                     Enter your credentials to access your rooms
                                 </p>
                             </div>
@@ -847,29 +848,29 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
 
                 {/* ── 5. OTP VERIFICATION VIEW ── */}
                 {view === 'otp-verification' && (
-                    <form onSubmit={handleOtpVerify} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                        <div style={{ textAlign: 'center', marginBottom: 8 }}>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 6px' }}>Verify OTP</h2>
-                            <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+                    <form onSubmit={handleOtpVerify} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        <div style={{ textAlign: 'center', marginBottom: 4 }}>
+                            <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 4px' }}>Verify OTP</h2>
+                            <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', margin: 0 }}>
                                 We've sent a 6-digit confirmation code to your email.
                             </p>
                         </div>
 
                         {error && (
-                            <div className="badge badge-danger text-center" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
+                            <div className="badge badge-danger text-center" style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
                                 {error}
                             </div>
                         )}
 
                         {success && (
-                            <div className="badge badge-success text-center" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
+                            <div className="badge badge-success text-center" style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
                                 {success}
                             </div>
                         )}
 
                         <div>
-                            <label className="label" style={{ textAlign: 'center', marginBottom: 12 }}>Confirmation Code</label>
-                            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                            <label className="label" style={{ textAlign: 'center', marginBottom: 10 }}>Confirmation Code</label>
+                            <div style={{ display: 'flex', gap: 'clamp(4px, 1.8vw, 8px)', justifyContent: 'center' }}>
                                 {otpCode.map((digit, index) => (
                                     <input
                                         key={index}
@@ -879,14 +880,14 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
                                         value={digit}
                                         onChange={(e) => handleOtpChange(index, e.target.value)}
                                         onKeyDown={(e) => {
-                                            if (e.key === 'Backspace' && !digit && index > 0) {
+                                             if (e.key === 'Backspace' && !digit && index > 0) {
                                                 const prevInput = document.getElementById(`otp-${index - 1}`)
                                                 prevInput?.focus()
                                             }
                                         }}
                                         className="input"
                                         style={{
-                                            width: 44, height: 48, padding: 0, textAlign: 'center', fontSize: '1.25rem',
+                                            width: 'clamp(36px, 11vw, 44px)', height: 'clamp(40px, 12vw, 46px)', padding: 0, textAlign: 'center', fontSize: 'clamp(1rem, 3.5vw, 1.25rem)',
                                             fontWeight: 700, background: 'var(--color-surface-2)', border: '1px solid var(--color-border-strong)'
                                         }}
                                     />

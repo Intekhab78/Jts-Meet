@@ -9,17 +9,17 @@ export async function createMeetingChat(
     senderNameParam?: string
 ): Promise<IMeetingChat> {
     const meeting = await getMeetingByMeetingId(meetingId)
-    if (!meeting || meeting.status !== 'active') {
-        throw new Error('Meeting not active')
+    if (!meeting || meeting.status === 'ended') {
+        throw new Error('Meeting not active or ended')
     }
 
     const isGuest = senderId.startsWith('guest_')
-    const isHostObj = meeting.host._id.toString() === senderId || meeting.host.toString() === senderId
-    const isParticipant = isGuest || isHostObj || meeting.participants.some((p) => p._id.toString() === senderId)
-
-    if (!isParticipant) {
-        throw new Error('User not a participant of this meeting')
-    }
+    const hostId = meeting.host?._id ? meeting.host._id.toString() : meeting.host?.toString()
+    const isHostObj = hostId === senderId
+    const isParticipant = isGuest || isHostObj || (meeting.participants && meeting.participants.some((p: any) => {
+        const pId = p?._id ? p._id.toString() : p?.toString()
+        return pId === senderId
+    }))
 
     let senderName = 'Participant'
     if (isGuest) {

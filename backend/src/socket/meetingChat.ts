@@ -1,23 +1,7 @@
-import { Types } from 'mongoose'
 import { Server, Socket } from 'socket.io'
 import { AuthenticatedSocket } from './auth'
 import { SocketEvents } from './events'
 import { createMeetingChat, addMeetingChatReaction, removeMeetingChatReaction } from '../modules/meeting-chat/meetingChat.service'
-import { getMeetingByMeetingId } from '../modules/meeting/meeting.service'
-
-function getMeetingRecipientIds(meeting: any): string[] {
-    const ids = new Set<string>()
-    if (meeting.host) {
-        ids.add(typeof meeting.host === 'object' ? meeting.host._id.toString() : meeting.host.toString())
-    }
-    if (meeting.coHosts && Array.isArray(meeting.coHosts)) {
-        meeting.coHosts.forEach((ch: any) => ids.add(ch.toString()))
-    }
-    if (meeting.participants && Array.isArray(meeting.participants)) {
-        meeting.participants.forEach((p: any) => ids.add(p.toString()))
-    }
-    return Array.from(ids)
-}
 
 export function registerMeetingChatHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
@@ -30,18 +14,14 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
         }
 
         try {
-            const chat = await createMeetingChat(payload.meetingId, userId, payload.message)
-            const meeting = await getMeetingByMeetingId(payload.meetingId)
-            if (!meeting) {
-                socket.emit('error', { message: 'Meeting not found' })
-                return
-            }
+            socket.join(`meeting:${payload.meetingId}`)
+            const senderDisplayName = authSocket.guestName || (socket.handshake.query?.displayName as string) || undefined
+            const chat = await createMeetingChat(payload.meetingId, userId, payload.message, senderDisplayName)
 
-            const recipientIds = getMeetingRecipientIds(meeting)
-            recipientIds.forEach((participantId) => {
-                io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_RECEIVE, chat)
-            })
+            // Broadcast to the entire meeting room (Host, members, and all guests)
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_CHAT_RECEIVE, chat)
         } catch (error: any) {
+            console.error('[MeetingChat] Error sending chat message:', error)
             socket.emit('error', { message: error.message || 'Unable to send meeting chat' })
         }
     })
@@ -51,25 +31,10 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
             return
         }
 
-        const meeting = await getMeetingByMeetingId(payload.meetingId)
-        if (!meeting) {
-            return
-        }
-
-        const recipientIds = getMeetingRecipientIds(meeting)
-        if (!recipientIds.includes(userId)) {
-            return
-        }
-
-        recipientIds.forEach((participantId) => {
-            if (participantId === userId) {
-                return
-            }
-
-            io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_TYPING, {
-                meetingId: payload.meetingId,
-                userId
-            })
+        socket.join(`meeting:${payload.meetingId}`)
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_CHAT_TYPING, {
+            meetingId: payload.meetingId,
+            userId
         })
     })
 
@@ -78,25 +43,9 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
             return
         }
 
-        const meeting = await getMeetingByMeetingId(payload.meetingId)
-        if (!meeting) {
-            return
-        }
-
-        const recipientIds = getMeetingRecipientIds(meeting)
-        if (!recipientIds.includes(userId)) {
-            return
-        }
-
-        recipientIds.forEach((participantId) => {
-            if (participantId === userId) {
-                return
-            }
-
-            io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_STOP_TYPING, {
-                meetingId: payload.meetingId,
-                userId
-            })
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_CHAT_STOP_TYPING, {
+            meetingId: payload.meetingId,
+            userId
         })
     })
 
@@ -108,19 +57,13 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
         try {
             const result = await addMeetingChatReaction(payload.messageId, userId, payload.emoji)
             if (result) {
-                const meeting = await getMeetingByMeetingId(payload.meetingId)
-                if (meeting) {
-                    const recipientIds = getMeetingRecipientIds(meeting)
-                    recipientIds.forEach((participantId) => {
-                        io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_REACTION_ADD, {
-                            meetingId: payload.meetingId,
-                            messageId: payload.messageId,
-                            userId,
-                            emoji: payload.emoji,
-                            createdAt: new Date()
-                        })
-                    })
-                }
+                io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_CHAT_REACTION_ADD, {
+                    meetingId: payload.meetingId,
+                    messageId: payload.messageId,
+                    userId,
+                    emoji: payload.emoji,
+                    createdAt: new Date()
+                })
             }
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Unable to add reaction' })
@@ -135,18 +78,12 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
         try {
             const result = await removeMeetingChatReaction(payload.messageId, userId, payload.emoji)
             if (result) {
-                const meeting = await getMeetingByMeetingId(payload.meetingId)
-                if (meeting) {
-                    const recipientIds = getMeetingRecipientIds(meeting)
-                    recipientIds.forEach((participantId) => {
-                        io.to(`user:${participantId}`).emit(SocketEvents.MEETING_CHAT_REACTION_REMOVE, {
-                            meetingId: payload.meetingId,
-                            messageId: payload.messageId,
-                            userId,
-                            emoji: payload.emoji
-                        })
-                    })
-                }
+                io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_CHAT_REACTION_REMOVE, {
+                    meetingId: payload.meetingId,
+                    messageId: payload.messageId,
+                    userId,
+                    emoji: payload.emoji
+                })
             }
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Unable to remove reaction' })

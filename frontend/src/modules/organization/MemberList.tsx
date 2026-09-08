@@ -100,15 +100,15 @@ export function MemberList({ organizationId, token, onRemove }: MemberListProps)
     };
 
     return (
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+        <div className="glass-card" style={{ padding: '16px 18px', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
                 <div>
-                    <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#fff', margin: 0 }}>Organization Members</h3>
-                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
+                    <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff', margin: 0 }}>Organization Members</h3>
+                    <p style={{ fontSize: '0.725rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
                         Manage access permissions and workspace invitations.
                     </p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <input
                         type="text"
                         placeholder="Search members..."
@@ -116,12 +116,12 @@ export function MemberList({ organizationId, token, onRemove }: MemberListProps)
                         onChange={(e) => setSearchQuery(e.target.value)}
                         style={{
                             background: 'rgba(255,255,255,0.03)',
-                            border: '1px solid rgba(255,255,255,0.08)',
-                            borderRadius: '10px',
-                            padding: '8px 14px',
-                            fontSize: '0.8125rem',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: 8,
+                            padding: '5px 10px',
+                            fontSize: '0.75rem',
                             color: '#fff',
-                            width: '200px',
+                            width: 170,
                             outline: 'none'
                         }}
                     />
@@ -131,9 +131,9 @@ export function MemberList({ organizationId, token, onRemove }: MemberListProps)
                         style={{
                             background: 'var(--color-surface-2)',
                             border: '1px solid var(--color-border)',
-                            borderRadius: '10px',
-                            padding: '8px 12px',
-                            fontSize: '0.8125rem',
+                            borderRadius: 8,
+                            padding: '5px 8px',
+                            fontSize: '0.75rem',
                             color: '#fff',
                             outline: 'none',
                             cursor: 'pointer'
@@ -152,9 +152,9 @@ export function MemberList({ organizationId, token, onRemove }: MemberListProps)
                         style={{
                             background: 'var(--color-surface-2)',
                             border: '1px solid var(--color-border)',
-                            borderRadius: '10px',
-                            padding: '8px 12px',
-                            fontSize: '0.8125rem',
+                            borderRadius: 8,
+                            padding: '5px 8px',
+                            fontSize: '0.75rem',
                             color: '#fff',
                             outline: 'none',
                             cursor: 'pointer'
@@ -168,15 +168,15 @@ export function MemberList({ organizationId, token, onRemove }: MemberListProps)
                 </div>
             </div>
 
-            <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', background: 'rgba(255,255,255,0.01)' }}>
-                <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
+            <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, background: 'rgba(255,255,255,0.01)' }}>
+                <table style={{ width: '100%', minWidth: 550, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.75rem' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
-                            <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Member</th>
-                            <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Role</th>
-                            <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Status</th>
-                            <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Joined Date</th>
-                            <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'right' }}>Actions</th>
+                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Member</th>
+                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Role</th>
+                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Status</th>
+                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Joined Date</th>
+                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'right' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -204,58 +204,59 @@ export function MemberList({ organizationId, token, onRemove }: MemberListProps)
 
                                 return (
                                     <tr key={userIdStr} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', transition: 'background 150ms' }} className="hover:bg-white/2">
-                                        <td style={{ padding: '14px 18px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <td style={{ padding: '10px 14px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                                 <div style={{
-                                                    width: '36px',
-                                                    height: '36px',
+                                                    width: 30,
+                                                    height: 30,
+                                                    minWidth: 30,
                                                     borderRadius: '50%',
                                                     background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
                                                     display: 'flex',
                                                     alignItems: 'center',
                                                     justifyContent: 'center',
-                                                    fontWeight: 600,
-                                                    fontSize: '0.8125rem',
+                                                    fontWeight: 700,
+                                                    fontSize: '0.75rem',
                                                     color: '#fff'
                                                 }}>
                                                     {fullName.slice(0, 2).toUpperCase()}
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                                    <span style={{ fontWeight: 600, color: '#fff' }}>{fullName}</span>
-                                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>
+                                                    <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.8125rem' }}>{fullName}</span>
+                                                    <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td style={{ padding: '14px 18px' }}>
+                                        <td style={{ padding: '10px 14px' }}>
                                             <span style={{
                                                 background: roleColors.bg,
                                                 color: roleColors.text,
                                                 border: `1px solid ${roleColors.border}`,
-                                                borderRadius: '8px',
-                                                padding: '2px 8px',
-                                                fontSize: '0.6875rem',
-                                                fontWeight: 600,
+                                                borderRadius: 6,
+                                                padding: '2px 7px',
+                                                fontSize: '0.65rem',
+                                                fontWeight: 700,
                                                 textTransform: 'uppercase',
                                                 letterSpacing: '0.02em'
                                             }}>
                                                 {member.role}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '14px 18px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <td style={{ padding: '10px 14px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                                                 <span style={{
-                                                    width: '6px',
-                                                    height: '6px',
+                                                    width: 5,
+                                                    height: 5,
                                                     borderRadius: '50%',
                                                     background: getStatusColor(member.status).bg
                                                 }} />
-                                                <span style={{ textTransform: 'capitalize', fontWeight: 500, color: '#E5E7EB' }}>{member.status}</span>
+                                                <span style={{ textTransform: 'capitalize', fontWeight: 500, color: '#E5E7EB', fontSize: '0.75rem' }}>{member.status}</span>
                                             </div>
                                         </td>
-                                        <td style={{ padding: '14px 18px', color: 'var(--color-text-muted)' }}>
+                                        <td style={{ padding: '10px 14px', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
                                             {joinedStr}
                                         </td>
-                                        <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>
                                             {onRemove && member.status !== 'removed' && (
                                                 <button
                                                     type="button"
@@ -266,10 +267,10 @@ export function MemberList({ organizationId, token, onRemove }: MemberListProps)
                                                     }}
                                                     className="btn btn-ghost"
                                                     style={{
-                                                        fontSize: '0.75rem',
+                                                        fontSize: '0.7rem',
                                                         color: '#EF4444',
-                                                        padding: '6px 12px',
-                                                        borderRadius: '8px',
+                                                        padding: '4px 10px',
+                                                        borderRadius: 6,
                                                         background: 'rgba(239, 68, 68, 0.05)',
                                                         border: '1px solid rgba(239, 68, 68, 0.1)',
                                                         cursor: 'pointer',

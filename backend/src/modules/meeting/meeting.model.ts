@@ -15,6 +15,14 @@ export interface IMeeting extends Document {
     isRecordingActive: boolean
     recordingUrl?: string
     status: 'scheduled' | 'active' | 'ended'
+    isRecurring?: boolean
+    recurrencePattern?: 'daily' | 'weekly' | 'weekdays' | 'monthly' | 'none'
+    scheduledDate?: string
+    scheduledTime?: string
+    organizationId?: Types.ObjectId | null
+    teamId?: Types.ObjectId | null
+    notifyByEmail?: boolean
+    lastNotifiedAt?: Date | null
     startedAt?: Date | null
     endedAt?: Date | null
     createdAt: Date
@@ -37,6 +45,14 @@ const MeetingSchema = new Schema<IMeeting>(
         isRecordingActive: { type: Boolean, default: false },
         recordingUrl: { type: String, default: '' },
         status: { type: String, enum: ['scheduled', 'active', 'ended'], default: 'scheduled' },
+        isRecurring: { type: Boolean, default: false },
+        recurrencePattern: { type: String, enum: ['daily', 'weekly', 'weekdays', 'monthly', 'none'], default: 'none' },
+        scheduledDate: { type: String, default: '' },
+        scheduledTime: { type: String, default: '' },
+        organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null },
+        teamId: { type: Schema.Types.ObjectId, ref: 'Team', default: null },
+        notifyByEmail: { type: Boolean, default: true },
+        lastNotifiedAt: { type: Date, default: null },
         startedAt: { type: Date, default: null },
         endedAt: { type: Date, default: null }
     },

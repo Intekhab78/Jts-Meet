@@ -1,0 +1,19 @@
+{
+  "name": "JTS Meet — Professional Video Conferencing",
+  "short_name": "JTS Meet",
+  "description": "Professional video conferencing built for teams with crystal-clear video, noise suppression, interactive whiteboard, live captions, and smart summaries.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0b0f",
+  "theme_color": "#0a0b0f",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "collaboration"]
+}

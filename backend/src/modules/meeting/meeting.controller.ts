@@ -36,7 +36,16 @@ export const meetingController = {
             return sendError(res, 401, 'Unauthorized access')
         }
 
-        const meeting = await createMeeting(userId, req.body.title)
+        const meeting = await createMeeting(userId, {
+            title: req.body.title,
+            isRecurring: req.body.isRecurring,
+            recurrencePattern: req.body.recurrencePattern,
+            scheduledDate: req.body.scheduledDate,
+            scheduledTime: req.body.scheduledTime,
+            organizationId: req.body.organizationId,
+            teamId: req.body.teamId,
+            notifyByEmail: req.body.notifyByEmail
+        })
         return sendSuccess(res, meeting, 'Meeting created')
     },
 

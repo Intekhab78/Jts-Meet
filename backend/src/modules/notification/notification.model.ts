@@ -26,5 +26,7 @@ const NotificationSchema = new Schema<INotification>(
 )
 
 NotificationSchema.index({ recipientId: 1, isRead: 1, createdAt: -1 })
+NotificationSchema.index({ recipientId: 1, createdAt: -1 })
 
 export const Notification = model<INotification>('Notification', NotificationSchema)
+

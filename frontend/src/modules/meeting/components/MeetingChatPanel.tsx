@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import type { MeetingChatMessage } from '../hooks/useMeetingChat'
+import { RichChatContent } from './RichChatContent'
 
 interface MeetingChatPanelProps {
     messages: MeetingChatMessage[]
@@ -196,14 +197,15 @@ export function MeetingChatPanel({
     }
 
     const filteredParentMessages = parentMessages.filter(msg => {
-        const name = msg.senderId === 'me' ? 'You' : (renamedUsers?.[msg.senderId] || msg.senderId)
+        const name = msg.senderId === 'me' ? 'You' : (renamedUsers?.[msg.senderId] || msg.senderName || msg.senderId)
         return msg.displayMessage.toLowerCase().includes(searchQuery.toLowerCase()) ||
                name.toLowerCase().includes(searchQuery.toLowerCase())
     })
 
     const renderMessageItem = (msg: any, isParentInThreadView = false) => {
-        const isMe = msg.senderId === 'me'
-        const avatarBg = getAvatarGradient(msg.senderId)
+        const isMe = msg.senderId === 'me' || (Boolean(currentUserId) && currentUserId !== 'me' && msg.senderId === currentUserId)
+        const senderDisplayName = isMe ? 'You' : (renamedUsers?.[msg.senderId] || msg.senderName || msg.senderId)
+        const avatarBg = getAvatarGradient(senderDisplayName)
         const replyCount = getReplyCount(msg._id)
 
         // Group reactions
@@ -286,7 +288,7 @@ export function MeetingChatPanel({
                         boxShadow: 'var(--shadow-sm)'
                     }}
                 >
-                    {getInitials(isMe ? 'You' : (renamedUsers?.[msg.senderId] || msg.senderId))}
+                    {getInitials(senderDisplayName)}
                 </div>
 
                 {/* Right Content */}
@@ -297,7 +299,7 @@ export function MeetingChatPanel({
                             fontWeight: 600,
                             color: 'var(--color-text-primary)'
                         }}>
-                            {isMe ? 'You' : (renamedUsers?.[msg.senderId] || msg.senderId)}
+                            {senderDisplayName}
                         </span>
                         {msg.createdAt && (
                             <span style={{
@@ -334,10 +336,9 @@ export function MeetingChatPanel({
                         fontSize: 'var(--settings-chat-font-size, 0.875rem)',
                         lineHeight: 1.5,
                         color: 'var(--color-text-secondary)',
-                        wordBreak: 'break-word',
-                        whiteSpace: 'pre-wrap'
+                        wordBreak: 'break-word'
                     }}>
-                        {msg.displayMessage}
+                        <RichChatContent content={msg.displayMessage} />
                     </div>
 
                     {/* Reactions List */}
@@ -684,6 +685,46 @@ export function MeetingChatPanel({
                         >
                             <IconSmile />
                         </button>
+
+                        {/* File Attachment Button */}
+                        <label
+                            style={{
+                                padding: 6,
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--color-text-muted)',
+                                cursor: disabled ? 'default' : 'pointer',
+                                display: 'flex',
+                                flexShrink: 0,
+                                alignItems: 'center'
+                            }}
+                            title="Attach Image / Screenshot"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                            </svg>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                disabled={disabled}
+                                style={{ display: 'none' }}
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0]
+                                    if (file) {
+                                        const reader = new FileReader()
+                                        reader.onload = (ev) => {
+                                            const dataUrl = ev.target?.result as string
+                                            if (dataUrl) {
+                                                onSendMessage(dataUrl)
+                                            }
+                                        }
+                                        reader.readAsDataURL(file)
+                                    }
+                                    e.target.value = ''
+                                }}
+                            />
+                        </label>
+
 
                         <textarea
                             value={message}

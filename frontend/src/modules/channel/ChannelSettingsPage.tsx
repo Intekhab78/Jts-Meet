@@ -14,7 +14,6 @@ import {
     removeChannelMember,
     updateChannelMemberRole
 } from './channel.service'
-import { ChannelSidebar } from './ChannelSidebar'
 import { CreateChannelDialog } from './CreateChannelDialog'
 import { EditChannelDialog } from './EditChannelDialog'
 import { InviteChannelMemberDialog } from './InviteChannelMemberDialog'
@@ -37,9 +36,10 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     const [showCreateDialog, setShowCreateDialog] = useState(false)
     const [showInviteDialog, setShowInviteDialog] = useState(false)
     const [showEditDialog, setShowEditDialog] = useState(false)
+    const [channelSearch, setChannelSearch] = useState('')
     const [members, setMembers] = useState<Channel['members']>([])
 
-    const [activePanelTab, setActivePanelTab] = useState<'chat' | 'members' | 'info'>('chat')
+    const [activePanelTab, setActivePanelTab] = useState<'chat' | 'members' | 'info' | 'permissions' | 'danger'>('chat')
     const [messages, setMessages] = useState<any[]>([])
     const [chatInput, setChatInput] = useState('')
     const [activeThreadParent, setActiveThreadParent] = useState<any | null>(null)
@@ -199,6 +199,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
 
     const loadChannels = async (teamId: string) => {
         setLoading(true)
+        setError('')
         try {
             const list = await listTeamChannels(teamId, token)
             setChannels(list)
@@ -256,9 +257,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }
 
     const handleUpdateChannel = async (payload: UpdateChannelPayload) => {
-        if (!selectedChannel) {
-            return
-        }
+        if (!selectedChannel) return
         try {
             const updated = await updateChannel(selectedChannel._id, payload, token)
             setSelectedChannel(updated)
@@ -269,9 +268,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }
 
     const handleArchiveChannel = async () => {
-        if (!selectedChannel) {
-            return
-        }
+        if (!selectedChannel) return
         try {
             const updated = await archiveChannel(selectedChannel._id, token)
             setSelectedChannel(updated)
@@ -282,9 +279,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }
 
     const handleRestoreChannel = async () => {
-        if (!selectedChannel) {
-            return
-        }
+        if (!selectedChannel) return
         try {
             const updated = await restoreChannel(selectedChannel._id, token)
             setSelectedChannel(updated)
@@ -295,9 +290,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }
 
     const handleDeleteChannel = async () => {
-        if (!selectedChannel || !teamId) {
-            return
-        }
+        if (!selectedChannel || !teamId) return
         try {
             await deleteChannel(selectedChannel._id, token)
             await loadChannels(teamId)
@@ -307,9 +300,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }
 
     const handleJoinChannel = async () => {
-        if (!selectedChannel || !currentUserId) {
-            return
-        }
+        if (!selectedChannel || !currentUserId) return
         try {
             const updated = await joinChannel({ channelId: selectedChannel._id, userId: currentUserId }, token)
             setSelectedChannel(updated)
@@ -320,9 +311,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }
 
     const handleLeaveChannel = async () => {
-        if (!selectedChannel || !currentUserId) {
-            return
-        }
+        if (!selectedChannel || !currentUserId) return
         try {
             const updated = await leaveChannel({ channelId: selectedChannel._id, userId: currentUserId }, token)
             setSelectedChannel(updated)
@@ -333,9 +322,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }
 
     const handleInviteMember = async (userId: string, role: Exclude<Channel['members'][number]['role'], 'owner'>) => {
-        if (!selectedChannel) {
-            return
-        }
+        if (!selectedChannel) return
         try {
             const updated = await inviteChannelMember({ channelId: selectedChannel._id, userId, role }, token)
             setSelectedChannel(updated)
@@ -346,9 +333,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }
 
     const handleRemoveMember = async (userId: string) => {
-        if (!selectedChannel) {
-            return
-        }
+        if (!selectedChannel) return
         try {
             const updated = await removeChannelMember({ channelId: selectedChannel._id, userId }, token)
             setSelectedChannel(updated)
@@ -359,9 +344,7 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
     }
 
     const handleUpdateMemberRole = async (userId: string, role: Exclude<Channel['members'][number]['role'], 'owner'>) => {
-        if (!selectedChannel) {
-            return
-        }
+        if (!selectedChannel) return
         try {
             const updated = await updateChannelMemberRole({ channelId: selectedChannel._id, userId, role }, token)
             setSelectedChannel(updated)
@@ -408,365 +391,426 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
         return list
     }, [selectedChannel])
 
+    const filteredChannels = useMemo(() => {
+        if (!channelSearch.trim()) return channels
+        return channels.filter(c => c.name.toLowerCase().includes(channelSearch.toLowerCase().trim()))
+    }, [channels, channelSearch])
+
     return (
-        <div className="px-4 py-6 md:p-10" style={{ background: 'var(--color-bg-base)', minHeight: '100vh', color: '#fff', fontFamily: 'var(--font-sans)', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', color: '#fff', fontFamily: 'var(--font-sans)', minHeight: 'calc(100vh - 100px)' }}>
             
-            {/* Header Section */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px' }}>
-                <div>
-                    {/* Breadcrumbs */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        <span>Channels</span>
-                        <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
-                        <span style={{ color: '#6366F1' }}>Channel Management</span>
-                    </div>
-                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold" style={{ margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(to right, #ffffff, #a1a1aa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                        Channel Management
-                    </h1>
-                    <p style={{ fontSize: '0.9375rem', color: 'var(--color-text-muted)', margin: '6px 0 0' }}>
-                        Manage channels, members, permissions and workspace chat settings.
-                    </p>
-                </div>
-
-                <div className="w-full sm:w-auto">
-                    <button
-                        onClick={() => setShowCreateDialog(true)}
-                        className="btn w-full sm:w-auto justify-center"
-                        style={{
-                            height: '42px',
-                            borderRadius: '12px',
-                            padding: '0 20px',
-                            fontWeight: 600,
-                            fontSize: '0.875rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            boxShadow: '0 0 20px rgba(99, 102, 241, 0.2)',
-                            background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
-                            color: '#fff',
-                            border: 'none',
-                            cursor: 'pointer',
-                            transition: 'transform 150ms'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
-                        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                    >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                        Create Channel
-                    </button>
-                </div>
-            </div>
-
             {error && (
-                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#f87171', padding: '14px 18px', borderRadius: '14px', fontSize: '0.875rem' }}>
-                    ⚠ {error}
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', color: '#f87171', padding: '6px 12px', borderRadius: 8, fontSize: '0.75rem', marginBottom: 8 }}>
+                    ⚠️ {error}
                 </div>
             )}
 
             {loading ? (
-                <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9375rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                    <div className="animate-spin" style={{ width: '28px', height: '28px', border: '3px solid rgba(99,102,241,0.2)', borderTopColor: '#6366F1', borderRadius: '50%' }} />
-                    Loading channels list...
+                <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.875rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                    <div className="animate-spin" style={{ width: 24, height: 24, border: '2px solid rgba(99,102,241,0.2)', borderTopColor: '#6366F1', borderRadius: '50%' }} />
+                    Loading channels...
                 </div>
             ) : !teamId ? (
-                <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '18px', background: 'var(--color-surface)' }}>
-                    💬 No team selected. Choose a team in the workspace switcher sidebar.
+                <div className="glass-card" style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                    💬 No team selected. Choose a team in the workspace sidebar.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                    
-                    {/* Left Column: Channel Selector Sidebar */}
-                    <div className="lg:col-span-1">
-                        <ChannelSidebar channels={channels} selectedChannelId={selectedChannel?._id} onSelectChannel={handleSelectChannel} />
-                    </div>
+                /* UNIFIED FULL-HEIGHT WORKSPACE CONTAINER (Zero dead space!) */
+                <div className="glass-card" style={{
+                    display: 'grid',
+                    gridTemplateColumns: '240px 1fr',
+                    flex: 1,
+                    minHeight: 'calc(100vh - 100px)',
+                    borderRadius: 14,
+                    overflow: 'hidden',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    padding: 0
+                }} id="unified-channel-container">
+                    <style>{`
+                        @media (max-width: 768px) {
+                            #unified-channel-container {
+                                grid-template-columns: 1fr !important;
+                            }
+                        }
+                    `}</style>
 
-                    {/* Right Column: Selected Channel Workspace */}
-                    <div className="lg:col-span-3 space-y-8">
-                        {selectedChannel ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                                
-                                {/* CHANNEL OVERVIEW SECTION */}
-                                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '20px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                            <div style={{
-                                                width: '46px',
-                                                height: '46px',
-                                                borderRadius: '12px',
-                                                background: 'rgba(99, 102, 241, 0.1)',
-                                                border: '1px solid rgba(99, 102, 241, 0.2)',
+                    {/* LEFT PANE: CHANNELS LIST (Fills full height, no empty gap!) */}
+                    <div style={{
+                        background: 'rgba(10, 11, 16, 0.6)',
+                        borderRight: '1px solid rgba(255, 255, 255, 0.06)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        height: '100%'
+                    }}>
+                        {/* Channels Header */}
+                        <div style={{
+                            padding: '12px 14px',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Channels ({channels.length})
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setShowCreateDialog(true)}
+                                style={{
+                                    background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                    padding: '3px 9px',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    color: '#fff',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3,
+                                    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)'
+                                }}
+                                title="Create new channel"
+                            >
+                                <span>+</span>
+                                <span>New</span>
+                            </button>
+                        </div>
+
+                        {/* Search Bar */}
+                        {channels.length > 3 && (
+                            <div style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                                <input
+                                    type="text"
+                                    placeholder="Find channel..."
+                                    value={channelSearch}
+                                    onChange={(e) => setChannelSearch(e.target.value)}
+                                    style={{
+                                        background: 'rgba(255, 255, 255, 0.03)',
+                                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                                        borderRadius: 6,
+                                        padding: '4px 8px',
+                                        fontSize: '0.75rem',
+                                        color: '#fff',
+                                        outline: 'none',
+                                        width: '100%',
+                                        boxSizing: 'border-box'
+                                    }}
+                                />
+                            </div>
+                        )}
+
+                        {/* Channel Items List */}
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {filteredChannels.length === 0 ? (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', padding: '16px 8px', textAlign: 'center' }}>
+                                    {channelSearch ? 'No match' : 'No channels'}
+                                </div>
+                            ) : (
+                                filteredChannels.map((channel) => {
+                                    const isActive = selectedChannel?._id === channel._id
+                                    return (
+                                        <button
+                                            key={channel._id}
+                                            type="button"
+                                            onClick={() => handleSelectChannel(channel._id)}
+                                            style={{
+                                                width: '100%',
+                                                textAlign: 'left',
+                                                borderRadius: 6,
+                                                padding: '7px 10px',
+                                                transition: 'all 0.15s ease',
+                                                cursor: 'pointer',
+                                                border: isActive ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid transparent',
+                                                background: isActive ? 'rgba(99, 102, 241, 0.18)' : 'transparent',
+                                                color: isActive ? '#fff' : '#a1a1aa',
+                                                outline: 'none',
                                                 display: 'flex',
                                                 alignItems: 'center',
-                                                justifyContent: 'center',
-                                                fontSize: '1.5rem',
-                                                fontWeight: 800,
-                                                color: '#6366F1'
-                                            }}>
-                                                #
-                                            </div>
-                                            <div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <h2 style={{ fontSize: '1.375rem', fontWeight: 800, color: '#fff', margin: 0 }}>{selectedChannel.name}</h2>
-                                                    <span style={{
-                                                        background: selectedChannel.type === 'public' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(139, 92, 246, 0.1)',
-                                                        color: selectedChannel.type === 'public' ? '#22C55E' : '#8B5CF6',
-                                                        border: selectedChannel.type === 'public' ? '1px solid rgba(34, 197, 94, 0.2)' : '1px solid rgba(139, 92, 246, 0.2)',
-                                                        fontSize: '0.6875rem',
-                                                        fontWeight: 700,
-                                                        padding: '1px 8px',
-                                                        borderRadius: '6px',
-                                                        textTransform: 'uppercase'
-                                                    }}>
-                                                        {selectedChannel.type}
-                                                    </span>
-                                                </div>
-                                                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
-                                                    {selectedChannel.description || 'No description yet.'}
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }} className="w-full sm:w-auto justify-start sm:justify-end">
-                                            {selectedChannel.type === 'public' && !isMember && (
-                                                <button onClick={handleJoinChannel} className="btn btn-success" style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 14px' }}>
-                                                    Join Channel
-                                                </button>
-                                            )}
-                                            {isMember && currentUserId && selectedChannel.members.some((member) => member.userId === currentUserId && member.role !== 'owner') && (
-                                                <button onClick={handleLeaveChannel} className="btn btn-danger" style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 14px' }}>
-                                                    Leave Channel
-                                                </button>
-                                            )}
-                                            <button onClick={() => { console.log('Invite Member button clicked!'); setShowInviteDialog(true); }} className="btn btn-primary" style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 14px' }}>
-                                                Invite Member
-                                            </button>
-                                            <button onClick={() => { console.log('Edit button clicked!'); setShowEditDialog(true); }} className="btn btn-secondary" style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 14px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}>
-                                                Edit
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* STATISTICS SECTION */}
-                                    <style>{`
-                                         .stats-grid-channel {
-                                             display: grid !important;
-                                             grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
-                                             gap: 24px !important;
-                                         }
-                                         @media (min-width: 640px) {
-                                             .stats-grid-channel {
-                                                 grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-                                             }
-                                         }
-                                         @media (min-width: 1024px) {
-                                             .stats-grid-channel {
-                                                 grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-                                             }
-                                         }
-                                     `}</style>
-                                     <div className="stats-grid-channel">
-                                        {[
-                                            { title: 'Total Members', val: selectedChannel.members.length, desc: 'Registered in channel', color: '#6366F1' },
-                                            { title: 'Online Members', val: dynamicOnlineMembers, desc: 'Active right now', color: '#22C55E' },
-                                            { title: 'Shared Files', val: dynamicSharedFilesCount, desc: 'Documents and media assets', color: '#8B5CF6' },
-                                            { title: 'Messages Today', val: dynamicMessagesCount, desc: 'Workspace communications', color: '#F59E0B' }
-                                        ].map((stat, idx) => (
-                                            <div key={idx} style={{
-                                                background: 'rgba(255,255,255,0.01)',
-                                                border: '1px solid rgba(255,255,255,0.05)',
-                                                borderRadius: '14px',
-                                                padding: '16px',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: '2px',
-                                                transition: 'all 200ms ease-in-out'
+                                                justifyContent: 'space-between',
+                                                gap: 6
                                             }}
                                             onMouseEnter={(e) => {
-                                                e.currentTarget.style.transform = 'translateY(-1px)';
-                                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+                                                if (!isActive) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'
                                             }}
                                             onMouseLeave={(e) => {
-                                                e.currentTarget.style.transform = 'translateY(0)';
-                                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)';
-                                            }}>
-                                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{stat.title}</span>
-                                                <span style={{ fontSize: '1.625rem', fontWeight: 800, color: '#fff', margin: '4px 0' }}>{stat.val}</span>
-                                                <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>{stat.desc}</span>
+                                                if (!isActive) e.currentTarget.style.background = 'transparent'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                                <span style={{ color: isActive ? '#818cf8' : '#6B7280', fontWeight: 800, fontSize: '0.85rem' }}>#</span>
+                                                <span style={{ fontWeight: isActive ? 700 : 500, fontSize: '0.8125rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {channel.name}
+                                                </span>
                                             </div>
-                                        ))}
+                                            <span style={{
+                                                fontSize: '0.6rem',
+                                                fontWeight: 700,
+                                                color: channel.type === 'public' ? '#4ade80' : '#c084fc',
+                                                textTransform: 'uppercase',
+                                                flexShrink: 0
+                                            }}>
+                                                {channel.type}
+                                            </span>
+                                        </button>
+                                    )
+                                })
+                            )}
+                        </div>
+                    </div>
+
+                    {/* RIGHT PANE: ACTIVE CHANNEL WORKSPACE & CHAT (Full height, composer pinned!) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, background: 'rgba(0, 0, 0, 0.2)' }}>
+                        {selectedChannel ? (
+                            <>
+                                {/* COMPACT CHANNEL HEADER TOOLBAR */}
+                                <div style={{
+                                    padding: '10px 16px',
+                                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    flexWrap: 'wrap',
+                                    gap: 8,
+                                    background: 'rgba(255, 255, 255, 0.015)'
+                                }}>
+                                    {/* Left: Channel Name + Pills */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                        <div style={{
+                                            width: 28, height: 28, borderRadius: 6,
+                                            background: 'rgba(99, 102, 241, 0.15)',
+                                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontSize: '1rem', fontWeight: 800, color: '#818cf8'
+                                        }}>
+                                            #
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
+                                                {selectedChannel.name}
+                                            </span>
+                                            <span style={{
+                                                background: selectedChannel.type === 'public' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(139, 92, 246, 0.15)',
+                                                color: selectedChannel.type === 'public' ? '#4ade80' : '#c084fc',
+                                                border: selectedChannel.type === 'public' ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(139, 92, 246, 0.3)',
+                                                fontSize: '0.625rem',
+                                                fontWeight: 700,
+                                                padding: '1px 5px',
+                                                borderRadius: 4,
+                                                textTransform: 'uppercase'
+                                            }}>
+                                                {selectedChannel.type}
+                                            </span>
+                                            {selectedChannel.description && (
+                                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 320 }}>
+                                                    • {selectedChannel.description}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Right: Inline Action Buttons */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                        {selectedChannel.type === 'public' && !isMember && (
+                                            <button
+                                                onClick={handleJoinChannel}
+                                                className="btn btn-success"
+                                                style={{ height: 26, borderRadius: 6, fontSize: '0.725rem', fontWeight: 600, padding: '0 10px', background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)', border: 'none', color: '#fff', cursor: 'pointer' }}
+                                            >
+                                                Join Channel
+                                            </button>
+                                        )}
+                                        {isMember && currentUserId && selectedChannel.members.some((member) => member.userId === currentUserId && member.role !== 'owner') && (
+                                            <button
+                                                onClick={handleLeaveChannel}
+                                                className="btn btn-danger"
+                                                style={{ height: 26, borderRadius: 6, fontSize: '0.725rem', fontWeight: 600, padding: '0 10px', cursor: 'pointer' }}
+                                            >
+                                                Leave
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => setShowInviteDialog(true)}
+                                            className="btn btn-primary"
+                                            style={{ height: 26, borderRadius: 6, fontSize: '0.725rem', fontWeight: 600, padding: '0 10px', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}
+                                        >
+                                            <span>+</span>
+                                            <span>Invite</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setShowEditDialog(true)}
+                                            className="btn btn-secondary"
+                                            style={{ height: 26, borderRadius: 6, fontSize: '0.725rem', fontWeight: 600, padding: '0 10px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: '#fff', cursor: 'pointer' }}
+                                        >
+                                            Edit
+                                        </button>
                                     </div>
                                 </div>
 
-                                {/* TAB SWITCHER */}
-                                <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', marginBottom: '8px' }}>
-                                    <button
-                                        onClick={() => setActivePanelTab('chat')}
-                                        style={{
-                                            padding: '8px 16px',
-                                            borderRadius: '8px',
-                                            fontSize: '0.875rem',
-                                            fontWeight: 600,
-                                            background: activePanelTab === 'chat' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                                            color: activePanelTab === 'chat' ? '#818cf8' : 'var(--color-text-muted)',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px'
-                                        }}
-                                    >
-                                        💬 Channel Chat
-                                    </button>
-                                    <button
-                                        onClick={() => setActivePanelTab('members')}
-                                        style={{
-                                            padding: '8px 16px',
-                                            borderRadius: '8px',
-                                            fontSize: '0.875rem',
-                                            fontWeight: 600,
-                                            background: activePanelTab === 'members' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                                            color: activePanelTab === 'members' ? '#818cf8' : 'var(--color-text-muted)',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px'
-                                        }}
-                                    >
-                                        👥 Members ({members.length})
-                                    </button>
-                                    <button
-                                        onClick={() => setActivePanelTab('info')}
-                                        style={{
-                                            padding: '8px 16px',
-                                            borderRadius: '8px',
-                                            fontSize: '0.875rem',
-                                            fontWeight: 600,
-                                            background: activePanelTab === 'info' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                                            color: activePanelTab === 'info' ? '#818cf8' : 'var(--color-text-muted)',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px'
-                                        }}
-                                    >
-                                        ⚙ Settings & Info
-                                    </button>
+                                {/* SLIM METRICS & SEGMENTED TABS STRIP */}
+                                <div style={{
+                                    padding: '0 16px',
+                                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    flexWrap: 'wrap',
+                                    background: 'rgba(255, 255, 255, 0.01)'
+                                }}>
+                                    {/* Tabs */}
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {[
+                                            { id: 'chat', label: 'Chat Stream', icon: '💬' },
+                                            { id: 'members', label: `Members (${members.length})`, icon: '👥' },
+                                            { id: 'info', label: 'Info', icon: 'ℹ️' },
+                                            { id: 'permissions', label: 'Roles', icon: '🛡️' },
+                                            { id: 'danger', label: 'Danger', icon: '⚠️' }
+                                        ].map((tab) => (
+                                            <button
+                                                key={tab.id}
+                                                onClick={() => setActivePanelTab(tab.id as any)}
+                                                style={{
+                                                    padding: '8px 10px',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: activePanelTab === tab.id ? 700 : 500,
+                                                    background: 'transparent',
+                                                    color: activePanelTab === tab.id ? '#818cf8' : 'var(--color-text-muted)',
+                                                    border: 'none',
+                                                    borderBottom: activePanelTab === tab.id ? '2px solid #6366F1' : '2px solid transparent',
+                                                    cursor: 'pointer',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 4
+                                                }}
+                                            >
+                                                <span>{tab.icon}</span>
+                                                <span>{tab.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Inline Metrics Info */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: '0.7rem', color: 'var(--color-text-muted)', padding: '4px 0' }}>
+                                        <span>👥 {selectedChannel.members.length} members</span>
+                                        <span>•</span>
+                                        <span>🟢 {dynamicOnlineMembers} online</span>
+                                        <span>•</span>
+                                        <span>📁 {dynamicSharedFilesCount} files</span>
+                                    </div>
                                 </div>
 
-                                {/* TAB CONTENTS */}
+                                {/* TAB 1: EMBEDDED FULL-HEIGHT CHAT STREAM */}
                                 {activePanelTab === 'chat' && (
-                                    <div style={{ display: 'flex', gap: '24px', position: 'relative', width: '100%', height: '550px', background: 'var(--color-surface)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', overflow: 'hidden' }}>
-                                        {/* Main Chat Area */}
-                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
-                                            {/* Messages Feed */}
-                                            <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                                {messages.length === 0 ? (
-                                                    <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
-                                                        💬 No messages yet in #{selectedChannel.name}. Type below to start conversing!
-                                                    </div>
-                                                ) : (
-                                                    messages.map((msg) => (
-                                                        <div key={msg._id} className="hover:bg-white/5" style={{ display: 'flex', gap: '12px', padding: '8px', borderRadius: '8px', position: 'relative', transition: 'background 0.15s' }}>
-                                                            {/* User Avatar */}
-                                                            <div style={{
-                                                                width: '36px', height: '36px', borderRadius: '50%',
-                                                                background: 'rgba(99, 102, 241, 0.15)',
-                                                                color: '#818cf8', display: 'flex', alignItems: 'center',
-                                                                justifyContent: 'center', fontWeight: 700, fontSize: '0.875rem',
-                                                                border: '1px solid rgba(99, 102, 241, 0.2)'
-                                                            }}>
-                                                                {msg.senderId?.fullName ? msg.senderId.fullName.charAt(0).toUpperCase() : 'U'}
+                                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden', minHeight: 0 }}>
+                                        {/* Messages Feed */}
+                                        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            {messages.length === 0 ? (
+                                                <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
+                                                    💬 No messages yet in #{selectedChannel.name}. Type below to start conversing!
+                                                </div>
+                                            ) : (
+                                                messages.map((msg) => (
+                                                    <div key={msg._id} className="hover:bg-white/5" style={{ display: 'flex', gap: 10, padding: '4px 6px', borderRadius: 6, position: 'relative', transition: 'background 0.15s' }}>
+                                                        <div style={{
+                                                            width: 28, height: 28, minWidth: 28, borderRadius: '50%',
+                                                            background: 'rgba(99, 102, 241, 0.15)',
+                                                            color: '#818cf8', display: 'flex', alignItems: 'center',
+                                                            justifyContent: 'center', fontWeight: 700, fontSize: '0.725rem',
+                                                            border: '1px solid rgba(99, 102, 241, 0.2)'
+                                                        }}>
+                                                            {msg.senderId?.fullName ? msg.senderId.fullName.charAt(0).toUpperCase() : 'U'}
+                                                        </div>
+                                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                <span style={{ fontWeight: 700, fontSize: '0.8125rem', color: '#fff' }}>{msg.senderId?.fullName || 'User'}</span>
+                                                                <span style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)' }}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                                             </div>
-                                                            {/* Message Details */}
-                                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                    <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#fff' }}>{msg.senderId?.fullName || 'User'}</span>
-                                                                    <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                                </div>
-                                                                <p style={{ margin: 0, fontSize: '0.875rem', color: '#e5e7eb', lineHeight: 1.4, wordBreak: 'break-word' }}>{msg.content}</p>
-                                                                
-                                                                {/* Thread Reply Trigger */}
-                                                                <div style={{ display: 'flex', gap: '12px', marginTop: '4px' }}>
-                                                                    <button
-                                                                        onClick={() => setActiveThreadParent(msg)}
-                                                                        style={{ background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.75rem', cursor: 'pointer', padding: 0, fontWeight: 600 }}
-                                                                        className="hover:underline"
-                                                                    >
-                                                                        Reply in thread
-                                                                    </button>
-                                                                    {msg.replyCount > 0 && (
-                                                                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                                                            • {msg.replyCount} {msg.replyCount === 1 ? 'reply' : 'replies'}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
+                                                            <p style={{ margin: 0, fontSize: '0.8125rem', color: '#e5e7eb', lineHeight: 1.4, wordBreak: 'break-word' }}>{msg.content}</p>
+                                                            
+                                                            <div style={{ display: 'flex', gap: 8, marginTop: 1 }}>
+                                                                <button
+                                                                    onClick={() => setActiveThreadParent(msg)}
+                                                                    style={{ background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.6875rem', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+                                                                    className="hover:underline"
+                                                                >
+                                                                    Reply in thread
+                                                                </button>
+                                                                {msg.replyCount > 0 && (
+                                                                    <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
+                                                                        • {msg.replyCount} {msg.replyCount === 1 ? 'reply' : 'replies'}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </div>
-                                                    ))
-                                                )}
-                                                <div ref={mainChatEndRef} />
-                                            </div>
-
-                                            {/* Chat Composer */}
-                                            <form onSubmit={handleSendMessage} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '16px', display: 'flex', gap: '12px', background: 'var(--color-bg-base)' }}>
-                                                <input
-                                                    value={chatInput}
-                                                    onChange={(e) => setChatInput(e.target.value)}
-                                                    className="input"
-                                                    placeholder={`Send a message to #${selectedChannel.name}...`}
-                                                    style={{ flex: 1, borderRadius: '10px' }}
-                                                    disabled={selectedChannel.archived}
-                                                />
-                                                <button type="submit" className="btn btn-primary" style={{ padding: '0 20px', borderRadius: '10px' }} disabled={selectedChannel.archived}>
-                                                    Send
-                                                </button>
-                                            </form>
+                                                    </div>
+                                                ))
+                                            )}
+                                            <div ref={mainChatEndRef} />
                                         </div>
 
-                                        {/* Sliding Thread Sidebar Panel */}
+                                        {/* PINNED CHAT COMPOSER (Always visible at bottom!) */}
+                                        <form onSubmit={handleSendMessage} style={{
+                                            borderTop: '1px solid rgba(255,255,255,0.06)',
+                                            padding: '8px 14px',
+                                            display: 'flex',
+                                            gap: 8,
+                                            background: 'rgba(10, 11, 16, 0.8)'
+                                        }}>
+                                            <input
+                                                value={chatInput}
+                                                onChange={(e) => setChatInput(e.target.value)}
+                                                className="input"
+                                                placeholder={`Send a message to #${selectedChannel.name}...`}
+                                                style={{ flex: 1, borderRadius: 6, height: 34, fontSize: '0.8125rem', background: 'rgba(255,255,255,0.03)' }}
+                                                disabled={selectedChannel.archived}
+                                            />
+                                            <button
+                                                type="submit"
+                                                className="btn btn-primary"
+                                                style={{ padding: '0 16px', borderRadius: 6, height: 34, fontSize: '0.8125rem', background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)' }}
+                                                disabled={selectedChannel.archived || !chatInput.trim()}
+                                            >
+                                                Send
+                                            </button>
+                                        </form>
+
+                                        {/* Slide-in Thread Sidebar */}
                                         {activeThreadParent && (
-                                            <div style={{ width: '360px', borderLeft: '1px solid rgba(255,255,255,0.05)', background: 'var(--color-bg-base)', display: 'flex', flexDirection: 'column', height: '100%', zIndex: 10 }}>
-                                                {/* Thread Header */}
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                                    <span style={{ fontWeight: 800, fontSize: '0.9375rem', color: '#fff' }}>Thread Panel</span>
-                                                    <button onClick={() => setActiveThreadParent(null)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 4 }} className="hover:text-white">
+                                            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 300, borderLeft: '1px solid rgba(255,255,255,0.08)', background: '#111218', display: 'flex', flexDirection: 'column', zIndex: 20 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                                                    <span style={{ fontWeight: 800, fontSize: '0.8125rem', color: '#fff' }}>Thread Reply</span>
+                                                    <button onClick={() => setActiveThreadParent(null)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 2 }}>
                                                         ✕
                                                     </button>
                                                 </div>
 
-                                                {/* Parent Message Reference */}
-                                                <div style={{ padding: '16px', background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid rgba(255,255,255,0.03)', display: 'flex', gap: '10px' }}>
-                                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem', color: '#fff' }}>
+                                                <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid rgba(255,255,255,0.04)', display: 'flex', gap: 8 }}>
+                                                    <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.65rem', color: '#fff' }}>
                                                         {activeThreadParent.senderId?.fullName ? activeThreadParent.senderId.fullName.charAt(0).toUpperCase() : 'U'}
                                                     </div>
                                                     <div>
-                                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>{activeThreadParent.senderId?.fullName || 'User'}</div>
-                                                        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', marginTop: '2px', wordBreak: 'break-all' }}>{activeThreadParent.content}</div>
+                                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#fff' }}>{activeThreadParent.senderId?.fullName || 'User'}</div>
+                                                        <div style={{ fontSize: '0.725rem', color: 'var(--color-text-secondary)', marginTop: 1, wordBreak: 'break-all' }}>{activeThreadParent.content}</div>
                                                     </div>
                                                 </div>
 
-                                                {/* Thread Replies List */}
-                                                <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                <div style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
                                                     {threadMessages.length === 0 ? (
                                                         <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
-                                                            💬 No replies yet. Start the conversation in thread!
+                                                            💬 No replies yet.
                                                         </div>
                                                     ) : (
                                                         threadMessages.map((reply) => (
-                                                            <div key={reply._id} style={{ display: 'flex', gap: '10px', padding: '6px', borderRadius: '6px' }}>
-                                                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.75rem', color: '#818cf8', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                            <div key={reply._id} style={{ display: 'flex', gap: 6, padding: 3 }}>
+                                                                <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.6rem', color: '#818cf8' }}>
                                                                     {reply.senderId?.fullName ? reply.senderId.fullName.charAt(0).toUpperCase() : 'U'}
                                                                 </div>
                                                                 <div style={{ flex: 1 }}>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                        <span style={{ fontWeight: 700, fontSize: '0.75rem', color: '#fff' }}>{reply.senderId?.fullName || 'User'}</span>
-                                                                        <span style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)' }}>{new Date(reply.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                        <span style={{ fontWeight: 700, fontSize: '0.6875rem', color: '#fff' }}>{reply.senderId?.fullName || 'User'}</span>
+                                                                        <span style={{ fontSize: '0.58rem', color: 'var(--color-text-muted)' }}>{new Date(reply.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                                                     </div>
-                                                                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#d1d5db', marginTop: '2px', wordBreak: 'break-word' }}>{reply.content}</p>
+                                                                    <p style={{ margin: 0, fontSize: '0.7rem', color: '#d1d5db', marginTop: 1, wordBreak: 'break-word' }}>{reply.content}</p>
                                                                 </div>
                                                             </div>
                                                         ))
@@ -774,17 +818,16 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                                     <div ref={threadChatEndRef} />
                                                 </div>
 
-                                                {/* Thread Reply Composer */}
-                                                <form onSubmit={handleSendThreadMessage} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '12px', display: 'flex', gap: '8px', background: 'var(--color-bg-base)' }}>
+                                                <form onSubmit={handleSendThreadMessage} style={{ borderTop: '1px solid rgba(255,255,255,0.06)', padding: 6, display: 'flex', gap: 4, background: 'var(--color-bg-base)' }}>
                                                     <input
                                                         value={threadInput}
                                                         onChange={(e) => setThreadInput(e.target.value)}
-                                                        className="input text-xs"
+                                                        className="input"
                                                         placeholder="Reply..."
-                                                        style={{ flex: 1, borderRadius: '8px', height: '32px' }}
+                                                        style={{ flex: 1, borderRadius: 4, height: 28, fontSize: '0.725rem' }}
                                                         disabled={selectedChannel.archived}
                                                     />
-                                                    <button type="submit" className="btn btn-primary text-xs" style={{ padding: '0 12px', borderRadius: '8px', height: '32px' }} disabled={selectedChannel.archived}>
+                                                    <button type="submit" className="btn btn-primary" style={{ padding: '0 8px', borderRadius: 4, height: 28, fontSize: '0.725rem' }} disabled={selectedChannel.archived || !threadInput.trim()}>
                                                         Send
                                                     </button>
                                                 </form>
@@ -793,8 +836,9 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                     </div>
                                 )}
 
+                                {/* TAB 2: MEMBERS */}
                                 {activePanelTab === 'members' && (
-                                    <div className="grid grid-cols-1 gap-8">
+                                    <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
                                         <ChannelMembersPage
                                             members={members}
                                             currentUserId={currentUserId}
@@ -804,46 +848,41 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                     </div>
                                 )}
 
+                                {/* TAB 3: DETAILS & ACTIVITY */}
                                 {activePanelTab === 'info' && (
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                        {/* Channel Details Card */}
-                                        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                            <h3 style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>Channel Details</h3>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.8125rem' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '8px' }}>
-                                                    <span style={{ color: 'var(--color-text-secondary)' }}>Type / Visibility:</span>
+                                    <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+                                        <div className="glass-card" style={{ padding: 14, borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            <h4 style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>Channel Info</h4>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.75rem' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: 4 }}>
+                                                    <span style={{ color: 'var(--color-text-secondary)' }}>Type:</span>
                                                     <span style={{ fontWeight: 600, color: '#fff', textTransform: 'capitalize' }}>{selectedChannel.type}</span>
                                                 </div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '8px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: 4 }}>
                                                     <span style={{ color: 'var(--color-text-secondary)' }}>Status:</span>
-                                                    <span style={{ fontWeight: 600, color: '#fff', textTransform: 'capitalize' }}>{selectedChannel.status}</span>
+                                                    <span style={{ fontWeight: 600, color: '#4ade80', textTransform: 'capitalize' }}>{selectedChannel.status}</span>
                                                 </div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '8px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: 4 }}>
                                                     <span style={{ color: 'var(--color-text-secondary)' }}>Archived:</span>
-                                                    <span className={`badge ${selectedChannel.archived ? 'badge-warning' : 'badge-success'}`} style={{ padding: '2px 8px', fontSize: '0.625rem', borderRadius: '6px' }}>
+                                                    <span style={{ fontWeight: 600, color: selectedChannel.archived ? '#fbbf24' : '#fff' }}>
                                                         {selectedChannel.archived ? 'Yes' : 'No'}
                                                     </span>
                                                 </div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '8px' }}>
-                                                    <span style={{ color: 'var(--color-text-secondary)' }}>Owner ID:</span>
-                                                    <span style={{ fontWeight: 600, color: '#fff', fontFamily: 'monospace', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '140px' }}>{selectedChannel.ownerId}</span>
-                                                </div>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                    <span style={{ color: 'var(--color-text-secondary)' }}>File Count:</span>
-                                                    <span style={{ fontWeight: 600, color: '#fff' }}>{dynamicSharedFilesCount} shared files</span>
+                                                    <span style={{ color: 'var(--color-text-secondary)' }}>Owner ID:</span>
+                                                    <span style={{ fontWeight: 600, color: '#fff', fontFamily: 'monospace' }}>{selectedChannel.ownerId?.slice(0, 14)}...</span>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* Recent Activity Timeline */}
-                                        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                            <h3 style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>Recent Activity</h3>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', position: 'relative', paddingLeft: '12px', borderLeft: '2px solid rgba(255,255,255,0.06)' }}>
+                                        <div className="glass-card" style={{ padding: 14, borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            <h4 style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>Recent Activity</h4>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 8, borderLeft: '2px solid rgba(255,255,255,0.06)' }}>
                                                 {dynamicRecentActivities.map((act, idx) => (
-                                                    <div key={idx} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                        <span style={{ position: 'absolute', left: '-17px', top: '5px', width: '8px', height: '8px', borderRadius: '50%', background: '#6366F1', border: '2px solid var(--color-surface)' }} />
-                                                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#E5E7EB' }}>{act.title}</span>
-                                                        <span style={{ fontSize: '0.725rem', color: 'var(--color-text-muted)' }}>{act.time}</span>
+                                                    <div key={idx} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                                                        <span style={{ position: 'absolute', left: '-13px', top: 4, width: 5, height: 5, borderRadius: '50%', background: '#6366F1' }} />
+                                                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#E5E7EB' }}>{act.title}</span>
+                                                        <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>{act.time}</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -851,77 +890,58 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                     </div>
                                 )}
 
-                                {/* PERMISSIONS SECTION */}
-                                <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                    <div>
-                                        <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#fff', margin: 0 }}>Channel Permissions & Roles</h3>
-                                        <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
-                                            Authorized access boundaries configured for this communication stream.
-                                        </p>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        {[
-                                            { title: 'Owner', desc: 'Full administration, edit channel attributes, archive thread, and member moderation.', color: '#F59E0B' },
-                                            { title: 'Moderator', desc: 'Can configure channel settings, delete other user\'s messages, and invite collaborators.', color: '#8B5CF6' },
-                                            { title: 'Member / Guest', desc: 'Standard write privileges, post messages, start WebRTC call lobby, and invite.', color: '#22C55E' }
-                                        ].map((p, idx) => (
-                                            <div key={idx} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: p.color }} />
-                                                    <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#fff' }}>{p.title}</span>
+                                {/* TAB 4: PERMISSIONS */}
+                                {activePanelTab === 'permissions' && (
+                                    <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+                                            {[
+                                                { title: 'Owner', desc: 'Full administration, archive thread, and member moderation.', color: '#F59E0B' },
+                                                { title: 'Moderator', desc: 'Can configure channel settings and invite collaborators.', color: '#8B5CF6' },
+                                                { title: 'Member / Guest', desc: 'Standard write privileges, post messages, and screen sharing.', color: '#22C55E' }
+                                            ].map((p, idx) => (
+                                                <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.color }} />
+                                                        <span style={{ fontWeight: 700, fontSize: '0.75rem', color: '#fff' }}>{p.title}</span>
+                                                    </div>
+                                                    <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>{p.desc}</p>
                                                 </div>
-                                                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>{p.desc}</p>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
 
-                                {/* DANGER ZONE */}
-                                <div className="glass-card" style={{ border: '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                    <div>
-                                        <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#EF4444', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2.5">
-                                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                            </svg>
-                                            Danger Zone
-                                        </h3>
-                                        <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
-                                            Destructive workspace actions related to channel preservation.
-                                        </p>
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '12px', padding: '16px', flexWrap: 'wrap', gap: '14px' }}>
+                                {/* TAB 5: DANGER ZONE */}
+                                {activePanelTab === 'danger' && (
+                                    <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '10px 14px', flexWrap: 'wrap', gap: 8 }}>
                                             <div>
-                                                <h4 style={{ margin: 0, fontSize: '0.8125rem', fontWeight: 600, color: '#fff' }}>Archive or Restore Channel</h4>
-                                                <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                                    Archiving a channel makes it read-only but preserves message history.
-                                                </p>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff' }}>Archive or Restore Channel</div>
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>Archiving makes the channel read-only while keeping message history.</div>
                                             </div>
                                             {selectedChannel.archived ? (
                                                 <button
                                                     onClick={handleRestoreChannel}
                                                     className="btn btn-success"
-                                                    style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 16px', background: 'linear-gradient(135deg, #22C55E 0%, #15803D 100%)', border: 'none' }}
+                                                    style={{ height: 26, borderRadius: 6, fontSize: '0.725rem', fontWeight: 600, padding: '0 10px', background: 'linear-gradient(135deg, #22C55E 0%, #15803D 100%)', border: 'none' }}
                                                 >
-                                                    Restore Channel
+                                                    Restore
                                                 </button>
                                             ) : (
                                                 <button
                                                     onClick={handleArchiveChannel}
                                                     className="btn btn-secondary"
-                                                    style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 16px', color: '#F59E0B', border: '1px solid rgba(245, 158, 11, 0.2)', background: 'rgba(245, 158, 11, 0.05)', cursor: 'pointer' }}
+                                                    style={{ height: 26, borderRadius: 6, fontSize: '0.725rem', fontWeight: 600, padding: '0 10px', color: '#F59E0B', border: '1px solid rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.1)', cursor: 'pointer' }}
                                                 >
-                                                    Archive Channel
+                                                    Archive
                                                 </button>
                                             )}
                                         </div>
 
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(239, 68, 68, 0.02)', border: '1px dashed rgba(239, 68, 68, 0.1)', borderRadius: '12px', padding: '16px', flexWrap: 'wrap', gap: '14px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(239, 68, 68, 0.03)', border: '1px dashed rgba(239, 68, 68, 0.2)', borderRadius: 8, padding: '10px 14px', flexWrap: 'wrap', gap: 8 }}>
                                             <div>
-                                                <h4 style={{ margin: 0, fontSize: '0.8125rem', fontWeight: 600, color: '#fff' }}>Delete Channel</h4>
-                                                <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                                    Completely remove this channel and all message history permanently.
-                                                </p>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#fff' }}>Delete Channel Permanently</div>
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>Completely purge #{selectedChannel.name} and all chat records.</div>
                                             </div>
                                             <button
                                                 onClick={() => {
@@ -930,18 +950,17 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
                                                     }
                                                 }}
                                                 className="btn btn-danger"
-                                                style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', fontWeight: 600, padding: '0 16px', background: 'linear-gradient(135deg, #EF4444 0%, #B91C1C 100%)', border: 'none' }}
+                                                style={{ height: 26, borderRadius: 6, fontSize: '0.725rem', fontWeight: 600, padding: '0 10px', background: 'linear-gradient(135deg, #EF4444 0%, #B91C1C 100%)', border: 'none' }}
                                             >
-                                                Delete Channel
+                                                Delete
                                             </button>
                                         </div>
                                     </div>
-                                </div>
-
-                            </div>
+                                )}
+                            </>
                         ) : (
-                            <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '18px', background: 'var(--color-surface)' }}>
-                                💬 Select a channel from the left sidebar to view config and manage members.
+                            <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
+                                💬 Select a channel from the left sidebar to start chatting.
                             </div>
                         )}
                     </div>
@@ -954,4 +973,3 @@ export function ChannelSettingsPage({ token, organizationId, teamId, currentUser
         </div>
     )
 }
-

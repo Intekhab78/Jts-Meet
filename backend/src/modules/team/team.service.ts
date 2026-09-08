@@ -78,7 +78,10 @@ export async function listOrganizationTeams(organizationId: string): Promise<ITe
         return []
     }
 
-    return Team.find({ organizationId: new Types.ObjectId(organizationId), deletedAt: null }).sort({ createdAt: -1 }).exec()
+    return Team.find({ organizationId: new Types.ObjectId(organizationId), deletedAt: null })
+        .populate('members.userId', 'fullName email profileImage')
+        .sort({ createdAt: -1 })
+        .exec()
 }
 
 export async function updateTeam(teamId: string, userId: string, payload: {
@@ -112,7 +115,9 @@ export async function updateTeam(teamId: string, userId: string, payload: {
     if (payload.visibility !== undefined) team.visibility = payload.visibility
     if (payload.status !== undefined) team.status = payload.status
 
-    return team.save()
+    await team.save()
+    await team.populate('members.userId', 'fullName email profileImage')
+    return team
 }
 
 export async function deleteTeam(teamId: string, userId: string): Promise<ITeam | null> {
@@ -140,7 +145,7 @@ export async function inviteTeamMember(teamId: string, inviterId: string, payloa
     }
 
     let targetUserId = payload.userId.trim()
-    if (!Types.ObjectId.isValid(targetUserId)) {
+    if (!Types.ObjectId.isValid(targetUserId) || targetUserId.includes('@')) {
         const user = await User.findOne({ email: targetUserId.toLowerCase() })
         if (!user) {
             throw new Error('User not found with this email address')
@@ -165,6 +170,7 @@ export async function inviteTeamMember(teamId: string, inviterId: string, payloa
     }
 
     const savedTeam = await team.save()
+    await savedTeam.populate('members.userId', 'fullName email profileImage')
 
     // Trigger invitation notifications asynchronously
     if (savedTeam) {
@@ -209,7 +215,9 @@ export async function joinPublicTeam(teamId: string, userId: string): Promise<IT
         })
     }
 
-    return team.save()
+    await team.save()
+    await team.populate('members.userId', 'fullName email profileImage')
+    return team
 }
 
 export async function leaveTeam(teamId: string, userId: string): Promise<ITeam | null> {
@@ -229,7 +237,9 @@ export async function leaveTeam(teamId: string, userId: string): Promise<ITeam |
     }
 
     team.members.splice(memberIndex, 1)
-    return team.save()
+    await team.save()
+    await team.populate('members.userId', 'fullName email profileImage')
+    return team
 }
 
 export async function removeTeamMember(teamId: string, requesterId: string, targetUserId: string): Promise<ITeam | null> {
@@ -253,7 +263,9 @@ export async function removeTeamMember(teamId: string, requesterId: string, targ
     }
 
     team.members.splice(memberIndex, 1)
-    return team.save()
+    await team.save()
+    await team.populate('members.userId', 'fullName email profileImage')
+    return team
 }
 
 export async function updateTeamMemberRole(teamId: string, requesterId: string, payload: { userId: string; role: 'admin' | 'member' | 'guest' }): Promise<ITeam | null> {
@@ -276,7 +288,9 @@ export async function updateTeamMemberRole(teamId: string, requesterId: string, 
     }
 
     member.role = payload.role
-    return team.save()
+    await team.save()
+    await team.populate('members.userId', 'fullName email profileImage')
+    return team
 }
 
 export async function getTeamMembers(teamId: string): Promise<ITeamMember[] | null> {

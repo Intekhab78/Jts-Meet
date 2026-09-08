@@ -1,14 +1,52 @@
 import { Types } from 'mongoose'
 import { Meeting, IMeeting } from './meeting.model'
+import { Organization } from '../organization/organization.model'
+import { Team } from '../team/team.model'
+import { User } from '../../models/user.model'
+import { sendMeetingInvitationEmail } from '../../services/email.service'
+import { FRONTEND_URL } from '../../config'
 
-export async function createMeeting(hostId: string, title: string): Promise<IMeeting> {
+export interface CreateMeetingOptions {
+    title: string
+    isRecurring?: boolean
+    recurrencePattern?: 'daily' | 'weekly' | 'weekdays' | 'monthly' | 'none'
+    scheduledDate?: string
+    scheduledTime?: string
+    organizationId?: string
+    teamId?: string
+    notifyByEmail?: boolean
+}
+
+export async function createMeeting(hostId: string, options: string | CreateMeetingOptions): Promise<IMeeting> {
+    const opts: CreateMeetingOptions = typeof options === 'string' ? { title: options } : options
     const meetingId = `meet_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    const hostObjectId = new Types.ObjectId(hostId)
+    const participantsSet = new Set<string>([hostId])
+
+    // If teamId provided, add all team members to participants
+    if (opts.teamId && Types.ObjectId.isValid(opts.teamId)) {
+        const team = await Team.findById(opts.teamId).select('members').exec()
+        if (team && team.members) {
+            team.members.forEach(m => participantsSet.add(m.userId.toString()))
+        }
+    }
+
+    // If organizationId provided and no specific team, add all org members
+    if (opts.organizationId && Types.ObjectId.isValid(opts.organizationId)) {
+        const org = await Organization.findById(opts.organizationId).select('members').exec()
+        if (org && org.members) {
+            org.members.forEach(m => participantsSet.add(m.userId.toString()))
+        }
+    }
+
+    const participantsList = Array.from(participantsSet).map(id => new Types.ObjectId(id))
+
     const meeting = new Meeting({
-        title: title.trim(),
+        title: opts.title.trim(),
         meetingId,
-        host: new Types.ObjectId(hostId),
+        host: hostObjectId,
         coHosts: [],
-        participants: [new Types.ObjectId(hostId)],
+        participants: participantsList,
         waitingRoom: [],
         mutedUsers: [],
         blockedUsers: [],
@@ -17,11 +55,41 @@ export async function createMeeting(hostId: string, title: string): Promise<IMee
         isRecordingActive: false,
         recordingUrl: '',
         status: 'scheduled',
+        isRecurring: opts.isRecurring || false,
+        recurrencePattern: opts.recurrencePattern || (opts.isRecurring ? 'daily' : 'none'),
+        scheduledDate: opts.scheduledDate || '',
+        scheduledTime: opts.scheduledTime || '',
+        organizationId: opts.organizationId && Types.ObjectId.isValid(opts.organizationId) ? new Types.ObjectId(opts.organizationId) : null,
+        teamId: opts.teamId && Types.ObjectId.isValid(opts.teamId) ? new Types.ObjectId(opts.teamId) : null,
+        notifyByEmail: opts.notifyByEmail !== false,
         startedAt: null,
         endedAt: null
     })
 
-    return meeting.save()
+    const savedMeeting = await meeting.save()
+
+    // Send instant invite email if requested and participants exist
+    if (opts.notifyByEmail && participantsList.length > 1) {
+        try {
+            const hostUser = await User.findById(hostObjectId).select('fullName').exec()
+            const hostName = hostUser?.fullName || 'Meeting Host'
+            const otherUserIds = participantsList.filter(p => !p.equals(hostObjectId))
+            const usersToNotify = await User.find({ _id: { $in: otherUserIds } }).select('email').exec()
+            const inviteUrl = `${FRONTEND_URL || 'http://localhost:3000'}/meet/${meetingId}`
+
+            for (const u of usersToNotify) {
+                if (u.email) {
+                    sendMeetingInvitationEmail(u.email, meetingId, opts.title.trim(), hostName, inviteUrl).catch(err => {
+                        console.error(`Failed to send meeting invite email to ${u.email}:`, err)
+                    })
+                }
+            }
+        } catch (e) {
+            console.error('Error sending immediate meeting invitation emails:', e)
+        }
+    }
+
+    return savedMeeting
 }
 
 export async function getMeetingByMeetingId(meetingId: string): Promise<IMeeting | null> {

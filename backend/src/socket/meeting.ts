@@ -26,31 +26,44 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     })
 
     socket.on(SocketEvents.MEETING_JOIN, async (payload: { meetingId: string }) => {
-        if (!userId) {
+        if (!userId || !payload?.meetingId) {
             return
         }
 
-        const meeting = await joinMeetingService(payload.meetingId, userId)
-        if (!meeting) {
-            socket.emit('error', { message: 'Meeting not found' })
-            return
-        }
+        try {
+            const meeting = await joinMeetingService(payload.meetingId, userId)
+            if (!meeting) {
+                socket.emit('error', { message: 'Meeting not found' })
+                return
+            }
 
-        io.emit(SocketEvents.MEETING_JOIN, { meetingId: payload.meetingId, participants: meeting.participants })
+            socket.join(`meeting:${payload.meetingId}`)
+            authSocket.meetingId = payload.meetingId
+
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_JOIN, { meetingId: payload.meetingId, participants: meeting.participants })
+        } catch (error: any) {
+            socket.emit('error', { message: error.message || 'Failed to join meeting' })
+        }
     })
 
     socket.on(SocketEvents.MEETING_LEAVE, async (payload: { meetingId: string }) => {
-        if (!userId) {
+        if (!userId || !payload?.meetingId) {
             return
         }
 
-        const meeting = await leaveMeetingService(payload.meetingId, userId)
-        if (!meeting) {
-            socket.emit('error', { message: 'Meeting not found' })
-            return
-        }
+        try {
+            const meeting = await leaveMeetingService(payload.meetingId, userId)
+            socket.leave(`meeting:${payload.meetingId}`)
 
-        io.emit(SocketEvents.MEETING_LEAVE, { meetingId: payload.meetingId, participants: meeting.participants })
+            if (!meeting) {
+                socket.emit('error', { message: 'Meeting not found' })
+                return
+            }
+
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_LEAVE, { meetingId: payload.meetingId, participants: meeting.participants })
+        } catch (error: any) {
+            socket.emit('error', { message: error.message || 'Failed to leave meeting' })
+        }
     })
 
     socket.on(SocketEvents.MEETING_END, async (payload: { meetingId: string }) => {

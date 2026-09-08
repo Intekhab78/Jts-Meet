@@ -72,7 +72,8 @@ export const teamController = {
                 { organizationId: new Types.ObjectId(organizationId), deletedAt: null },
                 params,
                 ['name', 'description'],
-                { visibility: req.query.visibility, status: req.query.status }
+                { visibility: req.query.visibility, status: req.query.status },
+                { path: 'members.userId', select: 'fullName email profileImage' }
             )
             return res.status(200).json({
                 success: true,

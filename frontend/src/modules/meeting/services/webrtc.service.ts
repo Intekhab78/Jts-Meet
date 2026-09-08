@@ -3,27 +3,17 @@ export interface PeerHandlers {
     onICECandidate: (candidate: RTCIceCandidateInit) => void
 }
 
+export const peerRemoteStreams = new Map<string, MediaStream>()
+
 export function createPeerConnection(userId: string, localStream: MediaStream | null, handlers: PeerHandlers) {
     const pc = new RTCPeerConnection({
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:openrelay.metered.ca:80' },
-            {
-                urls: 'turn:openrelay.metered.ca:80',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            }
-        ]
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun.services.mozilla.com' }
+        ],
+        iceCandidatePoolSize: 10
     })
 
     // Debug logging for WebRTC connection states
@@ -41,22 +31,39 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
     }
 
     pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-            handlers.onTrack(event.streams[0])
+        console.log(`[WebRTC] ontrack received: kind=${event.track.kind} id=${event.track.id} from user ${userId}`)
+        
+        let pStream = peerRemoteStreams.get(userId)
+        if (!pStream) {
+            pStream = new MediaStream()
+            peerRemoteStreams.set(userId, pStream)
         }
+
+        // Replace existing track of same kind so we don't accumulate duplicates
+        const existing = pStream.getTracks().find(t => t.kind === event.track.kind)
+        if (existing) {
+            pStream.removeTrack(existing)
+        }
+        pStream.addTrack(event.track)
+
+        // Always create a fresh MediaStream clone so React triggers useEffect and state updates
+        handlers.onTrack(new MediaStream(pStream.getTracks()))
     }
 
     if (localStream) {
-        localStream.getTracks().forEach((track) => pc.addTrack(track, localStream))
-        
-        // Ensure video sender/transceiver is present even if camera was off on join
-        const hasVideo = localStream.getVideoTracks().length > 0
-        if (!hasVideo) {
+        localStream.getTracks().forEach((track) => {
             try {
-                pc.addTransceiver('video', { direction: 'sendrecv' })
+                pc.addTrack(track, localStream)
             } catch (e) {
-                console.warn('Failed to add video transceiver:', e)
+                console.warn('addTrack warning:', e)
             }
+        })
+    } else {
+        try {
+            pc.addTransceiver('audio', { direction: 'sendrecv' })
+            pc.addTransceiver('video', { direction: 'sendrecv' })
+        } catch (e) {
+            console.warn('Failed to add transceivers:', e)
         }
     }
 

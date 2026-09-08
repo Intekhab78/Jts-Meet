@@ -20,5 +20,23 @@ export const SocketEvents = {
     CHANNEL_CHAT_STOP_TYPING: 'channel:chat:stopTyping',
     MEETING_LEAVE: 'meeting:leave',
     MEETING_CHAT_REACTION_ADD: 'meeting:chat:reaction:add',
-    MEETING_CHAT_REACTION_REMOVE: 'meeting:chat:reaction:remove'
+    MEETING_CHAT_REACTION_REMOVE: 'meeting:chat:reaction:remove',
+
+    // Direct 1-on-1 Calling events
+    CALL_INITIATE: 'call:initiate',
+    CALL_INCOMING: 'call:incoming',
+    CALL_ACCEPTED: 'call:accepted',
+    CALL_REJECTED: 'call:rejected',
+    CALL_CANCELLED: 'call:cancelled',
+
+    // Collaborative Whiteboard events
+    WHITEBOARD_DRAW: 'whiteboard:draw',
+    WHITEBOARD_CLEAR: 'whiteboard:clear',
+
+    // In-meeting Polls events
+    POLL_CREATE: 'poll:create',
+    POLL_VOTE: 'poll:vote',
+    POLL_UPDATE: 'poll:update',
+    POLL_CLOSE: 'poll:close'
 } as const
+

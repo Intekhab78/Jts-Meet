@@ -26,7 +26,7 @@ function createToken(userId: string) {
 export async function createSession(userId: string, deviceInfo = '', ipAddress = '', session?: mongoose.ClientSession): Promise<{ accessToken: string; refreshToken: string }> {
     const accessToken = createToken(userId)
     const refreshToken = crypto.randomBytes(40).toString('hex')
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+    const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 365 days
 
     const newSession = new Session({
         userId,
@@ -216,6 +216,8 @@ export async function resetPassword(email: string, code: string, password: Regis
     user.otpCode = null
     user.otpExpires = null
     await user.save()
+
+    await Session.deleteMany({ userId: user._id }).exec()
 }
 
 export async function refreshSessionToken(oldRefreshToken: string, deviceInfo = '', ipAddress = ''): Promise<{ accessToken: string; refreshToken: string }> {
@@ -274,6 +276,8 @@ export async function changeUserPassword(userId: string, oldPassword: string, ne
     }
     user.password = newPassword
     await user.save()
+
+    await Session.deleteMany({ userId: user._id }).exec()
 }
 
 export async function listActiveSessions(userId: string): Promise<any[]> {
@@ -302,7 +306,7 @@ export async function loginOrCreateSsoUser(email: string, orgSlug: string, devic
             user = new User({
                 fullName: cleanEmail.split('@')[0],
                 email: cleanEmail,
-                password: await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10),
+                password: crypto.randomBytes(16).toString('hex'),
                 profileImage: '',
                 status: 'online',
                 emailVerified: true,
@@ -401,7 +405,7 @@ export async function loginOrCreateGoogleUser(idToken: string, deviceInfo = '', 
                 user = new User({
                     fullName: googleData.name,
                     email: cleanEmail,
-                    password: await bcrypt.hash(secureRandomPassword, 10),
+                    password: secureRandomPassword,
                     profileImage: googleData.picture,
                     googleId: googleData.googleId,
                     provider: 'google',
@@ -517,7 +521,7 @@ export async function loginOrCreateMicrosoftUser(code: string, redirectUri: stri
                 user = new User({
                     fullName: decoded.name || cleanEmail.split('@')[0],
                     email: cleanEmail,
-                    password: await bcrypt.hash(secureRandomPassword, 10),
+                    password: secureRandomPassword,
                     profileImage: '',
                     microsoftId: decoded.oid,
                     tenantId: decoded.tid,

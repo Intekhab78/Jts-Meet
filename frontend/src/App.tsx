@@ -111,6 +111,12 @@ function App() {
                     setGuestToken(tokenVal)
                     setGuestUserId(userIdVal)
                     setGuestDetails(details)
+                    try {
+                        localStorage.setItem('jts_guest_token', tokenVal)
+                        if (details?.guestName) {
+                            localStorage.setItem('jts_guest_name', details.guestName)
+                        }
+                    } catch (e) {}
                     if (isPending) {
                         setView('guest-waiting')
                     } else {

@@ -8,6 +8,9 @@ import { createMessage, markMessageDelivered, markConversationSeen, addReactionT
 import { registerMeetingHandlers } from './meeting'
 import { registerMeetingChatHandlers } from './meetingChat'
 import { registerChannelChatHandlers } from './channelChat'
+import { registerDirectCallHandlers } from './directCall'
+import { registerWhiteboardHandlers } from './whiteboard'
+import { registerPollHandlers } from './poll'
 import { registerWebRTCHandlers } from '../modules/webrtc/webrtc.socket'
 import { getMeetingByMeetingId } from '../modules/meeting/meeting.service'
 import jwt from 'jsonwebtoken'
@@ -140,11 +143,23 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
             registerMeetingHandlers(io, socket)
             registerMeetingChatHandlers(io, socket)
             registerWebRTCHandlers(io, socket)
+            registerWhiteboardHandlers(io, socket)
+            registerPollHandlers(io, socket)
 
             socket.on(SocketEvents.DISCONNECT, () => {
                 // Approved guest disconnect cleanup
             })
             return
+        }
+
+        // For registered users, populate their full name into the socket
+        if (userId && !authSocket.guestName) {
+            try {
+                const userDoc = await User.findById(userId).select('fullName').lean()
+                if (userDoc?.fullName) {
+                    authSocket.guestName = userDoc.fullName
+                }
+            } catch (err) {}
         }
 
         setUserOnline(userId, socket.id)
@@ -281,6 +296,9 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         registerMeetingChatHandlers(io, socket)
         registerChannelChatHandlers(io, socket)
         registerWebRTCHandlers(io, socket)
+        registerDirectCallHandlers(io, socket)
+        registerWhiteboardHandlers(io, socket)
+        registerPollHandlers(io, socket)
 
         socket.on(SocketEvents.DISCONNECT, async () => {
             removeUserSocket(userId)

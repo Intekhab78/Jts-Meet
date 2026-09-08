@@ -1,6 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import type { Team, CreateTeamPayload, UpdateTeamPayload } from './team.types'
-import { createTeam, getTeam, inviteTeamMember, joinPublicTeam, leaveTeam, listOrganizationTeams, removeTeamMember, updateTeam, updateTeamMemberRole } from './team.service'
+import type { Team, CreateTeamPayload, UpdateTeamPayload, TeamMember } from './team.types'
+import {
+    createTeam,
+    getTeam,
+    inviteTeamMember,
+    joinPublicTeam,
+    leaveTeam,
+    listOrganizationTeams,
+    removeTeamMember,
+    updateTeam,
+    updateTeamMemberRole,
+    deleteTeam
+} from './team.service'
+import { getOrganizationMembers } from '../organization/organization.service'
+import type { OrganizationMember } from '../organization/organization.types'
 import { CreateTeamModal } from './CreateTeamModal'
 import { InviteTeamMemberModal } from './InviteTeamMemberModal'
 
@@ -12,6 +25,7 @@ interface TeamSettingsPageProps {
 
 export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamSettingsPageProps) {
     const [teams, setTeams] = useState<Team[]>([])
+    const [orgMembers, setOrgMembers] = useState<OrganizationMember[]>([])
     const [selectedTeam, setSelectedTeam] = useState<Team | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
@@ -22,23 +36,40 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
 
     // Search and Filter States
     const [searchQuery, setSearchQuery] = useState('')
+    const [memberSearchQuery, setMemberSearchQuery] = useState('')
     const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'public' | 'private'>('all')
-    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
-    const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
-    const [isDrawerOpen, setIsDrawerOpen] = useState(false)
-    const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'members' | 'settings'>('overview')
+    const [activeTab, setActiveTab] = useState<'members' | 'overview' | 'settings'>('members')
 
-    const loadTeams = async (orgId: string) => {
+    // Settings tab local form state
+    const [editName, setEditName] = useState('')
+    const [editDesc, setEditDesc] = useState('')
+    const [editColor, setEditColor] = useState('#6366F1')
+    const [editVisibility, setEditVisibility] = useState<'public' | 'private'>('public')
+
+    const loadTeamsAndMembers = async (orgId: string) => {
         setLoading(true)
+        setError('')
         try {
-            const list = await listOrganizationTeams(orgId, token)
-            setTeams(list)
-            if (selectedTeam) {
-                const refreshed = list.find((team) => team._id === selectedTeam._id)
-                if (refreshed) {
-                    setSelectedTeam(refreshed)
+            const [teamsList, rawMembers] = await Promise.all([
+                listOrganizationTeams(orgId, token).catch(() => [] as Team[]),
+                getOrganizationMembers(orgId, token).catch(() => [] as OrganizationMember[])
+            ])
+
+            const membersList = Array.isArray(rawMembers)
+                ? rawMembers
+                : (rawMembers && Array.isArray((rawMembers as any).members) ? (rawMembers as any).members : [])
+
+            setTeams(Array.isArray(teamsList) ? teamsList : [])
+            setOrgMembers(membersList)
+
+            // Select team: keep existing selection if available, else select first team
+            setSelectedTeam((prev) => {
+                if (prev) {
+                    const found = (Array.isArray(teamsList) ? teamsList : []).find(t => t._id === prev._id)
+                    if (found) return found
                 }
-            }
+                return (Array.isArray(teamsList) && teamsList.length > 0) ? teamsList[0] : null
+            })
         } catch (err: any) {
             setError(err?.message || 'Unable to load teams')
         } finally {
@@ -48,36 +79,80 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
 
     useEffect(() => {
         if (organizationId) {
-            loadTeams(organizationId)
+            loadTeamsAndMembers(organizationId)
         } else {
             setTeams([])
+            setOrgMembers([])
             setSelectedTeam(null)
-            setIsDrawerOpen(false)
         }
     }, [organizationId, token])
 
-    const handleCreateTeam = async (payload: CreateTeamPayload) => {
-        if (!organizationId) {
-            throw new Error('Organization is required')
+    // Sync edit form whenever selectedTeam changes
+    useEffect(() => {
+        if (selectedTeam) {
+            setEditName(selectedTeam.name || '')
+            setEditDesc(selectedTeam.description || '')
+            setEditColor(selectedTeam.color || '#6366F1')
+            setEditVisibility(selectedTeam.visibility || 'public')
         }
+    }, [selectedTeam?._id])
+
+    // Fast map of org members by userId for bulletproof user info fallback
+    const orgMemberMap = useMemo(() => {
+        const map = new Map<string, { fullName: string; email: string; profileImage?: string; role?: string }>()
+        const list = Array.isArray(orgMembers) ? orgMembers : (orgMembers && Array.isArray((orgMembers as any).members) ? (orgMembers as any).members : [])
+        for (const m of list) {
+            if (!m) continue
+            const uId = typeof m.userId === 'object' && m.userId ? (m.userId as any)._id : String(m.userId)
+            map.set(uId, {
+                fullName: m.user?.fullName || uId,
+                email: m.user?.email || '',
+                profileImage: m.user?.profileImage,
+                role: m.role
+            })
+        }
+        return map
+    }, [orgMembers])
+
+    const handleCreateTeam = async (payload: CreateTeamPayload) => {
+        if (!organizationId) throw new Error('Organization is required')
         const team = await createTeam({ ...payload, organizationId }, token)
-        await loadTeams(organizationId)
+        await loadTeamsAndMembers(organizationId)
         setSelectedTeam(team)
-        setIsDrawerOpen(true)
     }
 
     const handleUpdateTeam = async (payload: UpdateTeamPayload) => {
-        if (!selectedTeam) {
-            return
-        }
+        if (!selectedTeam) return
         setUpdating(true)
         setError('')
         try {
             const updated = await updateTeam(selectedTeam._id, payload, token)
             setSelectedTeam(updated)
-            await loadTeams(selectedTeam.organizationId)
+            setTeams(prev => prev.map(t => t._id === updated._id ? updated : t))
+            setSuccessMessage('Team configuration updated successfully')
+            setTimeout(() => setSuccessMessage(''), 3000)
         } catch (err: any) {
             setError(err?.message || 'Unable to update team')
+        } finally {
+            setUpdating(false)
+        }
+    }
+
+    const handleDeleteSelectedTeam = async () => {
+        if (!selectedTeam) return
+        if (!window.confirm(`Are you sure you want to delete the team "${selectedTeam.name}"? This action cannot be undone.`)) return
+
+        setUpdating(true)
+        setError('')
+        try {
+            await deleteTeam(selectedTeam._id, token)
+            const remaining = teams.filter(t => t._id !== selectedTeam._id)
+            setTeams(remaining)
+            setSelectedTeam(remaining.length > 0 ? remaining[0] : null)
+            setSuccessMessage('Team deleted successfully')
+            setTimeout(() => setSuccessMessage(''), 3000)
+        } catch (err: any) {
+            setError(err?.message || 'Unable to delete team')
         } finally {
             setUpdating(false)
         }
@@ -87,28 +162,26 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
         const team = teams.find((item) => item._id === teamId)
         if (team) {
             setSelectedTeam(team)
-            setIsDrawerOpen(true)
-        } else {
-            try {
-                const loaded = await getTeam(teamId, token)
-                setSelectedTeam(loaded)
-                setIsDrawerOpen(true)
-            } catch (err: any) {
-                setError(err?.message || 'Unable to load team')
-            }
+        }
+        try {
+            const loaded = await getTeam(teamId, token)
+            setSelectedTeam(loaded)
+            setTeams(prev => prev.map(t => t._id === loaded._id ? loaded : t))
+        } catch (err) {
+            console.error('Failed to refresh selected team:', err)
         }
     }
 
     const handleInviteMember = async (userId: string, role: Exclude<Team['members'][number]['role'], 'owner'>) => {
-        if (!selectedTeam) {
-            return
-        }
+        if (!selectedTeam) return
         setUpdating(true)
         setError('')
         try {
             const updated = await inviteTeamMember({ teamId: selectedTeam._id, userId, role }, token)
             setSelectedTeam(updated)
-            await loadTeams(selectedTeam.organizationId)
+            setTeams(prev => prev.map(t => t._id === updated._id ? updated : t))
+            setSuccessMessage('Member invited successfully!')
+            setTimeout(() => setSuccessMessage(''), 3000)
         } catch (err: any) {
             setError(err?.message || 'Unable to invite member')
         } finally {
@@ -117,15 +190,17 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
     }
 
     const handleRemoveMember = async (userId: string) => {
-        if (!selectedTeam) {
-            return
-        }
+        if (!selectedTeam) return
+        if (!window.confirm('Are you sure you want to remove this member from the team?')) return
+
         setUpdating(true)
         setError('')
         try {
             const updated = await removeTeamMember({ teamId: selectedTeam._id, userId }, token)
             setSelectedTeam(updated)
-            await loadTeams(selectedTeam.organizationId)
+            setTeams(prev => prev.map(t => t._id === updated._id ? updated : t))
+            setSuccessMessage('Member removed from team')
+            setTimeout(() => setSuccessMessage(''), 3000)
         } catch (err: any) {
             setError(err?.message || 'Unable to remove member')
         } finally {
@@ -134,15 +209,15 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
     }
 
     const handleUpdateMemberRole = async (userId: string, role: Exclude<Team['members'][number]['role'], 'owner'>) => {
-        if (!selectedTeam) {
-            return
-        }
+        if (!selectedTeam) return
         setUpdating(true)
         setError('')
         try {
             const updated = await updateTeamMemberRole({ teamId: selectedTeam._id, userId, role }, token)
             setSelectedTeam(updated)
-            await loadTeams(selectedTeam.organizationId)
+            setTeams(prev => prev.map(t => t._id === updated._id ? updated : t))
+            setSuccessMessage('Member role updated')
+            setTimeout(() => setSuccessMessage(''), 3000)
         } catch (err: any) {
             setError(err?.message || 'Unable to update member role')
         } finally {
@@ -151,15 +226,15 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
     }
 
     const handleJoinSelectedTeam = async () => {
-        if (!selectedTeam) {
-            return
-        }
+        if (!selectedTeam) return
         setUpdating(true)
         setError('')
         try {
             const updated = await joinPublicTeam({ teamId: selectedTeam._id, userId: currentUserId || '' }, token)
             setSelectedTeam(updated)
-            await loadTeams(selectedTeam.organizationId)
+            setTeams(prev => prev.map(t => t._id === updated._id ? updated : t))
+            setSuccessMessage('You joined this team')
+            setTimeout(() => setSuccessMessage(''), 3000)
         } catch (err: any) {
             setError(err?.message || 'Unable to join team')
         } finally {
@@ -168,15 +243,16 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
     }
 
     const handleLeaveSelectedTeam = async () => {
-        if (!selectedTeam || !currentUserId) {
-            return
-        }
+        if (!selectedTeam || !currentUserId) return
+        if (!window.confirm('Are you sure you want to leave this team?')) return
         setUpdating(true)
         setError('')
         try {
             const updated = await leaveTeam({ teamId: selectedTeam._id, userId: currentUserId }, token)
             setSelectedTeam(updated)
-            await loadTeams(selectedTeam.organizationId)
+            setTeams(prev => prev.map(t => t._id === updated._id ? updated : t))
+            setSuccessMessage('You left this team')
+            setTimeout(() => setSuccessMessage(''), 3000)
         } catch (err: any) {
             setError(err?.message || 'Unable to leave team')
         } finally {
@@ -184,731 +260,753 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
         }
     }
 
+    // Helper to resolve human-readable details for a team member
+    const resolveMemberDetails = (member: TeamMember) => {
+        const userObj = typeof member.userId === 'object' && member.userId ? (member.userId as any) : null
+        const userIdStr = userObj ? (userObj._id || userObj.id) : String(member.userId)
+        const orgInfo = orgMemberMap.get(userIdStr)
+
+        const fullName = userObj?.fullName || member.user?.fullName || orgInfo?.fullName || (userIdStr === currentUserId ? 'You' : `Colleague (${userIdStr.slice(-4)})`)
+        const email = userObj?.email || member.user?.email || orgInfo?.email || 'No email registered'
+        const isSelf = userIdStr === currentUserId
+
+        return {
+            userId: userIdStr,
+            fullName,
+            email,
+            role: member.role,
+            isSelf
+        }
+    }
+
     const isMember = useMemo(() => {
-        return selectedTeam?.members.some((member) => member.userId === currentUserId)
+        if (!selectedTeam || !currentUserId) return false
+        return selectedTeam.members.some((m) => {
+            const uId = typeof m.userId === 'object' && m.userId ? (m.userId as any)._id : String(m.userId)
+            return uId === currentUserId
+        })
     }, [selectedTeam, currentUserId])
 
-    const currentMemberRole = useMemo(() => {
-        return selectedTeam?.members.find((member) => member.userId === currentUserId)?.role
+    const isOwnerOrAdmin = useMemo(() => {
+        if (!selectedTeam || !currentUserId) return false
+        const m = selectedTeam.members.find((item) => {
+            const uId = typeof item.userId === 'object' && item.userId ? (item.userId as any)._id : String(item.userId)
+            return uId === currentUserId
+        })
+        return m?.role === 'owner' || m?.role === 'admin'
     }, [selectedTeam, currentUserId])
 
-    // Derive Statistics from State
-    const stats = useMemo(() => {
-        const total = teams.length
-        const publicCount = teams.filter(t => t.visibility === 'public').length
-        const privateCount = teams.filter(t => t.visibility === 'private').length
-        const totalMembers = Array.from(new Set(teams.flatMap(t => t.members.map(m => m.userId)))).length
-        const pendingCount = teams.filter(t => t.status === 'inactive').length
-        return { total, publicCount, privateCount, totalMembers, pendingCount }
-    }, [teams])
-
-    // Apply Search and Filters
+    // Filter teams in left pane
     const filteredTeams = useMemo(() => {
         return teams.filter(team => {
-            const matchesSearch = team.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                (team.description || '').toLowerCase().includes(searchQuery.toLowerCase())
+            const matchesSearch = !searchQuery.trim() ||
+                team.name.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
+                (team.description && team.description.toLowerCase().includes(searchQuery.toLowerCase().trim()))
             const matchesVisibility = visibilityFilter === 'all' || team.visibility === visibilityFilter
-            const matchesStatus = statusFilter === 'all' || team.status === statusFilter
-            return matchesSearch && matchesVisibility && matchesStatus
+            return matchesSearch && matchesVisibility
         })
-    }, [teams, searchQuery, visibilityFilter, statusFilter])
+    }, [teams, searchQuery, visibilityFilter])
+
+    // Filter members in active team
+    const filteredTeamMembers = useMemo(() => {
+        if (!selectedTeam) return []
+        const q = memberSearchQuery.toLowerCase().trim()
+        return selectedTeam.members
+            .map(resolveMemberDetails)
+            .filter(m => !q || m.fullName.toLowerCase().includes(q) || m.email.toLowerCase().includes(q))
+    }, [selectedTeam, memberSearchQuery, orgMemberMap])
+
+    const currentTeamMemberIds = useMemo(() => {
+        if (!selectedTeam) return []
+        return selectedTeam.members.map(m => {
+            return typeof m.userId === 'object' && m.userId ? (m.userId as any)._id : String(m.userId)
+        })
+    }, [selectedTeam])
 
     return (
-        <div className="px-4 py-6 md:p-8" style={{ background: 'var(--color-bg-base)', minHeight: '100vh', color: '#fff', fontFamily: 'var(--font-sans)', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', color: '#fff', fontFamily: 'var(--font-sans)' }}>
             
-            {/* Header section */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px' }}>
-                <div>
-                    {/* Breadcrumbs */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '8px', fontWeight: 600 }}>
-                        <span>Teams</span>
-                        <span>/</span>
-                        <span style={{ color: 'var(--color-accent)' }}>Team Management</span>
-                    </div>
-                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold" style={{ margin: 0, letterSpacing: '-0.03em', background: 'linear-gradient(to right, #ffffff, #a1a1aa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                        Team Management
-                    </h1>
-                    <p style={{ fontSize: '0.9375rem', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
-                        Manage teams inside your organization.
-                    </p>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    {/* Create Team Button */}
-                    <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="btn btn-primary"
-                        style={{
-                            height: '44px',
-                            borderRadius: '12px',
-                            padding: '0 20px',
-                            fontWeight: 600,
-                            fontSize: '0.875rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            boxShadow: 'var(--shadow-glow-accent)',
-                            background: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-hover) 100%)',
-                            border: 'none',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        <span>+</span> Create Team
-                    </button>
-                </div>
-            </div>
-
-            {/* Error Message */}
+            {/* Top Alerts */}
             {error && (
-                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', color: '#f87171', padding: '12px 16px', borderRadius: '12px', fontSize: '0.875rem' }}>
-                    ⚠ {error}
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', color: '#f87171', padding: '8px 14px', borderRadius: 8, fontSize: '0.8rem', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>⚠️ {error}</span>
+                    <button type="button" onClick={() => setError('')} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer' }}>✕</button>
                 </div>
             )}
 
-            {/* Statistics Dashboard Cards */}
-            <style>{`
-                .stats-grid-team {
-                    display: grid !important;
-                    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
-                    gap: 16px !important;
-                }
-                @media (min-width: 640px) {
-                    .stats-grid-team {
-                        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-                    }
-                }
-                @media (min-width: 1024px) {
-                    .stats-grid-team {
-                        grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-                    }
-                }
-            `}</style>
-            <div className="stats-grid-team">
-                {[
-                    { title: 'Total Teams', value: stats.total, desc: 'Teams created', icon: '👥', color: '#6366F1' },
-                    { title: 'Public Teams', value: stats.publicCount, desc: 'Visible to all', icon: '🌍', color: '#22C55E' },
-                    { title: 'Private Teams', value: stats.privateCount, desc: 'Invite only', icon: '🔒', color: '#8B5CF6' },
-                    { title: 'Total Members', value: stats.totalMembers, desc: 'Across all teams', icon: '👤', color: '#06B6D4' },
-                    { title: 'Inactive Teams', value: stats.pendingCount, desc: 'Archived workspace logs', icon: '⏳', color: '#F59E0B' }
-                ].map((stat, idx) => (
-                    <div
-                        key={idx}
-                        className="glass-card-sm"
-                        style={{
-                            padding: '16px 20px',
-                            borderRadius: '14px',
-                            background: 'var(--color-surface)',
-                            border: '1px solid var(--color-border)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '14px',
-                            transition: 'transform 200ms ease, border-color 200ms ease',
-                            cursor: 'default',
-                            minWidth: 0
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = 'translateY(-2px)'
-                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'translateY(0)'
-                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
-                        }}
-                    >
-                        <div style={{ fontSize: '1.5rem', padding: '10px', background: `${stat.color}15`, borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: stat.color }}>
-                            {stat.icon}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: '1.25' }}>
-                            <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stat.title}</span>
-                            <span style={{ fontSize: '1.5rem', fontWeight: 800, margin: '2px 0', color: '#fff' }}>{stat.value}</span>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stat.desc}</span>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Toolbar section: search + filters */}
-            <div className="glass-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '280px', flexWrap: 'wrap' }}>
-                    {/* Search Field */}
-                    <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', minWidth: '200px' }}>
-                        <span style={{ position: 'absolute', left: '12px', color: 'var(--color-text-muted)', display: 'flex' }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                            </svg>
-                        </span>
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search teams by name or description..."
-                            style={{
-                                width: '100%',
-                                background: 'rgba(255,255,255,0.03)',
-                                border: '1px solid rgba(255,255,255,0.08)',
-                                borderRadius: '12px',
-                                padding: '10px 12px 10px 38px',
-                                fontSize: '0.875rem',
-                                color: '#fff',
-                                outline: 'none',
-                                transition: 'border-color 150ms'
-                            }}
-                            onFocus={(e) => e.target.style.borderColor = 'var(--color-accent)'}
-                            onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
-                        />
-                    </div>
-
-                    {/* Visibility Filter */}
-                    <select
-                        value={visibilityFilter}
-                        onChange={(e) => setVisibilityFilter(e.target.value as any)}
-                        className="input"
-                        style={{ width: '130px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '10px', fontSize: '0.8125rem', color: '#fff', outline: 'none' }}
-                    >
-                        <option value="all">All Visibility</option>
-                        <option value="public">🌍 Public</option>
-                        <option value="private">🔒 Private</option>
-                    </select>
-
-                    {/* Status Filter */}
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value as any)}
-                        className="input"
-                        style={{ width: '130px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '10px', fontSize: '0.8125rem', color: '#fff', outline: 'none' }}
-                    >
-                        <option value="all">All Status</option>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                    </select>
+            {successMessage && (
+                <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.25)', color: '#4ade80', padding: '8px 14px', borderRadius: 8, fontSize: '0.8rem', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>✓ {successMessage}</span>
+                    <button type="button" onClick={() => setSuccessMessage('')} style={{ background: 'none', border: 'none', color: '#4ade80', cursor: 'pointer' }}>✕</button>
                 </div>
+            )}
 
-                {/* View switcher Grid/List Toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '2px' }}>
-                    <button
-                        onClick={() => setViewMode('list')}
-                        style={{ padding: '8px 12px', border: 'none', background: viewMode === 'list' ? 'rgba(255,255,255,0.08)' : 'transparent', color: viewMode === 'list' ? '#fff' : 'var(--color-text-muted)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', fontWeight: 600 }}
-                    >
-                        📝 List
-                    </button>
-                    <button
-                        onClick={() => setViewMode('grid')}
-                        style={{ padding: '8px 12px', border: 'none', background: viewMode === 'grid' ? 'rgba(255,255,255,0.08)' : 'transparent', color: viewMode === 'grid' ? '#fff' : 'var(--color-text-muted)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', fontWeight: 600 }}
-                    >
-                        🔲 Grid
-                    </button>
-                </div>
-            </div>
-
-            {/* List / Grid view selection */}
             {loading ? (
-                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9375rem', animation: 'jts-blink 1.5s ease-in-out infinite' }}>
-                    Loading organization teams...
+                <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.875rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                    <div className="animate-spin" style={{ width: 24, height: 24, border: '2px solid rgba(99,102,241,0.2)', borderTopColor: '#6366F1', borderRadius: '50%' }} />
+                    Loading teams & members...
                 </div>
             ) : !organizationId ? (
-                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                    No active organization selected. Please select one in the sidebar switch.
-                </div>
-            ) : filteredTeams.length === 0 ? (
-                <div style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: '18px', background: 'var(--color-surface)' }}>
-                    <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '12px' }}>👥</span>
-                    <h3 style={{ fontSize: '1rem', color: '#fff', margin: '0 0 4px', fontWeight: 700 }}>No Teams Found</h3>
-                    <p style={{ fontSize: '0.8125rem', margin: 0 }}>Try clearing filters or search queries to locate your organization teams.</p>
-                </div>
-            ) : viewMode === 'grid' ? (
-                /* Grid view cards */
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                    {filteredTeams.map((team) => (
-                        <div
-                            key={team._id}
-                            className="glass-card"
-                            style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '16px',
-                                transition: 'all 200ms ease',
-                                cursor: 'pointer',
-                                position: 'relative',
-                                overflow: 'hidden'
-                            }}
-                            onClick={() => handleSelectTeam(team._id)}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.transform = 'translateY(-4px)'
-                                e.currentTarget.style.borderColor = team.color || 'var(--color-accent)'
-                                e.currentTarget.style.boxShadow = `0 10px 30px -10px ${team.color || 'var(--color-accent)'}1A`
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.transform = 'translateY(0)'
-                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
-                                e.currentTarget.style.boxShadow = 'none'
-                            }}
-                        >
-                            {/* Accent highlight strip */}
-                            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: team.color || 'var(--color-accent)' }} />
-
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: `${team.color || 'var(--color-accent)'}20`, color: team.color || 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8125rem', fontWeight: 700 }}>
-                                        {team.name.slice(0, 2).toUpperCase()}
-                                    </div>
-                                    <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, margin: 0, color: '#fff' }}>{team.name}</h3>
-                                </div>
-                                <span className={`badge ${team.status === 'active' ? 'badge-success' : 'badge-accent'}`} style={{ fontSize: '0.625rem', padding: '2px 8px', textTransform: 'uppercase' }}>
-                                    {team.status}
-                                </span>
-                            </div>
-
-                            <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: '36px', lineHeight: 1.4 }}>
-                                {team.description || 'No description provided.'}
-                            </p>
-
-                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    {team.visibility === 'public' ? '🌍 Public' : '🔒 Private'}
-                                </span>
-                                <span style={{ fontWeight: 600, color: '#fff' }}>
-                                    👤 {team.members.length} member{team.members.length > 1 ? 's' : ''}
-                                </span>
-                            </div>
-                        </div>
-                    ))}
+                <div className="glass-card" style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                    🏢 No active organization selected. Please select one in the workspace sidebar.
                 </div>
             ) : (
-                /* List view (Professional SaaS Table) */
-                <div className="responsive-table-container" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '18px', overflow: 'hidden' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem', minWidth: '800px' }}>
-                        <thead>
-                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.01)' }}>
-                                <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Team Name</th>
-                                <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Description</th>
-                                <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Visibility</th>
-                                <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Members</th>
-                                <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Status</th>
-                                <th style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right' }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredTeams.map((team) => (
-                                <tr
-                                    key={team._id}
-                                    style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 150ms' }}
-                                    onClick={() => handleSelectTeam(team._id)}
-                                    className="table-row-hover"
-                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                >
-                                    {/* Team Name */}
-                                    <td style={{ padding: '16px 20px', fontWeight: 600, color: '#fff' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: team.color || 'var(--color-accent)', boxShadow: `0 0 8px ${team.color || 'var(--color-accent)'}` }} />
-                                            {team.name}
-                                        </div>
-                                    </td>
-
-                                    {/* Description */}
-                                    <td style={{ padding: '16px 20px', color: 'var(--color-text-secondary)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {team.description || 'No description provided.'}
-                                    </td>
-
-                                    {/* Visibility */}
-                                    <td style={{ padding: '16px 20px' }}>
-                                        <span className={`badge ${team.visibility === 'public' ? 'badge-success' : 'badge-accent'}`} style={{ fontSize: '0.6875rem', padding: '2px 8px', textTransform: 'capitalize' }}>
-                                            {team.visibility === 'public' ? '🌍 public' : '🔒 private'}
-                                        </span>
-                                    </td>
-
-                                    {/* Members Count */}
-                                    <td style={{ padding: '16px 20px', fontWeight: 600 }}>
-                                        👤 {team.members.length} members
-                                    </td>
-
-                                    {/* Status */}
-                                    <td style={{ padding: '16px 20px' }}>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 500, color: team.status === 'active' ? '#4ade80' : 'var(--color-text-muted)' }}>
-                                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: team.status === 'active' ? '#22C55E' : 'var(--color-text-muted)' }} />
-                                            {team.status}
-                                        </span>
-                                    </td>
-
-                                    {/* Actions */}
-                                    <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                                        <button
-                                            type="button"
-                                            className="btn btn-ghost"
-                                            style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600 }}
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleSelectTeam(team._id)
-                                            }}
-                                        >
-                                            Manage ➔
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-
-            {/* SIDE DRAWER (selected team details panel) */}
-            {selectedTeam && (
+                /* UNIFIED FULL-HEIGHT WORKSPACE CONTAINER (Zero dead space!) */
                 <div
+                    className="glass-card"
                     style={{
-                        position: 'fixed',
-                        inset: 0,
-                        background: 'rgba(0,0,0,0.65)',
-                        backdropFilter: 'blur(4px)',
-                        zIndex: 9999,
-                        opacity: isDrawerOpen ? 1 : 0,
-                        pointerEvents: isDrawerOpen ? 'all' : 'none',
-                        transition: 'opacity 280ms ease'
+                        display: 'grid',
+                        gridTemplateColumns: '270px 1fr',
+                        minHeight: 'calc(100vh - 120px)',
+                        borderRadius: 14,
+                        overflow: 'hidden',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        padding: 0
                     }}
-                    onClick={() => setIsDrawerOpen(false)}
+                    id="unified-teams-container"
                 >
-                    <div
-                        className="responsive-drawer"
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            right: 0,
-                            bottom: 0,
-                            width: 'min(520px, 95vw)',
-                            background: 'var(--color-surface)',
-                            borderLeft: '1px solid var(--color-border)',
-                            boxShadow: 'var(--shadow-xl)',
-                            transform: isDrawerOpen ? 'translateX(0)' : 'translateX(100%)',
-                            transition: 'transform 280ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    <style>{`
+                        @media (max-width: 768px) {
+                            #unified-teams-container {
+                                grid-template-columns: 1fr !important;
+                            }
+                        }
+                    `}</style>
+
+                    {/* LEFT PANE: TEAMS DIRECTORY */}
+                    <div style={{
+                        background: 'rgba(10, 11, 16, 0.6)',
+                        borderRight: '1px solid rgba(255, 255, 255, 0.06)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        height: '100%'
+                    }}>
+                        {/* Directory Header */}
+                        <div style={{
+                            padding: '12px 14px',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
                             display: 'flex',
-                            flexDirection: 'column'
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        {/* Drawer Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '20px', marginBottom: '20px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: `${selectedTeam.color || 'var(--color-accent)'}20`, color: selectedTeam.color || 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 800 }}>
-                                    {selectedTeam.name.slice(0, 2).toUpperCase()}
-                                </div>
-                                <div>
-                                    <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#fff' }}>{selectedTeam.name}</h2>
-                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Organization workspace team settings</span>
-                                </div>
-                            </div>
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Teams ({teams.length})
+                            </span>
                             <button
-                                onClick={() => setIsDrawerOpen(false)}
-                                className="btn btn-ghost"
-                                style={{ padding: '6px', borderRadius: '50%', display: 'flex', color: 'var(--color-text-muted)' }}
+                                type="button"
+                                onClick={() => setShowCreateModal(true)}
+                                style={{
+                                    background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
+                                    border: 'none',
+                                    color: '#fff',
+                                    padding: '4px 10px',
+                                    borderRadius: 6,
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                }}
                             >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                                </svg>
+                                + New Team
                             </button>
                         </div>
 
-                        {/* Drawer tabs */}
-                        <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', gap: '16px', marginBottom: '24px' }}>
-                            {[
-                                { id: 'overview', label: 'Overview' },
-                                { id: 'members', label: 'Members' },
-                                { id: 'settings', label: 'Settings' }
-                            ].map((tab) => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveDrawerTab(tab.id as any)}
-                                    style={{
-                                        padding: '10px 4px',
-                                        background: 'none',
-                                        border: 'none',
-                                        borderBottom: activeDrawerTab === tab.id ? '2px solid var(--color-accent)' : '2px solid transparent',
-                                        color: activeDrawerTab === tab.id ? '#fff' : 'var(--color-text-muted)',
-                                        fontSize: '0.875rem',
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                        transition: 'all 150ms'
-                                    }}
-                                >
-                                    {tab.label}
-                                </button>
-                            ))}
+                        {/* Search & Filter */}
+                        <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255, 255, 255, 0.04)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <input
+                                type="text"
+                                placeholder="Search teams..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="input"
+                                style={{ padding: '6px 10px', fontSize: '0.75rem', borderRadius: 6, width: '100%' }}
+                            />
+                            <select
+                                value={visibilityFilter}
+                                onChange={(e) => setVisibilityFilter(e.target.value as any)}
+                                className="input"
+                                style={{ padding: '5px 8px', fontSize: '0.72rem', borderRadius: 6, width: '100%' }}
+                            >
+                                <option value="all">All Visibility</option>
+                                <option value="public">🌍 Public Teams</option>
+                                <option value="private">🔒 Private Teams</option>
+                            </select>
                         </div>
 
-                        {/* Drawer body tabs contents */}
-                        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                            
-                            {/* OVERVIEW TAB */}
-                            {activeDrawerTab === 'overview' && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                    <div className="glass-card-sm" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', background: 'rgba(255,255,255,0.01)' }}>
-                                        <h4 style={{ margin: '0 0 12px', fontSize: '0.875rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Description</h4>
-                                        <p style={{ margin: 0, fontSize: '0.875rem', color: '#fff', lineHeight: 1.5 }}>
-                                            {selectedTeam.description || 'No description provided.'}
-                                        </p>
-                                    </div>
-
-                                    <div className="glass-card-sm" style={{ padding: '20px', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', background: 'rgba(255,255,255,0.01)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                                        <h4 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Team Stats</h4>
-                                        
-                                        <div style={{ display: 'flex', justifyItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '8px' }}>
-                                            <span style={{ color: 'var(--color-text-secondary)' }}>Visibility</span>
-                                            <span style={{ fontWeight: 600, color: '#fff', textTransform: 'capitalize' }}>{selectedTeam.visibility}</span>
-                                        </div>
-
-                                        <div style={{ display: 'flex', justifyItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '8px' }}>
-                                            <span style={{ color: 'var(--color-text-secondary)' }}>Status</span>
-                                            <span style={{ fontWeight: 600, color: '#fff', textTransform: 'capitalize' }}>{selectedTeam.status}</span>
-                                        </div>
-
-                                        <div style={{ display: 'flex', justifyItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '8px' }}>
-                                            <span style={{ color: 'var(--color-text-secondary)' }}>Owner</span>
-                                            <span style={{ fontWeight: 600, color: '#fff', fontFamily: 'monospace', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '140px' }}>{selectedTeam.ownerId}</span>
-                                        </div>
-
-                                        <div style={{ display: 'flex', justifyItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
-                                            <span style={{ color: 'var(--color-text-secondary)' }}>Member count</span>
-                                            <span style={{ fontWeight: 600, color: '#fff' }}>{selectedTeam.members.length} members</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Join/Leave/Actions buttons */}
-                                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                                        {selectedTeam.visibility === 'public' && !isMember && (
-                                            <button onClick={handleJoinSelectedTeam} className="btn btn-success" style={{ flex: 1, height: '44px', borderRadius: '12px', fontWeight: 600 }}>
-                                                Join Public Team
-                                            </button>
-                                        )}
-                                        {isMember && currentMemberRole !== 'owner' && (
-                                            <button onClick={handleLeaveSelectedTeam} className="btn btn-danger" style={{ flex: 1, height: '44px', borderRadius: '12px', fontWeight: 600 }}>
-                                                Leave Team
-                                            </button>
-                                        )}
-                                    </div>
+                        {/* Teams Scrollable List */}
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {filteredTeams.length === 0 ? (
+                                <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>
+                                    No teams match filter.
                                 </div>
-                            )}
-
-                            {/* MEMBERS TAB */}
-                            {activeDrawerTab === 'members' && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <h4 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#fff' }}>
-                                            Team Members ({selectedTeam.members.length})
-                                        </h4>
-                                        <button
-                                            onClick={() => setShowInviteModal(true)}
-                                            className="btn btn-primary"
-                                            style={{ height: '36px', borderRadius: '10px', fontSize: '0.8125rem', padding: '0 14px', fontWeight: 600 }}
-                                        >
-                                            + Invite Member
-                                        </button>
-                                    </div>
-
-                                    {/* Custom Redesigned Members List inside Side Drawer */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                        {selectedTeam.members.length === 0 ? (
-                                            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>No members joined yet.</div>
-                                        ) : (
-                                            selectedTeam.members.map((member) => {
-                                                const userObj = typeof member.userId === 'object' && member.userId ? (member.userId as any) : null
-                                                const userIdStr = userObj ? userObj._id : (member.userId as string)
-                                                const fullName = userObj ? userObj.fullName : (member.user?.fullName || userIdStr)
-                                                const email = userObj ? userObj.email : (member.user?.email || 'No email registered')
-
-                                                return (
-                                                    <div
-                                                        key={userIdStr}
-                                                        style={{
-                                                            background: 'rgba(255,255,255,0.02)',
-                                                            border: '1px solid rgba(255,255,255,0.06)',
-                                                            borderRadius: '14px',
-                                                            padding: '14px 16px',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'space-between',
-                                                            gap: '12px'
-                                                        }}
-                                                    >
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                                                            <div style={{
-                                                                width: '38px', height: '38px', borderRadius: '50%',
-                                                                background: `linear-gradient(135deg, ${selectedTeam.color || '#6366F1'}80 0%, ${selectedTeam.color || '#6366F1'}FF 100%)`,
-                                                                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, flexShrink: 0
-                                                            }}>
-                                                                {fullName.slice(0, 2).toUpperCase()}
-                                                            </div>
-                                                            <div style={{ minWidth: 0 }}>
-                                                                <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{fullName}</span>
-                                                                    {userIdStr === currentUserId && (
-                                                                        <span className="badge badge-accent" style={{ fontSize: '0.5625rem', padding: '1px 6px' }}>You</span>
-                                                                    )}
-                                                                </div>
-                                                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
-                                                                    {email}
-                                                                </div>
-                                                                <span style={{ fontSize: '0.625rem', color: 'var(--color-text-secondary)', display: 'inline-block', marginTop: '4px', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase', fontWeight: 600 }}>
-                                                                    {member.role}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Actions role update/remove */}
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                            {member.role !== 'owner' && (
-                                                                <select
-                                                                    value={member.role}
-                                                                    onChange={(e) => handleUpdateMemberRole(userIdStr, e.target.value as any)}
-                                                                    style={{
-                                                                        background: 'rgba(255,255,255,0.03)',
-                                                                        border: '1px solid rgba(255,255,255,0.08)',
-                                                                        color: '#fff',
-                                                                        padding: '6px 8px',
-                                                                        borderRadius: '8px',
-                                                                        fontSize: '0.75rem',
-                                                                        outline: 'none',
-                                                                        cursor: 'pointer'
-                                                                    }}
-                                                                >
-                                                                    <option value="admin" style={{ background: 'var(--color-surface-2)' }}>Admin</option>
-                                                                    <option value="member" style={{ background: 'var(--color-surface-2)' }}>Member</option>
-                                                                    <option value="guest" style={{ background: 'var(--color-surface-2)' }}>Guest</option>
-                                                                </select>
-                                                            )}
-                                                            {userIdStr !== currentUserId && member.role !== 'owner' && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleRemoveMember(userIdStr)}
-                                                                    className="btn btn-ghost"
-                                                                    style={{ padding: '6px 10px', fontSize: '0.75rem', color: 'var(--color-danger)', borderRadius: '8px' }}
-                                                                >
-                                                                    Remove
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )
-                                            })
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* SETTINGS TAB */}
-                            {activeDrawerTab === 'settings' && (
-                                <form
-                                    onSubmit={async (e) => {
-                                        e.preventDefault()
-                                        await handleUpdateTeam({
-                                            description: selectedTeam.description || '',
-                                            visibility: selectedTeam.visibility,
-                                            color: selectedTeam.color
-                                        })
-                                        setSuccessMessage('Team settings updated successfully')
-                                        setTimeout(() => setSuccessMessage(''), 4000)
-                                    }}
-                                    style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}
-                                >
-                                    {successMessage && (
-                                        <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.25)', color: '#4ade80', padding: '10px 14px', borderRadius: '12px', fontSize: '0.8125rem' }}>
-                                            ✓ {successMessage}
-                                        </div>
-                                    )}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Team Description</label>
-                                        <textarea
-                                            value={selectedTeam.description || ''}
-                                            onChange={(e) => setSelectedTeam(curr => curr && { ...curr, description: e.target.value })}
+                            ) : (
+                                filteredTeams.map((team) => {
+                                    const isSelected = selectedTeam?._id === team._id
+                                    return (
+                                        <div
+                                            key={team._id}
+                                            onClick={() => handleSelectTeam(team._id)}
                                             style={{
-                                                background: 'rgba(255,255,255,0.03)',
-                                                border: '1px solid rgba(255,255,255,0.08)',
-                                                borderRadius: '12px',
-                                                padding: '12px',
-                                                fontSize: '0.875rem',
-                                                color: '#fff',
-                                                resize: 'none',
-                                                height: '80px',
-                                                outline: 'none',
-                                                transition: 'border-color 150ms'
+                                                padding: '9px 12px',
+                                                borderRadius: 8,
+                                                cursor: 'pointer',
+                                                background: isSelected ? 'rgba(99, 102, 241, 0.16)' : 'transparent',
+                                                border: isSelected ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid transparent',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                gap: 8,
+                                                transition: 'all 120ms ease'
                                             }}
-                                            onFocus={(e) => e.target.style.borderColor = 'var(--color-accent)'}
-                                            onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
-                                        />
-                                    </div>
+                                            onMouseEnter={(e) => {
+                                                if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                if (!isSelected) e.currentTarget.style.background = 'transparent'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                                                <div style={{
+                                                    width: 24,
+                                                    height: 24,
+                                                    borderRadius: 6,
+                                                    background: `${team.color || '#6366F1'}25`,
+                                                    border: `1px solid ${team.color || '#6366F1'}60`,
+                                                    color: team.color || '#6366F1',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    fontSize: '0.65rem',
+                                                    fontWeight: 800,
+                                                    flexShrink: 0
+                                                }}>
+                                                    {team.name.slice(0, 2).toUpperCase()}
+                                                </div>
+                                                <div style={{ minWidth: 0 }}>
+                                                    <div style={{
+                                                        fontSize: '0.8125rem',
+                                                        fontWeight: isSelected ? 700 : 500,
+                                                        color: isSelected ? '#fff' : 'var(--color-text-secondary)',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap'
+                                                    }}>
+                                                        {team.name}
+                                                    </div>
+                                                </div>
+                                            </div>
 
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                            <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Visibility</label>
-                                            <select
-                                                value={selectedTeam.visibility}
-                                                onChange={(e) => setSelectedTeam(curr => curr && { ...curr, visibility: e.target.value as any })}
-                                                style={{
-                                                    background: 'rgba(255,255,255,0.03)',
-                                                    border: '1px solid rgba(255,255,255,0.08)',
-                                                    borderRadius: '12px',
-                                                    padding: '10px 12px',
-                                                    fontSize: '0.875rem',
-                                                    color: '#fff',
-                                                    outline: 'none',
-                                                    cursor: 'pointer'
-                                                }}
-                                            >
-                                                <option value="private" style={{ background: 'var(--color-surface-2)' }}>🔒 Private</option>
-                                                <option value="public" style={{ background: 'var(--color-surface-2)' }}>🌍 Public</option>
-                                            </select>
-                                        </div>
-
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                            <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Accent Color</label>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                <input
-                                                    type="color"
-                                                    value={selectedTeam.color || '#6366F1'}
-                                                    onChange={(e) => setSelectedTeam(curr => curr && { ...curr, color: e.target.value })}
-                                                    style={{
-                                                        width: '40px',
-                                                        height: '40px',
-                                                        border: '1px solid rgba(255,255,255,0.08)',
-                                                        borderRadius: '8px',
-                                                        background: 'transparent',
-                                                        padding: 0,
-                                                        cursor: 'pointer',
-                                                        overflow: 'hidden'
-                                                    }}
-                                                />
-                                                <span style={{ fontSize: '0.8125rem', fontFamily: 'monospace', textTransform: 'uppercase', color: 'var(--color-text-muted)' }}>
-                                                    {selectedTeam.color || '#6366F1'}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                                                <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
+                                                    👤 {team.members.length}
+                                                </span>
+                                                <span style={{ fontSize: '0.65rem' }}>
+                                                    {team.visibility === 'public' ? '🌍' : '🔒'}
                                                 </span>
                                             </div>
                                         </div>
+                                    )
+                                })
+                            )}
+                        </div>
+
+                        {/* Bottom Quick Actions */}
+                        <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255, 255, 255, 0.06)', background: 'rgba(0,0,0,0.2)' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
+                                Active Org: <strong style={{ color: '#e4e4e7' }}>{organizationId.slice(0, 8)}...</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* RIGHT PANE: ACTIVE TEAM HUB */}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        height: '100%',
+                        background: 'rgba(18, 19, 26, 0.75)',
+                        overflow: 'hidden'
+                    }}>
+                        {!selectedTeam ? (
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                                Select a team from the left sidebar to view members and settings.
+                            </div>
+                        ) : (
+                            <>
+                                {/* Active Team Header Bar */}
+                                <div style={{
+                                    padding: '14px 20px',
+                                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    flexWrap: 'wrap',
+                                    gap: 12,
+                                    background: 'rgba(255, 255, 255, 0.01)'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                                        <div style={{
+                                            width: 38,
+                                            height: 38,
+                                            borderRadius: 10,
+                                            background: `linear-gradient(135deg, ${selectedTeam.color || '#6366F1'} 0%, ${selectedTeam.color || '#6366F1'}99 100%)`,
+                                            color: '#fff',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '0.875rem',
+                                            fontWeight: 800,
+                                            boxShadow: `0 4px 12px ${selectedTeam.color || '#6366F1'}40`,
+                                            flexShrink: 0
+                                        }}>
+                                            {selectedTeam.name.slice(0, 2).toUpperCase()}
+                                        </div>
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                                <h2 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: '#fff' }}>
+                                                    {selectedTeam.name}
+                                                </h2>
+                                                <span className={`badge ${selectedTeam.visibility === 'public' ? 'badge-success' : 'badge-accent'}`} style={{ fontSize: '0.65rem', padding: '2px 7px' }}>
+                                                    {selectedTeam.visibility === 'public' ? '🌍 Public' : '🔒 Private'}
+                                                </span>
+                                                <span style={{ fontSize: '0.65rem', padding: '2px 7px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--color-text-muted)' }}>
+                                                    👤 {selectedTeam.members.length} members
+                                                </span>
+                                            </div>
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'block', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 450 }}>
+                                                {selectedTeam.description || 'No description provided.'}
+                                            </span>
+                                        </div>
                                     </div>
 
-                                    <button
-                                        type="submit"
-                                        disabled={updating}
-                                        className="btn btn-primary"
-                                        style={{
-                                            height: '44px',
-                                            borderRadius: '12px',
-                                            fontWeight: 600,
-                                            fontSize: '0.875rem',
-                                            marginTop: '10px',
-                                            border: 'none',
-                                            background: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-hover) 100%)',
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        {updating ? 'Saving Changes…' : 'Save Team Configuration'}
-                                    </button>
-                                </form>
-                            )}
+                                    {/* Action Buttons */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        {!isMember && selectedTeam.visibility === 'public' && (
+                                            <button
+                                                type="button"
+                                                onClick={handleJoinSelectedTeam}
+                                                disabled={updating}
+                                                className="btn btn-secondary"
+                                                style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: 8 }}
+                                            >
+                                                Join Team
+                                            </button>
+                                        )}
+                                        {isMember && !isOwnerOrAdmin && (
+                                            <button
+                                                type="button"
+                                                onClick={handleLeaveSelectedTeam}
+                                                disabled={updating}
+                                                className="btn btn-ghost"
+                                                style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: 8, color: '#f87171' }}
+                                            >
+                                                Leave Team
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowInviteModal(true)}
+                                            className="btn btn-primary"
+                                            style={{
+                                                padding: '6px 14px',
+                                                fontSize: '0.78rem',
+                                                fontWeight: 600,
+                                                borderRadius: 8,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 5
+                                            }}
+                                        >
+                                            <span>+</span> Invite Member
+                                        </button>
+                                    </div>
+                                </div>
 
-                        </div>
+                                {/* Navigation Tabs Bar */}
+                                <div style={{
+                                    display: 'flex',
+                                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                                    padding: '0 20px',
+                                    background: 'rgba(0, 0, 0, 0.15)',
+                                    gap: 20
+                                }}>
+                                    {[
+                                        { id: 'members', label: `👥 Members (${selectedTeam.members.length})` },
+                                        { id: 'overview', label: '📊 Overview' },
+                                        { id: 'settings', label: '⚙️ Settings' }
+                                    ].map((tab) => (
+                                        <button
+                                            key={tab.id}
+                                            type="button"
+                                            onClick={() => setActiveTab(tab.id as any)}
+                                            style={{
+                                                padding: '11px 0',
+                                                fontSize: '0.8rem',
+                                                fontWeight: activeTab === tab.id ? 700 : 500,
+                                                color: activeTab === tab.id ? '#fff' : 'var(--color-text-muted)',
+                                                border: 'none',
+                                                borderBottom: activeTab === tab.id ? '2px solid #6366f1' : '2px solid transparent',
+                                                background: 'transparent',
+                                                cursor: 'pointer',
+                                                transition: 'all 120ms ease'
+                                            }}
+                                        >
+                                            {tab.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Tab Body Contents */}
+                                <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px' }}>
+
+                                    {/* TAB 1: MEMBERS */}
+                                    {activeTab === 'members' && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                                            {/* Member Search Bar */}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Filter members by name or email..."
+                                                    value={memberSearchQuery}
+                                                    onChange={(e) => setMemberSearchQuery(e.target.value)}
+                                                    className="input"
+                                                    style={{ maxWidth: 320, padding: '7px 12px', fontSize: '0.78rem', borderRadius: 8 }}
+                                                />
+                                                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                                                    Showing {filteredTeamMembers.length} of {selectedTeam.members.length} members
+                                                </span>
+                                            </div>
+
+                                            {/* High-density SaaS Members Table */}
+                                            <div style={{
+                                                background: 'rgba(0, 0, 0, 0.25)',
+                                                border: '1px solid rgba(255, 255, 255, 0.06)',
+                                                borderRadius: 12,
+                                                overflow: 'hidden'
+                                            }}>
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
+                                                    <thead>
+                                                        <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.06)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                                                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Member Name</th>
+                                                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Email Address</th>
+                                                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase' }}>Team Role</th>
+                                                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {filteredTeamMembers.length === 0 ? (
+                                                            <tr>
+                                                                <td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                                                    No team members matched the filter query.
+                                                                </td>
+                                                            </tr>
+                                                        ) : (
+                                                            filteredTeamMembers.map((m) => {
+                                                                const roleBg = m.role === 'owner'
+                                                                    ? 'rgba(168, 85, 247, 0.15)'
+                                                                    : m.role === 'admin'
+                                                                    ? 'rgba(59, 130, 246, 0.15)'
+                                                                    : 'rgba(34, 197, 94, 0.15)'
+                                                                const roleColor = m.role === 'owner'
+                                                                    ? '#c084fc'
+                                                                    : m.role === 'admin'
+                                                                    ? '#60a5fa'
+                                                                    : '#4ade80'
+
+                                                                return (
+                                                                    <tr
+                                                                        key={m.userId}
+                                                                        style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)', transition: 'background 120ms' }}
+                                                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'}
+                                                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                                                    >
+                                                                        {/* Full Name & Avatar */}
+                                                                        <td style={{ padding: '10px 14px' }}>
+                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                                                <div style={{
+                                                                                    width: 32,
+                                                                                    height: 32,
+                                                                                    borderRadius: '50%',
+                                                                                    background: `linear-gradient(135deg, ${selectedTeam.color || '#6366F1'}80 0%, ${selectedTeam.color || '#6366F1'} 100%)`,
+                                                                                    color: '#fff',
+                                                                                    display: 'flex',
+                                                                                    alignItems: 'center',
+                                                                                    justifyContent: 'center',
+                                                                                    fontSize: '0.72rem',
+                                                                                    fontWeight: 700,
+                                                                                    flexShrink: 0
+                                                                                }}>
+                                                                                    {m.fullName.slice(0, 2).toUpperCase()}
+                                                                                </div>
+                                                                                <div>
+                                                                                    <div style={{ fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                                        <span>{m.fullName}</span>
+                                                                                        {m.isSelf && (
+                                                                                            <span className="badge badge-accent" style={{ fontSize: '0.55rem', padding: '1px 5px' }}>You</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </td>
+
+                                                                        {/* Email Address */}
+                                                                        <td style={{ padding: '10px 14px', color: 'var(--color-text-secondary)', fontSize: '0.78rem' }}>
+                                                                            {m.email}
+                                                                        </td>
+
+                                                                        {/* Role */}
+                                                                        <td style={{ padding: '10px 14px' }}>
+                                                                            {isOwnerOrAdmin && m.role !== 'owner' ? (
+                                                                                <select
+                                                                                    value={m.role}
+                                                                                    onChange={(e) => handleUpdateMemberRole(m.userId, e.target.value as any)}
+                                                                                    style={{
+                                                                                        background: 'rgba(255,255,255,0.05)',
+                                                                                        border: '1px solid rgba(255,255,255,0.1)',
+                                                                                        color: '#fff',
+                                                                                        padding: '4px 8px',
+                                                                                        borderRadius: 6,
+                                                                                        fontSize: '0.72rem',
+                                                                                        outline: 'none',
+                                                                                        cursor: 'pointer'
+                                                                                    }}
+                                                                                >
+                                                                                    <option value="admin" style={{ background: '#18181b' }}>Admin</option>
+                                                                                    <option value="member" style={{ background: '#18181b' }}>Member</option>
+                                                                                    <option value="guest" style={{ background: '#18181b' }}>Guest</option>
+                                                                                </select>
+                                                                            ) : (
+                                                                                <span style={{
+                                                                                    background: roleBg,
+                                                                                    color: roleColor,
+                                                                                    padding: '2px 8px',
+                                                                                    borderRadius: 4,
+                                                                                    fontSize: '0.68rem',
+                                                                                    fontWeight: 600,
+                                                                                    textTransform: 'uppercase',
+                                                                                    letterSpacing: '0.04em'
+                                                                                }}>
+                                                                                    {m.role}
+                                                                                </span>
+                                                                            )}
+                                                                        </td>
+
+                                                                        {/* Actions */}
+                                                                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                                                                            {isOwnerOrAdmin && !m.isSelf && m.role !== 'owner' ? (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleRemoveMember(m.userId)}
+                                                                                    style={{
+                                                                                        background: 'none',
+                                                                                        border: 'none',
+                                                                                        color: '#f87171',
+                                                                                        cursor: 'pointer',
+                                                                                        fontSize: '0.72rem',
+                                                                                        fontWeight: 600,
+                                                                                        padding: '3px 8px',
+                                                                                        borderRadius: 4
+                                                                                    }}
+                                                                                >
+                                                                                    Remove
+                                                                                </button>
+                                                                            ) : (
+                                                                                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>—</span>
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                )
+                                                            })
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* TAB 2: OVERVIEW */}
+                                    {activeTab === 'overview' && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                                                <div className="glass-card" style={{ padding: '14px 16px', borderRadius: 10 }}>
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Total Members</span>
+                                                    <h3 style={{ fontSize: '1.4rem', fontWeight: 800, margin: '6px 0 0', color: '#fff' }}>{selectedTeam.members.length}</h3>
+                                                </div>
+                                                <div className="glass-card" style={{ padding: '14px 16px', borderRadius: 10 }}>
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Visibility</span>
+                                                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '6px 0 0', color: '#fff', textTransform: 'capitalize' }}>
+                                                        {selectedTeam.visibility === 'public' ? '🌍 Public' : '🔒 Private'}
+                                                    </h3>
+                                                </div>
+                                                <div className="glass-card" style={{ padding: '14px 16px', borderRadius: 10 }}>
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Status</span>
+                                                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '6px 0 0', color: selectedTeam.status === 'active' ? '#4ade80' : 'var(--color-text-muted)' }}>
+                                                        ● {selectedTeam.status}
+                                                    </h3>
+                                                </div>
+                                                <div className="glass-card" style={{ padding: '14px 16px', borderRadius: 10 }}>
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Created Date</span>
+                                                    <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: '6px 0 0', color: '#fff' }}>
+                                                        {selectedTeam.createdAt ? new Date(selectedTeam.createdAt).toLocaleDateString() : 'Active'}
+                                                    </h3>
+                                                </div>
+                                            </div>
+
+                                            <div className="glass-card" style={{ padding: 18, borderRadius: 12 }}>
+                                                <h4 style={{ fontSize: '0.875rem', fontWeight: 700, margin: '0 0 8px', color: '#fff' }}>About this Team</h4>
+                                                <p style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.6 }}>
+                                                    {selectedTeam.description || 'No description provided for this team yet. Use the Settings tab to add a clear mission statement and purpose for your colleagues.'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* TAB 3: SETTINGS */}
+                                    {activeTab === 'settings' && (
+                                        <form
+                                            onSubmit={(e) => {
+                                                e.preventDefault()
+                                                handleUpdateTeam({
+                                                    name: editName,
+                                                    description: editDesc,
+                                                    color: editColor,
+                                                    visibility: editVisibility
+                                                })
+                                            }}
+                                            style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 520 }}
+                                        >
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Team Name</label>
+                                                <input
+                                                    type="text"
+                                                    value={editName}
+                                                    onChange={(e) => setEditName(e.target.value)}
+                                                    className="input"
+                                                    style={{ padding: '9px 12px', fontSize: '0.85rem' }}
+                                                    required
+                                                />
+                                            </div>
+
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Team Description</label>
+                                                <textarea
+                                                    value={editDesc}
+                                                    onChange={(e) => setEditDesc(e.target.value)}
+                                                    className="input"
+                                                    style={{ padding: '9px 12px', fontSize: '0.82rem', height: 80, resize: 'none' }}
+                                                />
+                                            </div>
+
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                    <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Visibility</label>
+                                                    <select
+                                                        value={editVisibility}
+                                                        onChange={(e) => setEditVisibility(e.target.value as any)}
+                                                        className="input"
+                                                        style={{ padding: '8px 10px', fontSize: '0.82rem' }}
+                                                    >
+                                                        <option value="public">🌍 Public (Open to org)</option>
+                                                        <option value="private">🔒 Private (Invite-only)</option>
+                                                    </select>
+                                                </div>
+
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                    <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Accent Color</label>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        <input
+                                                            type="color"
+                                                            value={editColor}
+                                                            onChange={(e) => setEditColor(e.target.value)}
+                                                            style={{ width: 36, height: 36, border: 'none', borderRadius: 8, background: 'transparent', cursor: 'pointer', padding: 0 }}
+                                                        />
+                                                        <span style={{ fontSize: '0.78rem', fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>{editColor}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                type="submit"
+                                                disabled={updating}
+                                                className="btn btn-primary"
+                                                style={{ alignSelf: 'flex-start', padding: '9px 20px', fontSize: '0.82rem', fontWeight: 600, borderRadius: 8, marginTop: 8 }}
+                                            >
+                                                {updating ? 'Saving...' : 'Save Configuration'}
+                                            </button>
+
+                                            {/* Danger Zone */}
+                                            {isOwnerOrAdmin && (
+                                                <div style={{
+                                                    marginTop: 24,
+                                                    padding: 16,
+                                                    borderRadius: 10,
+                                                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                                                    background: 'rgba(239, 68, 68, 0.05)',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    gap: 12
+                                                }}>
+                                                    <div>
+                                                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f87171', display: 'block' }}>Delete Team</span>
+                                                        <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                                                            Permanently delete this team and unlink discussions.
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleDeleteSelectedTeam}
+                                                        disabled={updating}
+                                                        style={{
+                                                            background: '#ef4444',
+                                                            border: 'none',
+                                                            color: '#fff',
+                                                            padding: '7px 14px',
+                                                            borderRadius: 8,
+                                                            fontSize: '0.75rem',
+                                                            fontWeight: 600,
+                                                            cursor: 'pointer',
+                                                            whiteSpace: 'nowrap'
+                                                        }}
+                                                    >
+                                                        Delete Team
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </form>
+                                    )}
+
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}
 
-            <CreateTeamModal open={showCreateModal} onClose={() => setShowCreateModal(false)} onCreate={handleCreateTeam} />
-            <InviteTeamMemberModal open={showInviteModal} onClose={() => setShowInviteModal(false)} onInvite={handleInviteMember} />
+            <CreateTeamModal
+                open={showCreateModal}
+                onClose={() => setShowCreateModal(false)}
+                onCreate={handleCreateTeam}
+            />
+
+            <InviteTeamMemberModal
+                open={showInviteModal}
+                onClose={() => setShowInviteModal(false)}
+                onInvite={handleInviteMember}
+                teamName={selectedTeam?.name}
+                availableOrgMembers={(Array.isArray(orgMembers) ? orgMembers : []).map(m => {
+                    if (!m) return { userId: '', fullName: '', email: '' }
+                    const uId = typeof m.userId === 'object' && m.userId ? (m.userId as any)._id : String(m.userId)
+                    return {
+                        userId: uId,
+                        fullName: m.user?.fullName || uId,
+                        email: m.user?.email || '',
+                        role: m.role
+                    }
+                }).filter(m => !!m.userId)}
+                currentTeamMemberIds={currentTeamMemberIds}
+            />
         </div>
     )
 }
-

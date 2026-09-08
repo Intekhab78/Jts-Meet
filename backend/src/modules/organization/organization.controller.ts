@@ -206,6 +206,6 @@ export const organizationController = {
             return sendError(res, 404, 'Organization not found')
         }
 
-        return sendSuccess(res, result, 'Organization members retrieved')
+        return sendSuccess(res, result.members, 'Organization members retrieved')
     }
 }

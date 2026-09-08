@@ -13,6 +13,31 @@ function getChannelMember(channel: any, userId: string) {
     return channel?.members?.find((member: any) => member.userId.equals(new Types.ObjectId(userId)))
 }
 
+async function isUserAuthorizedForTeam(team: any, userId: string): Promise<boolean> {
+    const member = getTeamMember(team, userId)
+    if (member) return true
+
+    if (team.organizationId) {
+        try {
+            const organization = await getOrganizationById(team.organizationId.toString())
+            if (organization) {
+                const orgMember = organization.members?.find((m: any) => (m.userId?.equals ? m.userId.equals(new Types.ObjectId(userId)) : m.userId?.toString() === userId) && m.status === 'active')
+                if (orgMember) {
+                    if (['owner', 'admin'].includes(orgMember.role)) {
+                        return true
+                    }
+                    if (team.isPublic !== false) {
+                        return true
+                    }
+                }
+            }
+        } catch (e) {
+            // ignore org lookup errors
+        }
+    }
+    return false
+}
+
 export async function requireTeamMember(req: Request, res: Response, next: NextFunction) {
     const teamId = req.body?.teamId || req.params.teamId
     const userId = (req as any).userId
@@ -30,8 +55,8 @@ export async function requireTeamMember(req: Request, res: Response, next: NextF
         return sendError(res, 404, 'Team not found')
     }
 
-    const member = getTeamMember(team, userId)
-    if (!member) {
+    const isAuthorized = await isUserAuthorizedForTeam(team, userId)
+    if (!isAuthorized) {
         return sendError(res, 403, 'Forbidden')
     }
 
@@ -60,8 +85,8 @@ export async function requireTeamMemberFromChannel(req: Request, res: Response, 
         return sendError(res, 404, 'Team not found')
     }
 
-    const member = getTeamMember(team, userId)
-    if (!member) {
+    const isAuthorized = await isUserAuthorizedForTeam(team, userId)
+    if (!isAuthorized) {
         return sendError(res, 403, 'Forbidden')
     }
 
@@ -90,8 +115,8 @@ export async function requireChannelAccess(req: Request, res: Response, next: Ne
         return sendError(res, 404, 'Team not found')
     }
 
-    const teamMember = getTeamMember(team, userId)
-    if (!teamMember) {
+    const isAuthorized = await isUserAuthorizedForTeam(team, userId)
+    if (!isAuthorized) {
         return sendError(res, 403, 'Forbidden')
     }
 
@@ -101,6 +126,17 @@ export async function requireChannelAccess(req: Request, res: Response, next: Ne
 
     const member = getChannelMember(channel, userId)
     if (!member) {
+        if (team.organizationId) {
+            try {
+                const organization = await getOrganizationById(team.organizationId.toString())
+                const orgMember = organization?.members?.find((m: any) => (m.userId?.equals ? m.userId.equals(new Types.ObjectId(userId)) : m.userId?.toString() === userId) && m.status === 'active')
+                if (orgMember && ['owner', 'admin'].includes(orgMember.role)) {
+                    return next()
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
         return sendError(res, 403, 'Forbidden')
     }
 

@@ -2,20 +2,48 @@ export interface PeerSession {
     userId: string
     meetingId: string
     socketId: string
+    displayName?: string
+    isVideoOff?: boolean
 }
 
 const peersByUserId = new Map<string, PeerSession>()
 const peersBySocketId = new Map<string, PeerSession>()
 const meetingPeers = new Map<string, Set<string>>()
 
-export function addPeerSession(userId: string, meetingId: string, socketId: string) {
-    const session: PeerSession = { userId, meetingId, socketId }
+export function addPeerSession(userId: string, meetingId: string, socketId: string, displayName?: string, isVideoOff?: boolean) {
+    const existing = peersByUserId.get(userId)
+    const session: PeerSession = { 
+        userId, 
+        meetingId, 
+        socketId,
+        displayName: displayName || existing?.displayName,
+        isVideoOff: isVideoOff !== undefined ? isVideoOff : existing?.isVideoOff
+    }
     peersByUserId.set(userId, session)
     peersBySocketId.set(socketId, session)
 
-    const existing = meetingPeers.get(meetingId) || new Set<string>()
-    existing.add(userId)
-    meetingPeers.set(meetingId, existing)
+    const existingSet = meetingPeers.get(meetingId) || new Set<string>()
+    existingSet.add(userId)
+    meetingPeers.set(meetingId, existingSet)
+}
+
+export function updatePeerSession(userId: string, updates: Partial<PeerSession>) {
+    const session = peersByUserId.get(userId)
+    if (session) {
+        Object.assign(session, updates)
+    }
+}
+
+export function getMeetingPeersInfo(meetingId: string) {
+    const userIds = getMeetingPeerUserIds(meetingId)
+    return userIds.map((uId) => {
+        const s = peersByUserId.get(uId)
+        return {
+            userId: uId,
+            displayName: s?.displayName || '',
+            isVideoOff: s?.isVideoOff
+        }
+    })
 }
 
 export function removePeerSessionBySocket(socketId: string): PeerSession | null {

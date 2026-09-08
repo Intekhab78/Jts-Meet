@@ -56,5 +56,23 @@ export const SocketEvents = {
 
     // Generic Typing indicator events
     TYPING_START: 'typing:start',
-    TYPING_STOP: 'typing:stop'
+    TYPING_STOP: 'typing:stop',
+
+    // Direct 1-on-1 Calling events
+    CALL_INITIATE: 'call:initiate',
+    CALL_INCOMING: 'call:incoming',
+    CALL_ACCEPTED: 'call:accepted',
+    CALL_REJECTED: 'call:rejected',
+    CALL_CANCELLED: 'call:cancelled',
+
+    // Collaborative Whiteboard events
+    WHITEBOARD_DRAW: 'whiteboard:draw',
+    WHITEBOARD_CLEAR: 'whiteboard:clear',
+
+    // In-meeting Polls events
+    POLL_CREATE: 'poll:create',
+    POLL_VOTE: 'poll:vote',
+    POLL_UPDATE: 'poll:update',
+    POLL_CLOSE: 'poll:close'
 } as const
+

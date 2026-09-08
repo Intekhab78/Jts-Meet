@@ -107,5 +107,8 @@ export async function getOrganizationMembers(organizationId: string, token: stri
             ...buildAuthHeaders(token)
         }
     })
-    return parseResponse<OrganizationMember[]>(response)
+    const data = await parseResponse<any>(response)
+    if (Array.isArray(data)) return data
+    if (data && Array.isArray(data.members)) return data.members
+    return []
 }

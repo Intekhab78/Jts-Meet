@@ -45,5 +45,13 @@ const FileMetadataSchema = new Schema<IFileMetadata>(
     { timestamps: true }
 )
 
+FileMetadataSchema.index({ uploadedBy: 1, deletedAt: 1 })
+FileMetadataSchema.index({ organizationId: 1, deletedAt: 1 })
+FileMetadataSchema.index({ teamId: 1, deletedAt: 1 })
+FileMetadataSchema.index({ channelId: 1, deletedAt: 1 })
+FileMetadataSchema.index({ messageId: 1, deletedAt: 1 })
+FileMetadataSchema.index({ createdAt: -1 })
+
 export const FileMetadata = model<IFileMetadata>('FileMetadata', FileMetadataSchema)
+
 

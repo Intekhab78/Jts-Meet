@@ -1,5 +1,8 @@
 import React, { useState, useEffect, Suspense } from 'react'
 import { useMeetingContext } from '../../meeting/context/MeetingContext'
+import { useSocketContext } from '../../meeting/context/SocketContext'
+import { IncomingCallModal, type IncomingCallData } from '../../meeting/components/IncomingCallModal'
+import { SocketEvents } from '../../meeting/services/socket.service'
 import { API_BASE } from '../../../config'
 
 const MeetingRoom = React.lazy(() => import('../../meeting/components/MeetingRoom').then(m => ({ default: m.MeetingRoom })))
@@ -42,7 +45,82 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     const [searchQuery, setSearchQuery] = useState('')
     const [historyFilter, setHistoryFilter] = useState<'all' | 'recorded' | 'regular'>('all')
 
-    const { joined } = useMeetingContext()
+    const { joined, setMeetingId } = useMeetingContext()
+    const { socket, connectSocket, connected } = useSocketContext()
+    const [incomingCall, setIncomingCall] = useState<IncomingCallData | null>(null)
+    const [showDirectDialModal, setShowDirectDialModal] = useState(false)
+    const [directDialTarget, setDirectDialTarget] = useState('')
+
+    // Ensure socket connected for direct ringing
+    useEffect(() => {
+        if (token && !connected) {
+            connectSocket(token)
+        }
+    }, [token, connected, connectSocket])
+
+    // Listen to direct call socket events
+    useEffect(() => {
+        if (!socket) return
+
+        const handleIncomingCall = (data: any) => {
+            setIncomingCall({
+                callerId: data.callerId,
+                callerName: data.callerName || 'Colleague',
+                callerAvatar: data.callerAvatar,
+                meetingId: data.meetingId,
+                callType: data.callType || 'video'
+            })
+        }
+
+        const handleCallCancelled = () => {
+            setIncomingCall(null)
+        }
+
+        socket.on(SocketEvents.CALL_INCOMING, handleIncomingCall)
+        socket.on(SocketEvents.CALL_CANCELLED, handleCallCancelled)
+
+        return () => {
+            socket.off(SocketEvents.CALL_INCOMING, handleIncomingCall)
+            socket.off(SocketEvents.CALL_CANCELLED, handleCallCancelled)
+        }
+    }, [socket])
+
+    const handleAcceptCall = (call: IncomingCallData) => {
+        if (socket) {
+            socket.emit(SocketEvents.CALL_ACCEPTED, {
+                callerId: call.callerId,
+                meetingId: call.meetingId
+            })
+        }
+        setMeetingId(call.meetingId)
+        setIncomingCall(null)
+        setActiveTab('meeting')
+    }
+
+    const handleDeclineCall = (call: IncomingCallData) => {
+        if (socket) {
+            socket.emit(SocketEvents.CALL_REJECTED, {
+                callerId: call.callerId,
+                meetingId: call.meetingId
+            })
+        }
+        setIncomingCall(null)
+    }
+
+    const handleStartDirectCall = (targetId: string) => {
+        if (!socket || !targetId.trim()) return
+        const newMeetingId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`
+        socket.emit(SocketEvents.CALL_INITIATE, {
+            calleeId: targetId.trim(),
+            callerName: profileName || 'Colleague',
+            meetingId: newMeetingId
+        })
+        setMeetingId(newMeetingId)
+        setShowDirectDialModal(false)
+        setDirectDialTarget('')
+        setActiveTab('meeting')
+    }
+
     const [sidebarExpanded, setSidebarExpanded] = useState(false)
     const [isHovered, setIsHovered] = useState(false)
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -79,6 +157,20 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     const [profileName, setProfileName] = useState('Team Member')
     const [profileEmail, setProfileEmail] = useState('member@jtsmeet.com')
     const [userId, setUserId] = useState('')
+    const [isSavingProfile, setIsSavingProfile] = useState(false)
+    const [profileSaveSuccess, setProfileSaveSuccess] = useState(false)
+    const [profileError, setProfileError] = useState('')
+
+    // Connected hardware & preferences
+    const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
+    const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([])
+    const [selectedAudioDevice, setSelectedAudioDevice] = useState<string>(() => localStorage.getItem('jts_default_mic') || '')
+    const [selectedVideoDevice, setSelectedVideoDevice] = useState<string>(() => localStorage.getItem('jts_default_cam') || '')
+    const [autoMuteMic, setAutoMuteMic] = useState<boolean>(() => localStorage.getItem('jts_pref_auto_mute') === 'true')
+    const [autoMuteCam, setAutoMuteCam] = useState<boolean>(() => localStorage.getItem('jts_pref_auto_cam_off') === 'true')
+    const [noiseSuppression, setNoiseSuppression] = useState<boolean>(() => localStorage.getItem('jts_pref_noise_suppr') !== 'false')
+    const [isTestingMic, setIsTestingMic] = useState(false)
+    const [micLevel, setMicLevel] = useState(0)
 
     // Dynamic Database meeting lists
     const [historyItems, setHistoryItems] = useState<any[]>([])
@@ -92,25 +184,32 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
     // State for Scheduler form
     const [scheduleTitle, setScheduleTitle] = useState('')
-    const [scheduleDate, setScheduleDate] = useState('')
-    const [scheduleTime, setScheduleTime] = useState('')
+    const [scheduleDate, setScheduleDate] = useState(() => new Date().toISOString().slice(0, 10))
+    const [scheduleTime, setScheduleTime] = useState('11:00')
     const [scheduleDuration, setScheduleDuration] = useState('30m')
+    const [isRecurringDaily, setIsRecurringDaily] = useState(true)
+    const [notifyTeamByEmail, setNotifyTeamByEmail] = useState(true)
+    const [scheduleTeamId, setScheduleTeamId] = useState('')
 
     // Fetch user details & meetings from API
     const fetchProfile = async () => {
+        if (!token) return
         try {
             const response = await fetch(`${API_BASE}/api/auth/me`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
-            if (response.status === 401) {
-                onLogout()
-                return
-            }
-            const data = await response.json()
-            if (response.ok && data?.data) {
-                setProfileName(data.data.fullName)
-                setProfileEmail(data.data.email)
-                setUserId(data.data._id || data.data.id || '')
+            if (response.ok) {
+                const data = await response.json()
+                if (data?.data) {
+                    setProfileName(data.data.fullName)
+                    setProfileEmail(data.data.email)
+                    setUserId(data.data._id || data.data.id || '')
+                    try {
+                        if (data.data.fullName) {
+                            localStorage.setItem('jts_user_name', data.data.fullName)
+                        }
+                    } catch (e) {}
+                }
             }
         } catch (err) {
             console.error('Failed to fetch profile:', err)
@@ -118,42 +217,44 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     }
 
     const fetchMeetings = async () => {
+        if (!token) return
         try {
             const response = await fetch(`${API_BASE}/api/meeting/mine`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
-            if (response.status === 401) {
-                onLogout()
-                return
-            }
-            const data = await response.json()
-            if (response.ok && data?.data) {
-                const list = data.data as any[]
+            if (response.ok) {
+                const data = await response.json()
+                if (data?.data) {
+                    const list = data.data as any[]
 
-                // Map to history list
-                const history = list.filter(m => m.status === 'ended').map(m => ({
-                    id: m.meetingId,
-                    title: m.title,
-                    date: m.startedAt ? new Date(m.startedAt).toLocaleDateString() : new Date(m.createdAt).toLocaleDateString(),
-                    time: m.startedAt ? new Date(m.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    duration: m.endedAt && m.startedAt ? `${Math.round((new Date(m.endedAt).getTime() - new Date(m.startedAt).getTime()) / 60000)}m` : '15m',
-                    participants: m.participants?.length || 1,
-                    recorded: false,
-                    status: 'Completed'
-                }))
+                    // Map to history list
+                    const history = list.filter(m => m.status === 'ended').map(m => ({
+                        id: m.meetingId,
+                        title: m.title,
+                        date: m.startedAt ? new Date(m.startedAt).toLocaleDateString() : new Date(m.createdAt).toLocaleDateString(),
+                        time: m.startedAt ? new Date(m.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        duration: m.endedAt && m.startedAt ? `${Math.round((new Date(m.endedAt).getTime() - new Date(m.startedAt).getTime()) / 60000)}m` : '15m',
+                        participants: m.participants?.length || 1,
+                        recorded: false,
+                        status: 'Completed'
+                    }))
 
-                // Map to scheduled list
-                const scheduled = list.filter(m => m.status === 'scheduled' || m.status === 'active').map(m => ({
-                    id: m.meetingId,
-                    title: m.title,
-                    date: new Date(m.createdAt).toLocaleDateString(),
-                    time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    duration: '30m',
-                    host: m.host?.fullName || 'Host'
-                }))
+                    // Map to scheduled list
+                    const scheduled = list.filter(m => m.status === 'scheduled' || m.status === 'active').map(m => ({
+                        id: m.meetingId,
+                        title: m.title,
+                        date: m.scheduledDate || new Date(m.createdAt).toLocaleDateString(),
+                        time: m.scheduledTime ? `${m.scheduledTime}` : new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        duration: '30m',
+                        host: m.host?.fullName || 'Host',
+                        isRecurring: m.isRecurring || false,
+                        recurrencePattern: m.recurrencePattern || 'none',
+                        notifyByEmail: m.notifyByEmail !== false
+                    }))
 
-                setHistoryItems(history)
-                setScheduledItems(scheduled)
+                    setHistoryItems(history)
+                    setScheduledItems(scheduled)
+                }
             }
         } catch (err) {
             console.error('Failed to fetch meetings:', err)
@@ -161,19 +262,18 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     }
 
     const fetchOrganizations = async () => {
+        if (!token) return
         try {
             const response = await fetch(`${API_BASE}/api/organization/mine`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
-            if (response.status === 401) {
-                onLogout()
-                return
-            }
-            const data = await response.json()
-            if (response.ok && data?.data) {
-                setOrganizations(data.data)
-                if (data.data.length > 0 && !currentOrgId) {
-                    setCurrentOrgId(data.data[0]._id)
+            if (response.ok) {
+                const data = await response.json()
+                if (data?.data) {
+                    setOrganizations(data.data)
+                    if (data.data.length > 0 && !currentOrgId) {
+                        setCurrentOrgId(data.data[0]._id)
+                    }
                 }
             }
         } catch (err) {
@@ -182,22 +282,20 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     }
 
     const fetchTeams = async (orgId: string) => {
-        if (!orgId) return
+        if (!orgId || !token) return
         try {
             const response = await fetch(`${API_BASE}/api/team/organization/${orgId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
-            if (response.status === 401) {
-                onLogout()
-                return
-            }
-            const data = await response.json()
-            if (response.ok && data?.data) {
-                setTeams(data.data)
-                if (data.data.length > 0) {
-                    setCurrentTeamId(data.data[0]._id)
-                } else {
-                    setCurrentTeamId('')
+            if (response.ok) {
+                const data = await response.json()
+                if (data?.data) {
+                    setTeams(data.data)
+                    if (data.data.length > 0) {
+                        setCurrentTeamId(data.data[0]._id)
+                    } else {
+                        setCurrentTeamId('')
+                    }
                 }
             }
         } catch (err) {
@@ -220,9 +318,105 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
         }
     }, [currentOrgId])
 
+    // Load available audio & video devices
+    useEffect(() => {
+        if (activeTab === 'profile' && navigator.mediaDevices?.enumerateDevices) {
+            navigator.mediaDevices.enumerateDevices().then(devices => {
+                const audios = devices.filter(d => d.kind === 'audioinput')
+                const videos = devices.filter(d => d.kind === 'videoinput')
+                setAudioDevices(audios)
+                setVideoDevices(videos)
+                if (!selectedAudioDevice && audios.length > 0) {
+                    setSelectedAudioDevice(audios[0].deviceId)
+                }
+                if (!selectedVideoDevice && videos.length > 0) {
+                    setSelectedVideoDevice(videos[0].deviceId)
+                }
+            }).catch(err => {
+                console.warn('Media devices enumeration warning:', err)
+            })
+        }
+    }, [activeTab])
+
+    // Live microphone volume test effect
+    useEffect(() => {
+        let audioCtx: AudioContext | null = null
+        let analyser: AnalyserNode | null = null
+        let micStream: MediaStream | null = null
+        let animId: number
+
+        if (isTestingMic) {
+            navigator.mediaDevices?.getUserMedia({
+                audio: selectedAudioDevice ? { deviceId: { exact: selectedAudioDevice } } : true
+            }).then(stream => {
+                micStream = stream
+                const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext
+                if (!AudioCtxClass) return
+                audioCtx = new AudioCtxClass()
+                analyser = audioCtx.createAnalyser()
+                analyser.fftSize = 256
+                const source = audioCtx.createMediaStreamSource(stream)
+                source.connect(analyser)
+                const dataArray = new Uint8Array(analyser.frequencyBinCount)
+
+                const updateMeter = () => {
+                    if (!analyser) return
+                    analyser.getByteFrequencyData(dataArray)
+                    let sum = 0
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i]
+                    }
+                    const avg = sum / dataArray.length
+                    setMicLevel(Math.min(100, Math.round((avg / 128) * 100)))
+                    animId = requestAnimationFrame(updateMeter)
+                }
+                updateMeter()
+            }).catch(err => {
+                console.error('Microphone test error:', err)
+                setIsTestingMic(false)
+            })
+        } else {
+            setMicLevel(0)
+        }
+
+        return () => {
+            if (animId) cancelAnimationFrame(animId)
+            if (micStream) micStream.getTracks().forEach(t => t.stop())
+            if (audioCtx && audioCtx.state !== 'closed') audioCtx.close().catch(() => {})
+        }
+    }, [isTestingMic, selectedAudioDevice])
+
+    const handleSaveProfile = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!profileName.trim()) return
+        setIsSavingProfile(true)
+        setProfileError('')
+        try {
+            const res = await fetch(`${API_BASE}/api/auth/profile`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ fullName: profileName.trim() })
+            })
+            const data = await res.json().catch(() => ({}))
+            if (res.ok) {
+                setProfileSaveSuccess(true)
+                setTimeout(() => setProfileSaveSuccess(false), 3500)
+            } else {
+                setProfileError(data?.message || 'Failed to update profile')
+            }
+        } catch (err: any) {
+            setProfileError(err?.message || 'Network error updating profile')
+        } finally {
+            setIsSavingProfile(false)
+        }
+    }
+
     const handleScheduleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!scheduleTitle) return
+        if (!scheduleTitle.trim()) return
 
         try {
             const response = await fetch(`${API_BASE}/api/meeting/create`, {
@@ -231,7 +425,16 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ title: scheduleTitle })
+                body: JSON.stringify({
+                    title: scheduleTitle.trim(),
+                    scheduledDate: scheduleDate,
+                    scheduledTime: scheduleTime,
+                    isRecurring: isRecurringDaily,
+                    recurrencePattern: isRecurringDaily ? 'daily' : 'none',
+                    organizationId: currentOrgId || undefined,
+                    teamId: scheduleTeamId || undefined,
+                    notifyByEmail: notifyTeamByEmail
+                })
             })
             if (response.status === 401) {
                 onLogout()
@@ -240,9 +443,8 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
             const data = await response.json()
             if (response.ok) {
                 fetchMeetings()
+                alert(`Meeting scheduled successfully! ${isRecurringDaily ? `It will repeat daily at ${scheduleTime}. ` : ''}${notifyTeamByEmail ? 'Team members will receive automated invitations.' : ''}`)
                 setScheduleTitle('')
-                setScheduleDate('')
-                setScheduleTime('')
                 setActiveTab('scheduled')
             } else {
                 alert(data.message || 'Failed to schedule meeting')
@@ -445,14 +647,15 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                     <header style={{
                         position: 'sticky',
                         top: 0,
-                        height: '64px',
-                        minHeight: '64px',
+                        height: '56px',
+                        minHeight: '56px',
                         borderBottom: '1px solid var(--color-border)',
-                        background: 'var(--color-bg-base)',
+                        background: 'rgba(10, 11, 15, 0.95)',
+                        backdropFilter: 'blur(12px)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: windowWidth < 480 ? '0 12px' : '0 24px',
+                        padding: windowWidth < 480 ? '0 12px' : '0 20px',
                         boxSizing: 'border-box',
                         zIndex: 50
                     }}>
@@ -534,26 +737,31 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                     {/* DASHBOARD TAB */}
                     {activeTab === 'dashboard' && (
-                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32, boxSizing: 'border-box' }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '16px 12px' : 'clamp(20px, 3vw, 32px)', maxWidth: 1140, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 'clamp(16px, 2.5vw, 24px)', boxSizing: 'border-box' }}>
                             {/* Welcome Banner */}
-                            <div className="glass-card flex flex-col md:flex-row gap-6 md:items-center justify-between" style={{ padding: '28px 36px' }}>
+                            <div className="glass-card flex flex-col md:flex-row gap-4 md:items-center justify-between" style={{ padding: 'clamp(18px, 3vw, 26px)' }}>
                                 <div>
-                                    <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: '0 0 6px', color: '#fff' }}>Welcome back, {profileName}!</h2>
-                                    <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', margin: 0 }}>Review scheduled calls, access past session recordings, and host secure instant room calls.</p>
+                                    <h2 style={{ fontSize: 'clamp(1.2rem, 2.5vw, 1.45rem)', fontWeight: 800, margin: '0 0 4px', color: '#fff' }}>Welcome back, {profileName}!</h2>
+                                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>Review scheduled calls, access past session recordings, and host secure instant room calls.</p>
                                 </div>
-                                <button onClick={() => setActiveTab('meeting')} className="btn btn-primary" style={{ padding: '12px 24px', alignSelf: 'flex-start' }}>
-                                    Start New Meeting
-                                </button>
+                                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                    <button onClick={() => setActiveTab('meeting')} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.85rem' }}>
+                                        Start New Meeting
+                                    </button>
+                                    <button onClick={() => setShowDirectDialModal(true)} className="btn btn-secondary" style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}>
+                                        <span>📞</span> Ring Colleague
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Stats Cards grid */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'clamp(10px, 2vw, 16px)' }}>
                                 {[
                                     { title: 'Ended Meetings', val: `${historyItems.length} sessions`, icon: '📹', desc: 'Secure database logs', trend: '+14.2%', trendUp: true },
                                     { title: 'Calendar Schedule', val: `${scheduledItems.length} planned`, icon: '📅', desc: 'Upcoming presentations', trend: '+8.4%', trendUp: true },
                                     { title: 'Storage quota', val: '1.4 GB / 10 GB', icon: '💾', desc: '14% capacity used', trend: 'Optimal', trendUp: null }
                                 ].map((stat, i) => (
-                                    <div key={i} className="glass-card-sm" style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
+                                    <div key={i} className="glass-card-sm" style={{ padding: 'clamp(12px, 2vw, 16px)', display: 'flex', alignItems: 'center', gap: 12 }}>
                                         <div style={{ fontSize: '2rem', padding: 8, background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)' }}>{stat.icon}</div>
                                         <div style={{ flex: 1 }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -635,17 +843,51 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                                 {/* Quick Scheduler form */}
                                 <form onSubmit={handleScheduleSubmit} className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                                    <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 4px', color: '#fff' }}>Quick Conference Scheduler</h3>
-                                    <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '0 0 8px' }}>Invite external members and reserve calendar spots.</p>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                                        <div>
+                                            <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 2px', color: '#fff' }}>Quick Conference Scheduler</h3>
+                                            <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: 0 }}>Plan meetings, repeat daily, and auto-email invite links to team members.</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setScheduleTitle('JTS Middle East Daily Morning Sync')
+                                                setScheduleTime('11:00')
+                                                setIsRecurringDaily(true)
+                                                setNotifyTeamByEmail(true)
+                                            }}
+                                            className="btn btn-secondary text-xs"
+                                            style={{ padding: '4px 10px', fontSize: '0.725rem', borderRadius: '8px', background: 'rgba(99,102,241,0.15)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.3)' }}
+                                        >
+                                            ⚡ 11:00 AM Daily Preset
+                                        </button>
+                                    </div>
 
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                         <label style={{ fontSize: '0.75rem', fontWeight: 600 }}>Topic / Title</label>
                                         <input
                                             type="text" required value={scheduleTitle} onChange={(e) => setScheduleTitle(e.target.value)}
-                                            placeholder="e.g., Marketing sync"
+                                            placeholder="e.g., JTS Middle East Daily Standup"
                                             className="input py-2 px-3"
                                         />
                                     </div>
+
+                                    {teams.length > 0 && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <label style={{ fontSize: '0.75rem', fontWeight: 600 }}>Target Department / Team</label>
+                                            <select
+                                                value={scheduleTeamId}
+                                                onChange={(e) => setScheduleTeamId(e.target.value)}
+                                                className="input py-2 px-3"
+                                                style={{ cursor: 'pointer', background: '#18181b', color: '#fff' }}
+                                            >
+                                                <option value="">🏢 Entire Organization (All Members)</option>
+                                                {teams.map(t => (
+                                                    <option key={t._id} value={t._id}>👥 {t.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
 
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -664,8 +906,31 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                         </div>
                                     </div>
 
-                                    <button type="submit" className="btn btn-primary" style={{ padding: '10px 14px', width: '100%', marginTop: 6 }}>
-                                        Confirm and Schedule
+                                    {/* Automated Scheduling & Notification Options */}
+                                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: '0.8125rem', color: '#fff' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isRecurringDaily}
+                                                onChange={(e) => setIsRecurringDaily(e.target.checked)}
+                                                style={{ width: 16, height: 16, accentColor: '#6366f1', cursor: 'pointer' }}
+                                            />
+                                            <span>🔁 <strong>Repeat Daily</strong> (Roz Morning {scheduleTime} baje automatic schedule)</span>
+                                        </label>
+
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: '0.8125rem', color: '#fff' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={notifyTeamByEmail}
+                                                onChange={(e) => setNotifyTeamByEmail(e.target.checked)}
+                                                style={{ width: 16, height: 16, accentColor: '#6366f1', cursor: 'pointer' }}
+                                            />
+                                            <span>📧 <strong>Auto-Email & Notify Team</strong> (1-Click Join Link with Email Alert)</span>
+                                        </label>
+                                    </div>
+
+                                    <button type="submit" className="btn btn-primary" style={{ padding: '10px 14px', width: '100%', marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: '10px' }}>
+                                        <span>📅</span> Confirm and Schedule Conference
                                     </button>
                                 </form>
                             </div>
@@ -674,38 +939,84 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                     {/* HISTORY LOG TAB */}
                     {activeTab === 'history' && (
-                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24, boxSizing: 'border-box' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '16px 12px' : 'clamp(20px, 3vw, 32px)', maxWidth: 1140, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 'clamp(14px, 2vw, 20px)', boxSizing: 'border-box' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                                 <div>
                                     <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 4px', color: '#fff' }}>Conference History Log</h2>
-                                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>Review summaries, download recordings, and inspect participant lists.</p>
+                                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>Review past sessions, download recordings, and inspect attendee analytics.</p>
                                 </div>
 
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search by ID or topic..."
-                                    className="input py-2 px-3"
-                                    style={{ width: 240 }}
-                                />
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: windowWidth < 640 ? '100%' : 'auto' }}>
+                                    <input
+                                        type="text"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder="Search by ID or topic..."
+                                        className="input py-2 px-3"
+                                        style={{ width: windowWidth < 640 ? '100%' : 240, fontSize: '0.8125rem' }}
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            const newRoomId = `instant_${Date.now()}`
+                                            setMeetingId(newRoomId)
+                                            setActiveTab('meeting')
+                                        }}
+                                        className="btn btn-primary"
+                                        style={{ padding: '8px 14px', fontSize: '0.8125rem', whiteSpace: 'nowrap', borderRadius: '10px' }}
+                                    >
+                                        ⚡ Instant Room
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Summary Metrics Bar */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+                                {[
+                                    { label: 'Total Sessions', value: historyItems.length, icon: '📅', color: '#6366f1' },
+                                    { label: 'Recorded Sessions', value: historyItems.filter(i => i.recorded).length, icon: '📹', color: '#ec4899' },
+                                    { label: 'Total Attendees', value: historyItems.reduce((acc, curr) => acc + (curr.participants || 1), 0), icon: '👥', color: '#22c55e' },
+                                    {
+                                        label: 'Est. Total Time',
+                                        value: `${historyItems.reduce((acc, curr) => {
+                                            const match = curr.duration?.match(/(\d+)m/)
+                                            return acc + (match ? parseInt(match[1], 10) : 15)
+                                        }, 0)} mins`,
+                                        icon: '⏱️',
+                                        color: '#f59e0b'
+                                    }
+                                ].map((stat, idx) => (
+                                    <div key={idx} className="glass-card" style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <div style={{ width: 38, height: 38, borderRadius: 10, background: `${stat.color}18`, border: `1px solid ${stat.color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.15rem' }}>
+                                            {stat.icon}
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', lineHeight: 1.1 }}>{stat.value}</div>
+                                            <div style={{ fontSize: '0.725rem', color: 'var(--color-text-muted)', marginTop: 2 }}>{stat.label}</div>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
 
                             {/* History filter tabs */}
-                            <div style={{ display: 'flex', gap: 10 }}>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                 {[
                                     { id: 'all', label: 'All Sessions' },
                                     { id: 'recorded', label: 'Recorded Only' },
-                                    { id: 'regular', label: 'No Recording' }
+                                    { id: 'regular', label: 'Standard Calls' }
                                 ].map(btn => (
                                     <button
                                         key={btn.id}
                                         onClick={() => setHistoryFilter(btn.id as any)}
                                         style={{
-                                            border: 'none', background: historyFilter === btn.id ? 'rgba(255,255,255,0.06)' : 'transparent',
-                                            color: historyFilter === btn.id ? '#fff' : 'var(--color-text-muted)',
-                                            padding: '6px 14px', borderRadius: 'var(--radius-full)', fontSize: '0.8125rem',
-                                            fontWeight: 600, cursor: 'pointer'
+                                            border: 'none',
+                                            background: historyFilter === btn.id ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.03)',
+                                            color: historyFilter === btn.id ? '#818cf8' : 'var(--color-text-muted)',
+                                            padding: '6px 14px',
+                                            borderRadius: 'var(--radius-full)',
+                                            fontSize: '0.8125rem',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            transition: 'all 0.15s ease'
                                         }}
                                     >
                                         {btn.label}
@@ -713,140 +1024,254 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                 ))}
                             </div>
 
-                            {/* Log Table */}
-                            <div className="responsive-table-container" style={{ margin: 0 }}>
-                                <table className="premium-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Topic / Session ID</th>
-                                            <th>Date & Time</th>
-                                            <th>Duration</th>
-                                            <th>Members</th>
-                                            <th>Status</th>
-                                            <th>Backups</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {filteredHistory.length === 0 ? (
-                                            <tr className="empty-row">
-                                                <td colSpan={6} style={{ padding: '60px 20px', textAlign: 'center' }}>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                                                        <span style={{ fontSize: '2rem' }}>📜</span>
-                                                        <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#fff', margin: 0 }}>No matching sessions found</h4>
-                                                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: 0, maxWidth: 300, lineHeight: 1.4 }}>
-                                                            Check your search query or clear the active history filters to view past sessions.
-                                                        </p>
-                                                        {searchQuery && (
-                                                            <button onClick={() => setSearchQuery('')} className="btn btn-secondary text-xs" style={{ marginTop: 8, padding: '4px 10px' }}>
-                                                                Reset Search
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </td>
+                            {/* History Log Display */}
+                            {historyItems.length === 0 ? (
+                                <div className="glass-card" style={{ padding: 'clamp(32px, 5vw, 56px)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 18, position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ position: 'absolute', top: '-40px', left: '50%', transform: 'translateX(-50%)', width: '260px', height: '160px', background: 'radial-gradient(ellipse, rgba(99,102,241,0.18) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                                    <div style={{
+                                        width: 68, height: 68, borderRadius: '22px',
+                                        background: 'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(168,85,247,0.2) 100%)',
+                                        border: '1px solid rgba(99,102,241,0.3)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.2rem',
+                                        boxShadow: '0 0 25px rgba(99,102,241,0.2)'
+                                    }}>
+                                        📜
+                                    </div>
+                                    <div style={{ maxWidth: 480 }}>
+                                        <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>No Past Sessions Logged</h3>
+                                        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5 }}>
+                                            Your meeting attendance logs, session durations, and cloud recordings will be archived here once your meetings conclude.
+                                        </p>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginTop: 4 }}>
+                                        <button
+                                            onClick={() => {
+                                                const newRoomId = `instant_${Date.now()}`
+                                                setMeetingId(newRoomId)
+                                                setActiveTab('meeting')
+                                            }}
+                                            className="btn btn-primary"
+                                            style={{ padding: '10px 20px', fontSize: '0.875rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, borderRadius: '10px' }}
+                                        >
+                                            <span>⚡</span> Start Instant Meeting
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('dashboard')}
+                                            className="btn btn-secondary"
+                                            style={{ padding: '10px 20px', fontSize: '0.875rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, borderRadius: '10px' }}
+                                        >
+                                            <span>📅</span> Plan a Meeting
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="responsive-table-container" style={{ margin: 0 }}>
+                                    <table className="premium-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Topic / Session ID</th>
+                                                <th>Date & Time</th>
+                                                <th>Duration</th>
+                                                <th>Members</th>
+                                                <th>Status</th>
+                                                <th>Backups</th>
                                             </tr>
-                                        ) : (
-                                            filteredHistory.map(item => (
-                                                <tr key={item.id}>
-                                                    <td>
-                                                        <div style={{ fontWeight: 600, color: '#fff' }}>{item.title}</div>
-                                                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>{item.id}</span>
-                                                    </td>
-                                                    <td style={{ color: 'var(--color-text-secondary)' }}>{item.date} at {item.time}</td>
-                                                    <td style={{ color: 'var(--color-text-secondary)' }}>{item.duration}</td>
-                                                    <td style={{ color: 'var(--color-text-secondary)' }}>👤 {item.participants} users</td>
-                                                    <td>
-                                                        <span className="badge badge-success">{item.status}</span>
-                                                    </td>
-                                                    <td>
-                                                        {item.recorded ? (
-                                                            <span className="badge badge-danger" style={{ display: 'inline-flex', gap: 4, cursor: 'pointer' }} title="Click to download file">
-                                                                ⬇ MP4 Recording
-                                                            </span>
-                                                        ) : (
-                                                            <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Unavailable</span>
-                                                        )}
+                                        </thead>
+                                        <tbody>
+                                            {filteredHistory.length === 0 ? (
+                                                <tr className="empty-row">
+                                                    <td colSpan={6} style={{ padding: '48px 20px', textAlign: 'center' }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                                            <span style={{ fontSize: '2rem' }}>🔍</span>
+                                                            <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#fff', margin: 0 }}>No matching sessions found</h4>
+                                                            <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: 0, maxWidth: 300, lineHeight: 1.4 }}>
+                                                                Check your search query or clear the active filter tabs to view past sessions.
+                                                            </p>
+                                                            {searchQuery && (
+                                                                <button onClick={() => setSearchQuery('')} className="btn btn-secondary text-xs" style={{ marginTop: 8, padding: '4px 12px', borderRadius: '8px' }}>
+                                                                    Reset Search
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
+                                            ) : (
+                                                filteredHistory.map(item => (
+                                                    <tr key={item.id}>
+                                                        <td>
+                                                            <div style={{ fontWeight: 600, color: '#fff' }}>{item.title}</div>
+                                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>{item.id}</span>
+                                                        </td>
+                                                        <td style={{ color: 'var(--color-text-secondary)' }}>{item.date} at {item.time}</td>
+                                                        <td style={{ color: 'var(--color-text-secondary)' }}>{item.duration}</td>
+                                                        <td style={{ color: 'var(--color-text-secondary)' }}>👤 {item.participants} users</td>
+                                                        <td>
+                                                            <span className="badge badge-success">{item.status}</span>
+                                                        </td>
+                                                        <td>
+                                                            {item.recorded ? (
+                                                                <span className="badge badge-danger" style={{ display: 'inline-flex', gap: 4, cursor: 'pointer' }} title="Click to download file">
+                                                                    ⬇ MP4 Recording
+                                                                </span>
+                                                            ) : (
+                                                                <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Unavailable</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
                         </div>
                     )}
 
                     {/* SCHEDULED CALENDAR TAB */}
                     {activeTab === 'scheduled' && (
-                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24, boxSizing: 'border-box' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '16px 12px' : 'clamp(20px, 3vw, 32px)', maxWidth: 1140, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 'clamp(14px, 2vw, 20px)', boxSizing: 'border-box' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                                 <div>
                                     <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 4px', color: '#fff' }}>Planned Conferences</h2>
                                     <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>Review schedules, share invites, and initiate meeting rooms.</p>
                                 </div>
+                                <button
+                                    onClick={() => setActiveTab('dashboard')}
+                                    className="btn btn-primary"
+                                    style={{ padding: '8px 16px', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8, borderRadius: '10px' }}
+                                >
+                                    <span>📅</span> Schedule New
+                                </button>
                             </div>
 
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                                {scheduledItems.map(item => (
-                                    <div key={item.id} className="glass-card flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ padding: '20px' }}>
-                                        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                                            <div style={{
-                                                width: 48, height: 48, borderRadius: 'var(--radius-md)', background: 'var(--color-accent-light)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'
-                                            }}>
-                                                📅
-                                            </div>
-                                            <div>
-                                                <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 4px', color: '#fff' }}>{item.title}</h4>
-                                                <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
-                                                    Scheduled (ID: {item.id}) • Created: {item.date} {item.time}
-                                                </span>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 4 }}>
-                                                    Organized by: <span style={{ fontWeight: 600 }}>{item.host}</span>
+                            {scheduledItems.length === 0 ? (
+                                <div className="glass-card" style={{ padding: 'clamp(32px, 5vw, 56px)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 20, position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ position: 'absolute', top: '-40px', left: '50%', transform: 'translateX(-50%)', width: '260px', height: '160px', background: 'radial-gradient(ellipse, rgba(99,102,241,0.18) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                                    <div style={{
+                                        width: 68, height: 68, borderRadius: '22px',
+                                        background: 'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(168,85,247,0.2) 100%)',
+                                        border: '1px solid rgba(99,102,241,0.3)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.2rem',
+                                        boxShadow: '0 0 25px rgba(99,102,241,0.2)'
+                                    }}>
+                                        📅
+                                    </div>
+                                    <div style={{ maxWidth: 480 }}>
+                                        <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>No Planned Conferences</h3>
+                                        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5 }}>
+                                            You don't have any upcoming meetings scheduled. Plan your next conference, invite attendees, or launch an instant meeting right now.
+                                        </p>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', marginTop: 4 }}>
+                                        <button
+                                            onClick={() => setActiveTab('dashboard')}
+                                            className="btn btn-primary"
+                                            style={{ padding: '10px 20px', fontSize: '0.875rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, borderRadius: '10px' }}
+                                        >
+                                            <span>📅</span> Schedule a Meeting
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                const newRoomId = `instant_${Date.now()}`
+                                                setMeetingId(newRoomId)
+                                                setActiveTab('meeting')
+                                            }}
+                                            className="btn btn-secondary"
+                                            style={{ padding: '10px 20px', fontSize: '0.875rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, borderRadius: '10px' }}
+                                        >
+                                            <span>⚡</span> Start Instant Meeting
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    {scheduledItems.map(item => (
+                                        <div key={item.id} className="glass-card flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ padding: '16px 20px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                            <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                                                <div style={{
+                                                    width: 44, height: 44, borderRadius: '12px', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.25)',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.35rem', flexShrink: 0
+                                                }}>
+                                                    📅
+                                                </div>
+                                                <div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                                        <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff' }}>{item.title}</h4>
+                                                        {item.isRecurring && (
+                                                            <span className="badge badge-primary" style={{ fontSize: '0.7rem', padding: '2px 8px' }}>
+                                                                🔁 Daily at {item.time}
+                                                            </span>
+                                                        )}
+                                                        {item.notifyByEmail && (
+                                                            <span className="badge badge-success" style={{ fontSize: '0.7rem', padding: '2px 8px' }}>
+                                                                📧 Auto-Email
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', display: 'block', marginTop: 3 }}>
+                                                        Meeting ID: <span style={{ fontFamily: 'monospace', color: '#818cf8' }}>{item.id}</span> • Time: {item.date} at {item.time}
+                                                    </span>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                                                        Host: <span style={{ fontWeight: 600, color: '#e4e4e7' }}>{item.host}</span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
 
-                                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', width: '100%', maxWidth: 'max-content' }} className="w-full sm:w-auto">
-                                            <button onClick={() => {
-                                                const joinLink = `${window.location.origin}/meet/${item.id}`
-                                                navigator.clipboard.writeText(`Join meeting "${item.title}" via JTS-Meet: ${joinLink}`)
-                                                alert('Invite link copied to clipboard!')
-                                            }} className="btn btn-secondary flex-1 sm:flex-none" style={{ padding: '8px 14px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                                                Copy Invite
-                                            </button>
-                                            <button onClick={() => setActiveTab('meeting')} className="btn btn-primary flex-1 sm:flex-none" style={{ padding: '8px 14px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                                                Start Room
-                                            </button>
+                                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', width: '100%', maxWidth: 'max-content' }} className="w-full sm:w-auto">
+                                                <button onClick={() => {
+                                                    const joinLink = `${window.location.origin}/meet/${item.id}`
+                                                    navigator.clipboard.writeText(`Join meeting "${item.title}" via JTS-Meet: ${joinLink}`)
+                                                    alert('Invite link copied to clipboard!')
+                                                }} className="btn btn-secondary flex-1 sm:flex-none" style={{ padding: '7px 14px', fontSize: '0.75rem', whiteSpace: 'nowrap', borderRadius: '8px' }}>
+                                                    Copy Invite
+                                                </button>
+                                                <button onClick={() => {
+                                                    setMeetingId(item.id)
+                                                    setActiveTab('meeting')
+                                                }} className="btn btn-primary flex-1 sm:flex-none" style={{ padding: '7px 14px', fontSize: '0.75rem', whiteSpace: 'nowrap', borderRadius: '8px' }}>
+                                                    Start Room
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 
                     {/* ORGANIZATIONS TAB */}
                     {activeTab === 'organization' && (
-                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32, boxSizing: 'border-box' }}>
-                            <OrganizationSettingsPage token={token} organizationId={currentOrgId || undefined} />
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '16px 12px' : 'clamp(20px, 3vw, 32px)', maxWidth: 1140, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20, boxSizing: 'border-box' }}>
+                            <OrganizationSettingsPage
+                                token={token}
+                                organizationId={currentOrgId || undefined}
+                                organizations={organizations}
+                                onSelectOrganization={(id) => setCurrentOrgId(id)}
+                                onOrganizationCreated={(newOrg) => {
+                                    setOrganizations(prev => [...prev, newOrg])
+                                    setCurrentOrgId(newOrg._id)
+                                    fetchOrganizations()
+                                }}
+                            />
                         </div>
                     )}
 
                     {/* TEAMS SETTINGS TAB */}
                     {activeTab === 'team' && (
-                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32, boxSizing: 'border-box' }}>
-                            <TeamSettingsPage token={token} organizationId={currentOrgId || undefined} />
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '16px 12px' : 'clamp(20px, 3vw, 32px)', maxWidth: 1140, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20, boxSizing: 'border-box' }}>
+                            <TeamSettingsPage token={token} organizationId={currentOrgId || undefined} currentUserId={userId} />
                         </div>
                     )}
 
                     {/* CHANNELS SETTINGS TAB */}
                     {activeTab === 'channel' && (
-                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '24px 16px' : '40px', maxWidth: 1100, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32, boxSizing: 'border-box' }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '10px 8px' : '12px 16px', maxWidth: 1320, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 'calc(100vh - 76px)', boxSizing: 'border-box' }}>
                             {currentTeamId ? (
                                 <ChannelSettingsPage token={token} organizationId={currentOrgId || undefined} teamId={currentTeamId} />
                             ) : (
-                                <div className="glass-card" style={{ padding: 40, margin: 32, textAlign: 'center' }}>
-                                    <h3 style={{ color: '#fff', marginBottom: 12 }}>No Team Available</h3>
-                                    <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
+                                <div className="glass-card" style={{ padding: 'clamp(24px, 4vw, 36px)', margin: '16px 0', textAlign: 'center' }}>
+                                    <h3 style={{ color: '#fff', marginBottom: 8 }}>No Team Available</h3>
+                                    <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
                                         Please create a team in the "Teams Settings" tab first.
                                     </p>
                                 </div>
@@ -856,58 +1281,252 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                     {/* USER PROFILE TAB */}
                     {activeTab === 'profile' && (
-                        <div className="anim-fade-in" style={{ padding: 40, maxWidth: 800, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 28 }}>
+                        <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '16px 12px' : 'clamp(20px, 3vw, 32px)', maxWidth: 1000, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24, boxSizing: 'border-box' }}>
                             <div>
-                                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 4px', color: '#fff' }}>User Profile & Settings</h2>
-                                <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>Configure personal details and global device defaults.</p>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 4px', color: '#fff' }}>User Profile & Preferences</h2>
+                                <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>Configure personal details, connected media hardware, and room defaults.</p>
                             </div>
 
-                            <div className="glass-card" style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 20 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-                                    <div style={{
-                                        width: 72, height: 72, borderRadius: '50%',
-                                        background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        fontSize: '2rem', fontWeight: 700, color: '#fff', boxShadow: 'var(--shadow-md)'
-                                    }}>
-                                        {profileName.slice(0, 2).toUpperCase()}
+                            {profileSaveSuccess && (
+                                <div style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)', color: '#4ade80', padding: '12px 18px', borderRadius: '12px', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <span>✓</span>
+                                    <span>Profile settings updated successfully!</span>
+                                </div>
+                            )}
+
+                            {profileError && (
+                                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '12px 18px', borderRadius: '12px', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <span>⚠</span>
+                                    <span>{profileError}</span>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'grid', gridTemplateColumns: windowWidth < 768 ? '1fr' : '1fr 1fr', gap: 20 }}>
+                                {/* Left Column: Identity & Account */}
+                                <div className="glass-card" style={{ padding: 'clamp(20px, 3vw, 28px)', display: 'flex', flexDirection: 'column', gap: 20 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                                        <div style={{
+                                            width: 60, height: 60, borderRadius: '50%',
+                                            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontSize: '1.6rem', fontWeight: 800, color: '#fff', boxShadow: '0 4px 16px rgba(99, 102, 241, 0.3)', flexShrink: 0
+                                        }}>
+                                            {profileName.slice(0, 2).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color: '#fff' }}>{profileName}</h3>
+                                                <span className="badge badge-primary" style={{ fontSize: '0.7rem', padding: '2px 8px' }}>
+                                                    Member
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e' }} />
+                                                <span style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 600 }}>Active Online</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h3 style={{ fontSize: '1.125rem', fontWeight: 700, margin: '0 0 4px', color: '#fff' }}>{profileName}</h3>
-                                        <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>Active Organization: <span style={{ fontWeight: 600 }}>Default Org</span></p>
-                                    </div>
+
+                                    <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Full Display Name</label>
+                                            <input
+                                                type="text"
+                                                value={profileName}
+                                                onChange={(e) => setProfileName(e.target.value)}
+                                                className="input"
+                                                style={{ padding: '10px 14px', fontSize: '0.875rem' }}
+                                                placeholder="Enter your name"
+                                                required
+                                            />
+                                        </div>
+
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Email Address</label>
+                                                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>🔒 Verified</span>
+                                            </div>
+                                            <input
+                                                type="email"
+                                                value={profileEmail}
+                                                disabled
+                                                className="input"
+                                                style={{ padding: '10px 14px', fontSize: '0.875rem', opacity: 0.7, cursor: 'not-allowed' }}
+                                            />
+                                        </div>
+
+                                        {userId && (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Personal User ID</label>
+                                                <div style={{ display: 'flex', gap: 8 }}>
+                                                    <input
+                                                        type="text"
+                                                        value={userId}
+                                                        readOnly
+                                                        className="input"
+                                                        style={{ padding: '8px 12px', fontSize: '0.75rem', fontFamily: 'monospace', opacity: 0.8 }}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(userId)
+                                                            alert('User ID copied to clipboard!')
+                                                        }}
+                                                        className="btn btn-secondary"
+                                                        style={{ padding: '8px 12px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+                                                    >
+                                                        Copy
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <button
+                                            type="submit"
+                                            disabled={isSavingProfile}
+                                            className="btn btn-primary"
+                                            style={{
+                                                padding: '10px 18px',
+                                                fontSize: '0.875rem',
+                                                fontWeight: 600,
+                                                marginTop: 6,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: 8,
+                                                borderRadius: '10px'
+                                            }}
+                                        >
+                                            {isSavingProfile ? (
+                                                <>
+                                                    <div className="animate-spin" style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%' }} />
+                                                    Saving Changes...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span>💾</span> Save Changes
+                                                </>
+                                            )}
+                                        </button>
+                                    </form>
                                 </div>
 
-                                <div style={{ width: '100%', height: 1, background: 'var(--color-border)' }} />
+                                {/* Right Column: Hardware Defaults & Meeting Prefs */}
+                                <div className="glass-card" style={{ padding: 'clamp(20px, 3vw, 28px)', display: 'flex', flexDirection: 'column', gap: 18 }}>
+                                    <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span>⚙️</span> Connected Hardware & Audio
+                                    </h3>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 16 }}>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Display Name</label>
-                                        <input
-                                            type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)}
-                                            style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: '#fff', padding: '8px 12px', borderRadius: 'var(--radius-sm)' }}
-                                        />
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Email Address</label>
-                                        <input
-                                            type="email" value={profileEmail} disabled
-                                            style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', cursor: 'not-allowed' }}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
+                                    {/* Microphone Selector & Tester */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Default Microphone</label>
+                                        <select
+                                            value={selectedAudioDevice}
+                                            onChange={(e) => {
+                                                setSelectedAudioDevice(e.target.value)
+                                                localStorage.setItem('jts_default_mic', e.target.value)
+                                            }}
+                                            className="input"
+                                            style={{ padding: '8px 12px', fontSize: '0.8125rem', cursor: 'pointer' }}
+                                        >
+                                            {audioDevices.length > 0 ? (
+                                                audioDevices.map(d => (
+                                                    <option key={d.deviceId} value={d.deviceId} style={{ background: '#18181b', color: '#fff' }}>
+                                                        {d.label || `Microphone (${d.deviceId.slice(0, 8)}...)`}
+                                                    </option>
+                                                ))
+                                            ) : (
+                                                <option value="" style={{ background: '#18181b', color: '#fff' }}>Default System Microphone</option>
+                                            )}
+                                        </select>
 
-                            <div className="glass-card" style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                                <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, margin: 0, color: '#fff' }}>Connected Devices defaults</h3>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: '0.8125rem' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span>🎥 Webcam default option</span>
-                                        <span className="badge badge-success">Integrated Camera</span>
+                                        {/* Mic Test Bar */}
+                                        <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>Mic Input Volume:</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsTestingMic(!isTestingMic)}
+                                                    className="btn btn-secondary"
+                                                    style={{ padding: '3px 10px', fontSize: '0.7rem', borderRadius: '6px' }}
+                                                >
+                                                    {isTestingMic ? 'Stop Test' : 'Test Mic'}
+                                                </button>
+                                            </div>
+                                            <div style={{ width: '100%', height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
+                                                <div style={{ width: `${micLevel}%`, height: '100%', background: micLevel > 75 ? '#ef4444' : micLevel > 35 ? '#22c55e' : '#6366f1', transition: 'width 60ms linear' }} />
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span>🎤 Audio Microphone default</span>
-                                        <span className="badge badge-success">System Mic Input</span>
+
+                                    {/* Camera Selector */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Default Video Camera</label>
+                                        <select
+                                            value={selectedVideoDevice}
+                                            onChange={(e) => {
+                                                setSelectedVideoDevice(e.target.value)
+                                                localStorage.setItem('jts_default_cam', e.target.value)
+                                            }}
+                                            className="input"
+                                            style={{ padding: '8px 12px', fontSize: '0.8125rem', cursor: 'pointer' }}
+                                        >
+                                            {videoDevices.length > 0 ? (
+                                                videoDevices.map(d => (
+                                                    <option key={d.deviceId} value={d.deviceId} style={{ background: '#18181b', color: '#fff' }}>
+                                                        {d.label || `Camera (${d.deviceId.slice(0, 8)}...)`}
+                                                    </option>
+                                                ))
+                                            ) : (
+                                                <option value="" style={{ background: '#18181b', color: '#fff' }}>Default System Camera</option>
+                                            )}
+                                        </select>
+                                    </div>
+
+                                    <div style={{ width: '100%', height: 1, background: 'var(--color-border)', margin: '4px 0' }} />
+
+                                    {/* Meeting In-Room Defaults */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>In-Call Preferences</label>
+
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: '0.8125rem', color: '#e4e4e7' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={autoMuteMic}
+                                                onChange={(e) => {
+                                                    setAutoMuteMic(e.target.checked)
+                                                    localStorage.setItem('jts_pref_auto_mute', e.target.checked.toString())
+                                                }}
+                                                style={{ width: 16, height: 16, accentColor: '#6366f1', cursor: 'pointer' }}
+                                            />
+                                            <span>Mute microphone when entering rooms</span>
+                                        </label>
+
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: '0.8125rem', color: '#e4e4e7' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={autoMuteCam}
+                                                onChange={(e) => {
+                                                    setAutoMuteCam(e.target.checked)
+                                                    localStorage.setItem('jts_pref_auto_cam_off', e.target.checked.toString())
+                                                }}
+                                                style={{ width: 16, height: 16, accentColor: '#6366f1', cursor: 'pointer' }}
+                                            />
+                                            <span>Turn off camera when entering rooms</span>
+                                        </label>
+
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: '0.8125rem', color: '#e4e4e7' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={noiseSuppression}
+                                                onChange={(e) => {
+                                                    setNoiseSuppression(e.target.checked)
+                                                    localStorage.setItem('jts_pref_noise_suppr', e.target.checked.toString())
+                                                }}
+                                                style={{ width: 16, height: 16, accentColor: '#6366f1', cursor: 'pointer' }}
+                                            />
+                                            <span>Enable AI background noise suppression</span>
+                                        </label>
                                     </div>
                                 </div>
                             </div>
@@ -916,6 +1535,47 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
                 </Suspense>
             </main>
+
+            {/* 1-on-1 Direct Dialing Modal */}
+            {showDirectDialModal && (
+                <div className="modal-overlay">
+                    <div className="modal-container anim-scale-in" style={{ maxWidth: 440 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span>📞</span> Direct Ring Colleague
+                            </h3>
+                            <button onClick={() => setShowDirectDialModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', fontSize: '1.25rem', cursor: 'pointer' }}>×</button>
+                        </div>
+                        <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.4 }}>
+                            Enter your colleague's User ID to ring their workspace with real-time audio chime signaling.
+                        </p>
+                        <form onSubmit={(e) => { e.preventDefault(); handleStartDirectCall(directDialTarget) }} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <input
+                                type="text"
+                                required
+                                value={directDialTarget}
+                                onChange={(e) => setDirectDialTarget(e.target.value)}
+                                placeholder="Colleague User ID (e.g. 64f1a...)"
+                                style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', color: '#fff', fontSize: '0.875rem', outline: 'none' }}
+                                autoFocus
+                            />
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+                                <button type="button" onClick={() => setShowDirectDialModal(false)} className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: '0.8125rem' }}>Cancel</button>
+                                <button type="submit" disabled={!directDialTarget.trim()} className="btn btn-primary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem' }}>
+                                    <span>📞</span> Call Now
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Global Incoming Call Ringing Modal */}
+            <IncomingCallModal
+                call={incomingCall}
+                onAccept={handleAcceptCall}
+                onDecline={handleDeclineCall}
+            />
         </div>
     )
 }

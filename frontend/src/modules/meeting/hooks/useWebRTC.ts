@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Socket } from 'socket.io-client'
 import { SocketEvents } from '../services/socket.service'
-import { createPeerConnection } from '../services/webrtc.service'
+import { createPeerConnection, peerRemoteStreams } from '../services/webrtc.service'
 import { getScreenShareStream, stopScreenShareStream } from '../services/screen.service'
 
 interface UseWebRTCResult {
@@ -35,12 +35,15 @@ export function useWebRTC(
     const [screenError, setScreenError] = useState<string | null>(null)
     const peerConnectionsRef = useRef<InternalPeerConnections>({})
     const localStreamRef = useRef<MediaStream | null>(null)
+    const pendingCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({})
 
     const cleanupPeer = useCallback((userId: string) => {
         const pc = peerConnectionsRef.current[userId]
         if (pc) {
             pc.close()
             delete peerConnectionsRef.current[userId]
+            delete pendingCandidatesRef.current[userId]
+            peerRemoteStreams.delete(userId)
             setRemoteStreams((prev) => {
                 const nextStreams = { ...prev }
                 delete nextStreams[userId]
@@ -63,16 +66,9 @@ export function useWebRTC(
             }
 
             setMeetingId(targetMeetingId)
-            const isLocalVideoOff = !localStreamRef.current || 
-                localStreamRef.current.getVideoTracks().length === 0 || 
-                !!(localStreamRef.current.getVideoTracks()[0] as any).isDummy;
+            const vTrack = localStreamRef.current?.getVideoTracks()[0]
+            const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled) : false
 
-            console.log('useWebRTC connectToMeeting isLocalVideoOff check:', {
-                localStreamExists: !!localStreamRef.current,
-                tracksCount: localStreamRef.current ? localStreamRef.current.getVideoTracks().length : 0,
-                isDummyTrack: localStreamRef.current && localStreamRef.current.getVideoTracks()[0] ? !!(localStreamRef.current.getVideoTracks()[0] as any).isDummy : false,
-                isLocalVideoOff
-            });
             socket.emit(SocketEvents.WEBRTC_JOIN, { 
                 meetingId: targetMeetingId,
                 displayName,
@@ -84,14 +80,24 @@ export function useWebRTC(
 
     const replaceTrackOnPeers = useCallback(
         (newTrack: MediaStreamTrack | null) => {
+            if (!newTrack) return
+            const kind = newTrack.kind
             Object.values(peerConnectionsRef.current).forEach((pc) => {
                 const sender = pc.getSenders().find((s) => {
-                    if (s.track) return s.track.kind === 'video'
+                    if (s.track) return s.track.kind === kind
                     const tc = pc.getTransceivers().find(t => t.sender === s)
-                    return tc && tc.receiver.track && tc.receiver.track.kind === 'video'
+                    return tc && tc.receiver.track && tc.receiver.track.kind === kind
                 })
                 if (sender) {
-                    sender.replaceTrack(newTrack)
+                    sender.replaceTrack(newTrack).catch(err => {
+                        console.warn('Failed to replace track on peer:', err)
+                    })
+                } else if (localStreamRef.current) {
+                    try {
+                        pc.addTrack(newTrack, localStreamRef.current)
+                    } catch (err) {
+                        console.warn('Failed to add track to peer:', err)
+                    }
                 }
             })
         },
@@ -139,7 +145,22 @@ export function useWebRTC(
 
     useEffect(() => {
         localStreamRef.current = localStream
-    }, [localStream])
+        if (localStream) {
+            const vTrack = localStream.getVideoTracks()[0]
+            const aTrack = localStream.getAudioTracks()[0]
+            if (vTrack) replaceTrackOnPeers(vTrack)
+            if (aTrack) replaceTrackOnPeers(aTrack)
+
+            if (socket && meetingId && vTrack) {
+                const isDummy = !!(vTrack as any).isDummy
+                const isOff = isDummy || !vTrack.enabled
+                socket.emit('meeting:camera-toggle', {
+                    meetingId,
+                    isVideoOff: isOff
+                })
+            }
+        }
+    }, [localStream, replaceTrackOnPeers, socket, meetingId])
 
     useEffect(() => {
         if (!socket) {
@@ -148,6 +169,17 @@ export function useWebRTC(
 
         const handleUserJoined = (payload: { userId: string; meetingId: string }) => {
             addParticipant(payload.userId)
+
+            const existingPc = peerConnectionsRef.current[payload.userId]
+            if (existingPc && (existingPc.connectionState === 'connected' || existingPc.iceConnectionState === 'connected')) {
+                console.log(`[WebRTC] Peer connection already active for user ${payload.userId}, skipping redundant offer`)
+                return
+            }
+
+            if (existingPc) {
+                try { existingPc.close() } catch (e) {}
+            }
+
             const pc = createPeerConnection(
                 payload.userId,
                 localStreamRef.current,
@@ -169,31 +201,23 @@ export function useWebRTC(
 
             pc.createOffer().then((offer) => {
                 return pc.setLocalDescription(offer).then(() => {
-                    let myName = '';
+                    let myName = localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || ''
                     try {
-                        const token = localStorage.getItem('jts_token') || '';
+                        const token = localStorage.getItem('jts_guest_token') || localStorage.getItem('jts_token') || ''
                         if (token) {
-                            const parts = token.split('.');
+                            const parts = token.split('.')
                             if (parts.length === 3) {
-                                const decoded = JSON.parse(atob(parts[1]));
-                                if (decoded && decoded.isGuest) {
-                                    myName = decoded.guestName;
+                                const decoded = JSON.parse(atob(parts[1]))
+                                if (decoded) {
+                                    myName = decoded.guestName || decoded.fullName || myName
                                 }
                             }
                         }
                     } catch (e) {}
 
-                    const isLocalVideoOff = !localStreamRef.current || 
-                        localStreamRef.current.getVideoTracks().length === 0 || 
-                        !!(localStreamRef.current.getVideoTracks()[0] as any).isDummy;
+                    const vTrack = localStreamRef.current?.getVideoTracks()[0]
+                    const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled) : false
 
-                    console.log('useWebRTC WEBRTC_OFFER isLocalVideoOff check:', {
-                        targetUserId: payload.userId,
-                        localStreamExists: !!localStreamRef.current,
-                        tracksCount: localStreamRef.current ? localStreamRef.current.getVideoTracks().length : 0,
-                        isDummyTrack: localStreamRef.current && localStreamRef.current.getVideoTracks()[0] ? !!(localStreamRef.current.getVideoTracks()[0] as any).isDummy : false,
-                        isLocalVideoOff
-                    });
                     socket.emit(SocketEvents.WEBRTC_OFFER, {
                         targetUserId: payload.userId,
                         meetingId: payload.meetingId,
@@ -202,11 +226,19 @@ export function useWebRTC(
                         isVideoOff: isLocalVideoOff
                     })
                 })
+            }).catch(err => {
+                console.warn('Error creating WebRTC offer:', err)
             })
         }
 
         const handleOffer = async (payload: { fromUserId: string; meetingId: string; offer: RTCSessionDescriptionInit }) => {
             addParticipant(payload.fromUserId)
+
+            const existingPc = peerConnectionsRef.current[payload.fromUserId]
+            if (existingPc) {
+                try { existingPc.close() } catch (e) {}
+            }
+
             const pc = createPeerConnection(
                 payload.fromUserId,
                 localStreamRef.current,
@@ -226,15 +258,51 @@ export function useWebRTC(
 
             peerConnectionsRef.current[payload.fromUserId] = pc
 
-            await pc.setRemoteDescription(new RTCSessionDescription(payload.offer))
-            const answer = await pc.createAnswer()
-            await pc.setLocalDescription(answer)
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(payload.offer))
+                const answer = await pc.createAnswer()
+                await pc.setLocalDescription(answer)
+                await processPendingCandidates(payload.fromUserId, pc)
 
-            socket.emit(SocketEvents.WEBRTC_ANSWER, {
-                targetUserId: payload.fromUserId,
-                meetingId: payload.meetingId,
-                answer
-            })
+                let myName = localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || ''
+                try {
+                    const token = localStorage.getItem('jts_guest_token') || localStorage.getItem('jts_token') || ''
+                    if (token) {
+                        const parts = token.split('.')
+                        if (parts.length === 3) {
+                            const decoded = JSON.parse(atob(parts[1]))
+                            if (decoded) {
+                                myName = decoded.guestName || decoded.fullName || myName
+                            }
+                        }
+                    }
+                } catch (e) {}
+
+                const vTrack = localStreamRef.current?.getVideoTracks()[0]
+                const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled) : false
+
+                socket.emit(SocketEvents.WEBRTC_ANSWER, {
+                    targetUserId: payload.fromUserId,
+                    meetingId: payload.meetingId,
+                    answer,
+                    displayName: myName,
+                    isVideoOff: isLocalVideoOff
+                })
+            } catch (err) {
+                console.warn('Error handling WebRTC offer:', err)
+            }
+        }
+
+        const processPendingCandidates = async (userId: string, pc: RTCPeerConnection) => {
+            const candidates = pendingCandidatesRef.current[userId] || []
+            pendingCandidatesRef.current[userId] = []
+            for (const cand of candidates) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(cand))
+                } catch (err) {
+                    console.warn('Error applying buffered ICE candidate for user', userId, err)
+                }
+            }
         }
 
         const handleAnswer = async (payload: { fromUserId: string; meetingId: string; answer: RTCSessionDescriptionInit }) => {
@@ -243,16 +311,30 @@ export function useWebRTC(
                 console.warn('handleAnswer: PeerConnection not found for user', payload.fromUserId)
                 return
             }
-            await pc.setRemoteDescription(new RTCSessionDescription(payload.answer))
+            try {
+                if (pc.signalingState === 'have-local-offer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload.answer))
+                    await processPendingCandidates(payload.fromUserId, pc)
+                }
+            } catch (err) {
+                console.warn('Error handling WebRTC answer:', err)
+            }
         }
 
         const handleIceCandidate = async (payload: { fromUserId: string; meetingId: string; candidate: RTCIceCandidateInit }) => {
             const pc = peerConnectionsRef.current[payload.fromUserId]
-            if (!pc) {
-                console.warn('handleIceCandidate: PeerConnection not found for user', payload.fromUserId)
+            if (!pc || !pc.remoteDescription) {
+                if (!pendingCandidatesRef.current[payload.fromUserId]) {
+                    pendingCandidatesRef.current[payload.fromUserId] = []
+                }
+                pendingCandidatesRef.current[payload.fromUserId].push(payload.candidate)
                 return
             }
-            await pc.addIceCandidate(new RTCIceCandidate(payload.candidate))
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(payload.candidate))
+            } catch (err) {
+                console.warn('Error adding ICE candidate:', err)
+            }
         }
 
         const handleUserLeft = (payload: { userId: string; meetingId: string }) => {

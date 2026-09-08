@@ -2,17 +2,20 @@ export type TeamVisibility = 'public' | 'private'
 export type TeamRole = 'owner' | 'admin' | 'member' | 'guest'
 export type TeamStatus = 'active' | 'inactive'
 
+export interface TeamMemberUser {
+    _id: string
+    fullName: string
+    email: string
+    profileImage?: string
+}
+
 export interface TeamMember {
-    userId: string
+    userId: string | TeamMemberUser
     role: TeamRole
     joinedAt: string
     invitedBy: string
     status?: string
-    user?: {
-        fullName: string
-        email: string
-        profileImage?: string
-    }
+    user?: TeamMemberUser
 }
 
 export interface Team {

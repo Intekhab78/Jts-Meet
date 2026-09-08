@@ -7,6 +7,7 @@ export interface MeetingChatMessage {
     _id?: string
     meetingId: string
     senderId: string
+    senderName?: string
     message: string
     messageType: 'text'
     reactions?: { userId: string; emoji: string; createdAt: string }[]

@@ -10,7 +10,7 @@ const isProductionPlatform = os.platform() === 'linux'
 export const PORT = process.env.PORT ? Number(process.env.PORT) : 4000
 export const MONGO_URI = process.env.MONGO_URI || ''
 export const JWT_SECRET = process.env.JWT_SECRET || 'change-me'
-export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h'
+export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '365d'
 export const NODE_ENV = process.env.NODE_ENV || (isProductionPlatform ? 'production' : 'development')
 export const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || ''
 export const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || ''

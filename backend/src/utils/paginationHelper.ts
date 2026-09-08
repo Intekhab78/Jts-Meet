@@ -24,7 +24,8 @@ export async function executeCursorQuery(
     baseQuery: any,
     params: ReturnType<typeof parseCursorQuery>,
     searchFields: string[],
-    filterMappings: Record<string, any> = {}
+    filterMappings: Record<string, any> = {},
+    populate?: any
 ) {
     const { limit, cursor, search, sortBy, sortOrder } = params
     const query = { ...baseQuery }
@@ -72,10 +73,11 @@ export async function executeCursorQuery(
     }
     sortParams._id = sortDirVal
 
-    const results = await model.find(query)
-        .sort(sortParams)
-        .limit(limit + 1)
-        .exec()
+    let queryExec = model.find(query).sort(sortParams).limit(limit + 1)
+    if (populate) {
+        queryExec = queryExec.populate(populate)
+    }
+    const results = await queryExec.exec()
 
     const hasMore = results.length > limit
     let nextCursor: string | null = null
