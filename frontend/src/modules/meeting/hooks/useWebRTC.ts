@@ -55,6 +55,10 @@ export function useWebRTC(
     const leaveMeeting = useCallback(() => {
         setMeetingId('')
         setJoined(false)
+        sessionStorage.removeItem('jts_active_meeting_id')
+        if (window.location.hash.startsWith('#meeting')) {
+            window.history.replaceState(null, '', '/#meeting')
+        }
         Object.keys(peerConnectionsRef.current).forEach((userId) => cleanupPeer(userId))
         socket?.emit(SocketEvents.MEETING_LEAVE, { meetingId })
     }, [cleanupPeer, meetingId, setJoined, socket])
@@ -66,6 +70,10 @@ export function useWebRTC(
             }
 
             setMeetingId(targetMeetingId)
+            sessionStorage.setItem('jts_active_meeting_id', targetMeetingId)
+            localStorage.setItem('jts_last_meeting_id', targetMeetingId)
+            window.history.replaceState(null, '', `/#meeting?id=${encodeURIComponent(targetMeetingId)}`)
+
             const vTrack = localStreamRef.current?.getVideoTracks()[0]
             const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled) : false
 

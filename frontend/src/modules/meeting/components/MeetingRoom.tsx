@@ -14,6 +14,8 @@ import { MeetingPollsModal } from './MeetingPollsModal'
 import { MeetingCaptionsBanner } from './MeetingCaptionsBanner'
 import { MeetingSummaryModal } from './MeetingSummaryModal'
 import { playJoinChime, playLeaveChime } from '../services/chime.service'
+import { EndMeetingModal } from './EndMeetingModal'
+import { MeetingNotesPanel } from './MeetingNotesPanel'
 
 const parseJwt = (token: string) => {
     try {
@@ -102,7 +104,7 @@ const IconChevronRight = () => (
     </svg>
 )
 
-type ActivePanel = 'participants' | 'chat' | 'files' | 'settings' | null
+type ActivePanel = 'participants' | 'chat' | 'files' | 'settings' | 'notes' | null
 
 /* ──────────────────────────────────────────────────────────
    Helper: get initials from a fullName string
@@ -623,12 +625,15 @@ interface ParticipantsPanelProps {
     addToast: (msg: string, type?: 'info' | 'success' | 'warning') => void
     hostId: string | null
     isLocalHost: boolean
+    isLocked?: boolean
+    onToggleLock?: () => void
+    onMuteAll?: () => void
 }
 
 function ParticipantsPanel({
     participants, onClose, spotlightUserId, setSpotlightUserId,
     coHostIds, setCoHostIds, renamedUsers, setRenamedUsers, addToast,
-    hostId, isLocalHost
+    hostId, isLocalHost, isLocked, onToggleLock, onMuteAll
 }: ParticipantsPanelProps) {
     const [search, setSearch] = useState('')
     const [activeMenu, setActiveMenu] = useState<string | null>(null)
@@ -677,14 +682,14 @@ function ParticipantsPanel({
     }
 
     return (
-        <div className="side-panel" style={{ animationName: 'jts-slide-right', display: 'flex', flexDirection: 'column', height: '100%' } as React.CSSProperties}>
+        <div className="side-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100%', minHeight: 0 } as React.CSSProperties}>
             <div className="side-panel-header" style={{ flexShrink: 0 }}>
                 <span className="side-panel-title">Participants</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
+                    <span className="badge badge-neutral" style={{ fontSize: '0.75rem', fontWeight: 700 }}>
                         {participants.length + 1}
                     </span>
-                    <button className="btn-icon" onClick={onClose} aria-label="Close panel">
+                    <button className="btn-icon" onClick={onClose} aria-label="Close panel" style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.06)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <IconX />
                     </button>
                 </div>
@@ -702,15 +707,64 @@ function ParticipantsPanel({
                         background: 'var(--color-surface-2)',
                         border: '1px solid var(--color-border)',
                         borderRadius: 'var(--radius-sm)',
-                        padding: '6px 12px',
+                        padding: '8px 12px',
                         fontSize: '0.8125rem',
                         color: 'var(--color-text-primary)',
-                        outline: 'none'
+                        outline: 'none',
+                        boxSizing: 'border-box'
                     }}
                 />
             </div>
 
-            <div className="side-panel-body" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+            {/* Host Quick-Action Toolbar */}
+            {isLocalHost && (
+                <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <button
+                        onClick={onMuteAll}
+                        style={{
+                            flex: 1,
+                            padding: '8px 10px',
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: '#fca5a5',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6
+                        }}
+                        title="Mute all participants' microphones"
+                    >
+                        <span>🔇</span> Mute All
+                    </button>
+                    <button
+                        onClick={onToggleLock}
+                        style={{
+                            flex: 1,
+                            padding: '8px 10px',
+                            background: isLocked ? 'rgba(245, 158, 11, 0.18)' : 'rgba(99, 102, 241, 0.12)',
+                            border: isLocked ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(99, 102, 241, 0.3)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: isLocked ? '#fcd34d' : '#a5b4fc',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6
+                        }}
+                        title={isLocked ? "Unlock meeting to allow new participants" : "Lock meeting to reject new participants"}
+                    >
+                        <span>{isLocked ? '🔒' : '🔓'}</span> {isLocked ? 'Unlock Room' : 'Lock Room'}
+                    </button>
+                </div>
+            )}
+
+            <div className="side-panel-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px' }}>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {/* Local User card */}
                     <li className="glass-card-sm" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px' }}>
@@ -879,14 +933,14 @@ interface FilesPanelProps {
 
 function FilesPanel({ token, meetingId, onClose }: FilesPanelProps) {
     return (
-        <div className="side-panel" style={{ animationName: 'jts-slide-right' } as React.CSSProperties}>
-            <div className="side-panel-header">
+        <div className="side-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100%', minHeight: 0 } as React.CSSProperties}>
+            <div className="side-panel-header" style={{ flexShrink: 0 }}>
                 <span className="side-panel-title">Shared Files</span>
-                <button className="btn-icon" onClick={onClose} aria-label="Close panel">
+                <button className="btn-icon" onClick={onClose} aria-label="Close panel" style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.06)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <IconX />
                 </button>
             </div>
-            <div className="side-panel-body" style={{ padding: '20px' }}>
+            <div className="side-panel-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px' }}>
                 <FileUploader token={token} contextType="meetingChat" contextId={meetingId} />
             </div>
         </div>
@@ -1011,7 +1065,7 @@ function SettingsPanel({
 
     return (
         <div className="side-panel" style={{
-            animationName: 'jts-slide-right', display: 'flex', flexDirection: 'column', height: '100%',
+            display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100%', minHeight: 0,
             width: '100%', maxWidth: 440, background: 'var(--color-surface)'
         } as React.CSSProperties}>
             {/* Header */}
@@ -1426,16 +1480,16 @@ function MicLevelIndicator({ stream, testing }: { stream: MediaStream | null, te
 /* ──────────────────────────────────────────────────────────
    Lobby Icons (no external dependency)
    ────────────────────────────────────────────────────────── */
-const IconMic = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const IconMic = ({ size = 20 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
         <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
         <line x1="12" y1="19" x2="12" y2="23" />
         <line x1="8" y1="23" x2="16" y2="23" />
     </svg>
 )
-const IconMicOff = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const IconMicOff = ({ size = 20 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="1" y1="1" x2="23" y2="23" />
         <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
         <path d="M17 11a5 5 0 0 1-8 4" />
@@ -1443,17 +1497,24 @@ const IconMicOff = () => (
         <line x1="8" y1="23" x2="16" y2="23" />
     </svg>
 )
-const IconCamera = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-        <circle cx="12" cy="13" r="4" />
+const IconCamera = ({ size = 20 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="23 7 16 12 23 17 23 7" />
+        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
     </svg>
 )
-const IconCameraOff = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const IconCameraOff = ({ size = 20 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="1" y1="1" x2="23" y2="23" />
-        <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34" />
-        <circle cx="12" cy="13" r="4" />
+        <path d="M21 15.5l2 1.5V7l-7 5" />
+        <path d="M10.4 5H14a2 2 0 0 1 2 2v3.6" />
+        <path d="M16 16.5V17a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 1.5-1.9" />
+    </svg>
+)
+const IconSettings = ({ size = 20 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
 )
 const IconCopy = () => (
@@ -1869,19 +1930,47 @@ function SetupScreen({
                             }}>
                                 <button
                                     onClick={toggleMute}
-                                    className={`btn btn-icon ${isMuted ? 'danger-active' : ''}`}
-                                    style={{ borderRadius: '50%', width: 44, height: 44, padding: 0 }}
+                                    style={{
+                                        borderRadius: '50%',
+                                        width: 46,
+                                        height: 46,
+                                        padding: 0,
+                                        border: isMuted ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.15)',
+                                        background: isMuted ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'rgba(255, 255, 255, 0.1)',
+                                        color: '#ffffff',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        boxShadow: isMuted ? '0 0 14px rgba(239, 68, 68, 0.45)' : 'none',
+                                        transition: 'all 0.2s ease'
+                                    }}
                                     aria-label={isMuted ? "Unmute microphone" : "Mute microphone"}
+                                    title={isMuted ? "Unmute microphone" : "Mute microphone"}
                                 >
-                                    {isMuted ? <IconMicOff /> : <IconMic />}
+                                    {isMuted ? <IconMicOff size={22} /> : <IconMic size={22} />}
                                 </button>
                                 <button
                                     onClick={toggleVideo}
-                                    className={`btn btn-icon ${isVideoOff ? 'danger-active' : ''}`}
-                                    style={{ borderRadius: '50%', width: 44, height: 44, padding: 0 }}
+                                    style={{
+                                        borderRadius: '50%',
+                                        width: 46,
+                                        height: 46,
+                                        padding: 0,
+                                        border: isVideoOff ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.15)',
+                                        background: isVideoOff ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'rgba(255, 255, 255, 0.1)',
+                                        color: '#ffffff',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        boxShadow: isVideoOff ? '0 0 14px rgba(239, 68, 68, 0.45)' : 'none',
+                                        transition: 'all 0.2s ease'
+                                    }}
                                     aria-label={isVideoOff ? "Turn on camera" : "Turn off camera"}
+                                    title={isVideoOff ? "Turn on camera" : "Turn off camera"}
                                 >
-                                    {isVideoOff ? <IconCameraOff /> : <IconCamera />}
+                                    {isVideoOff ? <IconCameraOff size={22} /> : <IconCamera size={22} />}
                                 </button>
                             </div>
                         </div>
@@ -1932,6 +2021,43 @@ function SetupScreen({
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
                             {activeTab === 'join' ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                    {(() => {
+                                        const recentMeetingId = localStorage.getItem('jts_last_meeting_id')
+                                        if (!recentMeetingId) return null
+                                        return (
+                                            <div style={{
+                                                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                                                border: '1px solid rgba(99, 102, 241, 0.3)',
+                                                borderRadius: 'var(--radius-md)',
+                                                padding: '12px 16px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                gap: 12
+                                            }}>
+                                                <div style={{ minWidth: 0, flex: 1 }}>
+                                                    <div style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#a5b4fc', fontWeight: 700 }}>
+                                                        🔄 Last Active Meeting
+                                                    </div>
+                                                    <div style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 600, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                                                        {recentMeetingId}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setMeetingInput(recentMeetingId)
+                                                        onJoin(recentMeetingId)
+                                                    }}
+                                                    className="btn btn-primary"
+                                                    style={{ padding: '6px 14px', fontSize: '0.75rem', fontWeight: 700, flexShrink: 0, borderRadius: '8px' }}
+                                                >
+                                                    Rejoin Room ↗
+                                                </button>
+                                            </div>
+                                        )
+                                    })()}
+
                                     <div>
                                         <label className="label" htmlFor="lobby-join-id">Meeting ID</label>
                                         <input
@@ -1944,7 +2070,7 @@ function SetupScreen({
                                         />
                                     </div>
                                     <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: 0 }}>
-                                        Make sure you have obtained the Meeting ID from the host.
+                                        Enter the Meeting ID above or click Rejoin Room to return to your previous session.
                                     </p>
                                 </div>
                             ) : (
@@ -2158,8 +2284,25 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
 
     const [remoteVideoStates, setRemoteVideoStates] = useState<Record<string, boolean>>({})
     const [token, setToken] = useState(initialToken)
-    const [meetingInput, setMeetingInput] = useState('')
+    const [meetingInput, setMeetingInput] = useState(() => {
+        try {
+            const hashParts = window.location.hash.split('?')
+            if (hashParts.length > 1) {
+                const params = new URLSearchParams(hashParts[1])
+                const urlId = params.get('id') || params.get('meetingId')
+                if (urlId) return urlId
+            }
+            const searchParams = new URLSearchParams(window.location.search)
+            const qId = searchParams.get('id') || searchParams.get('meetingId')
+            if (qId) return qId
+        } catch (e) {}
+        return sessionStorage.getItem('jts_active_meeting_id') || localStorage.getItem('jts_last_meeting_id') || ''
+    })
     const [activePanel, setActivePanel] = useState<ActivePanel>(null)
+    const [showEndMeetingModal, setShowEndMeetingModal] = useState(false)
+    const [isLocked, setIsLocked] = useState(false)
+    const [isPushToTalking, setIsPushToTalking] = useState(false)
+    const [isPiPActive, setIsPiPActive] = useState(false)
 
     const connectToMeetingRef = useRef(connectToMeeting)
     useEffect(() => {
@@ -2626,6 +2769,31 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         }
     }
 
+    // Picture-in-Picture (PiP) toggle handler
+    const handleTogglePiP = async () => {
+        try {
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture()
+                setIsPiPActive(false)
+                return
+            }
+            const videos = Array.from(document.querySelectorAll<HTMLVideoElement>('video'))
+            const activeVideo = videos.find(v => v.srcObject && (v.srcObject as MediaStream).active && v.readyState >= 2) || videos[0]
+            if (activeVideo) {
+                await activeVideo.requestPictureInPicture()
+                setIsPiPActive(true)
+                activeVideo.addEventListener('leavepictureinpicture', () => {
+                    setIsPiPActive(false)
+                }, { once: true })
+            } else {
+                addToast('No active video found for Picture-in-Picture', 'warning')
+            }
+        } catch (err: any) {
+            console.warn('PiP error:', err)
+            addToast(err?.message || 'Picture-in-Picture not supported or permission denied', 'warning')
+        }
+    }
+
     // Global keyboard shortcuts & Push-to-Talk listener
     useEffect(() => {
         if (!joined) return
@@ -2638,14 +2806,64 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
             }
 
             // Push-to-talk Spacebar (while muted)
-            if (e.code === 'Space' && !spaceDown && isMuted) {
+            if (e.code === 'Space' && !e.repeat && isMuted) {
                 e.preventDefault()
                 spaceDown = true
+                setIsPushToTalking(true)
                 if (localStream) {
                     localStream.getAudioTracks().forEach(t => { t.enabled = true })
                     setIsMuted(false)
                 }
                 return
+            }
+
+            // Alt Shortcuts
+            if (e.altKey) {
+                const key = e.key.toLowerCase()
+                if (key === 'p') {
+                    e.preventDefault()
+                    handleTogglePiP()
+                    return
+                }
+                if (key === 's') {
+                    e.preventDefault()
+                    if (isScreenShareSupported()) {
+                        if (screenSharingUserId === 'me') stopScreenShare()
+                        else startScreenShare()
+                    }
+                    return
+                }
+                if (key === 'c') {
+                    e.preventDefault()
+                    setActivePanel(prev => prev === 'chat' ? null : 'chat')
+                    return
+                }
+                if (key === 'n') {
+                    e.preventDefault()
+                    setActivePanel(prev => prev === 'notes' ? null : 'notes')
+                    return
+                }
+            }
+
+            // Single key shortcuts (no modifier keys)
+            if (!e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+                const key = e.key.toLowerCase()
+                if (key === 'm') {
+                    e.preventDefault()
+                    toggleMute()
+                    return
+                }
+                if (key === 'v') {
+                    e.preventDefault()
+                    toggleVideo()
+                    return
+                }
+                if (key === 'h') {
+                    e.preventDefault()
+                    socket?.emit('meeting:raise-hand', { meetingId: meetingId || meetingInput, raised: !handRaised })
+                    setHandRaised(prev => !prev)
+                    return
+                }
             }
 
             // Ctrl+D or Cmd+D -> Toggle Mic
@@ -2690,6 +2908,18 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                 return
             }
 
+            // Escape -> Close active panel / modals
+            if (e.key === 'Escape') {
+                setActivePanel(null)
+                setShowWhiteboard(false)
+                setShowPolls(false)
+                setShowDeviceSettings(false)
+                setShowSummary(false)
+                setShowShortcuts(false)
+                setShowEndMeetingModal(false)
+                return
+            }
+
             // ? -> Toggle Shortcuts Modal
             if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault()
@@ -2706,6 +2936,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
             if (e.code === 'Space' && spaceDown) {
                 e.preventDefault()
                 spaceDown = false
+                setIsPushToTalking(false)
                 if (localStream) {
                     localStream.getAudioTracks().forEach(t => { t.enabled = false })
                     setIsMuted(true)
@@ -2719,7 +2950,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
         }
-    }, [joined, isMuted, localStream])
+    }, [joined, isMuted, localStream, handRaised, screenSharingUserId, meetingId, meetingInput, socket])
 
     // Auto-connect if initialToken is provided
     useEffect(() => {
@@ -2747,16 +2978,44 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
             }
         } catch (e) {}
 
+        sessionStorage.setItem('jts_active_meeting_id', id)
+        localStorage.setItem('jts_last_meeting_id', id)
+        window.history.replaceState(null, '', `/#meeting?id=${encodeURIComponent(id)}`)
+
         connectToMeeting(id, myName)
         setJoined(true)
     }
 
-    // Auto-join meeting if guest token is authorized, connected, and media device initialization is complete
+    // Auto-join meeting if guest token is authorized, or if page was refreshed during an active session
+    const autoRejoinAttemptedRef = useRef(false)
     useEffect(() => {
-        if (connected && !joined && !mediaLoading) {
+        if (connected && !joined && !mediaLoading && !autoRejoinAttemptedRef.current) {
             const decoded = parseJwt(initialToken || token)
             if (decoded?.isGuest && decoded?.meetingId) {
+                autoRejoinAttemptedRef.current = true
                 handleJoinMeeting(decoded.meetingId)
+                return
+            }
+
+            let urlMeetingId = ''
+            try {
+                const hashParts = window.location.hash.split('?')
+                if (hashParts.length > 1) {
+                    const params = new URLSearchParams(hashParts[1])
+                    urlMeetingId = params.get('id') || params.get('meetingId') || ''
+                }
+                if (!urlMeetingId) {
+                    const searchParams = new URLSearchParams(window.location.search)
+                    urlMeetingId = searchParams.get('id') || searchParams.get('meetingId') || ''
+                }
+            } catch (e) {}
+
+            const activeSessionId = sessionStorage.getItem('jts_active_meeting_id')
+            const targetId = urlMeetingId || activeSessionId
+
+            if (targetId && targetId.trim()) {
+                autoRejoinAttemptedRef.current = true
+                handleJoinMeeting(targetId.trim())
             }
         }
     }, [connected, joined, initialToken, token, mediaLoading])
@@ -2770,6 +3029,62 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
 
     // Determine grid columns
     const gridCols = totalStreams === 1 ? 1 : totalStreams <= 2 ? 2 : totalStreams <= 4 ? 2 : 3
+
+    // Host checker
+    const localUserId = getUserIdFromToken(token)
+    const isLocalHost = meetingInfo && meetingInfo.host && (meetingInfo.host._id === localUserId || meetingInfo.host === localUserId)
+    const canManageParticipants = isLocalHost || isAdminOrOwner
+
+    // Host Controls: Mute All & Lock Meeting
+    const handleMuteAll = () => {
+        if (!isLocalHost && !canManageParticipants) return
+        socket?.emit('meeting:mute-all', { meetingId: meetingId || meetingInput.trim() })
+        addToast('Muted all participants', 'success')
+    }
+
+    const handleToggleLock = () => {
+        if (!isLocalHost && !canManageParticipants) return
+        const nextState = !isLocked
+        socket?.emit('meeting:lock-toggle', {
+            meetingId: meetingId || meetingInput.trim(),
+            isLocked: nextState
+        })
+    }
+
+    // Room-wide socket events: Mute All, Lock Meeting, End for All
+    useEffect(() => {
+        if (!socket) return
+
+        const onMuteAllEvent = () => {
+            if (!isLocalHost) {
+                if (localStream) {
+                    localStream.getAudioTracks().forEach(t => { t.enabled = false })
+                    setIsMuted(true)
+                    addToast('The host has muted all participants', 'warning')
+                }
+            }
+        }
+
+        const onLockToggleEvent = (data: { isLocked: boolean }) => {
+            setIsLocked(!!data.isLocked)
+            addToast(data.isLocked ? '🔒 Meeting has been locked by the host' : '🔓 Meeting has been unlocked', 'info')
+        }
+
+        const onEndAllEvent = () => {
+            addToast('The host has ended this meeting for everyone', 'warning')
+            leaveMeeting()
+        }
+
+        socket.on('meeting:mute-all', onMuteAllEvent)
+        socket.on('meeting:lock-toggle', onLockToggleEvent)
+        socket.on('meeting:end-all', onEndAllEvent)
+
+        return () => {
+            socket.off('meeting:mute-all', onMuteAllEvent)
+            socket.off('meeting:lock-toggle', onLockToggleEvent)
+            socket.off('meeting:end-all', onEndAllEvent)
+        }
+    }, [socket, isLocalHost, localStream, leaveMeeting])
 
     /* ── Pre-join lobby ── */
     if (!joined) {
@@ -2799,11 +3114,6 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     
     // Stream to display in the main enlarged slot
     const primaryStream = primaryUser === 'me' ? localStream : remoteStreams[primaryUser]
-    
-    // Host checker
-    const localUserId = getUserIdFromToken(token)
-    const isLocalHost = meetingInfo && meetingInfo.host && (meetingInfo.host._id === localUserId || meetingInfo.host === localUserId)
-    const canManageParticipants = isLocalHost || isAdminOrOwner
     
     // Presenter details
     const presenterName = primaryUser === 'me' ? 'You' : (renamedUsers[primaryUser] || (primaryUser.startsWith('guest_') ? 'Guest' : primaryUser))
@@ -3357,17 +3667,20 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                             addToast={addToast}
                             hostId={meetingInfo && meetingInfo.host ? (typeof meetingInfo.host === 'object' ? meetingInfo.host._id : meetingInfo.host) : null}
                             isLocalHost={isLocalHost}
+                            isLocked={isLocked}
+                            onToggleLock={handleToggleLock}
+                            onMuteAll={handleMuteAll}
                         />
                     )}
                     {activePanel === 'chat' && (
-                        <div className="side-panel">
-                            <div className="side-panel-header">
+                        <div className="side-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100%', minHeight: 0 }}>
+                            <div className="side-panel-header" style={{ flexShrink: 0 }}>
                                 <span className="side-panel-title">Meeting Chat</span>
-                                <button className="btn-icon" onClick={() => setActivePanel(null)} aria-label="Close chat">
+                                <button className="btn-icon" onClick={() => setActivePanel(null)} aria-label="Close chat" style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.06)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <IconX />
                                 </button>
                             </div>
-                            <div className="side-panel-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                            <div className="side-panel-body" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                 <MeetingChatPanel
                                     messages={messages}
                                     typingUsers={typingUsers}
@@ -3387,6 +3700,14 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                             token={token}
                             meetingId={meetingId || meetingInput.trim()}
                             onClose={() => setActivePanel(null)}
+                        />
+                    )}
+                    {activePanel === 'notes' && (
+                        <MeetingNotesPanel
+                            meetingId={meetingId || meetingInput.trim()}
+                            socket={socket}
+                            onClose={() => setActivePanel(null)}
+                            authorName={renamedUsers['me'] || (parseJwt(token)?.fullName || 'You')}
                         />
                     )}
                     {activePanel === 'settings' && (
@@ -3477,21 +3798,53 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                 {/* Mic Trigger */}
                 <button
                     onClick={toggleMute}
-                    className={`btn-toolbar ${isMuted ? 'active leave' : ''}`}
-                    style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: isMuted ? 'var(--color-danger)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                    title={isMuted ? "Unmute Mic" : "Mute Mic"}
+                    style={{
+                        width: windowWidth < 640 ? 40 : 46,
+                        height: windowWidth < 640 ? 40 : 46,
+                        minWidth: windowWidth < 640 ? 40 : 46,
+                        minHeight: windowWidth < 640 ? 40 : 46,
+                        padding: 0,
+                        borderRadius: '50%',
+                        border: isMuted ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.12)',
+                        background: isMuted ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'rgba(255, 255, 255, 0.08)',
+                        color: '#ffffff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        boxShadow: isMuted ? '0 0 14px rgba(239, 68, 68, 0.45)' : 'none',
+                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                    title={isMuted ? "Unmute Mic (Ctrl+D)" : "Mute Mic (Ctrl+D)"}
                 >
-                    {isMuted ? <IconMicOff /> : <IconMic />}
+                    {isMuted ? <IconMicOff size={22} /> : <IconMic size={22} />}
                 </button>
 
                 {/* Camera Trigger */}
                 <button
                     onClick={toggleVideo}
-                    className={`btn-toolbar ${isVideoOff ? 'active leave' : ''}`}
-                    style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: isVideoOff ? 'var(--color-danger)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                    title={isVideoOff ? "Turn on Camera" : "Turn off Camera"}
+                    style={{
+                        width: windowWidth < 640 ? 40 : 46,
+                        height: windowWidth < 640 ? 40 : 46,
+                        minWidth: windowWidth < 640 ? 40 : 46,
+                        minHeight: windowWidth < 640 ? 40 : 46,
+                        padding: 0,
+                        borderRadius: '50%',
+                        border: isVideoOff ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.12)',
+                        background: isVideoOff ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'rgba(255, 255, 255, 0.08)',
+                        color: '#ffffff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        boxShadow: isVideoOff ? '0 0 14px rgba(239, 68, 68, 0.45)' : 'none',
+                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                    title={isVideoOff ? "Turn on Camera (Ctrl+E)" : "Turn off Camera (Ctrl+E)"}
                 >
-                    {isVideoOff ? <IconCameraOff /> : <IconCamera />}
+                    {isVideoOff ? <IconCameraOff size={22} /> : <IconCamera size={22} />}
                 </button>
 
                 {/* Screen Share Trigger */}
@@ -3598,17 +3951,56 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     <IconFiles />
                 </button>
 
+                {/* Collaborative Meeting Notes */}
+                <button
+                    className={`btn-icon ${activePanel === 'notes' ? 'active' : ''}`}
+                    onClick={() => togglePanel('notes')}
+                    title="Collaborative Meeting Notes (Alt+N)"
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'notes' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'notes' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                        <polyline points="10 9 9 9 8 9" />
+                    </svg>
+                </button>
+
+                {/* Picture-in-Picture (PiP) trigger */}
+                <button
+                    className={`btn-icon ${isPiPActive ? 'active' : ''}`}
+                    onClick={handleTogglePiP}
+                    title="Picture-in-Picture Mode (Alt+P)"
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: isPiPActive ? 'rgba(99, 102, 241, 0.25)' : 'transparent', color: isPiPActive ? '#818cf8' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="4" width="20" height="16" rx="2" />
+                        <rect x="12" y="10" width="8" height="8" rx="1" fill="currentColor" opacity="0.3" />
+                    </svg>
+                </button>
+
                 {/* Settings & Devices modal toggle */}
                 <button
-                    className={`btn-icon ${showDeviceSettings ? 'active' : ''}`}
                     onClick={() => setShowDeviceSettings(true)}
                     title="Audio, Video & Hardware Settings"
-                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showDeviceSettings ? 'var(--color-accent-light)' : 'transparent', color: showDeviceSettings ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    style={{
+                        width: windowWidth < 640 ? 36 : 40,
+                        height: windowWidth < 640 ? 36 : 40,
+                        padding: 0,
+                        border: 'none',
+                        borderRadius: '50%',
+                        background: showDeviceSettings ? 'var(--color-accent-light)' : 'transparent',
+                        color: showDeviceSettings ? 'var(--color-accent)' : '#fff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        transition: 'background 0.2s ease, color 0.2s ease'
+                    }}
                 >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="3" />
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                    </svg>
+                    <IconSettings size={20} />
                 </button>
 
                 {/* Whiteboard trigger */}
@@ -3676,19 +4068,69 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
 
                 {/* Hang up leave meeting */}
                 <button
-                    onClick={leaveMeeting}
+                    onClick={() => {
+                        if (isLocalHost) {
+                            setShowEndMeetingModal(true)
+                        } else {
+                            leaveMeeting()
+                        }
+                    }}
                     style={{ background: 'var(--color-danger)', border: 'none', borderRadius: '20px', padding: windowWidth < 640 ? '6px 12px' : '8px 18px', color: '#fff', fontWeight: 700, fontSize: windowWidth < 640 ? '0.75rem' : '0.8125rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}
-                    title="Leave Meeting Room"
+                    title={isLocalHost ? "Leave or End Meeting" : "Leave Meeting Room"}
                 >
                     <IconPhoneOff />
                     Leave
                 </button>
             </footer>
 
+            {/* Push-to-Talk Active Status HUD */}
+            {isPushToTalking && (
+                <div style={{
+                    position: 'fixed',
+                    top: 24,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 10001,
+                    background: 'rgba(34, 197, 94, 0.94)',
+                    backdropFilter: 'blur(12px)',
+                    color: '#fff',
+                    padding: '8px 22px',
+                    borderRadius: 30,
+                    fontWeight: 700,
+                    fontSize: '0.875rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    boxShadow: '0 8px 30px rgba(34, 197, 94, 0.45)',
+                    animation: 'jts-pulse 1.5s infinite'
+                }}>
+                    <span style={{ fontSize: '1.2rem' }}>🎙️</span>
+                    Spacebar held — You are speaking
+                </div>
+            )}
+
+            {/* End Meeting Modal for Host */}
+            <EndMeetingModal
+                isOpen={showEndMeetingModal}
+                onClose={() => setShowEndMeetingModal(false)}
+                onLeaveOnly={() => {
+                    setShowEndMeetingModal(false)
+                    leaveMeeting()
+                }}
+                onEndForAll={() => {
+                    setShowEndMeetingModal(false)
+                    socket?.emit('meeting:end-all', { meetingId: meetingId || meetingInput.trim() })
+                    leaveMeeting()
+                }}
+            />
+
             {/* Live Captions Subtitle Banner */}
             <MeetingCaptionsBanner
                 isEnabled={showCaptions}
-                speakerName={renamedUsers['me'] || 'You'}
+                speakerName={renamedUsers['me'] || (parseJwt(token)?.fullName || 'You')}
+                meetingId={meetingId || meetingInput.trim()}
+                socket={socket}
+                isLocalMuted={isMuted}
                 onTranscriptUpdate={(newTranscripts) => setTranscripts(newTranscripts)}
             />
 

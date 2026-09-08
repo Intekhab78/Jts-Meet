@@ -8,6 +8,7 @@ import {
     leaveMeeting as leaveMeetingService,
     endMeeting as endMeetingService
 } from '../modules/meeting/meeting.service'
+import { Meeting } from '../modules/meeting/meeting.model'
 import { SocketEvents } from './events'
 
 export function registerMeetingHandlers(io: Server, socket: Socket) {
@@ -181,5 +182,59 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
             userId,
             isVideoOff: payload.isVideoOff
         })
+    })
+
+    socket.on(SocketEvents.MEETING_LOCK_TOGGLE, async (payload: { meetingId: string; isLocked: boolean }) => {
+        if (!userId || !payload?.meetingId) return
+        try {
+            await Meeting.findOneAndUpdate({ meetingId: payload.meetingId }, { isLocked: payload.isLocked })
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_LOCK_TOGGLE, {
+                meetingId: payload.meetingId,
+                isLocked: payload.isLocked
+            })
+        } catch (err) {
+            console.error('Failed to toggle meeting lock:', err)
+        }
+    })
+
+    socket.on(SocketEvents.MEETING_MUTE_ALL, (payload: { meetingId: string }) => {
+        if (!userId || !payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_MUTE_ALL, {
+            meetingId: payload.meetingId
+        })
+    })
+
+    socket.on(SocketEvents.MEETING_CAPTION, (payload: { meetingId: string; text: string; isFinal: boolean; speakerName?: string }) => {
+        if (!userId || !payload?.meetingId || !payload?.text) return
+        const speakerName = payload.speakerName || authSocket.guestName || 'Speaker'
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_CAPTION, {
+            userId,
+            speakerName,
+            text: payload.text,
+            isFinal: payload.isFinal,
+            timestamp: new Date()
+        })
+    })
+
+    socket.on(SocketEvents.MEETING_NOTES_UPDATE, (payload: { meetingId: string; content: string }) => {
+        if (!userId || !payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_NOTES_UPDATE, {
+            content: payload.content,
+            updatedBy: authSocket.guestName || 'Participant',
+            updatedAt: new Date()
+        })
+    })
+
+    socket.on(SocketEvents.MEETING_END_ALL, async (payload: { meetingId: string }) => {
+        if (!userId || !payload?.meetingId) return
+        try {
+            await Meeting.findOneAndUpdate({ meetingId: payload.meetingId }, { status: 'ended', endedAt: new Date() })
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_END, {
+                meetingId: payload.meetingId,
+                endedByHost: true
+            })
+        } catch (err) {
+            console.error('Failed to end meeting for all:', err)
+        }
     })
 }

@@ -35,7 +35,7 @@ function WorkspaceTabSkeleton() {
 
 export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     const [activeTab, setActiveTab] = useState<'dashboard' | 'meeting' | 'history' | 'scheduled' | 'organization' | 'team' | 'channel' | 'profile'>(() => {
-        const hash = window.location.hash.replace('#', '')
+        const hash = window.location.hash.replace('#', '').split('?')[0]
         const validTabs = ['dashboard', 'meeting', 'history', 'scheduled', 'organization', 'team', 'channel', 'profile']
         if (validTabs.includes(hash)) {
             return hash as any
@@ -136,14 +136,22 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     // Sync activeTab state to URL hash
     useEffect(() => {
         if (activeTab) {
-            window.history.replaceState(null, '', `/#${activeTab}`)
+            const currentHash = window.location.hash.replace('#', '')
+            const currentBase = currentHash.split('?')[0]
+            const currentQuery = currentHash.includes('?') ? '?' + currentHash.split('?')[1] : ''
+
+            if (activeTab === currentBase && currentQuery) {
+                window.history.replaceState(null, '', `/#${activeTab}${currentQuery}`)
+            } else {
+                window.history.replaceState(null, '', `/#${activeTab}`)
+            }
         }
     }, [activeTab])
 
     // Listen for hash changes (e.g. browser back/forward button)
     useEffect(() => {
         const handleHashChange = () => {
-            const hash = window.location.hash.replace('#', '')
+            const hash = window.location.hash.replace('#', '').split('?')[0]
             const validTabs = ['dashboard', 'meeting', 'history', 'scheduled', 'organization', 'team', 'channel', 'profile']
             if (validTabs.includes(hash)) {
                 setActiveTab(hash as any)

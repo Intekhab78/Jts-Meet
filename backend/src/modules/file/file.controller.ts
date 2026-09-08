@@ -1,3 +1,5 @@
+import path from 'path'
+import fs from 'fs'
 import { Request, Response } from 'express'
 import { createFileMetadata, getFileMetadata, softDeleteFile, computeChecksum } from './file.service'
 import { sendSuccess, sendError } from '../../utils/responseHelper'
@@ -76,6 +78,14 @@ export const fileController = {
         const metadata = await getFileMetadata(fileId)
         if (!metadata || metadata.deletedAt) {
             return sendError(res, 404, 'File not found')
+        }
+
+        if (metadata.storageProvider === 'local') {
+            const uploadsDir = path.join(process.cwd(), 'uploads')
+            const filePath = path.join(uploadsDir, metadata.storageKey)
+            if (fs.existsSync(filePath)) {
+                return res.download(filePath, metadata.originalName)
+            }
         }
 
         return res.redirect(metadata.secureUrl)

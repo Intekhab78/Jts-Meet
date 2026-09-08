@@ -37,6 +37,13 @@ export const SocketEvents = {
     POLL_CREATE: 'poll:create',
     POLL_VOTE: 'poll:vote',
     POLL_UPDATE: 'poll:update',
-    POLL_CLOSE: 'poll:close'
+    POLL_CLOSE: 'poll:close',
+
+    // Advanced meeting events
+    MEETING_LOCK_TOGGLE: 'meeting:lock-toggle',
+    MEETING_MUTE_ALL: 'meeting:mute-all',
+    MEETING_CAPTION: 'meeting:caption',
+    MEETING_NOTES_UPDATE: 'meeting:notes:update',
+    MEETING_END_ALL: 'meeting:end-all'
 } as const
 

@@ -11,6 +11,7 @@ export interface IMeeting extends Document {
     blockedUsers: Types.ObjectId[]
     isWaitingRoomEnabled: boolean
     isGuestJoinEnabled: boolean
+    isLocked?: boolean
     screenShareBy?: Types.ObjectId | null
     isRecordingActive: boolean
     recordingUrl?: string
@@ -41,6 +42,7 @@ const MeetingSchema = new Schema<IMeeting>(
         blockedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         isWaitingRoomEnabled: { type: Boolean, default: false },
         isGuestJoinEnabled: { type: Boolean, default: true },
+        isLocked: { type: Boolean, default: false },
         screenShareBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
         isRecordingActive: { type: Boolean, default: false },
         recordingUrl: { type: String, default: '' },

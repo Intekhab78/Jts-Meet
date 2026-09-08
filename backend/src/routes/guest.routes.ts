@@ -58,6 +58,11 @@ router.post('/request', async (req: Request, res: Response) => {
             return
         }
 
+        if (meeting.isLocked) {
+            res.status(403).json({ success: false, message: 'This meeting is locked by the host' })
+            return
+        }
+
         // Generate temporary guest ID
         const tempGuestId = `guest_${Math.random().toString(36).substring(2, 11)}`
 

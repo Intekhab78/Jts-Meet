@@ -1,9 +1,7 @@
 import crypto from 'crypto'
 import { Types } from 'mongoose'
 import { FileMetadata, IFileMetadata } from './file.model'
-import { uploadFileToCloudinary, deleteFileFromCloudinary } from './storage.service'
-
-const STORAGE_PROVIDER = 'cloudinary'
+import { storeFile, deleteStoredFile } from './storage.service'
 
 export async function computeChecksum(buffer: Buffer): Promise<string> {
     return crypto.createHash('sha256').update(buffer).digest('hex')
@@ -29,7 +27,7 @@ export async function createFileMetadata(
 
     const extension = originalName.includes('.') ? originalName.split('.').pop()?.toLowerCase() || '' : ''
     const fileName = `${Date.now()}_${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-    const stored = await uploadFileToCloudinary(buffer, fileName, mimeType)
+    const stored = await storeFile(buffer, fileName, mimeType)
 
     const metadata = new FileMetadata({
         originalName,
@@ -38,7 +36,7 @@ export async function createFileMetadata(
         checksum,
         extension,
         size: buffer.length,
-        storageProvider: STORAGE_PROVIDER,
+        storageProvider: stored.provider,
         storageKey: stored.publicId,
         secureUrl: stored.secureUrl,
         uploadedBy: new Types.ObjectId(uploadedBy),
@@ -73,10 +71,11 @@ export async function softDeleteFile(fileId: string, userId: string): Promise<IF
     }
 
     file.deletedAt = new Date()
-    await deleteFileFromCloudinary(file.storageKey)
+    await deleteStoredFile(file.storageKey, file.storageProvider)
     return file.save()
 }
 
 export async function getFileByChecksum(checksum: string): Promise<IFileMetadata | null> {
     return FileMetadata.findOne({ checksum, deletedAt: null }).exec()
 }
+

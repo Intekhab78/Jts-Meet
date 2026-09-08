@@ -1,3 +1,5 @@
+import path from 'path'
+import fs from 'fs'
 import express from 'express'
 import helmet from 'helmet'
 import cors from 'cors'
@@ -22,12 +24,21 @@ import { rateLimiter } from './middleware/rateLimiter'
 
 const app = express()
 
-app.use(helmet())
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}))
 app.use(cors())
 app.use(json())
 app.use(urlencoded({ extended: true }))
 app.use(passport.initialize())
 app.use(requestLogger)
+
+// Static uploads directory for local file storage
+const uploadsDir = path.join(process.cwd(), 'uploads')
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true })
+}
+app.use('/uploads', express.static(uploadsDir))
 
 // Try connecting to DB, but don't crash on failure
 connectDB().catch((err) => {

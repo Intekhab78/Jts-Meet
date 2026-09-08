@@ -9,14 +9,19 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
     if (!isOpen) return null
 
     const shortcuts = [
-        { key: 'Space (Hold)', desc: 'Push to talk (temporary un-mute)' },
-        { key: 'Ctrl / Cmd + D', desc: 'Toggle Microphone on/off' },
-        { key: 'Ctrl / Cmd + E', desc: 'Toggle Camera on/off' },
-        { key: 'Ctrl / Cmd + Shift + S', desc: 'Toggle Screen Sharing' },
-        { key: 'Ctrl / Cmd + Shift + C', desc: 'Toggle Live Closed Captions' },
-        { key: 'Ctrl / Cmd + Shift + W', desc: 'Toggle Collaborative Whiteboard' },
-        { key: 'Ctrl / Cmd + Shift + M', desc: 'Host: Mute all participants' },
-        { key: 'Esc', desc: 'Close dialogs, whiteboard, or side panels' }
+        { key: 'Space (Hold)', desc: 'Push to talk (temporary un-mute microphone)' },
+        { key: 'M', desc: 'Toggle Microphone on / off' },
+        { key: 'V', desc: 'Toggle Camera on / off' },
+        { key: 'H', desc: 'Toggle Raise / Lower Hand' },
+        { key: 'Alt + P', desc: 'Toggle Picture-in-Picture Mode' },
+        { key: 'Alt + S', desc: 'Toggle Screen Sharing' },
+        { key: 'Alt + C', desc: 'Toggle In-Call Chat Drawer' },
+        { key: 'Alt + N', desc: 'Toggle Collaborative Meeting Notes' },
+        { key: 'Ctrl + Shift + C', desc: 'Toggle Live Collaborative Captions' },
+        { key: 'Ctrl + Shift + W', desc: 'Toggle Collaborative Whiteboard' },
+        { key: 'Ctrl + Shift + P', desc: 'Toggle Live Polls' },
+        { key: '?', desc: 'Open / Close this Shortcuts Cheatsheet' },
+        { key: 'Esc', desc: 'Close dialogs, panels, or modals' }
     ]
 
     return (
