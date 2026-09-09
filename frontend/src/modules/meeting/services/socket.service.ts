@@ -44,6 +44,10 @@ export const SocketEvents = {
     MEETING_MUTE_ALL: 'meeting:mute-all',
     MEETING_CAPTION: 'meeting:caption',
     MEETING_NOTES_UPDATE: 'meeting:notes:update',
-    MEETING_END_ALL: 'meeting:end-all'
+    MEETING_END_ALL: 'meeting:end-all',
+    MEETING_REACTION: 'meeting:reaction',
+    MEETING_WATERMARK_TOGGLE: 'meeting:toggle-watermark',
+    MEETING_COHOST_PROMOTE: 'meeting:cohost-promote',
+    MEETING_COHOST_DEMOTE: 'meeting:cohost-demote'
 } as const
 

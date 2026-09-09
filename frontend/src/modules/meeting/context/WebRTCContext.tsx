@@ -13,6 +13,7 @@ interface WebRTCContextValue {
     stopScreenShare: () => void
     screenSharingUserId: string | null
     screenError: string | null
+    clearScreenError: () => void
     mediaError: string | null
     mediaLoading: boolean
     replaceTrackOnPeers: (newTrack: MediaStreamTrack | null) => void
@@ -24,7 +25,7 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     const { socket } = useSocketContext()
     const { meetingId, setJoined, addParticipant, removeParticipant } = useMeetingContext()
     const { localStream, cameraStream, mediaError, mediaLoading, requestMedia, stopMedia, replaceLocalStream, restoreCameraStream } = useMediaDevices()
-    const { remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, replaceTrackOnPeers } = useWebRTC(
+    const { remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, clearScreenError, replaceTrackOnPeers } = useWebRTC(
         socket,
         localStream,
         cameraStream,
@@ -54,7 +55,7 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     }, [])
 
     return (
-        <WebRTCContext.Provider value={{ localStream, remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, mediaError, mediaLoading, replaceTrackOnPeers }}>
+        <WebRTCContext.Provider value={{ localStream, remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, clearScreenError, mediaError, mediaLoading, replaceTrackOnPeers }}>
             {children}
         </WebRTCContext.Provider>
     )

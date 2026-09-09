@@ -13,8 +13,37 @@ import { API_BASE } from './config'
 type ViewType = 'landing' | 'login' | 'register' | 'forgot-password' | 'reset-password' | 'email-verification' | 'otp-verification' | 'app' | 'guest-preview' | 'guest-waiting' | 'microsoft-callback' | 'google-callback'
 
 const getMeetingIdFromUrl = (): string | null => {
+    // 1. Pathname /meet/:id
     const match = window.location.pathname.match(/^\/meet\/([a-zA-Z0-9\-_]+)/)
-    return match ? match[1] : null
+    if (match) return match[1]
+
+    // 2. Hash /#meeting?id=xxx or #meeting?id=xxx
+    try {
+        const hash = window.location.hash
+        if (hash.includes('meeting')) {
+            const hashParts = hash.split('?')
+            if (hashParts.length > 1) {
+                const params = new URLSearchParams(hashParts[1])
+                const id = params.get('id') || params.get('meetingId')
+                if (id) return id
+            }
+        }
+    } catch (e) {}
+
+    // 3. Search query ?id=xxx or ?meetingId=xxx
+    try {
+        const searchParams = new URLSearchParams(window.location.search)
+        const id = searchParams.get('id') || searchParams.get('meetingId')
+        if (id) return id
+    } catch (e) {}
+
+    // 4. Stored active meeting ID from current session
+    try {
+        const active = sessionStorage.getItem('jts_active_meeting_id') || localStorage.getItem('jts_last_meeting_id')
+        if (active) return active
+    } catch (e) {}
+
+    return null
 }
 
 const parseJwt = (token: string) => {
@@ -26,10 +55,29 @@ const parseJwt = (token: string) => {
 }
 
 function App() {
-    const [meetingIdFromUrl] = useState<string | null>(getMeetingIdFromUrl)
-    const [guestToken, setGuestToken] = useState<string>('')
-    const [guestUserId, setGuestUserId] = useState<string>('')
-    const [guestDetails, setGuestDetails] = useState<any>(null)
+    const [meetingIdFromUrl, setMeetingIdFromUrl] = useState<string | null>(getMeetingIdFromUrl)
+    const [guestToken, setGuestToken] = useState<string>(() => {
+        try {
+            return localStorage.getItem('jts_guest_token') || ''
+        } catch {
+            return ''
+        }
+    })
+    const [guestUserId, setGuestUserId] = useState<string>(() => {
+        try {
+            return localStorage.getItem('jts_guest_user_id') || ''
+        } catch {
+            return ''
+        }
+    })
+    const [guestDetails, setGuestDetails] = useState<any>(() => {
+        try {
+            const saved = localStorage.getItem('jts_guest_details')
+            return saved ? JSON.parse(saved) : null
+        } catch {
+            return null
+        }
+    })
 
     const [view, setView] = useState<ViewType>(() => {
         if (window.location.pathname.startsWith('/auth/microsoft/callback')) {
@@ -40,12 +88,33 @@ function App() {
         }
         const params = new URLSearchParams(window.location.search)
         const urlToken = params.get('token')
-        const savedToken = urlToken || localStorage.getItem('jts_token')
+        const userToken = urlToken || localStorage.getItem('jts_token')
+        const savedGuestToken = localStorage.getItem('jts_guest_token')
         const meetId = getMeetingIdFromUrl()
-        if (meetId) {
-            return savedToken ? 'app' : 'guest-preview'
+
+        // If user has a registered member token, enter app
+        if (userToken) {
+            return 'app'
         }
-        return savedToken ? 'app' : 'landing'
+
+        // If URL has a meeting ID or hash route #meeting
+        if (meetId || window.location.hash.startsWith('#meeting')) {
+            const isRefreshed = sessionStorage.getItem('jts_meeting_joined') === 'true'
+            const activeMeetingInSession = sessionStorage.getItem('jts_active_meeting_id')
+
+            if (savedGuestToken && isRefreshed && (!activeMeetingInSession || activeMeetingInSession === meetId)) {
+                const decoded = parseJwt(savedGuestToken)
+                if (decoded && !decoded.isPending) {
+                    return 'app'
+                }
+                if (decoded && decoded.isPending) {
+                    return 'guest-waiting'
+                }
+            }
+            return meetId ? 'guest-preview' : 'landing'
+        }
+
+        return 'landing'
     })
     
     const [token, setToken] = useState<string>(() => {
@@ -67,10 +136,83 @@ function App() {
 
     const handleLogout = () => {
         localStorage.removeItem('jts_token')
+        localStorage.removeItem('jts_guest_token')
+        localStorage.removeItem('jts_guest_user_id')
+        sessionStorage.removeItem('jts_active_meeting_id')
+        sessionStorage.removeItem('jts_meeting_joined')
         setToken('')
         setGuestToken('')
         setView('landing')
+        window.history.pushState({}, '', '/')
     }
+
+    // Auto-generate guest token ONLY if user was already actively joined in a meeting and refreshed
+    React.useEffect(() => {
+        const isJoined = sessionStorage.getItem('jts_meeting_joined') === 'true'
+        const meetId = getMeetingIdFromUrl()
+        if (!token && !guestToken && isJoined && meetId) {
+            const savedGuestName = localStorage.getItem('jts_guest_name') || 'Guest'
+            fetch(`${API_BASE}/api/guest/request`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ meetingId: meetId, guestName: savedGuestName })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data?.success && data?.data?.token) {
+                    setGuestToken(data.data.token)
+                    setGuestUserId(data.data.userId)
+                    try {
+                        localStorage.setItem('jts_guest_token', data.data.token)
+                        localStorage.setItem('jts_guest_user_id', data.data.userId)
+                    } catch(e) {}
+                    if (!data.data.isPending) {
+                        setView('app')
+                    } else {
+                        setView('guest-waiting')
+                    }
+                }
+            })
+            .catch(() => {})
+        }
+    }, [token, guestToken])
+
+    // Sync view on browser hash change or back/forward buttons
+    React.useEffect(() => {
+        const handleHashOrPopState = () => {
+            const currentMeetId = getMeetingIdFromUrl()
+            setMeetingIdFromUrl(currentMeetId)
+            
+            const userToken = localStorage.getItem('jts_token')
+            const savedGuest = localStorage.getItem('jts_guest_token')
+
+            if (userToken) {
+                setView('app')
+                return
+            }
+
+            if (window.location.hash.startsWith('#meeting') || currentMeetId) {
+                const isRefreshed = sessionStorage.getItem('jts_meeting_joined') === 'true'
+                const activeMeetingInSession = sessionStorage.getItem('jts_active_meeting_id')
+                if (savedGuest && isRefreshed && (!activeMeetingInSession || activeMeetingInSession === currentMeetId)) {
+                    const decodedGuest = parseJwt(savedGuest)
+                    if (decodedGuest && !decodedGuest.isPending) {
+                        setView('app')
+                        return
+                    }
+                }
+                setView(currentMeetId ? 'guest-preview' : 'landing')
+                return
+            }
+        }
+
+        window.addEventListener('hashchange', handleHashOrPopState)
+        window.addEventListener('popstate', handleHashOrPopState)
+        return () => {
+            window.removeEventListener('hashchange', handleHashOrPopState)
+            window.removeEventListener('popstate', handleHashOrPopState)
+        }
+    }, [])
 
     if (view === 'microsoft-callback') {
         return (
@@ -156,15 +298,20 @@ function App() {
 
     const activeToken = token || guestToken
     const decoded = parseJwt(activeToken)
-    const isGuest = decoded?.isGuest
+    const isGuest = decoded?.isGuest || (!token && !!guestToken) || (!token && (window.location.hash.startsWith('#meeting') || window.location.pathname.startsWith('/meet/')))
 
-    if (isGuest) {
+    if (isGuest || (!token && (window.location.hash.startsWith('#meeting') || window.location.pathname.startsWith('/meet/')))) {
         return (
             <SocketProvider>
                 <MeetingProvider>
                     <WebRTCProvider>
                         <div style={{ width: '100%', height: '100dvh', background: 'var(--color-bg-base)' }}>
-                            <MeetingRoom initialToken={activeToken} isAdminOrOwner={false} />
+                            <MeetingRoom
+                                initialToken={activeToken}
+                                initialMeetingId={meetingIdFromUrl || undefined}
+                                autoJoin={true}
+                                isAdminOrOwner={false}
+                            />
                         </div>
                     </WebRTCProvider>
                 </MeetingProvider>

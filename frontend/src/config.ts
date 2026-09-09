@@ -16,18 +16,24 @@ const dynamicLocalUrl = typeof window !== 'undefined'
     ? `${window.location.protocol}//${window.location.hostname}:4000`
     : 'http://localhost:4000'
 
-let detectedUrl = 'http://localhost:4000'
+let detectedUrl = ONLINE_URL
 
 if (typeof window !== 'undefined') {
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        detectedUrl = 'http://localhost:4000'
-    } else if (envUrl) {
-        detectedUrl = envUrl
+        // Local machine development: prioritize local server
+        detectedUrl = (envUrl && !envUrl.includes('jtsonline.shop')) ? envUrl : 'http://localhost:4000'
     } else if (isLocalHostname) {
+        // LAN IP testing (e.g. testing from mobile device on local Wi-Fi)
         detectedUrl = dynamicLocalUrl
     } else {
-        detectedUrl = ONLINE_URL
+        // Online production (e.g. https://meet.jtsmiddleeast.com, vercel, etc.)
+        // Never allow a localhost URL in online environment
+        detectedUrl = (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1'))
+            ? envUrl
+            : ONLINE_URL
     }
+} else {
+    detectedUrl = import.meta.env.PROD ? ONLINE_URL : (envUrl || 'http://localhost:4000')
 }
 
 export const API_BASE = detectedUrl

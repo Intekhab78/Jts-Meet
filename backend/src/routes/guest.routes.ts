@@ -12,6 +12,19 @@ router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
         const meeting = await getMeetingByMeetingId(meetingId)
         
         if (!meeting) {
+            // Support instant / ad-hoc meeting rooms (e.g. room-xxxx)
+            if (meetingId.startsWith('room-') || meetingId.length >= 4) {
+                res.json({
+                    success: true,
+                    data: {
+                        title: `Room ${meetingId}`,
+                        hostName: 'Host',
+                        isWaitingRoomEnabled: false,
+                        isGuestJoinEnabled: true
+                    }
+                })
+                return
+            }
             res.status(404).json({ success: false, message: 'Meeting not found' })
             return
         }
@@ -26,7 +39,8 @@ router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
             data: {
                 title: meeting.title,
                 hostName: (meeting.host as any)?.fullName || 'Organizer',
-                isWaitingRoomEnabled: meeting.isWaitingRoomEnabled
+                isWaitingRoomEnabled: meeting.isWaitingRoomEnabled,
+                isGuestJoinEnabled: (meeting as any).isGuestJoinEnabled !== false
             }
         })
     } catch (error: any) {
@@ -49,6 +63,32 @@ router.post('/request', async (req: Request, res: Response) => {
 
         const meeting = await getMeetingByMeetingId(meetingId)
         if (!meeting) {
+            // Allow ad-hoc / instant rooms without database records
+            if (meetingId.startsWith('room-') || meetingId.length >= 4) {
+                const tempGuestId = `guest_${Math.random().toString(36).substring(2, 11)}`
+                const token = jwt.sign(
+                    {
+                        userId: tempGuestId,
+                        isGuest: true,
+                        guestName: guestName.trim(),
+                        meetingId,
+                        isPending: false
+                    },
+                    JWT_SECRET,
+                    { expiresIn: '6h' }
+                )
+                res.json({
+                    success: true,
+                    data: {
+                        token,
+                        userId: tempGuestId,
+                        isPending: false,
+                        meetingTitle: `Room ${meetingId}`,
+                        hostName: 'Host'
+                    }
+                })
+                return
+            }
             res.status(404).json({ success: false, message: 'Meeting not found' })
             return
         }

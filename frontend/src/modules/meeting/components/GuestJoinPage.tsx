@@ -15,7 +15,13 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
     const [isRestricted, setIsRestricted] = useState(false)
 
     // Form inputs
-    const [guestName, setGuestName] = useState('')
+    const [guestName, setGuestName] = useState(() => {
+        try {
+            return localStorage.getItem('jts_guest_name') || ''
+        } catch {
+            return ''
+        }
+    })
     const [email, setEmail] = useState('')
     const [company, setCompany] = useState('')
     const [requesting, setRequesting] = useState(false)
@@ -46,16 +52,18 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                 const response = await fetch(`${API_BASE}/api/guest/meeting/${meetingId}`)
                 const data = await response.json()
                 if (response.ok && data?.success) {
-                    setMeetingTitle(data.data.title)
-                    setHostName(data.data.hostName)
+                    setMeetingTitle(data.data.title || `Meeting ${meetingId}`)
+                    setHostName(data.data.hostName || 'Organizer')
                     if (data.data.isGuestJoinEnabled === false) {
                         setIsRestricted(true)
                     }
                 } else {
-                    setErrorInfo(data.message || 'Failed to fetch meeting info')
+                    setMeetingTitle(`Room ${meetingId}`)
+                    setHostName('Host')
                 }
             } catch (err) {
-                setErrorInfo('Failed to connect to server')
+                setMeetingTitle(`Room ${meetingId}`)
+                setHostName('Host')
             } finally {
                 setLoadingInfo(false)
             }
@@ -140,6 +148,11 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
             const data = await response.json()
             if (response.ok && data?.success) {
                 const { token, userId, isPending } = data.data
+                try {
+                    localStorage.setItem('jts_guest_name', guestName.trim())
+                    sessionStorage.setItem('jts_active_meeting_id', meetingId)
+                    sessionStorage.setItem('jts_meeting_joined', 'true')
+                } catch (e) {}
                 // Stop local preview so it doesn't conflict with main WebRTC connection
                 if (stream) {
                     stream.getTracks().forEach(t => t.stop())

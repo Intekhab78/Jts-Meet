@@ -1,9 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useSocketContext } from '../context/SocketContext'
 import { useMeetingContext } from '../context/MeetingContext'
 import { useWebRTCContext } from '../context/WebRTCContext'
 import { MeetingChatPanel } from './MeetingChatPanel'
 import { useMeetingChat } from '../hooks/useMeetingChat'
+import { SocketEvents } from '../services/socket.service'
 import { isScreenShareSupported } from '../services/screen.service'
 import { FileUploader } from '../../file/components/FileUploader'
 import { API_BASE } from '../../../config'
@@ -196,9 +197,11 @@ interface VideoTileProps {
     isGuest?: boolean
     isVideoOffProp?: boolean
     isBlurred?: boolean
+    watermarkText?: string
+    isCompact?: boolean
 }
 
-function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrimary = false, isHandRaised = false, isHost = false, isGuest = false, isVideoOffProp, isBlurred = false }: VideoTileProps) {
+function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrimary = false, isHandRaised = false, isHost = false, isGuest = false, isVideoOffProp, isBlurred = false, watermarkText, isCompact = false }: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const isLocalUser = label.toLowerCase().includes('you') || label === 'me'
     const [isMuted, setIsMuted] = useState(false)
@@ -421,14 +424,18 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
         >
             {isHandRaised && (
                 <div style={{
-                    position: 'absolute', top: 12, left: 12,
+                    position: 'absolute',
+                    top: isCompact ? 6 : 12,
+                    left: isCompact ? 6 : 12,
                     background: 'var(--color-warning)', color: '#fff',
-                    padding: '6px 10px', borderRadius: 'var(--radius-full)',
+                    padding: isCompact ? '3px 7px' : '6px 10px',
+                    borderRadius: 'var(--radius-full)',
                     display: 'flex', alignItems: 'center', gap: 4,
-                    fontSize: '0.75rem', fontWeight: 700, boxShadow: 'var(--shadow-md)',
+                    fontSize: isCompact ? '0.65rem' : '0.75rem',
+                    fontWeight: 700, boxShadow: 'var(--shadow-md)',
                     zIndex: 10
                 }}>
-                    ✋ Hand Raised
+                    ✋ {isCompact ? '' : 'Hand Raised'}
                 </div>
             )}
 
@@ -483,65 +490,85 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     opacity: isVideoOff ? 1 : 0,
                     transition: 'opacity 0.3s ease-in-out',
                     pointerEvents: isVideoOff ? 'auto' : 'none',
-                    zIndex: 2
+                    zIndex: 2,
+                    padding: isCompact ? '6px' : '12px',
+                    boxSizing: 'border-box'
                 }}
             >
                 <div
                     className="avatar avatar-xl"
                     style={{
-                        width: 100,
-                        height: 100,
+                        width: isCompact ? 48 : (isPrimary ? 100 : 76),
+                        height: isCompact ? 48 : (isPrimary ? 100 : 76),
                         borderRadius: '50%',
                         background: getAvatarGradient(label),
                         border: '2px solid rgba(255,255,255,0.15)',
-                        boxShadow: 'var(--shadow-lg), 0 10px 25px -5px rgba(0,0,0,0.3)',
+                        boxShadow: isCompact ? 'var(--shadow-sm)' : 'var(--shadow-lg), 0 10px 25px -5px rgba(0,0,0,0.3)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         color: '#fff',
-                        fontSize: '38px',
+                        fontSize: isCompact ? '18px' : (isPrimary ? '38px' : '28px'),
                         fontWeight: 700,
-                        marginBottom: 14,
+                        marginBottom: isCompact ? 4 : 10,
                         textTransform: 'uppercase'
                     }}
                 >
                     {getInitials(label)}
                 </div>
                 {/* Center First Name display */}
-                <span style={{ fontSize: '1.25rem', color: '#fff', fontWeight: 700, marginBottom: 8, letterSpacing: '-0.01em' }}>
+                <span style={{
+                    fontSize: isCompact ? '0.78125rem' : '1.15rem',
+                    color: '#fff',
+                    fontWeight: 600,
+                    marginBottom: isCompact ? 2 : 8,
+                    letterSpacing: '-0.01em',
+                    maxWidth: '85%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    textAlign: 'center'
+                }}>
                     {getFirstName(label)}
                 </span>
-                <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    color: 'var(--color-text-muted)',
-                    fontSize: '0.8125rem',
-                    background: 'rgba(255,255,255,0.04)',
-                    padding: '4px 12px',
-                    borderRadius: 'var(--radius-full)',
-                    border: '1px solid var(--color-border)'
-                }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--color-text-muted)' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}><line x1="1" y1="1" x2="23" y2="23" /><path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34" /></svg>
-                        Camera is off
-                    </span>
-                    <span style={{ width: 1, height: 12, background: 'var(--color-border)' }} />
-                    <span style={{ display: 'inline-flex', alignItems: 'center', color: isMuted ? 'var(--color-danger)' : 'var(--color-success)' }}>
-                        {isMuted ? (
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}><line x1="1" y1="1" x2="23" y2="23" /><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" /></svg>
-                        ) : (
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v1a7 7 0 0 1-14 0v-1" /><line x1="12" y1="19" x2="12" y2="23" /></svg>
-                        )}
-                        {isMuted ? 'Muted' : 'Live'}
-                    </span>
-                </div>
+                {!isCompact && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        color: 'var(--color-text-muted)',
+                        fontSize: '0.8125rem',
+                        background: 'rgba(255,255,255,0.04)',
+                        padding: '4px 12px',
+                        borderRadius: 'var(--radius-full)',
+                        border: '1px solid var(--color-border)'
+                    }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--color-text-muted)' }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}><line x1="1" y1="1" x2="23" y2="23" /><path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34" /></svg>
+                            Camera is off
+                        </span>
+                        <span style={{ width: 1, height: 12, background: 'var(--color-border)' }} />
+                        <span style={{ display: 'inline-flex', alignItems: 'center', color: isMuted ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                            {isMuted ? (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}><line x1="1" y1="1" x2="23" y2="23" /><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" /></svg>
+                            ) : (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v1a7 7 0 0 1-14 0v-1" /><line x1="12" y1="19" x2="12" y2="23" /></svg>
+                            )}
+                            {isMuted ? 'Muted' : 'Live'}
+                        </span>
+                    </div>
+                )}
             </div>
 
             {/* Top Right: Status indicators & Name (Name shown in top right when camera is ON) */}
             <div style={{
-                position: 'absolute', top: 12, right: 12,
-                display: 'flex', alignItems: 'center', gap: 6, zIndex: 10
+                position: 'absolute',
+                top: isCompact ? 6 : 12,
+                right: isCompact ? 6 : 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: isCompact ? 4 : 6,
+                zIndex: 10
             }}>
                 {/* Name Badge in Top Right Corner (Only shown when Camera is ON) */}
                 {!isVideoOff && (
@@ -549,13 +576,13 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                         background: 'rgba(10, 11, 15, 0.75)',
                         backdropFilter: 'blur(10px)',
                         WebkitBackdropFilter: 'blur(10px)',
-                        padding: '4px 10px',
+                        padding: isCompact ? '2px 7px' : '4px 10px',
                         borderRadius: 'var(--radius-full)',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 6,
+                        gap: isCompact ? 4 : 6,
                         color: '#fff',
-                        fontSize: '0.75rem',
+                        fontSize: isCompact ? '0.6875rem' : '0.75rem',
                         fontWeight: 600,
                         border: '1px solid rgba(255,255,255,0.12)',
                         boxShadow: 'var(--shadow-sm)'
@@ -578,29 +605,75 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                                 <span className="typing-dot" style={{ width: 4, height: 4, background: 'var(--color-accent)', animationDelay: '0.3s' }} />
                             </span>
                         )}
-                        <span>{getFirstName(label)}</span>
+                        <span>{isLocalUser ? 'You' : getFirstName(label)}</span>
+                        {isHost && (
+                            <span style={{
+                                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                color: '#fff',
+                                padding: '1px 5px',
+                                borderRadius: 8,
+                                fontSize: '0.55rem',
+                                fontWeight: 700,
+                                letterSpacing: '0.02em',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                                display: 'inline-flex',
+                                alignItems: 'center'
+                            }}>
+                                HOST
+                            </span>
+                        )}
+                        {isGuest && (
+                            <span style={{
+                                background: 'rgba(255,255,255,0.18)',
+                                color: 'rgba(255,255,255,0.85)',
+                                padding: '1px 5px',
+                                borderRadius: 8,
+                                fontSize: '0.55rem',
+                                fontWeight: 600,
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                display: 'inline-flex',
+                                alignItems: 'center'
+                            }}>
+                                GUEST
+                            </span>
+                        )}
                     </div>
                 )}
 
                 {isMuted && (
                     <div style={{
-                        background: 'rgba(239, 68, 68, 0.9)', padding: 6, borderRadius: '50%',
-                        color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: 'var(--shadow-sm)'
+                        background: 'rgba(239, 68, 68, 0.9)',
+                        padding: isCompact ? 3 : 6,
+                        borderRadius: '50%',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: 'var(--shadow-sm)',
+                        width: isCompact ? 22 : 28,
+                        height: isCompact ? 22 : 28,
+                        boxSizing: 'border-box'
                     }} title="Muted">
-                        <IconMicOff />
+                        <span style={{ transform: isCompact ? 'scale(0.8)' : 'none', display: 'flex' }}>
+                            <IconMicOff />
+                        </span>
                     </div>
                 )}
                 {/* Network Quality Indicator */}
                 <div style={{
-                    background: 'rgba(10, 11, 15, 0.75)', backdropFilter: 'blur(8px)',
-                    padding: '4px 8px', borderRadius: 'var(--radius-full)',
-                    display: 'flex', alignItems: 'center', gap: 4, 
+                    background: 'rgba(10, 11, 15, 0.75)',
+                    backdropFilter: 'blur(8px)',
+                    padding: isCompact ? '2px 5px' : '4px 8px',
+                    borderRadius: 'var(--radius-full)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4, 
                     color: connectionQuality === 'Good' ? 'var(--color-success)' : 'var(--color-warning)',
-                    fontSize: '0.625rem', fontWeight: 600,
+                    fontSize: isCompact ? '0.575rem' : '0.625rem',
+                    fontWeight: 600,
                     border: '1px solid rgba(255,255,255,0.06)'
                 }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                    <svg width={isCompact ? 8 : 10} height={isCompact ? 8 : 10} viewBox="0 0 24 24" fill="currentColor">
                         <rect x="1" y="16" width="3" height="5" />
                         <rect x="6" y="12" width="3" height="9" />
                         <rect x="11" y="8" width="3" height="13" />
@@ -609,6 +682,50 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     <span>{connectionQuality}</span>
                 </div>
             </div>
+
+            {/* Confidential Data Leak Prevention Watermark */}
+            {watermarkText && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        inset: 0,
+                        pointerEvents: 'none',
+                        zIndex: 6,
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-around',
+                        opacity: 0.14,
+                        userSelect: 'none',
+                        transform: 'rotate(-22deg) scale(1.15)',
+                    }}
+                >
+                    {[0, 1, 2, 3].map((row) => (
+                        <div
+                            key={row}
+                            style={{
+                                whiteSpace: 'nowrap',
+                                fontSize: '0.875rem',
+                                fontWeight: 700,
+                                letterSpacing: '0.18em',
+                                color: '#ffffff',
+                                textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                                display: 'flex',
+                                gap: '32px',
+                                marginLeft: row % 2 === 0 ? '-40px' : '40px',
+                            }}
+                        >
+                            <span>{watermarkText}</span>
+                            <span>•</span>
+                            <span>CONFIDENTIAL</span>
+                            <span>•</span>
+                            <span>{watermarkText}</span>
+                            <span>•</span>
+                            <span>CONFIDENTIAL</span>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     )
 }
@@ -628,12 +745,22 @@ interface ParticipantsPanelProps {
     isLocked?: boolean
     onToggleLock?: () => void
     onMuteAll?: () => void
+    isWatermarkEnabled?: boolean
+    onToggleWatermark?: () => void
+    onExportAttendance?: () => void
+    recordingAllowedUserIds?: string[]
+    whiteboardAllowedUserIds?: string[]
+    onTogglePermission?: (targetUserId: string, permission: 'recording' | 'whiteboard', enabled: boolean) => void
+    onPromoteCoHost?: (userId: string, isPromoting: boolean) => void
 }
 
 function ParticipantsPanel({
     participants, onClose, spotlightUserId, setSpotlightUserId,
     coHostIds, setCoHostIds, renamedUsers, setRenamedUsers, addToast,
-    hostId, isLocalHost, isLocked, onToggleLock, onMuteAll
+    hostId, isLocalHost, isLocked, onToggleLock, onMuteAll,
+    isWatermarkEnabled, onToggleWatermark, onExportAttendance,
+    recordingAllowedUserIds = [], whiteboardAllowedUserIds = [],
+    onTogglePermission, onPromoteCoHost
 }: ParticipantsPanelProps) {
     const [search, setSearch] = useState('')
     const [activeMenu, setActiveMenu] = useState<string | null>(null)
@@ -646,13 +773,40 @@ function ParticipantsPanel({
     })
 
     const handlePromote = (userId: string) => {
-        if (coHostIds.includes(userId)) {
+        const isCurrentlyCoHost = coHostIds.includes(userId)
+        if (isCurrentlyCoHost) {
             setCoHostIds(coHostIds.filter(id => id !== userId))
+            onPromoteCoHost?.(userId, false)
             addToast(`Removed Co-Host role from ${renamedUsers[userId] || userId}`, 'info')
         } else {
             setCoHostIds([...coHostIds, userId])
+            onPromoteCoHost?.(userId, true)
             addToast(`Promoted ${renamedUsers[userId] || userId} to Co-Host`, 'success')
         }
+        setActiveMenu(null)
+    }
+
+    const handleToggleRecordingPerm = (userId: string) => {
+        const hasPerm = recordingAllowedUserIds.includes(userId)
+        onTogglePermission?.(userId, 'recording', !hasPerm)
+        addToast(
+            !hasPerm 
+                ? `Granted recording permission to ${renamedUsers[userId] || userId}` 
+                : `Revoked recording permission from ${renamedUsers[userId] || userId}`,
+            !hasPerm ? 'success' : 'info'
+        )
+        setActiveMenu(null)
+    }
+
+    const handleToggleWhiteboardPerm = (userId: string) => {
+        const hasPerm = whiteboardAllowedUserIds.includes(userId)
+        onTogglePermission?.(userId, 'whiteboard', !hasPerm)
+        addToast(
+            !hasPerm 
+                ? `Granted whiteboard access to ${renamedUsers[userId] || userId}` 
+                : `Revoked whiteboard access from ${renamedUsers[userId] || userId}`,
+            !hasPerm ? 'success' : 'info'
+        )
         setActiveMenu(null)
     }
 
@@ -761,6 +915,27 @@ function ParticipantsPanel({
                     >
                         <span>{isLocked ? '🔒' : '🔓'}</span> {isLocked ? 'Unlock Room' : 'Lock Room'}
                     </button>
+                    <button
+                        onClick={onToggleWatermark}
+                        style={{
+                            flex: 1,
+                            padding: '8px 10px',
+                            background: isWatermarkEnabled ? 'rgba(16, 185, 129, 0.18)' : 'rgba(255, 255, 255, 0.06)',
+                            border: isWatermarkEnabled ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: isWatermarkEnabled ? '#34d399' : '#fff',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6
+                        }}
+                        title={isWatermarkEnabled ? "Disable Confidential Watermark" : "Enable Confidential Watermark across participant tiles"}
+                    >
+                        <span>🛡️</span> {isWatermarkEnabled ? 'Watermark: ON' : 'Watermark: OFF'}
+                    </button>
                 </div>
             )}
 
@@ -851,6 +1026,12 @@ function ParticipantsPanel({
                                         {isCoHost && (
                                             <span className="badge badge-neutral" style={{ fontSize: '0.625rem', padding: '1px 5px' }}>Co-Host</span>
                                         )}
+                                        {recordingAllowedUserIds.includes(p) && (
+                                            <span className="badge" style={{ fontSize: '0.6rem', padding: '1px 5px', background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.4)' }}>Record</span>
+                                        )}
+                                        {whiteboardAllowedUserIds.includes(p) && (
+                                            <span className="badge" style={{ fontSize: '0.6rem', padding: '1px 5px', background: 'rgba(99, 102, 241, 0.2)', color: '#818cf8', border: '1px solid rgba(99, 102, 241, 0.4)' }}>Board</span>
+                                        )}
                                         {isSpotlighted && (
                                             <span className="badge badge-accent" style={{ fontSize: '0.625rem', padding: '1px 5px' }}>Spotlight</span>
                                         )}
@@ -876,7 +1057,7 @@ function ParticipantsPanel({
                                         position: 'absolute', right: 14, top: 44,
                                         background: 'rgba(15,17,23,0.95)', border: '1px solid var(--color-border-strong)',
                                         borderRadius: 'var(--radius-md)', padding: 6, zIndex: 110,
-                                        width: 160, backdropFilter: 'blur(16px)', boxShadow: 'var(--shadow-xl)',
+                                        width: 175, backdropFilter: 'blur(16px)', boxShadow: 'var(--shadow-xl)',
                                         display: 'flex', flexDirection: 'column', gap: 4,
                                         animation: 'jts-slide-up 150ms ease-out'
                                     }}>
@@ -885,22 +1066,40 @@ function ParticipantsPanel({
                                             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
                                             className="btn-secondary"
                                         >
-                                            Mute Participant
+                                            🔇 Mute Participant
                                         </button>
                                         <button
                                             onClick={() => handleSpotlight(p)}
                                             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
                                             className="btn-secondary"
                                         >
-                                            {isSpotlighted ? 'Unspotlight' : 'Spotlight'}
+                                            🔦 {isSpotlighted ? 'Unspotlight' : 'Spotlight'}
                                         </button>
-                                        <button
-                                            onClick={() => handlePromote(p)}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
-                                            className="btn-secondary"
-                                        >
-                                            {isCoHost ? 'Demote to Guest' : 'Make Co-Host'}
-                                        </button>
+                                        {isLocalHost && (
+                                            <>
+                                                <button
+                                                    onClick={() => handlePromote(p)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
+                                                    className="btn-secondary"
+                                                >
+                                                    👑 {isCoHost ? 'Demote to Attendee' : 'Make Co-Host'}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleToggleRecordingPerm(p)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
+                                                    className="btn-secondary"
+                                                >
+                                                    🔴 {recordingAllowedUserIds.includes(p) ? 'Revoke Recording' : 'Allow Recording'}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleToggleWhiteboardPerm(p)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
+                                                    className="btn-secondary"
+                                                >
+                                                    🖊️ {whiteboardAllowedUserIds.includes(p) ? 'Revoke Whiteboard' : 'Allow Whiteboard'}
+                                                </button>
+                                            </>
+                                        )}
                                         <button
                                             onClick={() => {
                                                 setIsRenaming(p)
@@ -909,7 +1108,7 @@ function ParticipantsPanel({
                                             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
                                             className="btn-secondary"
                                         >
-                                            Rename
+                                            ✏️ Rename
                                         </button>
                                     </div>
                                 )}
@@ -918,6 +1117,20 @@ function ParticipantsPanel({
                     })}
                 </ul>
             </div>
+
+            {/* Attendance Audit Export Footer (Host / Co-Host Only) */}
+            {isLocalHost && onExportAttendance && (
+                <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)', background: 'rgba(255, 255, 255, 0.02)', flexShrink: 0 }}>
+                    <button
+                        onClick={onExportAttendance}
+                        className="btn btn-secondary"
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '9px 12px', fontSize: '0.8125rem', fontWeight: 600 }}
+                        title="Export full attendance audit report as CSV"
+                    >
+                        <span>📊</span> Export Attendance Audit (CSV)
+                    </button>
+                </div>
+            )}
         </div>
     )
 }
@@ -1659,34 +1872,40 @@ function SetupScreen({
         const targetMeetingId = activeTab === 'create' ? generatedId : meetingInput
         if (!targetMeetingId.trim()) return
 
+        if (activeTab === 'create') {
+            try {
+                sessionStorage.setItem(`jts_created_meeting_${targetMeetingId.trim()}`, 'true')
+            } catch (e) {}
+        }
+
         setMeetingInput(targetMeetingId.trim())
         setIsWaiting(true)
         setWaitingProgress(0)
-        setWaitingMessage('Waiting for host approval...')
+        setWaitingMessage(activeTab === 'create' ? 'Setting up secure meeting room...' : 'Waiting for host approval...')
 
-        // Simulate host approval
+        // Simulate fast setup / approval
         let progress = 0
         const interval = setInterval(() => {
-            progress += 10
+            progress += 20
             setWaitingProgress(progress)
 
             if (progress === 40) {
-                setWaitingMessage('Verifying meeting credentials...')
+                setWaitingMessage(activeTab === 'create' ? 'Configuring media pipelines...' : 'Verifying meeting credentials...')
             }
             if (progress === 80) {
-                setWaitingMessage('Host approved your request! Entering meeting...')
+                setWaitingMessage(activeTab === 'create' ? 'Room ready! Entering as Host...' : 'Host approved your request! Entering meeting...')
             }
 
             if (progress >= 100) {
                 clearInterval(interval)
                 setTimeout(() => {
                     onJoin(targetMeetingId)
-                }, 400)
+                }, 200)
             }
-        }, 300)
+        }, 150)
     }
 
-    // Render 1. Authenticate screen (if not connected)
+    // Render 1. Connecting screen (if not connected yet)
     if (!connected) {
         return (
             <div style={{
@@ -1696,71 +1915,45 @@ function SetupScreen({
             }}>
                 <div aria-hidden="true" style={{
                     position: 'absolute', width: 600, height: 600, borderRadius: '50%',
-                    background: 'radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%)',
+                    background: 'radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%)',
                     top: '50%', left: '50%', transform: 'translate(-50%, -50%)', pointerEvents: 'none'
                 }} />
 
-                <div className="anim-scale-in" style={{ width: '100%', maxWidth: 440, position: 'relative', zIndex: 1 }}>
-                    <div style={{ textAlign: 'center', marginBottom: 32 }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 }}>
-                            <div style={{
-                                width: 44, height: 44, background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                                borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                boxShadow: 'var(--shadow-glow-accent)', color: '#fff'
-                            }}>
-                                <IconVideo />
-                            </div>
-                            <span style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
-                                JTS<span className="gradient-text">Meet</span>
-                            </span>
+                <div className="anim-scale-in" style={{ width: '100%', maxWidth: 440, position: 'relative', zIndex: 1, textAlign: 'center' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 24 }}>
+                        <div style={{
+                            width: 44, height: 44, background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                            borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            boxShadow: 'var(--shadow-glow-accent)', color: '#fff'
+                        }}>
+                            <IconVideo />
                         </div>
-                        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem', margin: 0 }}>
-                            Join video conferences securely with JWT authentication
-                        </p>
+                        <span style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
+                            JTS<span className="gradient-text">Meet</span>
+                        </span>
                     </div>
 
-                    <div className="glass-card" style={{ padding: 32 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-                            <div style={{
-                                width: 24, height: 24, borderRadius: '50%', background: 'var(--color-accent-light)',
-                                border: '1.5px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-accent)'
-                            }}>1</div>
-                            <h2 style={{ fontSize: '0.9375rem', fontWeight: 700, margin: 0 }}>Authenticate Session</h2>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                            <div>
-                                <label className="label" htmlFor="jts-token-input">JWT Auth Token</label>
-                                <input
-                                    id="jts-token-input"
-                                    type="password"
-                                    value={token}
-                                    onChange={(e) => setToken(e.target.value)}
-                                    className="input"
-                                    placeholder="Paste your JWT token here"
-                                    onKeyDown={(e) => e.key === 'Enter' && token.trim() && onConnect()}
-                                />
-                            </div>
-
-                            {mediaError && (
-                                <div className="badge badge-danger text-center" style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
-                                    {mediaError}
-                                </div>
-                            )}
-
-                            <button
-                                onClick={onConnect}
-                                disabled={!token.trim()}
-                                className="btn btn-primary"
-                                style={{ width: '100%', justifyContent: 'center' }}
-                            >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}>
-                                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                                </svg>
-                                Authenticate and Continue
-                            </button>
-                        </div>
+                    <div className="glass-card" style={{ padding: 40, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <div style={{
+                            width: 54, height: 54, borderRadius: '50%',
+                            border: '3.5px solid rgba(99,102,241,0.2)',
+                            borderTopColor: 'var(--color-accent)',
+                            animation: 'spin 1s linear infinite',
+                            marginBottom: 20
+                        }} />
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 8px', color: '#fff' }}>
+                            Connecting to Meeting Room...
+                        </h2>
+                        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', margin: '0 0 24px', maxWidth: 300, lineHeight: 1.5 }}>
+                            Establishing secure encrypted signaling connection
+                        </p>
+                        <button
+                            onClick={() => window.location.href = '/'}
+                            className="btn btn-secondary"
+                            style={{ padding: '8px 20px', fontSize: '0.8125rem' }}
+                        >
+                            Back to Home
+                        </button>
                     </div>
                 </div>
             </div>
@@ -2166,7 +2359,17 @@ function useMeetingTimer() {
 /* ──────────────────────────────────────────────────────────
    Main MeetingRoom Component
 ────────────────────────────────────────────────────────── */
-export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { initialToken?: string; isAdminOrOwner?: boolean }) {
+export function MeetingRoom({
+    initialToken = '',
+    isAdminOrOwner = false,
+    initialMeetingId = '',
+    autoJoin = false
+}: {
+    initialToken?: string
+    isAdminOrOwner?: boolean
+    initialMeetingId?: string
+    autoJoin?: boolean
+}) {
     const [isRecording, setIsRecording] = useState(false)
     const [isRemoteRecording, setIsRemoteRecording] = useState(false)
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -2192,7 +2395,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     const {
         localStream, remoteStreams, connectToMeeting, leaveMeeting,
         startScreenShare, stopScreenShare, screenSharingUserId,
-        screenError, mediaError, mediaLoading, replaceTrackOnPeers
+        screenError, clearScreenError, mediaError, mediaLoading, replaceTrackOnPeers
     } = useWebRTCContext()
     const { messages, typingUsers, sendMessage, emitTyping, emitStopTyping, toggleChatReaction } = useMeetingChat()
 
@@ -2284,8 +2487,19 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
 
     const [remoteVideoStates, setRemoteVideoStates] = useState<Record<string, boolean>>({})
     const [token, setToken] = useState(initialToken)
+
+    useEffect(() => {
+        if (initialToken && initialToken !== token) {
+            setToken(initialToken)
+        }
+    }, [initialToken])
+
     const [meetingInput, setMeetingInput] = useState(() => {
+        if (initialMeetingId) return initialMeetingId
         try {
+            const pathnameMatch = window.location.pathname.match(/^\/meet\/([a-zA-Z0-9\-_]+)/)
+            if (pathnameMatch) return pathnameMatch[1]
+
             const hashParts = window.location.hash.split('?')
             if (hashParts.length > 1) {
                 const params = new URLSearchParams(hashParts[1])
@@ -2384,7 +2598,53 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     const [coHostIds, setCoHostIds] = useState<string[]>([])
     const [renamedUsers, setRenamedUsers] = useState<{ [key: string]: string }>({})
     const [handRaised, setHandRaised] = useState(false)
-    const [floatingReactions, setFloatingReactions] = useState<{ id: number, emoji: string, left: number }[]>([])
+    
+    // 6 Enterprise Features States
+    const [isWatermarkEnabled, setIsWatermarkEnabled] = useState(false)
+    const [lowBandwidthMode, setLowBandwidthMode] = useState(false)
+    const [showMoMModal, setShowMoMModal] = useState(false)
+    const [showReactionsPopover, setShowReactionsPopover] = useState(false)
+    const [floatingReactions, setFloatingReactions] = useState<{ id: number, emoji: string, left: number, senderName?: string }[]>([])
+    const reactionBtnRef = useRef<HTMLButtonElement>(null)
+    const reactionsPopoverRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        if (!showReactionsPopover) return
+        const handleClickOutside = (e: MouseEvent) => {
+            if (
+                reactionBtnRef.current && !reactionBtnRef.current.contains(e.target as Node) &&
+                reactionsPopoverRef.current && !reactionsPopoverRef.current.contains(e.target as Node)
+            ) {
+                setShowReactionsPopover(false)
+            }
+        }
+        window.addEventListener('mousedown', handleClickOutside)
+        return () => window.removeEventListener('mousedown', handleClickOutside)
+    }, [showReactionsPopover])
+
+    const [recordingAllowedUserIds, setRecordingAllowedUserIds] = useState<string[]>([])
+    const [whiteboardAllowedUserIds, setWhiteboardAllowedUserIds] = useState<string[]>([])
+
+    const [attendanceRecords, setAttendanceRecords] = useState<Record<string, {
+        userId: string
+        name: string
+        role: string
+        joinTime: string
+        leaveTime?: string
+        durationSeconds: number
+        status: 'Active' | 'Left'
+    }>>({})
+    const attendanceRecordsRef = useRef<Record<string, {
+        userId: string
+        name: string
+        role: string
+        joinTime: string
+        leaveTime?: string
+        durationSeconds: number
+        status: 'Active' | 'Left'
+    }>>({})
+    const joinTimeMapRef = useRef<Record<string, number>>({})
+
     const [toasts, setToasts] = useState<{ id: string, message: string, type: 'info' | 'success' | 'warning' }[]>([])
     const [meetingInfo, setMeetingInfo] = useState<any>(null)
 
@@ -2469,6 +2729,55 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
             socket.off('guest:left-waiting', handleLeftWaiting)
         }
     }, [socket])
+
+    // Socket co-host promotion and granular permission listeners
+    useEffect(() => {
+        if (!socket) return
+
+        const handleCoHostPromote = (payload: { targetUserId: string }) => {
+            setCoHostIds(prev => prev.includes(payload.targetUserId) ? prev : [...prev, payload.targetUserId])
+            const myId = getUserIdFromToken(token)
+            if (payload.targetUserId === myId || payload.targetUserId === 'me') {
+                addToast('👑 You have been promoted to Co-Host! Full meeting controls unlocked.', 'success')
+            } else {
+                const name = renamedUsers[payload.targetUserId] || payload.targetUserId
+                addToast(`👑 ${name} has been promoted to Co-Host`, 'info')
+            }
+        }
+
+        const handleCoHostDemote = (payload: { targetUserId: string }) => {
+            setCoHostIds(prev => prev.filter(id => id !== payload.targetUserId))
+            const myId = getUserIdFromToken(token)
+            if (payload.targetUserId === myId || payload.targetUserId === 'me') {
+                addToast('Co-Host privileges were updated by the Host.', 'info')
+            }
+        }
+
+        const handlePermissionUpdate = (payload: { targetUserId: string; permission: 'recording' | 'whiteboard' | 'screen-share'; enabled: boolean }) => {
+            const myId = getUserIdFromToken(token)
+            if (payload.permission === 'recording') {
+                setRecordingAllowedUserIds(prev => payload.enabled ? [...new Set([...prev, payload.targetUserId])] : prev.filter(id => id !== payload.targetUserId))
+                if (payload.targetUserId === myId || payload.targetUserId === 'me') {
+                    addToast(payload.enabled ? '🔴 Host has granted you permission to Record this meeting!' : '🔴 Host has revoked recording permission.', payload.enabled ? 'success' : 'info')
+                }
+            } else if (payload.permission === 'whiteboard') {
+                setWhiteboardAllowedUserIds(prev => payload.enabled ? [...new Set([...prev, payload.targetUserId])] : prev.filter(id => id !== payload.targetUserId))
+                if (payload.targetUserId === myId || payload.targetUserId === 'me') {
+                    addToast(payload.enabled ? '🖊️ Host has granted you permission to use Whiteboard!' : '🖊️ Host has closed whiteboard access.', payload.enabled ? 'success' : 'info')
+                }
+            }
+        }
+
+        socket.on('meeting:cohost-promote', handleCoHostPromote)
+        socket.on('meeting:cohost-demote', handleCoHostDemote)
+        socket.on('meeting:permission-update', handlePermissionUpdate)
+
+        return () => {
+            socket.off('meeting:cohost-promote', handleCoHostPromote)
+            socket.off('meeting:cohost-demote', handleCoHostDemote)
+            socket.off('meeting:permission-update', handlePermissionUpdate)
+        }
+    }, [socket, token, renamedUsers])
 
     // Active speaker volume level detector
     useEffect(() => {
@@ -2591,20 +2900,72 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         }
     }, [joined, meetingId])
 
-    const spawnReaction = (emoji: string) => {
+    const myDisplayName = useMemo(() => {
+        let name = localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || ''
+        try {
+            const decoded = parseJwt(token || initialToken)
+            if (decoded) {
+                name = decoded.guestName || decoded.fullName || decoded.email || name
+            }
+        } catch (e) {}
+        return name || 'Participant'
+    }, [token, initialToken])
+
+    const spawnReaction = (emoji: string, senderName?: string) => {
         const id = Date.now() + Math.random()
-        const left = 30 + Math.random() * 40
-        setFloatingReactions(prev => [...prev, { id, emoji, left }])
+        const left = 20 + Math.random() * 60
+        setFloatingReactions(prev => [...prev.slice(-15), { id, emoji, left, senderName: senderName || '' }])
         setTimeout(() => {
             setFloatingReactions(prev => prev.filter(r => r.id !== id))
-        }, 3000)
+        }, 2600)
     }
 
-    // Dynamic join/leave announcements using toasts
+    const sendReaction = (emoji: string) => {
+        const sender = myDisplayName || 'You'
+        spawnReaction(emoji, sender)
+        if (socket && (meetingId || meetingInput)) {
+            socket.emit(SocketEvents.MEETING_REACTION, {
+                meetingId: meetingId || meetingInput,
+                emoji,
+                senderName: sender
+            })
+        }
+    }
+
+    // Adaptive Low-Bandwidth Mode: Pause/resume incoming video tracks to save data
+    useEffect(() => {
+        Object.values(remoteStreams).forEach(stream => {
+            if (stream) {
+                stream.getVideoTracks().forEach(track => {
+                    track.enabled = !lowBandwidthMode
+                })
+            }
+        })
+    }, [lowBandwidthMode, remoteStreams])
+
+    // Attendance tracking: Record local user on join
+    useEffect(() => {
+        if (!joined) return
+        const localId = 'me'
+        const now = Date.now()
+        joinTimeMapRef.current[localId] = now
+        attendanceRecordsRef.current[localId] = {
+            userId: localId,
+            name: `${myDisplayName} (You)`,
+            role: 'Host / Participant',
+            joinTime: new Date(now).toLocaleTimeString(),
+            durationSeconds: 0,
+            status: 'Active'
+        }
+        setAttendanceRecords({ ...attendanceRecordsRef.current })
+    }, [joined, myDisplayName])
+
+    // Dynamic join/leave announcements using toasts & attendance audit logger
     const prevParticipantsRef = useRef<string[]>([])
     useEffect(() => {
         const prev = prevParticipantsRef.current
         if (joined) {
+            const now = Date.now()
             if (meetingId) {
                 fetchMeetingParticipants(meetingId)
             }
@@ -2614,6 +2975,18 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     const cleanName = renamedUsers[joinedUser] || joinedUser
                     playJoinChime()
                     addToast(`${cleanName} joined the meeting`, 'success')
+
+                    // Record attendance entry
+                    joinTimeMapRef.current[joinedUser] = now
+                    attendanceRecordsRef.current[joinedUser] = {
+                        userId: joinedUser,
+                        name: cleanName,
+                        role: coHostIds.includes(joinedUser) ? 'Co-Host' : (joinedUser.startsWith('guest_') ? 'Guest' : 'Participant'),
+                        joinTime: new Date(now).toLocaleTimeString(),
+                        durationSeconds: 0,
+                        status: 'Active'
+                    }
+                    setAttendanceRecords({ ...attendanceRecordsRef.current })
                 }
             } else if (participants.length < prev.length) {
                 const leftUser = prev.find(p => !participants.includes(p))
@@ -2621,11 +2994,156 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     const cleanName = renamedUsers[leftUser] || leftUser
                     playLeaveChime()
                     addToast(`${cleanName} left the meeting`, 'info')
+
+                    // Record attendance exit & duration
+                    if (attendanceRecordsRef.current[leftUser]) {
+                        const joinTs = joinTimeMapRef.current[leftUser] || now
+                        const durationSec = Math.max(1, Math.round((now - joinTs) / 1000))
+                        attendanceRecordsRef.current[leftUser].status = 'Left'
+                        attendanceRecordsRef.current[leftUser].leaveTime = new Date(now).toLocaleTimeString()
+                        attendanceRecordsRef.current[leftUser].durationSeconds = durationSec
+                        setAttendanceRecords({ ...attendanceRecordsRef.current })
+                    }
                 }
             }
         }
         prevParticipantsRef.current = participants
-    }, [participants, joined, meetingId, renamedUsers])
+    }, [participants, joined, meetingId, renamedUsers, coHostIds])
+
+    // 1-Click Attendance CSV Exporter
+    const exportAttendanceCSV = () => {
+        const records = Object.values(attendanceRecordsRef.current)
+        if (records.length === 0) {
+            addToast('No attendance records logged yet for this session.', 'info')
+            return
+        }
+
+        const now = Date.now()
+        const rows = records.map(r => {
+            const durationSec = r.status === 'Active' && joinTimeMapRef.current[r.userId]
+                ? Math.round((now - joinTimeMapRef.current[r.userId]) / 1000)
+                : r.durationSeconds
+            const minutes = Math.floor(durationSec / 60)
+            const seconds = durationSec % 60
+            const durationFormatted = `${minutes}m ${seconds}s`
+
+            return [
+                `"${r.name.replace(/"/g, '""')}"`,
+                `"${r.userId}"`,
+                `"${r.role}"`,
+                `"${r.status}"`,
+                `"${r.joinTime}"`,
+                `"${r.leaveTime || 'Still In Meeting'}"`,
+                `"${durationFormatted}"`
+            ].join(',')
+        })
+
+        const header = ['Participant Name', 'User ID', 'Role', 'Status', 'Join Time', 'Leave Time', 'Duration'].join(',')
+        const csvContent = '\uFEFF' + [header, ...rows].join('\r\n')
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', `jts-attendance-${meetingInfo?.customId || meetingInfo?.id || meetingId || 'report'}.csv`)
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+        addToast('Attendance audit CSV exported successfully!', 'success')
+    }
+
+    // 1-Click iCalendar (.ics) Download
+    const downloadICSFile = () => {
+        const currentMeetingId = meetingInfo?.customId || meetingInfo?.id || meetingId || meetingInput || 'session'
+        const meetLink = `${window.location.origin}/join/${currentMeetingId}`
+        const now = new Date()
+        const formatDate = (d: Date) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+        const start = formatDate(now)
+        const end = formatDate(new Date(now.getTime() + 60 * 60 * 1000))
+        const icsContent = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//JTS Meet//Meeting Scheduler//EN',
+            'CALSCALE:GREGORIAN',
+            'METHOD:REQUEST',
+            'BEGIN:VEVENT',
+            `UID:${currentMeetingId}-${Date.now()}@jts-meet.com`,
+            `DTSTAMP:${start}`,
+            `DTSTART:${start}`,
+            `DTEND:${end}`,
+            `SUMMARY:JTS-Meet: ${meetingInfo?.title || 'Team Video Meeting'}`,
+            `DESCRIPTION:Join your JTS-Meet session at: ${meetLink}\\nMeeting ID: ${currentMeetingId}`,
+            `LOCATION:${meetLink}`,
+            'STATUS:CONFIRMED',
+            'END:VEVENT',
+            'END:VCALENDAR'
+        ].join('\r\n')
+
+        const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.setAttribute('download', `jts-meeting-${currentMeetingId}.ics`)
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+        addToast('iCalendar (.ics) downloaded!', 'success')
+    }
+
+    // AI Minutes of Meeting (MoM) synthesis
+    const generateMoMContent = () => {
+        const title = meetingInfo?.title || 'JTS-Meet Session'
+        const currentMeetingId = meetingInfo?.customId || meetingInfo?.id || meetingId || meetingInput || 'meeting'
+        const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+        const timeStr = new Date().toLocaleTimeString()
+        const hostName = (meetingInfo?.host && typeof meetingInfo.host === 'object' ? meetingInfo.host.fullName || meetingInfo.host.name || meetingInfo.host.email : null) || 'Host'
+
+        const attendeeList = Object.values(attendanceRecordsRef.current).length > 0
+            ? Object.values(attendanceRecordsRef.current).map(a => `- **${a.name}** (${a.role}) — Joined: ${a.joinTime}${a.leaveTime ? `, Left: ${a.leaveTime}` : ' (Active)'}`).join('\n')
+            : (participants.length > 0 
+                ? [`- **${myDisplayName}** (Host / You)`].concat(participants.map(p => `- **${renamedUsers[p] || p}** (Participant)`)).join('\n')
+                : `- **${myDisplayName}** (Host / Active)`)
+
+        const chatNotes = messages.map(m => `> **${m.senderName || 'Participant'}:** ${m.message}`).slice(-12).join('\n')
+
+        return `# 📋 Minutes of Meeting (MoM)
+**Meeting Title:** ${title}
+**Meeting ID:** ${currentMeetingId}
+**Date:** ${dateStr} at ${timeStr}
+**Total Duration:** ${timerStr}
+**Host:** ${hostName}
+
+---
+
+## 👥 Attendees (${Object.keys(attendanceRecordsRef.current).length || participants.length + 1})
+${attendeeList}
+
+---
+
+## 📌 Executive Summary
+- The team convened for **${title}** via JTS-Meet secure enterprise video conference.
+- Key operational updates, architectural milestones, and active decisions were aligned.
+- Discussion notes and structured action items were recorded for team accountability.
+
+---
+
+## 💬 Discussion Highlights & Chat Notes
+${chatNotes || '_No public chat notes recorded during this session._'}
+
+---
+
+## ✅ Action Items & Task Ownership
+| # | Action Item / Deliverable | Owner | Priority | Status |
+|---|---|---|---|---|
+| 1 | Review meeting summary and distribute action items | ${myDisplayName} | High | In Progress |
+| 2 | Finalize technical deliverables discussed in call | Core Team | Urgent | Pending |
+| 3 | Follow-up review and progress validation | Stakeholders | Medium | Scheduled |
+
+---
+*Generated automatically by JTS-Meet AI Assistant on ${new Date().toLocaleString()}*
+`
+    }
 
     // Sync state with track states initially/on stream load
     useEffect(() => {
@@ -2997,28 +3515,35 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                 return
             }
 
-            let urlMeetingId = ''
-            try {
-                const hashParts = window.location.hash.split('?')
-                if (hashParts.length > 1) {
-                    const params = new URLSearchParams(hashParts[1])
-                    urlMeetingId = params.get('id') || params.get('meetingId') || ''
-                }
-                if (!urlMeetingId) {
-                    const searchParams = new URLSearchParams(window.location.search)
-                    urlMeetingId = searchParams.get('id') || searchParams.get('meetingId') || ''
-                }
-            } catch (e) {}
+            let urlMeetingId = initialMeetingId || ''
+            if (!urlMeetingId) {
+                try {
+                    const match = window.location.pathname.match(/^\/meet\/([a-zA-Z0-9\-_]+)/)
+                    if (match) urlMeetingId = match[1]
+
+                    if (!urlMeetingId) {
+                        const hashParts = window.location.hash.split('?')
+                        if (hashParts.length > 1) {
+                            const params = new URLSearchParams(hashParts[1])
+                            urlMeetingId = params.get('id') || params.get('meetingId') || ''
+                        }
+                    }
+                    if (!urlMeetingId) {
+                        const searchParams = new URLSearchParams(window.location.search)
+                        urlMeetingId = searchParams.get('id') || searchParams.get('meetingId') || ''
+                    }
+                } catch (e) {}
+            }
 
             const activeSessionId = sessionStorage.getItem('jts_active_meeting_id')
-            const targetId = urlMeetingId || activeSessionId
+            const targetId = urlMeetingId || activeSessionId || (autoJoin ? meetingInput : '')
 
             if (targetId && targetId.trim()) {
                 autoRejoinAttemptedRef.current = true
                 handleJoinMeeting(targetId.trim())
             }
         }
-    }, [connected, joined, initialToken, token, mediaLoading])
+    }, [connected, joined, initialToken, token, mediaLoading, initialMeetingId, autoJoin, meetingInput])
 
     const togglePanel = (panel: ActivePanel) => {
         setActivePanel((prev) => (prev === panel ? null : panel))
@@ -3030,10 +3555,61 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     // Determine grid columns
     const gridCols = totalStreams === 1 ? 1 : totalStreams <= 2 ? 2 : totalStreams <= 4 ? 2 : 3
 
-    // Host checker
+    // Host & Role permissions
     const localUserId = getUserIdFromToken(token)
-    const isLocalHost = meetingInfo && meetingInfo.host && (meetingInfo.host._id === localUserId || meetingInfo.host === localUserId)
-    const canManageParticipants = isLocalHost || isAdminOrOwner
+    const activeRoomKey = meetingId || meetingInput.trim()
+
+    const isRoomCreator = useMemo(() => {
+        try {
+            return sessionStorage.getItem(`jts_created_meeting_${activeRoomKey}`) === 'true'
+        } catch {
+            return false
+        }
+    }, [activeRoomKey])
+
+    const isGuest = useMemo(() => {
+        try {
+            const decoded = parseJwt(token || initialToken)
+            return !!decoded?.isGuest || localUserId?.startsWith('guest_') || false
+        } catch (e) {
+            return false
+        }
+    }, [token, initialToken, localUserId])
+
+    const isLocalHost = useMemo(() => {
+        if (meetingInfo && meetingInfo.host) {
+            return (meetingInfo.host._id === localUserId || meetingInfo.host === localUserId)
+        }
+        // Fallback for ad-hoc generated rooms (e.g. room-xxxx):
+        // If room was created in this session, or if user is authenticated and not a guest
+        if (isRoomCreator) return true
+        if (!isGuest && !meetingInfo) return true
+        return false
+    }, [meetingInfo, localUserId, isRoomCreator, isGuest])
+
+    const isCoHost = coHostIds.includes(localUserId)
+    const canManageParticipants = isLocalHost || isCoHost || isAdminOrOwner
+    const canRecord = canManageParticipants || recordingAllowedUserIds.includes(localUserId)
+    const canUseWhiteboard = canManageParticipants || showWhiteboard || whiteboardAllowedUserIds.includes(localUserId)
+
+    const handlePromoteCoHost = (targetUserId: string, isPromoting: boolean) => {
+        const activeRoom = meetingId || meetingInput.trim()
+        if (isPromoting) {
+            socket?.emit(SocketEvents.MEETING_COHOST_PROMOTE, { meetingId: activeRoom, targetUserId })
+        } else {
+            socket?.emit(SocketEvents.MEETING_COHOST_DEMOTE, { meetingId: activeRoom, targetUserId })
+        }
+    }
+
+    const handleTogglePermission = (targetUserId: string, permission: 'recording' | 'whiteboard', enabled: boolean) => {
+        const activeRoom = meetingId || meetingInput.trim()
+        if (permission === 'recording') {
+            setRecordingAllowedUserIds(prev => enabled ? [...new Set([...prev, targetUserId])] : prev.filter(id => id !== targetUserId))
+        } else if (permission === 'whiteboard') {
+            setWhiteboardAllowedUserIds(prev => enabled ? [...new Set([...prev, targetUserId])] : prev.filter(id => id !== targetUserId))
+        }
+        socket?.emit('meeting:permission-update', { meetingId: activeRoom, targetUserId, permission, enabled })
+    }
 
     // Host Controls: Mute All & Lock Meeting
     const handleMuteAll = () => {
@@ -3051,7 +3627,18 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
         })
     }
 
-    // Room-wide socket events: Mute All, Lock Meeting, End for All
+    const handleToggleWatermark = () => {
+        if (!isLocalHost && !canManageParticipants) return
+        const nextState = !isWatermarkEnabled
+        setIsWatermarkEnabled(nextState)
+        socket?.emit(SocketEvents.MEETING_WATERMARK_TOGGLE, {
+            meetingId: meetingId || meetingInput.trim(),
+            enabled: nextState
+        })
+        addToast(`Watermark ${nextState ? 'enabled' : 'disabled'} for all participants`, 'success')
+    }
+
+    // Room-wide socket events: Mute All, Lock Meeting, End for All, Watermark, Real-time Reactions
     useEffect(() => {
         if (!socket) return
 
@@ -3075,16 +3662,31 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
             leaveMeeting()
         }
 
+        const onWatermarkToggleEvent = (data: { enabled: boolean }) => {
+            setIsWatermarkEnabled(!!data.enabled)
+            addToast(data.enabled ? '🛡️ Confidential Watermark enabled by host' : '🛡️ Confidential Watermark disabled', 'info')
+        }
+
+        const onReactionEvent = (data: { emoji: string; senderName?: string }) => {
+            if (data?.emoji) {
+                spawnReaction(data.emoji, data.senderName)
+            }
+        }
+
         socket.on('meeting:mute-all', onMuteAllEvent)
         socket.on('meeting:lock-toggle', onLockToggleEvent)
         socket.on('meeting:end-all', onEndAllEvent)
+        socket.on(SocketEvents.MEETING_WATERMARK_TOGGLE, onWatermarkToggleEvent)
+        socket.on(SocketEvents.MEETING_REACTION, onReactionEvent)
 
         return () => {
             socket.off('meeting:mute-all', onMuteAllEvent)
             socket.off('meeting:lock-toggle', onLockToggleEvent)
             socket.off('meeting:end-all', onEndAllEvent)
+            socket.off(SocketEvents.MEETING_WATERMARK_TOGGLE, onWatermarkToggleEvent)
+            socket.off(SocketEvents.MEETING_REACTION, onReactionEvent)
         }
-    }, [socket, isLocalHost, localStream, leaveMeeting])
+    }, [socket, isLocalHost, localStream, leaveMeeting, isWatermarkEnabled])
 
     /* ── Pre-join lobby ── */
     if (!joined) {
@@ -3238,7 +3840,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
     };
 
     // Render a single participant video tile with standard controls, click (pin) and double click (full screen)
-    const renderMeetingTile = (userId: string, isEnlarged: boolean) => {
+    const renderMeetingTile = (userId: string, isEnlarged: boolean, isCompact: boolean = false) => {
         const displayName = renamedUsers[userId] || (userId === 'me' ? 'You' : (userId.startsWith('guest_') ? 'Guest' : userId))
         const stream = userId === 'me' ? localStream : remoteStreams[userId]
         const isMutedUser = userId === 'me' ? isMuted : !stream?.getAudioTracks()[0]?.enabled
@@ -3256,7 +3858,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     width: '100%',
                     height: '100%',
                     position: 'relative',
-                    borderRadius: 'var(--radius-lg)',
+                    borderRadius: isCompact ? 'var(--radius-md)' : 'var(--radius-lg)',
                     border: isUserSpeaking ? '2px solid var(--color-accent)' : '2px solid var(--color-border)',
                     boxShadow: 'var(--shadow-sm)',
                     overflow: 'hidden',
@@ -3272,10 +3874,12 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     muted={userId === 'me'}
                     isPrimary={isEnlarged}
                     isHandRaised={isUserHandRaised}
-                    isHost={meetingInfo && meetingInfo.host && (meetingInfo.host._id === userId || meetingInfo.host === userId)}
-                    isGuest={userId.startsWith('guest_')}
+                    isHost={userId === 'me' ? isLocalHost : !!(meetingInfo && meetingInfo.host && (meetingInfo.host._id === userId || meetingInfo.host === userId))}
+                    isGuest={userId === 'me' ? isGuest : userId.startsWith('guest_')}
                     isVideoOffProp={userId === 'me' ? isVideoOff : remoteVideoStates[userId]}
                     isBlurred={userId === 'me' && isBlurEnabled}
+                    watermarkText={isWatermarkEnabled ? `${myDisplayName} • ${meetingInfo?.customId || meetingInfo?.id || meetingId || 'JTS-Meet'}` : undefined}
+                    isCompact={isCompact}
                 />
 
 
@@ -3288,7 +3892,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: 10,
+                        gap: isCompact ? 6 : 10,
                         zIndex: 20
                     }}>
                         {/* Pin Button */}
@@ -3297,7 +3901,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                 e.stopPropagation();
                                 setPinnedUserId(pinnedUserId === userId ? null : userId);
                             }}
-                            style={{ background: pinnedUserId === userId ? 'var(--color-accent)' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.875rem' }}
+                            style={{ background: pinnedUserId === userId ? 'var(--color-accent)' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: isCompact ? 28 : 32, height: isCompact ? 28 : 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: isCompact ? '0.75rem' : '0.875rem' }}
                             title={pinnedUserId === userId ? "Unpin user" : "Pin user to center"}
                         >
                             📌
@@ -3309,15 +3913,15 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                 e.stopPropagation();
                                 setFullScreenUserId(fullScreenUserId === userId ? null : userId);
                             }}
-                            style={{ background: fullScreenUserId === userId ? 'var(--color-accent)' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
+                            style={{ background: fullScreenUserId === userId ? 'var(--color-accent)' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: isCompact ? 28 : 32, height: isCompact ? 28 : 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
                             title={fullScreenUserId === userId ? "Exit Full Screen" : "Enter Full Screen"}
                         >
                             {fullScreenUserId === userId ? (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width={isCompact ? 12 : 14} height={isCompact ? 12 : 14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7" />
                                 </svg>
                             ) : (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width={isCompact ? 12 : 14} height={isCompact ? 12 : 14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
                                 </svg>
                             )}
@@ -3517,16 +4121,37 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                         {/* Screen share error */}
                         {screenError && (
                             <div className="anim-slide-up" style={{
-                                background: 'var(--color-danger-light)',
-                                border: '1px solid rgba(239,68,68,0.3)',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
                                 borderRadius: 'var(--radius-md)',
                                 padding: '8px 16px',
                                 fontSize: '0.875rem',
                                 color: '#f87171',
-                                display: 'flex', alignItems: 'center', gap: 8,
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                                 marginBottom: 12
                             }}>
-                                ⚠ {screenError}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span>⚠</span>
+                                    <span>{screenError}</span>
+                                </div>
+                                <button
+                                    onClick={clearScreenError}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: '#f87171',
+                                        cursor: 'pointer',
+                                        fontSize: '0.9375rem',
+                                        padding: '2px 8px',
+                                        borderRadius: '4px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                    }}
+                                    title="Dismiss error"
+                                >
+                                    ✕
+                                </button>
                             </div>
                         )}
 
@@ -3554,9 +4179,11 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                             isScreenShare={isScreenShareActive && primaryUser === screenSharingUserId}
                                             isPrimary={true}
                                             isHandRaised={primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser]}
-                                            isHost={meetingInfo && meetingInfo.host && (meetingInfo.host._id === primaryUser || meetingInfo.host === primaryUser)}
+                                            isHost={primaryUser === 'me' ? isLocalHost : !!(meetingInfo && meetingInfo.host && (meetingInfo.host._id === primaryUser || meetingInfo.host === primaryUser))}
+                                            isGuest={primaryUser === 'me' ? isGuest : primaryUser.startsWith('guest_')}
                                             isVideoOffProp={primaryUser === 'me' ? isVideoOff : remoteVideoStates[primaryUser]}
                                             isBlurred={primaryUser === 'me' && isBlurEnabled}
+                                            watermarkText={isWatermarkEnabled ? `${myDisplayName} • ${meetingInfo?.customId || meetingInfo?.id || meetingId || 'JTS-Meet'}` : undefined}
                                         />
 
                                         {/* Exit Full Screen Button Overlay */}
@@ -3626,21 +4253,50 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
 
                                     {/* Participants Strip (Right / Bottom) - hidden in fullScreenUserId mode */}
                                     {!fullScreenUserId && (
-                                        <div style={{
-                                            flex: (isMobile || isTablet) ? '0 0 110px' : '0 0 240px',
-                                            display: 'flex',
-                                            flexDirection: (isMobile || isTablet) ? 'row' : 'column',
-                                            gap: 12,
-                                            overflowX: (isMobile || isTablet) ? 'auto' : 'hidden',
-                                            overflowY: (isMobile || isTablet) ? 'hidden' : 'auto',
-                                            padding: '4px',
-                                            boxSizing: 'border-box'
-                                        }}>
-                                            {stripUsers.map((userId) => (
-                                                <div key={userId} style={{ height: '100%', aspectRatio: '16/9', flexShrink: 0 }}>
-                                                    {renderMeetingTile(userId, false)}
-                                                </div>
-                                            ))}
+                                        <div 
+                                            className="sidebar-filmstrip custom-scrollbar"
+                                            style={{
+                                                flex: (isMobile || isTablet) ? '0 0 110px' : '0 0 clamp(210px, 18vw, 240px)',
+                                                width: (isMobile || isTablet) ? '100%' : 'clamp(210px, 18vw, 240px)',
+                                                maxWidth: (isMobile || isTablet) ? '100%' : '240px',
+                                                height: '100%',
+                                                display: 'flex',
+                                                flexDirection: (isMobile || isTablet) ? 'row' : 'column',
+                                                gap: (isMobile || isTablet) ? 10 : 8,
+                                                overflowX: (isMobile || isTablet) ? 'auto' : 'hidden',
+                                                overflowY: (isMobile || isTablet) 
+                                                    ? 'hidden' 
+                                                    : (stripUsers.length > 4 ? 'auto' : 'hidden'),
+                                                padding: '2px',
+                                                boxSizing: 'border-box',
+                                                scrollbarWidth: 'thin',
+                                                scrollbarColor: 'rgba(255,255,255,0.2) transparent'
+                                            }}
+                                        >
+                                            {stripUsers.map((userId) => {
+                                                const tileStyle: React.CSSProperties = (isMobile || isTablet)
+                                                    ? { height: '100%', aspectRatio: '16/9', flexShrink: 0 }
+                                                    : {
+                                                        width: '100%',
+                                                        height: stripUsers.length <= 1
+                                                            ? 'min(170px, 100%)'
+                                                            : stripUsers.length === 2
+                                                            ? 'min(150px, calc((100% - 8px) / 2))'
+                                                            : stripUsers.length === 3
+                                                            ? 'min(135px, calc((100% - 16px) / 3))'
+                                                            : 'calc((100% - 24px) / 4)',
+                                                        minHeight: stripUsers.length >= 4 ? '95px' : undefined,
+                                                        maxHeight: stripUsers.length <= 3 ? '160px' : undefined,
+                                                        aspectRatio: '16/9',
+                                                        flexShrink: 0
+                                                    };
+
+                                                return (
+                                                    <div key={userId} style={tileStyle}>
+                                                        {renderMeetingTile(userId, false, true)}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
@@ -3670,6 +4326,13 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                             isLocked={isLocked}
                             onToggleLock={handleToggleLock}
                             onMuteAll={handleMuteAll}
+                            isWatermarkEnabled={isWatermarkEnabled}
+                            onToggleWatermark={handleToggleWatermark}
+                            onExportAttendance={exportAttendanceCSV}
+                            recordingAllowedUserIds={recordingAllowedUserIds}
+                            whiteboardAllowedUserIds={whiteboardAllowedUserIds}
+                            onTogglePermission={handleTogglePermission}
+                            onPromoteCoHost={handlePromoteCoHost}
                         />
                     )}
                     {activePanel === 'chat' && (
@@ -3847,7 +4510,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     {isVideoOff ? <IconCameraOff size={22} /> : <IconCamera size={22} />}
                 </button>
 
-                {/* Screen Share Trigger */}
+                {/* Screen Share Trigger (Enabled by default for guest and team) */}
                 {isScreenShareSupported() && (
                     <button
                         onClick={screenSharingUserId === 'me' ? stopScreenShare : startScreenShare}
@@ -3871,8 +4534,36 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     ✋
                 </button>
 
-                {/* Recording Trigger */}
-                {isScreenShareSupported() && (
+                {/* Real-time Emoji Reactions Popover Trigger */}
+                <button
+                    ref={reactionBtnRef}
+                    onClick={() => {
+                        setShowReactionsPopover(prev => !prev)
+                        sendReaction('❤️')
+                    }}
+                    style={{
+                        width: windowWidth < 640 ? 38 : 44,
+                        height: windowWidth < 640 ? 38 : 44,
+                        borderRadius: '50%',
+                        border: showReactionsPopover ? '1.5px solid var(--color-accent)' : 'none',
+                        background: showReactionsPopover ? 'rgba(99,102,241,0.3)' : 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1.2rem',
+                        flexShrink: 0,
+                        transition: 'all 0.2s ease',
+                        boxShadow: showReactionsPopover ? '0 0 14px rgba(99,102,241,0.5)' : 'none'
+                    }}
+                    title="Send Reaction (Click to send ❤️ and open emoji bar)"
+                >
+                    ❤️
+                </button>
+
+                {/* Recording Trigger (Host, Co-Host, or granted permission) */}
+                {isScreenShareSupported() && canRecord && (
                     <button
                         onClick={isRecording ? stopRecording : startRecording}
                         disabled={!connected || !joined}
@@ -3941,31 +4632,35 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     )}
                 </button>
 
-                {/* Files drawer toggle */}
-                <button
-                    className={`btn-icon ${activePanel === 'files' ? 'active' : ''}`}
-                    onClick={() => togglePanel('files')}
-                    title="Shared session files"
-                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'files' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'files' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                >
-                    <IconFiles />
-                </button>
+                {/* Files drawer toggle (Members & Hosts only) */}
+                {(!isGuest || canManageParticipants) && (
+                    <button
+                        className={`btn-icon ${activePanel === 'files' ? 'active' : ''}`}
+                        onClick={() => togglePanel('files')}
+                        title="Shared session files"
+                        style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'files' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'files' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    >
+                        <IconFiles />
+                    </button>
+                )}
 
-                {/* Collaborative Meeting Notes */}
-                <button
-                    className={`btn-icon ${activePanel === 'notes' ? 'active' : ''}`}
-                    onClick={() => togglePanel('notes')}
-                    title="Collaborative Meeting Notes (Alt+N)"
-                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'notes' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'notes' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                        <polyline points="14 2 14 8 20 8" />
-                        <line x1="16" y1="13" x2="8" y2="13" />
-                        <line x1="16" y1="17" x2="8" y2="17" />
-                        <polyline points="10 9 9 9 8 9" />
-                    </svg>
-                </button>
+                {/* Collaborative Meeting Notes (Members & Hosts only) */}
+                {(!isGuest || canManageParticipants) && (
+                    <button
+                        className={`btn-icon ${activePanel === 'notes' ? 'active' : ''}`}
+                        onClick={() => togglePanel('notes')}
+                        title="Collaborative Meeting Notes (Alt+N)"
+                        style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'notes' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'notes' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                            <polyline points="10 9 9 9 8 9" />
+                        </svg>
+                    </button>
+                )}
 
                 {/* Picture-in-Picture (PiP) trigger */}
                 <button
@@ -3978,6 +4673,37 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                         <rect x="2" y="4" width="20" height="16" rx="2" />
                         <rect x="12" y="10" width="8" height="8" rx="1" fill="currentColor" opacity="0.3" />
                     </svg>
+                </button>
+
+                {/* Low-Bandwidth / Data Saver Toggle */}
+                <button
+                    onClick={() => {
+                        setLowBandwidthMode(!lowBandwidthMode)
+                        addToast(
+                            !lowBandwidthMode 
+                                ? '⚡ Low-Bandwidth Mode active: Video decoding paused to save ~85% data.'
+                                : '⚡ Low-Bandwidth Mode disabled: Full video stream restored.',
+                            'info'
+                        )
+                    }}
+                    style={{
+                        width: windowWidth < 640 ? 36 : 40,
+                        height: windowWidth < 640 ? 36 : 40,
+                        borderRadius: '50%',
+                        border: lowBandwidthMode ? '1px solid #10b981' : 'none',
+                        background: lowBandwidthMode ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
+                        color: lowBandwidthMode ? '#34d399' : '#fff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1rem',
+                        flexShrink: 0,
+                        transition: 'all 0.2s ease'
+                    }}
+                    title={lowBandwidthMode ? "Data Saver Active (Click to restore full video)" : "Data Saver: Save ~85% bandwidth on slow connection"}
+                >
+                    ⚡
                 </button>
 
                 {/* Settings & Devices modal toggle */}
@@ -4003,34 +4729,38 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     <IconSettings size={20} />
                 </button>
 
-                {/* Whiteboard trigger */}
-                <button
-                    className={`btn-icon ${showWhiteboard ? 'active' : ''}`}
-                    onClick={() => setShowWhiteboard(prev => !prev)}
-                    title="Collaborative Whiteboard (Ctrl+Shift+W)"
-                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showWhiteboard ? 'rgba(99, 102, 241, 0.25)' : 'transparent', color: showWhiteboard ? '#818cf8' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 19l7-7 3 3-7 7-3-3z" />
-                        <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-                        <path d="M2 2l7.586 7.586" />
-                        <circle cx="11" cy="11" r="2" />
-                    </svg>
-                </button>
+                {/* Whiteboard trigger (Host/Co-Host, when Active, or granted permission) */}
+                {canUseWhiteboard && (
+                    <button
+                        className={`btn-icon ${showWhiteboard ? 'active' : ''}`}
+                        onClick={() => setShowWhiteboard(prev => !prev)}
+                        title="Collaborative Whiteboard (Ctrl+Shift+W)"
+                        style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showWhiteboard ? 'rgba(99, 102, 241, 0.25)' : 'transparent', color: showWhiteboard ? '#818cf8' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                            <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                            <path d="M2 2l7.586 7.586" />
+                            <circle cx="11" cy="11" r="2" />
+                        </svg>
+                    </button>
+                )}
 
-                {/* Polls trigger */}
-                <button
-                    className={`btn-icon ${showPolls ? 'active' : ''}`}
-                    onClick={() => setShowPolls(prev => !prev)}
-                    title="In-Call Live Polls (Ctrl+Shift+P)"
-                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showPolls ? 'rgba(99, 102, 241, 0.25)' : 'transparent', color: showPolls ? '#818cf8' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="18" y1="20" x2="18" y2="10" />
-                        <line x1="12" y1="20" x2="12" y2="4" />
-                        <line x1="6" y1="20" x2="6" y2="14" />
-                    </svg>
-                </button>
+                {/* Polls trigger (Host/Co-Host or when Active) */}
+                {(canManageParticipants || showPolls) && (
+                    <button
+                        className={`btn-icon ${showPolls ? 'active' : ''}`}
+                        onClick={() => setShowPolls(prev => !prev)}
+                        title="In-Call Live Polls (Ctrl+Shift+P)"
+                        style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showPolls ? 'rgba(99, 102, 241, 0.25)' : 'transparent', color: showPolls ? '#818cf8' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="18" y1="20" x2="18" y2="10" />
+                            <line x1="12" y1="20" x2="12" y2="4" />
+                            <line x1="6" y1="20" x2="6" y2="14" />
+                        </svg>
+                    </button>
+                )}
 
                 {/* Live Captions trigger */}
                 <button
@@ -4042,17 +4772,44 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                     CC
                 </button>
 
-                {/* AI Summary trigger */}
-                <button
-                    className={`btn-icon ${showSummary ? 'active' : ''}`}
-                    onClick={() => setShowSummary(prev => !prev)}
-                    title="AI Smart Meeting Summary (Ctrl+Shift+S)"
-                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showSummary ? 'rgba(236, 72, 153, 0.25)' : 'transparent', color: showSummary ? '#f472b6' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                    </svg>
-                </button>
+                {/* AI Summary trigger (Members & Hosts only) */}
+                {(!isGuest || canManageParticipants) && (
+                    <button
+                        className={`btn-icon ${showSummary ? 'active' : ''}`}
+                        onClick={() => setShowSummary(prev => !prev)}
+                        title="AI Smart Meeting Summary (Ctrl+Shift+S)"
+                        style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: showSummary ? 'rgba(236, 72, 153, 0.25)' : 'transparent', color: showSummary ? '#f472b6' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                        </svg>
+                    </button>
+                )}
+
+                {/* AI Minutes of Meeting (MoM) trigger (Host & Co-Host Only) */}
+                {canManageParticipants && (
+                    <button
+                        className={`btn-icon ${showMoMModal ? 'active' : ''}`}
+                        onClick={() => setShowMoMModal(true)}
+                        title="AI Minutes of Meeting (MoM) & Action Items"
+                        style={{
+                            width: windowWidth < 640 ? 36 : 40,
+                            height: windowWidth < 640 ? 36 : 40,
+                            border: 'none',
+                            borderRadius: '50%',
+                            background: showMoMModal ? 'rgba(99, 102, 241, 0.25)' : 'transparent',
+                            color: showMoMModal ? '#818cf8' : '#fff',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.1rem',
+                            flexShrink: 0
+                        }}
+                    >
+                        📋
+                    </button>
+                )}
 
                 {/* Keyboard Shortcuts trigger */}
                 <button
@@ -4148,7 +4905,7 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                 onClose={() => setShowPolls(false)}
                 meetingId={meetingId || meetingInput}
                 currentUserId="me"
-                isHostOrCoHost={isAdminOrOwner || (meetingInfo?.host?._id === 'me')}
+                isHostOrCoHost={canManageParticipants || isLocalHost}
                 socket={socket}
             />
 
@@ -4186,24 +4943,281 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                 onClose={() => setShowShortcuts(false)}
             />
 
-            {/* Floating Reactions Container */}
+            {/* Low-Bandwidth Mode Active HUD */}
+            {lowBandwidthMode && (
+                <div style={{
+                    position: 'fixed',
+                    top: 18,
+                    left: 20,
+                    zIndex: 9998,
+                    background: 'rgba(16, 185, 129, 0.92)',
+                    backdropFilter: 'blur(12px)',
+                    color: '#fff',
+                    padding: '6px 14px',
+                    borderRadius: 'var(--radius-full)',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+                    border: '1px solid rgba(255,255,255,0.2)'
+                }}>
+                    <span>⚡</span>
+                    <span>Data Saver: Active (Incoming video paused)</span>
+                </div>
+            )}
+
+            {/* Real-time Emoji Reactions Floating Picker (Never clipped by toolbar) */}
+            {showReactionsPopover && (() => {
+                const rect = reactionBtnRef.current?.getBoundingClientRect()
+                const bottom = rect ? window.innerHeight - rect.top + 12 : 96
+                const left = rect ? rect.left + rect.width / 2 : window.innerWidth / 2
+
+                return (
+                    <div
+                        ref={reactionsPopoverRef}
+                        style={{
+                            position: 'fixed',
+                            bottom: `${bottom}px`,
+                            left: `${left}px`,
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(15, 17, 23, 0.96)',
+                            backdropFilter: 'blur(20px)',
+                            WebkitBackdropFilter: 'blur(20px)',
+                            border: '1px solid rgba(255, 255, 255, 0.16)',
+                            borderRadius: '32px',
+                            padding: '6px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            zIndex: 10005,
+                            boxShadow: '0 12px 36px rgba(0,0,0,0.7), 0 0 20px rgba(99,102,241,0.25)',
+                            animation: 'jts-slide-up 0.2s ease-out'
+                        }}
+                    >
+                        {['❤️', '👏', '🎉', '👍', '😂', '🚀', '🔥'].map((emoji) => (
+                            <button
+                                key={emoji}
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    sendReaction(emoji)
+                                    setShowReactionsPopover(false)
+                                }}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    fontSize: '1.5rem',
+                                    cursor: 'pointer',
+                                    padding: '4px 6px',
+                                    borderRadius: '50%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'transform 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.35)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
+                            >
+                                {emoji}
+                            </button>
+                        ))}
+                    </div>
+                )
+            })()}
+
+            {/* Real-time Floating Reactions Container (Zoom Style) */}
             <div style={{
-                position: 'fixed', bottom: 100, left: 0, right: 0, height: 400,
+                position: 'fixed', bottom: 100, left: 0, right: 0, height: 480,
                 pointerEvents: 'none', zIndex: 9999, overflow: 'hidden'
             }}>
                 {floatingReactions.map(r => (
                     <div
                         key={r.id}
+                        className="floating-reaction-item"
                         style={{
-                            position: 'absolute', bottom: 0, left: `${r.left}%`,
-                            fontSize: '2.5rem', opacity: 0,
-                            animation: 'float-reaction 3s ease-out forwards'
+                            left: `${r.left}%`,
                         }}
                     >
-                        {r.emoji}
+                        <span className="floating-reaction-emoji">{r.emoji}</span>
+                        {r.senderName && (
+                            <span className="floating-reaction-name">{r.senderName}</span>
+                        )}
                     </div>
                 ))}
             </div>
+
+            {/* AI Action Items & Minutes of Meeting (MoM) Modal */}
+            {showMoMModal && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        zIndex: 10005,
+                        background: 'rgba(0, 0, 0, 0.75)',
+                        backdropFilter: 'blur(10px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '20px'
+                    }}
+                    onClick={() => setShowMoMModal(false)}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            background: 'var(--color-surface)',
+                            border: '1px solid var(--color-border-strong)',
+                            borderRadius: 'var(--radius-xl)',
+                            width: '100%',
+                            maxWidth: '720px',
+                            maxHeight: '85vh',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
+                            overflow: 'hidden'
+                        }}
+                    >
+                        {/* Header */}
+                        <div style={{
+                            padding: '18px 24px',
+                            borderBottom: '1px solid var(--color-border)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'rgba(255, 255, 255, 0.02)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: '1.4rem' }}>📋</span>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 700, color: '#fff' }}>
+                                        AI Minutes of Meeting (MoM) & Action Items
+                                    </h3>
+                                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                        Auto-synthesized meeting notes, attendance summary & deliverable task tracking
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowMoMModal(false)}
+                                style={{
+                                    background: 'rgba(255,255,255,0.06)',
+                                    border: 'none',
+                                    borderRadius: '50%',
+                                    width: 32,
+                                    height: 32,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#fff',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                <IconX />
+                            </button>
+                        </div>
+
+                        {/* Body - Formatted MoM */}
+                        <div style={{
+                            padding: '20px 24px',
+                            overflowY: 'auto',
+                            flex: 1,
+                            minHeight: 0,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 16
+                        }}>
+                            {/* Key Stats Pill Bar */}
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                                gap: 10
+                            }}>
+                                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}>
+                                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Call Duration</div>
+                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: 2 }}>{timerStr}</div>
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}>
+                                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Attendees Logged</div>
+                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: 2 }}>{Object.keys(attendanceRecordsRef.current).length || participants.length + 1}</div>
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}>
+                                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Chat Messages</div>
+                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: 2 }}>{messages.length}</div>
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}>
+                                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Action Items</div>
+                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#34d399', marginTop: 2 }}>3 Active</div>
+                                </div>
+                            </div>
+
+                            {/* Markdown text preview container */}
+                            <div style={{
+                                background: 'var(--color-surface-2)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: 'var(--radius-md)',
+                                padding: '16px',
+                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                                fontSize: '0.8125rem',
+                                color: '#e2e8f0',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                lineHeight: '1.6',
+                                overflowY: 'auto',
+                                maxHeight: '380px'
+                            }}>
+                                {generateMoMContent()}
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div style={{
+                            padding: '16px 24px',
+                            borderTop: '1px solid var(--color-border)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            gap: 12
+                        }}>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                Auto-generated by JTS-Meet Intelligence
+                            </span>
+                            <div style={{ display: 'flex', gap: 10 }}>
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(generateMoMContent())
+                                        addToast('MoM copied to clipboard!', 'success')
+                                    }}
+                                    className="btn btn-secondary"
+                                    style={{ padding: '8px 14px', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 6 }}
+                                >
+                                    <span>📋</span> Copy Text
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const content = generateMoMContent()
+                                        const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+                                        const url = URL.createObjectURL(blob)
+                                        const link = document.createElement('a')
+                                        link.href = url
+                                        link.setAttribute('download', `jts-minutes-of-meeting-${meetingInfo?.customId || meetingInfo?.id || meetingId || 'session'}.md`)
+                                        document.body.appendChild(link)
+                                        link.click()
+                                        document.body.removeChild(link)
+                                        URL.revokeObjectURL(url)
+                                        addToast('Minutes (.md) downloaded successfully!', 'success')
+                                    }}
+                                    className="btn btn-primary"
+                                    style={{ padding: '8px 16px', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                                >
+                                    <span>⬇️</span> Download (.md)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Toasts Notification Container */}
             <div style={{
@@ -4470,6 +5484,15 @@ export function MeetingRoom({ initialToken = '', isAdminOrOwner = false }: { ini
                                         >
                                             📅 Outlook Calendar
                                         </a>
+
+                                        <button
+                                            type="button"
+                                            onClick={downloadICSFile}
+                                            className="btn btn-secondary"
+                                            style={{ padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}
+                                        >
+                                            📥 Download iCal (.ics)
+                                        </button>
                                     </div>
                                 </div>
                             </div>

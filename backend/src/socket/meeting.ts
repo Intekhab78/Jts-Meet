@@ -109,10 +109,20 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         socket.to(`meeting:${payload.meetingId}`).emit('meeting:record-toggle', { userId, isRecording: payload.isRecording })
     })
 
-    socket.on(SocketEvents.MEETING_REACTION, (payload: { meetingId: string; emoji: string }) => {
+    socket.on(SocketEvents.MEETING_REACTION, (payload: { meetingId: string; emoji: string; senderName?: string }) => {
         if (!userId || !payload?.meetingId || !payload?.emoji) return
 
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_REACTION, { userId, meetingId: payload.meetingId, emoji: payload.emoji })
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_REACTION, { 
+            userId, 
+            meetingId: payload.meetingId, 
+            emoji: payload.emoji,
+            senderName: payload.senderName || 'Participant'
+        })
+    })
+
+    socket.on('meeting:toggle-watermark', (payload: { meetingId: string; enabled: boolean }) => {
+        if (!userId || !payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:toggle-watermark', { enabled: payload.enabled })
     })
 
     socket.on(SocketEvents.MEETING_COHOST_PROMOTE, (payload: { meetingId: string; targetUserId: string }) => {
@@ -125,6 +135,11 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         if (!userId || !payload?.meetingId || !payload?.targetUserId) return
 
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_COHOST_DEMOTE, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+    })
+
+    socket.on('meeting:permission-update', (payload: { meetingId: string; targetUserId: string; permission: 'recording' | 'whiteboard' | 'screen-share'; enabled: boolean }) => {
+        if (!userId || !payload?.meetingId || !payload?.targetUserId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:permission-update', payload)
     })
 
     socket.on(SocketEvents.MEETING_WAITING_APPROVE, (payload: { meetingId: string; targetUserId: string }) => {

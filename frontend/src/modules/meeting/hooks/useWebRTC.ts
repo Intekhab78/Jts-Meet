@@ -12,6 +12,7 @@ interface UseWebRTCResult {
     stopScreenShare: () => void
     screenSharingUserId: string | null
     screenError: string | null
+    clearScreenError: () => void
     replaceTrackOnPeers: (newTrack: MediaStreamTrack | null) => void
 }
 
@@ -147,9 +148,28 @@ export function useWebRTC(
                 stopScreenShare()
             }
         } catch (error: any) {
-            setScreenError(error?.message || 'Screen sharing failed or permission denied')
+            // Check if user dismissed or cancelled the browser's screen-share prompt
+            const msg = (error?.message || '').toLowerCase()
+            const name = error?.name || ''
+            if (
+                name === 'NotAllowedError' ||
+                msg.includes('permission denied') ||
+                msg.includes('cancel') ||
+                msg.includes('dismissed')
+            ) {
+                // Normal user cancellation - do not treat as error
+                return
+            }
+            setScreenError(error?.message || 'Screen sharing failed')
+            setTimeout(() => {
+                setScreenError(null)
+            }, 4000)
         }
     }, [cameraStream, meetingId, replaceLocalStream, replaceTrackOnPeers, socket, stopScreenShare])
+
+    const clearScreenError = useCallback(() => {
+        setScreenError(null)
+    }, [])
 
     useEffect(() => {
         localStreamRef.current = localStream
@@ -384,7 +404,7 @@ export function useWebRTC(
     }, [socket, addParticipant, removeParticipant, cleanupPeer])
 
     return useMemo(
-        () => ({ remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, replaceTrackOnPeers }),
-        [remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, replaceTrackOnPeers]
+        () => ({ remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, clearScreenError, replaceTrackOnPeers }),
+        [remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, clearScreenError, replaceTrackOnPeers]
     )
 }
