@@ -5,13 +5,14 @@ import { RichChatContent } from './RichChatContent'
 interface MeetingChatPanelProps {
     messages: MeetingChatMessage[]
     typingUsers: string[]
-    onSendMessage: (message: string) => void
+    onSendMessage: (message: string, recipientId?: string, recipientName?: string) => void
     onTyping: () => void
     onStopTyping: () => void
     disabled?: boolean
     onToggleChatReaction?: (messageId: string, emoji: string, userId: string) => void
     currentUserId?: string
     renamedUsers?: { [key: string]: string }
+    participants?: string[]
 }
 
 const IconSend = () => (
@@ -70,10 +71,11 @@ function formatTime(dateStr: string): string {
 }
 
 export function MeetingChatPanel({
-    messages, typingUsers, onSendMessage, onTyping, onStopTyping, disabled, onToggleChatReaction, currentUserId, renamedUsers,
+    messages, typingUsers, onSendMessage, onTyping, onStopTyping, disabled, onToggleChatReaction, currentUserId, renamedUsers, participants,
 }: MeetingChatPanelProps) {
     const [message, setMessage] = useState('')
     const [searchQuery, setSearchQuery] = useState('')
+    const [selectedRecipient, setSelectedRecipient] = useState<string>('everyone')
     const [showEmojis, setShowEmojis] = useState(false)
     const [activeThreadParentId, setActiveThreadParentId] = useState<string | null>(null)
     const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null)
@@ -174,10 +176,13 @@ export function MeetingChatPanel({
         const trimmed = message.trim()
         if (!trimmed) return
 
+        const recipientId = selectedRecipient !== 'everyone' ? selectedRecipient : undefined
+        const recipientName = recipientId ? (renamedUsers?.[recipientId] || recipientId) : undefined
+
         if (activeThreadParentId) {
-            onSendMessage(`[thread:${activeThreadParentId}] ${trimmed}`)
+            onSendMessage(`[thread:${activeThreadParentId}] ${trimmed}`, recipientId, recipientName)
         } else {
-            onSendMessage(trimmed)
+            onSendMessage(trimmed, recipientId, recipientName)
         }
         setMessage('')
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
@@ -194,6 +199,26 @@ export function MeetingChatPanel({
     const handleEmojiClick = (emoji: string) => {
         setMessage(prev => prev + emoji)
         setShowEmojis(false)
+    }
+
+    const handleExportChat = () => {
+        if (messages.length === 0) return
+        const lines = messages.map(m => {
+            const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString() : ''
+            const sender = m.senderId === 'me' ? 'You' : (renamedUsers?.[m.senderId] || m.senderName || m.senderId)
+            const privacy = m.recipientId ? ` [Private to ${m.recipientName || m.recipientId}]` : ''
+            return `[${time}] ${sender}${privacy}: ${m.message}`
+        })
+        const header = `JTS-Meet Chat Transcript\nExported on: ${new Date().toLocaleString()}\nTotal Messages: ${messages.length}\n----------------------------------------\n\n`
+        const blob = new Blob([header + lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `meeting-chat-${new Date().toISOString().slice(0, 10)}.txt`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
     }
 
     const filteredParentMessages = parentMessages.filter(msg => {
@@ -301,6 +326,22 @@ export function MeetingChatPanel({
                         }}>
                             {senderDisplayName}
                         </span>
+                        {msg.isPrivate && (
+                            <span style={{
+                                fontSize: '0.65rem',
+                                padding: '1px 7px',
+                                borderRadius: '10px',
+                                background: 'rgba(59, 130, 246, 0.15)',
+                                color: '#60a5fa',
+                                border: '1px solid rgba(59, 130, 246, 0.35)',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3
+                            }}>
+                                🔒 Direct Message {msg.recipientId && (isMe ? `to ${msg.recipientName || msg.recipientId}` : '(Private)')}
+                            </span>
+                        )}
                         {msg.createdAt && (
                             <span style={{
                                 fontSize: '0.6875rem',
@@ -514,6 +555,31 @@ export function MeetingChatPanel({
                             onBlur={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}
                         />
                     </div>
+                    {messages.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={handleExportChat}
+                            title="Download complete chat transcript (.txt)"
+                            className="btn-ghost"
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '6px 10px',
+                                borderRadius: 'var(--radius-sm)',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                color: 'var(--color-text-secondary)',
+                                background: 'var(--color-surface-2)',
+                                border: '1px solid var(--color-border)',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                                transition: 'all 0.15s'
+                            }}
+                        >
+                            <span>📥 Export</span>
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -665,6 +731,47 @@ export function MeetingChatPanel({
                 )}
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {/* Recipient Selector (Everyone vs Direct Message) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 2px' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>To:</span>
+                        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                            <select
+                                value={selectedRecipient}
+                                onChange={(e) => setSelectedRecipient(e.target.value)}
+                                disabled={disabled}
+                                style={{
+                                    appearance: 'none',
+                                    WebkitAppearance: 'none',
+                                    background: selectedRecipient === 'everyone' ? 'rgba(255,255,255,0.06)' : 'rgba(59, 130, 246, 0.15)',
+                                    color: selectedRecipient === 'everyone' ? 'var(--color-text-primary)' : '#93c5fd',
+                                    border: selectedRecipient === 'everyone' ? '1px solid var(--color-border)' : '1px solid rgba(59, 130, 246, 0.45)',
+                                    borderRadius: '16px',
+                                    fontSize: '0.75rem',
+                                    padding: '3px 24px 3px 10px',
+                                    fontWeight: 600,
+                                    outline: 'none',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease'
+                                }}
+                            >
+                                <option value="everyone">Everyone</option>
+                                {participants?.filter(p => p !== (currentUserId || 'me')).map(p => (
+                                    <option key={p} value={p}>
+                                        {renamedUsers?.[p] || p} (Direct Message)
+                                    </option>
+                                ))}
+                            </select>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ position: 'absolute', right: 8, pointerEvents: 'none', color: selectedRecipient === 'everyone' ? 'var(--color-text-muted)' : '#93c5fd' }}>
+                                <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                        </div>
+                        {selectedRecipient !== 'everyone' && (
+                            <span style={{ fontSize: '0.6875rem', color: '#60a5fa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
+                                🔒 Only you and this person will see this
+                            </span>
+                        )}
+                    </div>
+
                     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: 'var(--color-surface-2)', border: '1px solid var(--color-border-strong)', borderRadius: 'var(--radius-md)', padding: '6px 8px' }}>
                         
                         {/* Emoji Button */}

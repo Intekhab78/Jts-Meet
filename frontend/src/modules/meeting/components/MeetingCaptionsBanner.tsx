@@ -30,6 +30,18 @@ export function MeetingCaptionsBanner({
     const recognitionRef = useRef<any>(null)
     const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+    const speakerNameRef = useRef(speakerName)
+    const meetingIdRef = useRef(meetingId)
+    const socketRef = useRef(socket)
+    const onTranscriptUpdateRef = useRef(onTranscriptUpdate)
+
+    useEffect(() => {
+        speakerNameRef.current = speakerName
+        meetingIdRef.current = meetingId
+        socketRef.current = socket
+        onTranscriptUpdateRef.current = onTranscriptUpdate
+    }, [speakerName, meetingId, socket, onTranscriptUpdate])
+
     // Listen to remote captions from other participants
     useEffect(() => {
         if (!socket || !isEnabled) return
@@ -51,7 +63,7 @@ export function MeetingCaptionsBanner({
                         timestamp: new Date()
                     }
                     transcriptRef.current.push(newEntry)
-                    onTranscriptUpdate?.([...transcriptRef.current])
+                    onTranscriptUpdateRef.current?.([...transcriptRef.current])
                 }
             }
         }
@@ -60,14 +72,14 @@ export function MeetingCaptionsBanner({
         return () => {
             socket.off('meeting:caption', handleRemoteCaption)
         }
-    }, [socket, isEnabled, onTranscriptUpdate])
+    }, [socket, isEnabled])
 
-    // Local Speech Recognition
+    // Local Speech Recognition (stable lifecycle)
     useEffect(() => {
         if (!isEnabled || isLocalMuted) {
             if (recognitionRef.current) {
                 try {
-                    recognitionRef.current.stop()
+                    recognitionRef.current.abort()
                 } catch (e) {}
                 recognitionRef.current = null
             }
@@ -76,16 +88,21 @@ export function MeetingCaptionsBanner({
 
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
         if (!SpeechRecognition) {
+            console.warn('SpeechRecognition API is not supported in this browser environment')
             return
         }
 
-        try {
-            const recognition = new SpeechRecognition()
-            recognition.continuous = true
-            recognition.interimResults = true
-            recognition.lang = 'en-US'
+        let isStoppedManually = false
+        let recognitionInstance: any = null
 
-            recognition.onresult = (event: any) => {
+        try {
+            recognitionInstance = new SpeechRecognition()
+            recognitionInstance.continuous = true
+            recognitionInstance.interimResults = true
+            recognitionInstance.maxAlternatives = 1
+            recognitionInstance.lang = navigator.language || 'en-US'
+
+            recognitionInstance.onresult = (event: any) => {
                 let interim = ''
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     const transcriptPiece = event.results[i][0].transcript
@@ -94,23 +111,24 @@ export function MeetingCaptionsBanner({
                     if (isFinal) {
                         const finalChunk = transcriptPiece.trim()
                         if (finalChunk) {
-                            setCurrentSpeaker(speakerName || 'You')
+                            const currentName = speakerNameRef.current || 'You'
+                            setCurrentSpeaker(currentName)
                             setDisplayText(finalChunk)
-                            
+
                             const newEntry: CaptionEntry = {
-                                speaker: speakerName || 'You',
+                                speaker: currentName,
                                 text: finalChunk,
                                 timestamp: new Date()
                             }
                             transcriptRef.current.push(newEntry)
-                            onTranscriptUpdate?.([...transcriptRef.current])
+                            onTranscriptUpdateRef.current?.([...transcriptRef.current])
 
                             // Broadcast caption to entire meeting room
-                            socket?.emit('meeting:caption', {
-                                meetingId,
+                            socketRef.current?.emit('meeting:caption', {
+                                meetingId: meetingIdRef.current,
                                 text: finalChunk,
                                 isFinal: true,
-                                speakerName: speakerName || 'You'
+                                speakerName: currentName
                             })
 
                             if (clearTimerRef.current) clearTimeout(clearTimerRef.current)
@@ -122,15 +140,16 @@ export function MeetingCaptionsBanner({
                 }
 
                 if (interim.trim()) {
-                    setCurrentSpeaker(speakerName || 'You')
+                    const currentName = speakerNameRef.current || 'You'
+                    setCurrentSpeaker(currentName)
                     setDisplayText(interim)
-                    
+
                     // Broadcast interim caption
-                    socket?.emit('meeting:caption', {
-                        meetingId,
+                    socketRef.current?.emit('meeting:caption', {
+                        meetingId: meetingIdRef.current,
                         text: interim,
                         isFinal: false,
-                        speakerName: speakerName || 'You'
+                        speakerName: currentName
                     })
 
                     if (clearTimerRef.current) clearTimeout(clearTimerRef.current)
@@ -138,50 +157,74 @@ export function MeetingCaptionsBanner({
                 }
             }
 
-            recognition.onerror = (event: any) => {
-                if (event.error !== 'no-speech') {
+            recognitionInstance.onerror = (event: any) => {
+                if (event.error !== 'no-speech' && event.error !== 'aborted') {
                     console.warn('Speech recognition status:', event.error)
                 }
             }
 
-            recognition.onend = () => {
-                if (isEnabled && !isLocalMuted && recognitionRef.current) {
+            recognitionInstance.onend = () => {
+                if (!isStoppedManually && isEnabled && !isLocalMuted) {
                     try {
-                        recognition.start()
+                        recognitionInstance.start()
                     } catch (e) {}
                 }
             }
 
-            recognition.start()
-            recognitionRef.current = recognition
+            recognitionInstance.start()
+            recognitionRef.current = recognitionInstance
         } catch (err) {
-            console.warn('Failed to start speech recognition:', err)
+            console.warn('Failed to initialize speech recognition:', err)
         }
 
         return () => {
-            if (recognitionRef.current) {
+            isStoppedManually = true
+            if (recognitionInstance) {
                 try {
-                    recognitionRef.current.stop()
+                    recognitionInstance.abort()
                 } catch (e) {}
-                recognitionRef.current = null
             }
+            recognitionRef.current = null
         }
-    }, [isEnabled, isLocalMuted, speakerName, meetingId, socket, onTranscriptUpdate])
+    }, [isEnabled, isLocalMuted])
 
-    if (!isEnabled || !displayText) return null
+    if (!isEnabled) return null
+
+    if (!displayText) {
+        return (
+            <div style={{
+                position: 'absolute', bottom: 96, left: '50%', transform: 'translateX(-50%)',
+                zIndex: 80, padding: '8px 20px',
+                background: 'rgba(10, 11, 15, 0.92)', backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: isLocalMuted ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(52, 211, 153, 0.4)',
+                borderRadius: 'var(--radius-full)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6)',
+                textAlign: 'center', pointerEvents: 'none',
+                display: 'flex', alignItems: 'center', gap: 8
+            }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: isLocalMuted ? '#f59e0b' : '#34d399', display: 'inline-block' }} />
+                <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#e2e8f0' }}>
+                    {isLocalMuted 
+                        ? '🔇 Mic is Muted — Unmute mic to speak and see live subtitles' 
+                        : '🎙️ Live Captions: Listening for speech... Speak into microphone'}
+                </span>
+            </div>
+        )
+    }
 
     return (
         <div style={{
             position: 'absolute', bottom: 96, left: '50%', transform: 'translateX(-50%)',
             zIndex: 80, maxWidth: '85%', padding: '10px 22px',
-            background: 'rgba(10, 11, 15, 0.9)', backdropFilter: 'blur(16px)',
+            background: 'rgba(10, 11, 15, 0.94)', backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
-            border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: 'var(--radius-full)',
+            border: '1px solid rgba(52, 211, 153, 0.5)', borderRadius: 'var(--radius-full)',
             boxShadow: '0 8px 32px rgba(0, 0, 0, 0.7)',
             textAlign: 'center', pointerEvents: 'none',
             display: 'flex', alignItems: 'center', gap: 10
         }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#34d399', whiteSpace: 'nowrap' }}>
                 {currentSpeaker}:
             </span>
             <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#fff', lineHeight: 1.4 }}>

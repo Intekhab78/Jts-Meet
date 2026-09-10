@@ -104,3 +104,59 @@ export function stopRingtone() {
         ringtoneInterval = null
     }
 }
+
+export function playKnockChime() {
+    try {
+        const ctx = getAudioContext()
+        const now = ctx.currentTime
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(440, now) // A4
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.15) // A5
+        
+        gain.gain.setValueAtTime(0.001, now)
+        gain.gain.linearRampToValueAtTime(0.22, now + 0.05)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38)
+        
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start(now)
+        osc.stop(now + 0.4)
+    } catch (e) {}
+}
+
+export function playSpeakerTestSound(onComplete?: () => void) {
+    try {
+        const ctx = getAudioContext()
+        const now = ctx.currentTime
+        const notes = [
+            { freq: 440.0, time: 0 },       // A4
+            { freq: 554.37, time: 0.15 },   // C#5
+            { freq: 659.25, time: 0.3 },    // E5
+            { freq: 880.0, time: 0.45 },    // A5
+        ]
+
+        notes.forEach(({ freq, time }) => {
+            const osc = ctx.createOscillator()
+            const gain = ctx.createGain()
+            osc.type = 'triangle'
+            osc.frequency.setValueAtTime(freq, now + time)
+
+            gain.gain.setValueAtTime(0.001, now + time)
+            gain.gain.exponentialRampToValueAtTime(0.2, now + time + 0.04)
+            gain.gain.exponentialRampToValueAtTime(0.001, now + time + 0.35)
+
+            osc.connect(gain)
+            gain.connect(ctx.destination)
+            osc.start(now + time)
+            osc.stop(now + time + 0.36)
+        })
+
+        if (onComplete) {
+            setTimeout(onComplete, 900)
+        }
+    } catch {
+        if (onComplete) onComplete()
+    }
+}

@@ -6,6 +6,8 @@ export interface AuthenticatedSocket extends Socket {
     userId?: string
     isGuest?: boolean
     guestName?: string
+    email?: string
+    company?: string
     meetingId?: string
     isPending?: boolean
 }
@@ -21,6 +23,8 @@ export function authenticateSocket(socket: AuthenticatedSocket): boolean {
             userId: string; 
             isGuest?: boolean; 
             guestName?: string; 
+            email?: string;
+            company?: string;
             meetingId?: string; 
             isPending?: boolean; 
         }
@@ -28,6 +32,8 @@ export function authenticateSocket(socket: AuthenticatedSocket): boolean {
         if (payload.isGuest) {
             socket.isGuest = true
             socket.guestName = payload.guestName
+            socket.email = payload.email || ''
+            socket.company = payload.company || ''
             socket.meetingId = payload.meetingId
             socket.isPending = payload.isPending
         }

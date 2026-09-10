@@ -7,7 +7,7 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
     const userId = authSocket.userId
 
-    socket.on(SocketEvents.MEETING_CHAT_SEND, async (payload: { meetingId: string; message: string }) => {
+    socket.on(SocketEvents.MEETING_CHAT_SEND, async (payload: { meetingId: string; message: string; recipientId?: string; recipientName?: string }) => {
         if (!userId || !payload?.meetingId || !payload?.message || typeof payload.message !== 'string') {
             socket.emit('error', { message: 'Invalid meeting chat payload' })
             return
@@ -17,9 +17,22 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
             socket.join(`meeting:${payload.meetingId}`)
             const senderDisplayName = authSocket.guestName || (socket.handshake.query?.displayName as string) || undefined
             const chat = await createMeetingChat(payload.meetingId, userId, payload.message, senderDisplayName)
+            const chatObj = (chat as any).toObject ? (chat as any).toObject() : { ...chat }
 
-            // Broadcast to the entire meeting room (Host, members, and all guests)
-            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_CHAT_RECEIVE, chat)
+            if (payload.recipientId && payload.recipientId !== 'everyone') {
+                const privateChat = {
+                    ...chatObj,
+                    recipientId: payload.recipientId,
+                    recipientName: payload.recipientName,
+                    isPrivate: true
+                }
+                // Deliver to sender and recipient only
+                socket.emit(SocketEvents.MEETING_CHAT_RECEIVE, privateChat)
+                io.to(`user:${payload.recipientId}`).emit(SocketEvents.MEETING_CHAT_RECEIVE, privateChat)
+            } else {
+                // Broadcast to the entire meeting room (Host, members, and all guests)
+                io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_CHAT_RECEIVE, chatObj)
+            }
         } catch (error: any) {
             console.error('[MeetingChat] Error sending chat message:', error)
             socket.emit('error', { message: error.message || 'Unable to send meeting chat' })

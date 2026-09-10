@@ -8,6 +8,9 @@ export interface MeetingChatMessage {
     meetingId: string
     senderId: string
     senderName?: string
+    recipientId?: string
+    recipientName?: string
+    isPrivate?: boolean
     message: string
     messageType: 'text'
     reactions?: { userId: string; emoji: string; createdAt: string }[]
@@ -23,15 +26,19 @@ export function useMeetingChat() {
     const [typingUsers, setTypingUsers] = useState<string[]>([])
 
     const sendMessage = useCallback(
-        (message: string) => {
+        (message: string, recipientId?: string, recipientName?: string) => {
             if (!socket || !meetingId || !message.trim()) {
                 return
             }
+            const isPrivate = !!recipientId && recipientId !== 'everyone'
             const tempId = `temp-${Date.now()}`
             const localMsg: MeetingChatMessage = {
                 _id: tempId,
                 meetingId,
                 senderId: 'me',
+                recipientId: isPrivate ? recipientId : undefined,
+                recipientName: isPrivate ? recipientName : undefined,
+                isPrivate,
                 message: message.trim(),
                 messageType: 'text',
                 status: 'sent',
@@ -39,7 +46,12 @@ export function useMeetingChat() {
                 updatedAt: new Date().toISOString()
             }
             setMessages((prev) => [...prev, localMsg])
-            socket.emit(SocketEvents.MEETING_CHAT_SEND, { meetingId, message: message.trim() })
+            socket.emit(SocketEvents.MEETING_CHAT_SEND, {
+                meetingId,
+                message: message.trim(),
+                recipientId: isPrivate ? recipientId : undefined,
+                recipientName: isPrivate ? recipientName : undefined
+            })
         },
         [meetingId, socket]
     )

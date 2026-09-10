@@ -78,6 +78,7 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
             )
             
             guestSocket.emit('guest:approved', { token })
+            io.to(`user:${guestSocket.userId}`).emit('guest:approved', { token })
             
             // Broadcast status change to meeting participants
             io.to(`meeting:${guestSocket.meetingId}`).emit('guest:status-changed', { socketId, status: 'approved' })
@@ -110,31 +111,18 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
                 // Join the guest lobby room
                 socket.join(`lobby:${authSocket.meetingId}`)
                 
-                // Notify the meeting host that a guest is waiting
-                const meeting = await getMeetingByMeetingId(authSocket.meetingId || '')
-                if (meeting) {
-                    const hostId = meeting.host._id.toString()
-                    const hostSocketId = getMeetingSocketId(hostId, authSocket.meetingId || '')
-                    if (hostSocketId) {
-                        io.to(hostSocketId).emit('guest:new-waiting', {
-                            socketId: socket.id,
-                            userId: authSocket.userId,
-                            guestName: authSocket.guestName,
-                            email: socket.handshake.query?.email || '',
-                            company: socket.handshake.query?.company || ''
-                        })
-                    }
-                }
+                // Notify the meeting host & co-hosts in real-time that a guest is waiting
+                io.to(`meeting:${authSocket.meetingId}`).emit('guest:new-waiting', {
+                    socketId: socket.id,
+                    userId: authSocket.userId,
+                    guestName: authSocket.guestName || 'Guest',
+                    email: authSocket.email || socket.handshake.query?.email || '',
+                    company: authSocket.company || socket.handshake.query?.company || ''
+                })
                 
                 // Register disconnect handler for pending guest
                 socket.on(SocketEvents.DISCONNECT, () => {
-                    if (meeting) {
-                        const hostId = meeting.host._id.toString()
-                        const hostSocketId = getMeetingSocketId(hostId, authSocket.meetingId || '')
-                        if (hostSocketId) {
-                            io.to(hostSocketId).emit('guest:left-waiting', { socketId: socket.id })
-                        }
-                    }
+                    io.to(`meeting:${authSocket.meetingId}`).emit('guest:left-waiting', { socketId: socket.id })
                 })
                 return
             }

@@ -9,6 +9,7 @@ interface DeviceSettingsModalProps {
     onToggleBlur?: (enabled: boolean) => void
     isNoiseSuppressionEnabled?: boolean
     onToggleNoiseSuppression?: (enabled: boolean) => void
+    onOpenVirtualBg?: () => void
 }
 
 export function DeviceSettingsModal({
@@ -19,7 +20,8 @@ export function DeviceSettingsModal({
     isBlurEnabled = false,
     onToggleBlur,
     isNoiseSuppressionEnabled = true,
-    onToggleNoiseSuppression
+    onToggleNoiseSuppression,
+    onOpenVirtualBg
 }: DeviceSettingsModalProps) {
     const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([])
     const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([])
@@ -118,23 +120,18 @@ export function DeviceSettingsModal({
         }
     }, [isOpen, localStream])
 
+    const [isPlayingTest, setIsPlayingTest] = useState(false)
+
     const handleTestSpeaker = () => {
-        try {
-            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-            const ctx = new AudioContextClass()
-            const osc = ctx.createOscillator()
-            const gain = ctx.createGain()
-
-            osc.type = 'sine'
-            osc.frequency.setValueAtTime(440, ctx.currentTime)
-            gain.gain.setValueAtTime(0.1, ctx.currentTime)
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
-
-            osc.connect(gain)
-            gain.connect(ctx.destination)
-            osc.start()
-            osc.stop(ctx.currentTime + 0.5)
-        } catch (e) {}
+        if (isPlayingTest) return
+        setIsPlayingTest(true)
+        import('../../../utils/soundEffects').then(({ soundEffects }) => {
+            soundEffects.playSpeakerTestSound(() => {
+                setIsPlayingTest(false)
+            })
+        }).catch(() => {
+            setIsPlayingTest(false)
+        })
     }
 
     if (!isOpen) return null
@@ -225,8 +222,27 @@ export function DeviceSettingsModal({
                             <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                                 🔊 Speaker / Output
                             </label>
-                            <button onClick={handleTestSpeaker} className="btn btn-secondary text-xs" style={{ padding: '3px 8px' }}>
-                                Test Output
+                            <button 
+                                onClick={handleTestSpeaker} 
+                                disabled={isPlayingTest}
+                                className="btn btn-secondary text-xs" 
+                                style={{ 
+                                    padding: '4px 10px', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: 6,
+                                    borderColor: isPlayingTest ? '#22c55e' : undefined,
+                                    color: isPlayingTest ? '#22c55e' : undefined
+                                }}
+                            >
+                                {isPlayingTest ? (
+                                    <>
+                                        <span className="spinner-sm" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+                                        Playing Chime...
+                                    </>
+                                ) : (
+                                    <>🔊 Test Output</>
+                                )}
                             </button>
                         </div>
                         <select
@@ -250,18 +266,37 @@ export function DeviceSettingsModal({
                         Smart Processing & Effects
                     </h4>
 
-                    {/* Virtual Background Blur */}
+                    {/* Virtual Background Blur & Wallpapers */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-md)' }}>
                         <div>
-                            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff' }}>Camera Background Blur</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Soft focus background privacy filter</div>
+                            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span>🖼️</span> AI Background & Wallpapers
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                {isBlurEnabled ? 'AI Segmentation Active (Face crystal-clear)' : 'Blur, Office, Library, Cafe presets'}
+                            </div>
                         </div>
-                        <input
-                            type="checkbox"
-                            checked={isBlurEnabled}
-                            onChange={(e) => onToggleBlur?.(e.target.checked)}
-                            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--color-accent)' }}
-                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            {onOpenVirtualBg && (
+                                <button
+                                    onClick={() => {
+                                        onClose()
+                                        onOpenVirtualBg()
+                                    }}
+                                    className="btn btn-secondary text-xs"
+                                    style={{ padding: '4px 10px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-accent)' }}
+                                >
+                                    Effects...
+                                </button>
+                            )}
+                            <input
+                                type="checkbox"
+                                checked={isBlurEnabled}
+                                onChange={(e) => onToggleBlur?.(e.target.checked)}
+                                style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--color-accent)' }}
+                                title="Toggle quick background blur"
+                            />
+                        </div>
                     </div>
 
                     {/* Noise Suppression */}

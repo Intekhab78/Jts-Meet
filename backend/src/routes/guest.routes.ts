@@ -5,6 +5,9 @@ import { getMeetingByMeetingId } from '../modules/meeting/meeting.service'
 
 const router = Router()
 
+// In-memory cache for ad-hoc / instant meeting room configurations
+export const adHocRoomSettings: Record<string, { isWaitingRoomEnabled?: boolean; isGuestJoinEnabled?: boolean }> = {}
+
 // GET /api/guest/meeting/:meetingId
 router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
     try {
@@ -14,13 +17,14 @@ router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
         if (!meeting) {
             // Support instant / ad-hoc meeting rooms (e.g. room-xxxx)
             if (meetingId.startsWith('room-') || meetingId.length >= 4) {
+                const isWaitingRoom = adHocRoomSettings[meetingId]?.isWaitingRoomEnabled !== false
                 res.json({
                     success: true,
                     data: {
                         title: `Room ${meetingId}`,
                         hostName: 'Host',
-                        isWaitingRoomEnabled: false,
-                        isGuestJoinEnabled: true
+                        isWaitingRoomEnabled: isWaitingRoom,
+                        isGuestJoinEnabled: adHocRoomSettings[meetingId]?.isGuestJoinEnabled !== false
                     }
                 })
                 return
@@ -39,7 +43,7 @@ router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
             data: {
                 title: meeting.title,
                 hostName: (meeting.host as any)?.fullName || 'Organizer',
-                isWaitingRoomEnabled: meeting.isWaitingRoomEnabled,
+                isWaitingRoomEnabled: meeting.isWaitingRoomEnabled !== false,
                 isGuestJoinEnabled: (meeting as any).isGuestJoinEnabled !== false
             }
         })
@@ -65,14 +69,17 @@ router.post('/request', async (req: Request, res: Response) => {
         if (!meeting) {
             // Allow ad-hoc / instant rooms without database records
             if (meetingId.startsWith('room-') || meetingId.length >= 4) {
+                const isWaitingRoom = adHocRoomSettings[meetingId]?.isWaitingRoomEnabled !== false
                 const tempGuestId = `guest_${Math.random().toString(36).substring(2, 11)}`
                 const token = jwt.sign(
                     {
                         userId: tempGuestId,
                         isGuest: true,
                         guestName: guestName.trim(),
+                        email,
+                        company,
                         meetingId,
-                        isPending: false
+                        isPending: isWaitingRoom
                     },
                     JWT_SECRET,
                     { expiresIn: '6h' }
@@ -82,7 +89,7 @@ router.post('/request', async (req: Request, res: Response) => {
                     data: {
                         token,
                         userId: tempGuestId,
-                        isPending: false,
+                        isPending: isWaitingRoom,
                         meetingTitle: `Room ${meetingId}`,
                         hostName: 'Host'
                     }
@@ -106,8 +113,8 @@ router.post('/request', async (req: Request, res: Response) => {
         // Generate temporary guest ID
         const tempGuestId = `guest_${Math.random().toString(36).substring(2, 11)}`
 
-        // Check if waiting room is enabled. If disabled, guest is auto-approved (isPending: false)
-        const isPending = meeting.isWaitingRoomEnabled
+        // Check if waiting room is enabled. Default is true!
+        const isPending = meeting.isWaitingRoomEnabled !== false
 
         // Sign JWT
         const token = jwt.sign(
@@ -115,6 +122,8 @@ router.post('/request', async (req: Request, res: Response) => {
                 userId: tempGuestId,
                 isGuest: true,
                 guestName: guestName.trim(),
+                email,
+                company,
                 meetingId,
                 isPending
             },

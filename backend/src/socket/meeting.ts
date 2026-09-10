@@ -10,6 +10,7 @@ import {
 } from '../modules/meeting/meeting.service'
 import { Meeting } from '../modules/meeting/meeting.model'
 import { SocketEvents } from './events'
+import { adHocRoomSettings } from '../routes/guest.routes'
 
 export function registerMeetingHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
@@ -148,11 +149,12 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_WAITING_APPROVE, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
     })
 
-    socket.on('guest:approve', (payload: { socketId: string }) => {
-        if (!userId || !payload?.socketId) return
+    socket.on('guest:approve', (payload: { socketId?: string; guestSocketId?: string; meetingId?: string }) => {
+        const targetSocketId = payload?.socketId || payload?.guestSocketId
+        if (!userId || !targetSocketId) return
         
         // Handle locally first (supports single-node in-memory dev fallback)
-        const guestSocket = io.sockets.sockets.get(payload.socketId) as AuthenticatedSocket
+        const guestSocket = io.sockets.sockets.get(targetSocketId) as AuthenticatedSocket
         if (guestSocket) {
             guestSocket.isPending = false
             guestSocket.leave(`lobby:${guestSocket.meetingId}`)
@@ -170,25 +172,122 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                 { expiresIn: '6h' }
             )
             guestSocket.emit('guest:approved', { token })
-            io.to(`meeting:${guestSocket.meetingId}`).emit('guest:status-changed', { socketId: payload.socketId, status: 'approved' })
+            io.to(`user:${guestSocket.userId}`).emit('guest:approved', { token })
+            io.to(`meeting:${guestSocket.meetingId}`).emit('guest:status-changed', { socketId: targetSocketId, status: 'approved' })
         }
 
         // Also emit to cluster
-        io.serverSideEmit("internal:guest:approve-cluster", payload.socketId)
+        io.serverSideEmit("internal:guest:approve-cluster", targetSocketId)
     })
 
-    socket.on('guest:deny', (payload: { socketId: string }) => {
-        if (!userId || !payload?.socketId) return
+    socket.on('guest:deny', (payload: { socketId?: string; guestSocketId?: string; meetingId?: string }) => {
+        const targetSocketId = payload?.socketId || payload?.guestSocketId
+        if (!userId || !targetSocketId) return
         
         // Handle locally first
-        const guestSocket = io.sockets.sockets.get(payload.socketId) as AuthenticatedSocket
+        const guestSocket = io.sockets.sockets.get(targetSocketId) as AuthenticatedSocket
         if (guestSocket) {
             guestSocket.emit('guest:denied')
+            io.to(`user:${guestSocket.userId}`).emit('guest:denied')
             guestSocket.disconnect(true)
         }
 
         // Also emit to cluster
-        io.serverSideEmit("internal:guest:deny-cluster", payload.socketId)
+        io.serverSideEmit("internal:guest:deny-cluster", targetSocketId)
+    })
+
+    socket.on('guest:get-waiting', (payload: { meetingId: string }) => {
+        if (!payload?.meetingId) return
+        const lobbyRoom = io.sockets.adapter.rooms.get(`lobby:${payload.meetingId}`)
+        const waitingList: any[] = []
+        if (lobbyRoom) {
+            for (const sId of Array.from(lobbyRoom)) {
+                const s = io.sockets.sockets.get(sId) as AuthenticatedSocket
+                if (s && s.isPending) {
+                    waitingList.push({
+                        socketId: s.id,
+                        userId: s.userId,
+                        guestName: s.guestName || 'Guest',
+                        email: s.email || '',
+                        company: s.company || ''
+                    })
+                }
+            }
+        }
+        socket.emit('guest:waiting-list', { waitingList })
+    })
+
+    socket.on('guest:approve-all', (payload: { meetingId: string }) => {
+        if (!userId || !payload?.meetingId) return
+        
+        const lobbyRoom = io.sockets.adapter.rooms.get(`lobby:${payload.meetingId}`)
+        if (lobbyRoom) {
+            for (const sId of Array.from(lobbyRoom)) {
+                const guestSocket = io.sockets.sockets.get(sId) as AuthenticatedSocket
+                if (guestSocket && guestSocket.isPending) {
+                    guestSocket.isPending = false
+                    guestSocket.leave(`lobby:${guestSocket.meetingId}`)
+                    const token = jwt.sign(
+                        {
+                            userId: guestSocket.userId,
+                            isGuest: true,
+                            guestName: guestSocket.guestName,
+                            email: guestSocket.email,
+                            company: guestSocket.company,
+                            meetingId: guestSocket.meetingId,
+                            isPending: false
+                        },
+                        JWT_SECRET,
+                        { expiresIn: '6h' }
+                    )
+                    guestSocket.emit('guest:approved', { token })
+                }
+            }
+            io.to(`meeting:${payload.meetingId}`).emit('guest:status-changed', { status: 'all-approved' })
+        }
+    })
+
+    socket.on('meeting:waiting-room-toggle', async (payload: { meetingId: string; enabled: boolean }) => {
+        if (!payload?.meetingId) return
+        const { meetingId, enabled } = payload
+
+        try {
+            await Meeting.findOneAndUpdate({ meetingId }, { isWaitingRoomEnabled: enabled })
+        } catch (e) {}
+
+        if (!adHocRoomSettings[meetingId]) adHocRoomSettings[meetingId] = {}
+        adHocRoomSettings[meetingId].isWaitingRoomEnabled = enabled
+
+        io.to(`meeting:${meetingId}`).emit('meeting:waiting-room-toggle', { meetingId, enabled })
+
+        // If toggled OFF (Allow everyone without approval), auto-approve any guests currently waiting
+        if (!enabled) {
+            const lobbyRoom = io.sockets.adapter.rooms.get(`lobby:${meetingId}`)
+            if (lobbyRoom) {
+                for (const sId of Array.from(lobbyRoom)) {
+                    const guestSocket = io.sockets.sockets.get(sId) as AuthenticatedSocket
+                    if (guestSocket && guestSocket.isPending) {
+                        guestSocket.isPending = false
+                        guestSocket.leave(`lobby:${guestSocket.meetingId}`)
+                        const token = jwt.sign(
+                            {
+                                userId: guestSocket.userId,
+                                isGuest: true,
+                                guestName: guestSocket.guestName,
+                                email: guestSocket.email,
+                                company: guestSocket.company,
+                                meetingId: guestSocket.meetingId,
+                                isPending: false
+                            },
+                            JWT_SECRET,
+                            { expiresIn: '6h' }
+                        )
+                        guestSocket.emit('guest:approved', { token })
+                    }
+                }
+                io.to(`meeting:${meetingId}`).emit('guest:status-changed', { status: 'all-approved' })
+            }
+        }
     })
 
     socket.on('meeting:camera-toggle', (payload: { meetingId: string; isVideoOff: boolean }) => {

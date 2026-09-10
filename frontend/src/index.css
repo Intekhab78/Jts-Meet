@@ -222,6 +222,16 @@
     40%           { transform: scale(1.0); opacity: 1.0; }
   }
 
+  @keyframes audioWave {
+    0% { height: 3px; }
+    100% { height: 12px; }
+  }
+
+  @keyframes jts-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+
   @keyframes float-reaction {
     0% {
       transform: translateY(0) translateX(0) scale(0.5);

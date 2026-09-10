@@ -40,7 +40,7 @@ const MeetingSchema = new Schema<IMeeting>(
         waitingRoom: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         mutedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         blockedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-        isWaitingRoomEnabled: { type: Boolean, default: false },
+        isWaitingRoomEnabled: { type: Boolean, default: true },
         isGuestJoinEnabled: { type: Boolean, default: true },
         isLocked: { type: Boolean, default: false },
         screenShareBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },

@@ -277,7 +277,12 @@ function App() {
                 guestName={guestDetails?.guestName || 'Guest'}
                 meetingTitle={guestDetails?.meetingTitle || 'Meeting'}
                 hostName={guestDetails?.hostName || 'Organizer'}
-                onApproved={() => setView('app')}
+                onApproved={(approvedToken) => {
+                    if (approvedToken) {
+                        setGuestToken(approvedToken)
+                    }
+                    setView('app')
+                }}
                 onLeave={() => {
                     setView('landing')
                     window.history.pushState({}, '', '/')
