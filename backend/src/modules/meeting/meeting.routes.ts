@@ -11,6 +11,8 @@ router.get('/:meetingId', authenticate, asyncWrapper(meetingController.getMeetin
 router.post('/join', authenticate, asyncWrapper(meetingController.joinMeeting))
 router.post('/leave', authenticate, asyncWrapper(meetingController.leaveMeeting))
 router.post('/end', authenticate, asyncWrapper(meetingController.endMeeting))
+router.delete('/:meetingId', authenticate, asyncWrapper(meetingController.deleteMeeting))
+router.put('/:meetingId', authenticate, asyncWrapper(meetingController.updateMeeting))
 
 router.post('/waiting-room/approve', authenticate, asyncWrapper(meetingController.approveWaiting))
 router.post('/waiting-room/toggle', authenticate, asyncWrapper(meetingController.toggleWaiting))

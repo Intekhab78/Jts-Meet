@@ -80,6 +80,13 @@ export const SocketEvents = {
     MEETING_MUTE_ALL: 'meeting:mute-all',
     MEETING_CAPTION: 'meeting:caption',
     MEETING_NOTES_UPDATE: 'meeting:notes:update',
-    MEETING_END_ALL: 'meeting:end-all'
+    MEETING_END_ALL: 'meeting:end-all',
+
+    // Screen Annotation events
+    SCREEN_ANNOTATION_STROKE_START: 'screen:annotation:stroke-start',
+    SCREEN_ANNOTATION_STROKE_POINT: 'screen:annotation:stroke-point',
+    SCREEN_ANNOTATION_STROKE_END: 'screen:annotation:stroke-end',
+    SCREEN_ANNOTATION_LASER: 'screen:annotation:laser',
+    SCREEN_ANNOTATION_CLEAR: 'screen:annotation:clear'
 } as const
 

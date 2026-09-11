@@ -4,6 +4,7 @@ import { Organization } from '../organization/organization.model'
 import { Team } from '../team/team.model'
 import { User } from '../../models/user.model'
 import { sendMeetingInvitationEmail } from '../../services/email.service'
+import { NotificationService } from '../notification/notification.service'
 import { FRONTEND_URL } from '../../config'
 
 export interface CreateMeetingOptions {
@@ -68,18 +69,38 @@ export async function createMeeting(hostId: string, options: string | CreateMeet
 
     const savedMeeting = await meeting.save()
 
-    // Send instant invite email if requested and participants exist
-    if (opts.notifyByEmail && participantsList.length > 1) {
+    // Send invite emails to all team members / participants if not opted out
+    if (opts.notifyByEmail !== false && participantsList.length > 1) {
         try {
             const hostUser = await User.findById(hostObjectId).select('fullName').exec()
             const hostName = hostUser?.fullName || 'Meeting Host'
             const otherUserIds = participantsList.filter(p => !p.equals(hostObjectId))
-            const usersToNotify = await User.find({ _id: { $in: otherUserIds } }).select('email').exec()
+            const usersToNotify = await User.find({ _id: { $in: otherUserIds } }).select('email fullName').exec()
             const inviteUrl = `${FRONTEND_URL || 'http://localhost:3000'}/meet/${meetingId}`
 
+            let teamName: string | undefined
+            if (opts.teamId && Types.ObjectId.isValid(opts.teamId)) {
+                const teamObj = await Team.findById(opts.teamId).select('name').exec()
+                if (teamObj) teamName = teamObj.name
+            }
+
             for (const u of usersToNotify) {
+                // In-app Notification
+                NotificationService.send({
+                    recipientId: u._id.toString(),
+                    title: 'New Meeting Scheduled',
+                    body: `${hostName} invited you to join "${opts.title.trim()}"${teamName ? ` (${teamName})` : ''}`,
+                    type: 'meeting_invite',
+                    metadata: { meetingId, hostName, title: opts.title.trim(), teamName }
+                }).catch(err => console.error(`Failed in-app notification to ${u._id}:`, err))
+
+                // Email Notification
                 if (u.email) {
-                    sendMeetingInvitationEmail(u.email, meetingId, opts.title.trim(), hostName, inviteUrl).catch(err => {
+                    sendMeetingInvitationEmail(u.email, meetingId, opts.title.trim(), hostName, inviteUrl, {
+                        scheduledDate: opts.scheduledDate,
+                        scheduledTime: opts.scheduledTime,
+                        teamName
+                    }).catch(err => {
                         console.error(`Failed to send meeting invite email to ${u.email}:`, err)
                     })
                 }
@@ -182,7 +203,58 @@ export async function endMeeting(meetingId: string, userId: string): Promise<IMe
 }
 
 export async function getMyMeetings(userId: string): Promise<IMeeting[]> {
-    return Meeting.find({ participants: new Types.ObjectId(userId) }).populate('host', 'fullName email').sort({ updatedAt: -1 }).exec()
+    const userObjectId = new Types.ObjectId(userId)
+    return Meeting.find({
+        $or: [
+            { host: userObjectId },
+            { participants: userObjectId },
+            { coHosts: userObjectId }
+        ]
+    })
+    .populate('host', 'fullName email avatar')
+    .populate('participants', 'fullName email avatar status')
+    .populate('coHosts', 'fullName email avatar')
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .exec()
+}
+
+export async function deleteMeeting(meetingId: string, userId: string): Promise<boolean> {
+    const userObjectId = new Types.ObjectId(userId)
+    const meeting = await Meeting.findOne({ meetingId }).exec()
+    if (!meeting) return false
+
+    if (meeting.host.equals(userObjectId)) {
+        await Meeting.deleteOne({ meetingId }).exec()
+        return true
+    } else {
+        meeting.participants = meeting.participants.filter(p => !p.equals(userObjectId))
+        await meeting.save()
+        return true
+    }
+}
+
+export async function updateMeeting(meetingId: string, userId: string, updateData: any): Promise<IMeeting | null> {
+    const userObjectId = new Types.ObjectId(userId)
+    const meeting = await Meeting.findOne({ meetingId }).exec()
+    if (!meeting) return null
+
+    const isAuthorized = meeting.host.equals(userObjectId) || meeting.coHosts.some((id) => id.equals(userObjectId))
+    if (!isAuthorized) {
+        throw new Error('Only the host or co-hosts can edit the scheduled conference')
+    }
+
+    if (updateData.title) meeting.title = updateData.title.trim()
+    if (updateData.scheduledDate !== undefined) meeting.scheduledDate = updateData.scheduledDate
+    if (updateData.scheduledTime !== undefined) meeting.scheduledTime = updateData.scheduledTime
+    if (updateData.isRecurring !== undefined) meeting.isRecurring = updateData.isRecurring
+    if (updateData.recurrencePattern !== undefined) meeting.recurrencePattern = updateData.recurrencePattern
+    if (updateData.isWaitingRoomEnabled !== undefined) meeting.isWaitingRoomEnabled = updateData.isWaitingRoomEnabled
+    if (updateData.notifyByEmail !== undefined) meeting.notifyByEmail = updateData.notifyByEmail
+    if (updateData.teamId !== undefined) {
+        meeting.teamId = updateData.teamId && Types.ObjectId.isValid(updateData.teamId) ? new Types.ObjectId(updateData.teamId) : null
+    }
+
+    return meeting.save()
 }
 
 // Host controls implementation

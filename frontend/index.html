@@ -3,6 +3,53 @@
 
 <head>
   <meta charset="utf-8" />
+  <script>
+    (function() {
+      window.addEventListener('unhandledrejection', function(event) {
+        var msg = (event && event.reason && (event.reason.message || (typeof event.reason === 'string' ? event.reason : ''))) || '';
+        if (
+          msg.includes('message channel closed') ||
+          msg.includes('asynchronous response') ||
+          msg.includes('Extension context invalidated')
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+      }, true);
+
+      window.addEventListener('error', function(event) {
+        var msg = (event && (event.message || (event.error && event.error.message))) || '';
+        if (
+          msg.includes('message channel closed') ||
+          msg.includes('asynchronous response') ||
+          msg.includes('Extension context invalidated')
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return true;
+        }
+      }, true);
+
+      var origError = console.error;
+      console.error = function() {
+        var argStr = '';
+        try {
+          argStr = Array.prototype.slice.call(arguments).map(function(a) {
+            return typeof a === 'object' ? (a?.message || JSON.stringify(a) || '') : String(a);
+          }).join(' ');
+        } catch (_) {}
+
+        if (
+          argStr.includes('message channel closed') ||
+          argStr.includes('asynchronous response') ||
+          argStr.includes('Extension context invalidated')
+        ) {
+          return;
+        }
+        return origError.apply(console, arguments);
+      };
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="JTS Meet — Professional video conferencing built for teams. Crystal-clear video, seamless collaboration, enterprise-grade security." />
   <meta name="theme-color" content="#0a0b0f" />

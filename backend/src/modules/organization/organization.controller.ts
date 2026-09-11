@@ -9,7 +9,8 @@ import {
     leaveOrganization,
     getOrganizationMembers,
     getOrganizationMembersPaginated,
-    listUserOrganizations
+    listUserOrganizations,
+    updateMemberRole
 } from './organization.service'
 import {
     validateCreateOrganization,
@@ -177,35 +178,56 @@ export const organizationController = {
         }
     },
 
+    updateMemberRole: async (req: AuthRequest, res: Response) => {
+        const organizationId = Array.isArray(req.params.organizationId) ? req.params.organizationId[0] : req.params.organizationId
+        const targetUserId = Array.isArray(req.params.targetUserId) ? req.params.targetUserId[0] : req.params.targetUserId
+        const { role } = req.body
+
+        if (!organizationId || !targetUserId || !role) {
+            return sendError(res, 400, 'organizationId, targetUserId, and role are required')
+        }
+
+        if (!['owner', 'admin', 'member', 'guest'].includes(role)) {
+            return sendError(res, 400, 'Invalid role specified')
+        }
+
+        if (!req.userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+
+        try {
+            const organization = await updateMemberRole(organizationId, req.userId, targetUserId, role)
+            if (!organization) {
+                return sendError(res, 404, 'Organization or member not found')
+            }
+            return sendSuccess(res, organization, 'Member role updated successfully')
+        } catch (error: any) {
+            return sendError(res, 403, error.message || 'Forbidden')
+        }
+    },
+
     getMembers: async (req: AuthRequest, res: Response) => {
         const organizationId = Array.isArray(req.params.organizationId) ? req.params.organizationId[0] : req.params.organizationId
         if (!organizationId) {
             return sendError(res, 400, 'organizationId is required')
         }
 
-        const limit = Number(req.query.limit) || 20
+        const limit = Math.min(100, Number(req.query.limit || req.query.pageSize) || 50)
         const cursor = req.query.cursor ? String(req.query.cursor) : undefined
         const search = req.query.search ? String(req.query.search) : undefined
-
-        if (req.query.cursor !== undefined || req.query.pageSize !== undefined || req.query.search !== undefined) {
-            const pageSizeVal = Math.min(100, Number(req.query.pageSize || req.query.limit) || 20)
-            const result = await getOrganizationMembersPaginated(organizationId, pageSizeVal, cursor, search)
-            if (!result) {
-                return sendError(res, 404, 'Organization not found')
-            }
-            return res.status(200).json({
-                success: true,
-                data: result.members,
-                nextCursor: result.nextCursor,
-                hasMore: !!result.nextCursor
-            })
-        }
 
         const result = await getOrganizationMembersPaginated(organizationId, limit, cursor, search)
         if (!result) {
             return sendError(res, 404, 'Organization not found')
         }
 
-        return sendSuccess(res, result.members, 'Organization members retrieved')
+        return res.status(200).json({
+            success: true,
+            data: result.members,
+            members: result.members,
+            nextCursor: result.nextCursor,
+            hasMore: !!result.nextCursor,
+            total: result.members.length
+        })
     }
 }

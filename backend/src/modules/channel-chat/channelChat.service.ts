@@ -1,18 +1,47 @@
 import { Types } from 'mongoose'
-import { ChannelChat, IChannelChat } from './channelChat.model'
+import { ChannelChat, IChannelChat, IChannelAttachment, ICodeSnippet } from './channelChat.model'
 import { getChannel } from '../channel/channel.service'
 
+export interface CreateChannelMessageOptions {
+    replyTo?: string
+    messageType?: 'text' | 'file' | 'code' | 'image'
+    attachments?: IChannelAttachment[]
+    codeSnippet?: ICodeSnippet
+}
+
 export class ChannelChatService {
-    static async createMessage(channelId: string, senderId: string, content: string, replyTo?: string) {
+    static async createMessage(
+        channelId: string,
+        senderId: string,
+        content: string,
+        replyToOrOptions?: string | CreateChannelMessageOptions
+    ) {
         const channel = await getChannel(channelId)
         if (!channel) {
             throw new Error('Channel not found')
         }
 
+        let replyTo: string | undefined
+        let messageType: 'text' | 'file' | 'code' | 'image' = 'text'
+        let attachments: IChannelAttachment[] | undefined
+        let codeSnippet: ICodeSnippet | undefined
+
+        if (typeof replyToOrOptions === 'string') {
+            replyTo = replyToOrOptions
+        } else if (replyToOrOptions && typeof replyToOrOptions === 'object') {
+            replyTo = replyToOrOptions.replyTo
+            messageType = replyToOrOptions.messageType || 'text'
+            attachments = replyToOrOptions.attachments
+            codeSnippet = replyToOrOptions.codeSnippet
+        }
+
         const message = new ChannelChat({
             channelId,
             senderId: new Types.ObjectId(senderId),
-            content,
+            content: content || (messageType === 'file' ? 'Shared a file' : messageType === 'code' ? 'Shared a code snippet' : ''),
+            messageType,
+            attachments: attachments || [],
+            codeSnippet: codeSnippet || undefined,
             replyTo: replyTo ? new Types.ObjectId(replyTo) : null
         })
         await message.save()

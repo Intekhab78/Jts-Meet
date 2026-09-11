@@ -5,6 +5,8 @@ import { ChannelChatService } from './channelChat.service'
 import * as ChannelService from '../channel/channel.service'
 import { sendError, sendSuccess } from '../../utils/responseHelper'
 
+import { getIO } from '../../socket'
+
 export class ChannelChatController {
     static getMessages = asyncWrapper(async (req: AuthRequest, res: Response) => {
         const { channelId } = req.params as { channelId: string }
@@ -50,10 +52,28 @@ export class ChannelChatController {
 
     static createMessage = asyncWrapper(async (req: AuthRequest, res: Response) => {
         const { channelId } = req.params as { channelId: string }
-        const { content, replyTo } = req.body as { content: string; replyTo?: string }
+        const { content, replyTo, messageType, attachments, codeSnippet } = req.body as {
+            content?: string
+            replyTo?: string
+            messageType?: 'text' | 'file' | 'code' | 'image'
+            attachments?: any[]
+            codeSnippet?: any
+        }
 
         await ChannelService.ensureMember(channelId, req.userId as string)
-        const message = await ChannelChatService.createMessage(channelId, req.userId as string, content, replyTo)
+        const message = await ChannelChatService.createMessage(channelId, req.userId as string, content || '', {
+            replyTo,
+            messageType,
+            attachments,
+            codeSnippet
+        })
+
+        const io = getIO()
+        if (io) {
+            io.to(channelId).to(`channel:${channelId}`).emit('channel:message:receive', message)
+            io.emit('channel:message:receive', message)
+        }
+
         return sendSuccess(res, message, 'Message created')
     })
 
@@ -67,6 +87,11 @@ export class ChannelChatController {
             return sendError(res, 404, 'Message not found')
         }
 
+        const io = getIO()
+        if (io) {
+            io.to(channelId).to(`channel:${channelId}`).emit('channel:message:receive', message)
+        }
+
         return sendSuccess(res, message, 'Message updated')
     })
 
@@ -75,6 +100,34 @@ export class ChannelChatController {
 
         await ChannelService.ensureMember(channelId, req.userId as string)
         await ChannelChatService.deleteMessage(messageId, req.userId as string)
+
+        const io = getIO()
+        if (io) {
+            io.to(channelId).to(`channel:${channelId}`).emit('channel:message:delete', { channelId, messageId })
+        }
+
         return res.status(204).send()
+    })
+
+    static addReaction = asyncWrapper(async (req: AuthRequest, res: Response) => {
+        const { channelId, messageId } = req.params as { channelId: string; messageId: string }
+        const { emoji } = req.body as { emoji: string }
+
+        if (!emoji) {
+            return sendError(res, 400, 'Emoji is required')
+        }
+
+        await ChannelService.ensureMember(channelId, req.userId as string)
+        const updated = await ChannelChatService.addReactionToMessage(messageId, req.userId as string, emoji)
+        if (!updated) {
+            return sendError(res, 404, 'Message not found')
+        }
+
+        const io = getIO()
+        if (io) {
+            io.to(channelId).to(`channel:${channelId}`).emit('channel:message:reaction', { messageId, reactions: updated.reactions })
+        }
+
+        return sendSuccess(res, updated, 'Reaction updated')
     })
 }

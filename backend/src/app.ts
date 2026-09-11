@@ -19,6 +19,7 @@ import channelRoutes from './modules/channel/channel.routes'
 import adminRoutes from './modules/admin/admin.routes'
 import guestRoutes from './routes/guest.routes'
 import notificationRoutes from './modules/notification/notification.routes'
+import aiRoutes from './routes/ai.routes'
 import { connectDB } from './config/db'
 import { rateLimiter } from './middleware/rateLimiter'
 
@@ -65,6 +66,7 @@ app.use('/api/channel', channelRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/guest', guestRoutes)
 app.use('/api/notifications', notificationRoutes)
+app.use('/api/ai', aiRoutes)
 
 // Global error handler
 app.use(errorHandler)

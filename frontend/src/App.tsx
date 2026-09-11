@@ -37,10 +37,12 @@ const getMeetingIdFromUrl = (): string | null => {
         if (id) return id
     } catch (e) {}
 
-    // 4. Stored active meeting ID from current session
+    // 4. Stored active meeting ID ONLY if currently on a meeting route
     try {
-        const active = sessionStorage.getItem('jts_active_meeting_id') || localStorage.getItem('jts_last_meeting_id')
-        if (active) return active
+        if (window.location.pathname.startsWith('/meet') || window.location.hash.startsWith('#meeting')) {
+            const active = sessionStorage.getItem('jts_active_meeting_id')
+            if (active) return active
+        }
     } catch (e) {}
 
     return null
@@ -56,6 +58,19 @@ const parseJwt = (token: string) => {
 
 function App() {
     const [meetingIdFromUrl, setMeetingIdFromUrl] = useState<string | null>(getMeetingIdFromUrl)
+
+    React.useEffect(() => {
+        const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+            if (
+                event.reason?.message?.includes('message channel closed before a response was received') ||
+                event.reason?.message?.includes('A listener indicated an asynchronous response')
+            ) {
+                event.preventDefault()
+            }
+        }
+        window.addEventListener('unhandledrejection', handleUnhandledRejection)
+        return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+    }, [])
     const [guestToken, setGuestToken] = useState<string>(() => {
         try {
             return localStorage.getItem('jts_guest_token') || ''
@@ -122,7 +137,8 @@ function App() {
         const urlToken = params.get('token')
         if (urlToken) {
             localStorage.setItem('jts_token', urlToken)
-            window.history.pushState({}, '', '/')
+            const cleanUrl = window.location.pathname + (window.location.hash || '')
+            window.history.pushState({}, '', cleanUrl)
             return urlToken
         }
         return localStorage.getItem('jts_token') || ''
@@ -177,6 +193,26 @@ function App() {
         }
     }, [token, guestToken])
 
+    // Cleanup stale meeting data if at root landing page
+    React.useEffect(() => {
+        const isMeetingRoute = window.location.pathname.startsWith('/meet') || window.location.hash.startsWith('#meeting') || window.location.search.includes('id=')
+        if (!isMeetingRoute) {
+            try {
+                localStorage.removeItem('jts_guest_token')
+                localStorage.removeItem('jts_guest_user_id')
+                localStorage.removeItem('jts_guest_details')
+                sessionStorage.removeItem('jts_active_meeting_id')
+                sessionStorage.removeItem('jts_meeting_joined')
+                localStorage.removeItem('jts_last_meeting_id')
+            } catch (e) {}
+            if (!token && guestToken) {
+                setGuestToken('')
+                setGuestUserId('')
+                setView('landing')
+            }
+        }
+    }, [token, guestToken])
+
     // Sync view on browser hash change or back/forward buttons
     React.useEffect(() => {
         const handleHashOrPopState = () => {
@@ -191,7 +227,7 @@ function App() {
                 return
             }
 
-            if (window.location.hash.startsWith('#meeting') || currentMeetId) {
+            if (currentMeetId || window.location.pathname.startsWith('/meet') || (window.location.hash.startsWith('#meeting') && currentMeetId)) {
                 const isRefreshed = sessionStorage.getItem('jts_meeting_joined') === 'true'
                 const activeMeetingInSession = sessionStorage.getItem('jts_active_meeting_id')
                 if (savedGuest && isRefreshed && (!activeMeetingInSession || activeMeetingInSession === currentMeetId)) {
@@ -204,6 +240,16 @@ function App() {
                 setView(currentMeetId ? 'guest-preview' : 'landing')
                 return
             }
+
+            // Default to landing page when at home root /
+            try {
+                localStorage.removeItem('jts_guest_token')
+                localStorage.removeItem('jts_guest_user_id')
+                sessionStorage.removeItem('jts_active_meeting_id')
+                sessionStorage.removeItem('jts_meeting_joined')
+            } catch (e) {}
+            setGuestToken('')
+            setView('landing')
         }
 
         window.addEventListener('hashchange', handleHashOrPopState)
@@ -284,8 +330,7 @@ function App() {
                     setView('app')
                 }}
                 onLeave={() => {
-                    setView('landing')
-                    window.history.pushState({}, '', '/')
+                    handleLogout()
                 }}
             />
         )
@@ -301,19 +346,19 @@ function App() {
         )
     }
 
-    const activeToken = token || guestToken
-    const decoded = parseJwt(activeToken)
-    const isGuest = decoded?.isGuest || (!token && !!guestToken) || (!token && (window.location.hash.startsWith('#meeting') || window.location.pathname.startsWith('/meet/')))
+    const currentMeetId = meetingIdFromUrl || getMeetingIdFromUrl()
+    const isMeetingRoute = !!currentMeetId || window.location.pathname.startsWith('/meet') || (window.location.hash.startsWith('#meeting') && !!currentMeetId)
 
-    if (isGuest || (!token && (window.location.hash.startsWith('#meeting') || window.location.pathname.startsWith('/meet/')))) {
+    // Only render guest MeetingRoom if user is on a valid meeting route WITH a meetingId
+    if (!token && isMeetingRoute && (guestToken || currentMeetId)) {
         return (
             <SocketProvider>
                 <MeetingProvider>
                     <WebRTCProvider>
                         <div style={{ width: '100%', height: '100dvh', background: 'var(--color-bg-base)' }}>
                             <MeetingRoom
-                                initialToken={activeToken}
-                                initialMeetingId={meetingIdFromUrl || undefined}
+                                initialToken={guestToken}
+                                initialMeetingId={currentMeetId || undefined}
                                 autoJoin={true}
                                 isAdminOrOwner={false}
                             />
@@ -322,6 +367,11 @@ function App() {
                 </MeetingProvider>
             </SocketProvider>
         )
+    }
+
+    // If not logged in and not on a meeting route, always show LandingPage
+    if (!token) {
+        return <LandingPage onNavigate={setView} />
     }
 
     return (

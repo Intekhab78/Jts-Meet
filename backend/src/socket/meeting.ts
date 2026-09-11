@@ -43,6 +43,13 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
             authSocket.meetingId = payload.meetingId
 
             io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_JOIN, { meetingId: payload.meetingId, participants: meeting.participants })
+
+            // Notify waiting room / lobby guests that the host has arrived
+            const isHostOrCoHost = String(meeting.host) === String(userId) || (meeting.coHosts && meeting.coHosts.some(id => String(id) === String(userId)))
+            if (isHostOrCoHost) {
+                const hostName = authSocket.guestName || 'Organizer'
+                io.to(`lobby:${payload.meetingId}`).emit('meeting:host-joined', { hostName, meetingId: payload.meetingId })
+            }
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Failed to join meeting' })
         }
@@ -350,5 +357,52 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         } catch (err) {
             console.error('Failed to end meeting for all:', err)
         }
+    })
+
+    socket.on('meeting:reaction', (payload: { meetingId: string; emoji: string; senderName?: string; senderId?: string }) => {
+        if (!payload?.meetingId || !payload?.emoji) return
+        const senderName = payload.senderName || authSocket.guestName || 'Participant'
+        io.to(`meeting:${payload.meetingId}`).emit('meeting:reaction', {
+            id: 'react_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+            emoji: payload.emoji,
+            senderName,
+            senderId: payload.senderId || userId,
+            left: 15 + Math.floor(Math.random() * 70), // Random swaying horizontal placement
+            timestamp: Date.now()
+        })
+    })
+
+    socket.on('meeting:soundboard', (payload: { meetingId: string; sound: string; senderName?: string }) => {
+        if (!payload?.meetingId || !payload?.sound) return
+        io.to(`meeting:${payload.meetingId}`).emit('meeting:soundboard', {
+            sound: payload.sound,
+            senderName: payload.senderName || authSocket.guestName || 'Participant'
+        })
+    })
+
+    // Screen Share Annotation Events Relay
+    socket.on('screen:annotation:stroke-start', (payload: { meetingId: string; stroke: any }) => {
+        if (!payload?.meetingId || !payload?.stroke) return
+        socket.to(`meeting:${payload.meetingId}`).emit('screen:annotation:stroke-start', payload)
+    })
+
+    socket.on('screen:annotation:stroke-point', (payload: { meetingId: string; strokeId: string; point: any }) => {
+        if (!payload?.meetingId || !payload?.strokeId || !payload?.point) return
+        socket.to(`meeting:${payload.meetingId}`).emit('screen:annotation:stroke-point', payload)
+    })
+
+    socket.on('screen:annotation:stroke-end', (payload: { meetingId: string; strokeId?: string }) => {
+        if (!payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('screen:annotation:stroke-end', payload)
+    })
+
+    socket.on('screen:annotation:laser', (payload: { meetingId: string; point: any }) => {
+        if (!payload?.meetingId || !payload?.point) return
+        socket.to(`meeting:${payload.meetingId}`).emit('screen:annotation:laser', payload)
+    })
+
+    socket.on('screen:annotation:clear', (payload: { meetingId: string }) => {
+        if (!payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('screen:annotation:clear', payload)
     })
 }

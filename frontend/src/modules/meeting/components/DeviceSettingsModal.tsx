@@ -302,8 +302,12 @@ export function DeviceSettingsModal({
                     {/* Noise Suppression */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-md)' }}>
                         <div>
-                            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff' }}>Noise Suppression</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Suppress background fan and typing noise</div>
+                            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span>🔕</span> AI Ultra-Deep Noise Cancellation
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                Real-time 120Hz highpass rumble filter, keyboard clack notch &amp; VAD gate
+                            </div>
                         </div>
                         <input
                             type="checkbox"

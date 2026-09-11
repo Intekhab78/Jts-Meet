@@ -61,3 +61,39 @@ export interface UpdateChannelMemberRolePayload {
     userId: string
     role: Exclude<ChannelRole, 'owner'>
 }
+
+export interface ChannelAttachment {
+    name: string
+    url: string
+    fileType: 'pdf' | 'image' | 'sheet' | 'doc' | 'archive' | 'code' | 'other' | string
+    size?: number
+    mimeType?: string
+}
+
+export interface CodeSnippet {
+    language: string
+    code: string
+    title?: string
+}
+
+export interface ChannelMessage {
+    _id: string
+    channelId: string
+    senderId: {
+        _id: string
+        fullName: string
+        email: string
+        profileImage?: string
+    } | string
+    messageType?: 'text' | 'file' | 'code' | 'image'
+    content: string
+    attachments?: ChannelAttachment[]
+    codeSnippet?: CodeSnippet
+    replyTo?: string | null
+    replyCount?: number
+    reactions?: { userId: string; emoji: string }[]
+    edited?: boolean
+    deleted?: boolean
+    createdAt: string
+    updatedAt?: string
+}

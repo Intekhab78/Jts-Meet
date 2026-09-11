@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 import { Notification, INotification } from './notification.model'
-import { sendOTPEmail, sendResetPasswordEmail, sendMeetingInvitationEmail, sendOrganizationInvitationEmail } from '../../services/email.service'
+import { sendOTPEmail, sendResetPasswordEmail, sendMeetingInvitationEmail, sendOrganizationInvitationEmail, sendTeamInvitationEmail } from '../../services/email.service'
 
 export interface NotificationPayload {
     recipientId: string
@@ -10,7 +10,7 @@ export interface NotificationPayload {
     metadata?: Record<string, any>
     emailData?: {
         to: string
-        template: 'otp' | 'reset' | 'meeting_invite' | 'org_invite'
+        template: 'otp' | 'reset' | 'meeting_invite' | 'org_invite' | 'team_invite'
         params: Record<string, any>
     }
 }
@@ -49,10 +49,17 @@ export class NotificationService {
                         await sendResetPasswordEmail(to, params.code)
                         break
                     case 'meeting_invite':
-                        await sendMeetingInvitationEmail(to, params.meetingId, params.meetingTitle, params.hostName, params.inviteLink)
+                        await sendMeetingInvitationEmail(to, params.meetingId, params.meetingTitle, params.hostName, params.inviteLink, {
+                            scheduledDate: params.scheduledDate,
+                            scheduledTime: params.scheduledTime,
+                            teamName: params.teamName
+                        })
                         break
                     case 'org_invite':
                         await sendOrganizationInvitationEmail(to, params.orgName, params.inviterName, params.joinLink, params.isRegistered || false)
+                        break
+                    case 'team_invite':
+                        await sendTeamInvitationEmail(to, params.teamName, params.inviterName, params.role || 'member', params.teamLink)
                         break
                 }
             } catch (err) {

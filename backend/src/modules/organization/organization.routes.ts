@@ -14,5 +14,6 @@ router.post('/invite/accept', authenticate, asyncWrapper(organizationController.
 router.post('/remove', authenticate, asyncWrapper(organizationController.removeMember))
 router.post('/leave', authenticate, asyncWrapper(organizationController.leaveOrganization))
 router.get('/:organizationId/members', authenticate, asyncWrapper(organizationController.getMembers))
+router.patch('/:organizationId/members/:targetUserId/role', authenticate, asyncWrapper(organizationController.updateMemberRole))
 
 export default router

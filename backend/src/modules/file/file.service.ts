@@ -79,3 +79,14 @@ export async function getFileByChecksum(checksum: string): Promise<IFileMetadata
     return FileMetadata.findOne({ checksum, deletedAt: null }).exec()
 }
 
+export async function listChannelFiles(channelId: string): Promise<IFileMetadata[]> {
+    const conditions: any[] = [{ contextId: channelId }]
+    if (Types.ObjectId.isValid(channelId)) {
+        conditions.push({ channelId: new Types.ObjectId(channelId) })
+    }
+    return FileMetadata.find({
+        $or: conditions,
+        deletedAt: null
+    }).populate('uploadedBy', 'fullName email profileImage').sort({ uploadedAt: -1 }).exec()
+}
+

@@ -30,17 +30,22 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
     const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
     const [selectedVideoDevice, setSelectedVideoDevice] = useState<string>('')
     const [selectedAudioDevice, setSelectedAudioDevice] = useState<string>('')
+    const [isHostOnline, setIsHostOnline] = useState(false)
 
     const videoRef = useRef<HTMLVideoElement>(null)
     const streamRef = useRef<MediaStream | null>(null)
     const audioCtxRef = useRef<AudioContext | null>(null)
     const animFrameRef = useRef<number | null>(null)
 
-    // Socket listener for approval/denial
+    // Socket listener for approval/denial and host presence
     useEffect(() => {
         const socket = io(SOCKET_URL, {
             auth: { token: guestToken },
             transports: ['websocket']
+        })
+
+        socket.on('meeting:host-joined', () => {
+            setIsHostOnline(true)
         })
 
         socket.on('guest:approved', (data?: { token?: string }) => {
@@ -458,9 +463,9 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 6,
-                            background: 'rgba(245, 158, 11, 0.15)',
-                            color: '#fbbf24',
-                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            background: isHostOnline ? 'rgba(34, 197, 94, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                            color: isHostOnline ? '#4ade80' : '#fbbf24',
+                            border: `1px solid ${isHostOnline ? 'rgba(34, 197, 94, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
                             borderRadius: '20px',
                             padding: '4px 12px',
                             fontSize: '0.75rem',
@@ -471,16 +476,20 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                                 width: 6,
                                 height: 6,
                                 borderRadius: '50%',
-                                background: '#fbbf24',
+                                background: isHostOnline ? '#4ade80' : '#fbbf24',
                                 animation: 'jts-pulse-dot 1.4s infinite'
                             }} />
-                            Asking to be let in...
+                            {isHostOnline ? '🟢 Host is in the meeting' : '⏳ Waiting for Host to start...'}
                         </div>
-                        <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-0.02em' }}>
-                            You'll join the call when someone lets you in
+                        <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-0.02em', lineHeight: 1.3 }}>
+                            {isHostOnline
+                                ? `Asking ${hostName || 'the host'} to admit you into the call`
+                                : `The meeting will begin when ${hostName || 'the organizer'} joins`}
                         </h2>
                         <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginTop: 8, lineHeight: 1.5 }}>
-                            You can check your audio and video while you wait.
+                            {isHostOnline
+                                ? "The host has arrived and has been notified that you're waiting in the lobby."
+                                : "We've sent a notification to the host. You'll be admitted as soon as the session begins."}
                         </p>
                     </div>
 

@@ -10,5 +10,6 @@ router.get('/:messageId', ChannelChatController.getMessage)
 router.post('/', ChannelChatController.createMessage)
 router.put('/:messageId', ChannelChatController.editMessage)
 router.delete('/:messageId', ChannelChatController.deleteMessage)
+router.post('/:messageId/reaction', ChannelChatController.addReaction)
 
 export default router

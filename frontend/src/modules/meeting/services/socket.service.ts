@@ -48,6 +48,13 @@ export const SocketEvents = {
     MEETING_REACTION: 'meeting:reaction',
     MEETING_WATERMARK_TOGGLE: 'meeting:toggle-watermark',
     MEETING_COHOST_PROMOTE: 'meeting:cohost-promote',
-    MEETING_COHOST_DEMOTE: 'meeting:cohost-demote'
+    MEETING_COHOST_DEMOTE: 'meeting:cohost-demote',
+
+    // Screen Share Live Annotation events
+    SCREEN_ANNOTATION_STROKE_START: 'screen:annotation:stroke-start',
+    SCREEN_ANNOTATION_STROKE_POINT: 'screen:annotation:stroke-point',
+    SCREEN_ANNOTATION_STROKE_END: 'screen:annotation:stroke-end',
+    SCREEN_ANNOTATION_LASER: 'screen:annotation:laser',
+    SCREEN_ANNOTATION_CLEAR: 'screen:annotation:clear'
 } as const
 

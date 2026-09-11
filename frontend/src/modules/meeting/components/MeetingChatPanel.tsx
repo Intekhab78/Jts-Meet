@@ -532,7 +532,7 @@ export function MeetingChatPanel({
                         display: 'flex',
                         alignItems: 'center'
                     }}>
-                        <span style={{ position: 'absolute', left: 10, color: 'var(--color-text-muted)', display: 'flex' }}>
+                        <span style={{ position: 'absolute', left: 10, color: 'var(--color-text-muted)', display: 'flex', pointerEvents: 'none' }}>
                             <IconSearch />
                         </span>
                         <input
@@ -545,7 +545,7 @@ export function MeetingChatPanel({
                                 background: 'var(--color-surface-2)',
                                 border: '1px solid var(--color-border)',
                                 borderRadius: 'var(--radius-sm)',
-                                padding: '6px 12px 6px 30px',
+                                padding: '6px 12px 6px 34px',
                                 fontSize: '0.8125rem',
                                 color: 'var(--color-text-primary)',
                                 outline: 'none',

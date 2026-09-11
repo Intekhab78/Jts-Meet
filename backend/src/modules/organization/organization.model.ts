@@ -21,6 +21,9 @@ export interface IOrganization extends Document {
     members: IOrganizationMember[]
     status: OrganizationStatus
     timezone?: string
+    planTier?: 'free' | 'starter' | 'enterprise'
+    maxSeats?: number
+    maxStorageGb?: number
     createdAt: Date
     updatedAt: Date
 }
@@ -29,9 +32,9 @@ const OrganizationMemberSchema = new Schema<IOrganizationMember>(
     {
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         role: { type: String, enum: ['owner', 'admin', 'member', 'guest'], required: true },
-        joinedAt: { type: Date, default: null },
+        joinedAt: { type: Date, default: Date.now },
         invitedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-        status: { type: String, enum: ['pending', 'active', 'removed'], required: true, default: 'pending' }
+        status: { type: String, enum: ['pending', 'active', 'removed'], required: true, default: 'active' }
     },
     { _id: false }
 )
@@ -45,7 +48,10 @@ const OrganizationSchema = new Schema<IOrganization>(
         ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         members: { type: [OrganizationMemberSchema], default: [] },
         status: { type: String, enum: ['active', 'inactive'], default: 'active' },
-        timezone: { type: String, default: 'UTC' }
+        timezone: { type: String, default: 'UTC' },
+        planTier: { type: String, enum: ['free', 'starter', 'enterprise'], default: 'enterprise' },
+        maxSeats: { type: Number, default: 50 },
+        maxStorageGb: { type: Number, default: 25 }
     },
     { timestamps: true }
 )

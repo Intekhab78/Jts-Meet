@@ -1,4 +1,4 @@
-import { Organization, CreateOrganizationPayload, UpdateOrganizationPayload, InviteMemberPayload, OrganizationMember } from './organization.types'
+import { Organization, CreateOrganizationPayload, UpdateOrganizationPayload, InviteMemberPayload, OrganizationMember, OrganizationRole } from './organization.types'
 
 import { API_BASE } from '../../config'
 
@@ -27,13 +27,25 @@ export async function createOrganization(payload: CreateOrganizationPayload, tok
 }
 
 export async function getOrganization(organizationId: string, token: string): Promise<Organization> {
-    const response = await fetch(`${API_BASE}/api/organization/${organizationId}`, {
-        headers: {
-            'Content-Type': 'application/json',
-            ...buildAuthHeaders(token)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 7000)
+    try {
+        const response = await fetch(`${API_BASE}/api/organization/${organizationId}`, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...buildAuthHeaders(token)
+            },
+            signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+        return parseResponse<Organization>(response)
+    } catch (err: any) {
+        clearTimeout(timeoutId)
+        if (err.name === 'AbortError') {
+            throw new Error('Network timeout while loading workspace profile. Please try again.')
         }
-    })
-    return parseResponse<Organization>(response)
+        throw err
+    }
 }
 
 export async function updateOrganization(
@@ -111,4 +123,21 @@ export async function getOrganizationMembers(organizationId: string, token: stri
     if (Array.isArray(data)) return data
     if (data && Array.isArray(data.members)) return data.members
     return []
+}
+
+export async function updateOrganizationMemberRole(
+    organizationId: string,
+    targetUserId: string,
+    role: OrganizationRole,
+    token: string
+): Promise<Organization> {
+    const response = await fetch(`${API_BASE}/api/organization/${organizationId}/members/${targetUserId}/role`, {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/json',
+            ...buildAuthHeaders(token)
+        },
+        body: JSON.stringify({ role })
+    })
+    return parseResponse<Organization>(response)
 }

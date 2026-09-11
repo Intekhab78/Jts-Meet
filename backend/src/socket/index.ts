@@ -11,6 +11,8 @@ import { registerChannelChatHandlers } from './channelChat'
 import { registerDirectCallHandlers } from './directCall'
 import { registerWhiteboardHandlers } from './whiteboard'
 import { registerPollHandlers } from './poll'
+import { registerBreakoutHandlers } from './breakout'
+import { registerMeetingQAHandlers } from './meetingQA'
 import { registerWebRTCHandlers } from '../modules/webrtc/webrtc.socket'
 import { getMeetingByMeetingId } from '../modules/meeting/meeting.service'
 import jwt from 'jsonwebtoken'
@@ -20,6 +22,12 @@ import { RedisService } from '../services/redis.service'
 import { User } from '../models/user.model'
 import { Message } from '../modules/chat/chat.model'
 
+let ioInstance: Server | null = null
+
+export function getIO(): Server | null {
+    return ioInstance
+}
+
 export async function initializeSocket(server: HttpServer): Promise<Server> {
     const io = new Server(server, {
         cors: {
@@ -28,6 +36,7 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
             credentials: true
         }
     })
+    ioInstance = io
 
     try {
         const redisService = RedisService.getInstance()
@@ -110,6 +119,15 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
             if (authSocket.isPending) {
                 // Join the guest lobby room
                 socket.join(`lobby:${authSocket.meetingId}`)
+
+                // If the meeting room already has participants/host, notify the connecting guest
+                const meetingRoom = io.sockets.adapter.rooms.get(`meeting:${authSocket.meetingId}`)
+                if (meetingRoom && meetingRoom.size > 0) {
+                    socket.emit('meeting:host-joined', {
+                        hostName: 'Organizer',
+                        meetingId: authSocket.meetingId
+                    })
+                }
                 
                 // Notify the meeting host & co-hosts in real-time that a guest is waiting
                 io.to(`meeting:${authSocket.meetingId}`).emit('guest:new-waiting', {
@@ -133,6 +151,8 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
             registerWebRTCHandlers(io, socket)
             registerWhiteboardHandlers(io, socket)
             registerPollHandlers(io, socket)
+            registerBreakoutHandlers(io, socket)
+            registerMeetingQAHandlers(io, socket)
 
             socket.on(SocketEvents.DISCONNECT, () => {
                 // Approved guest disconnect cleanup
@@ -287,6 +307,8 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         registerDirectCallHandlers(io, socket)
         registerWhiteboardHandlers(io, socket)
         registerPollHandlers(io, socket)
+        registerBreakoutHandlers(io, socket)
+        registerMeetingQAHandlers(io, socket)
 
         socket.on(SocketEvents.DISCONNECT, async () => {
             removeUserSocket(userId)

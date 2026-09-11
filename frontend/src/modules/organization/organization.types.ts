@@ -3,14 +3,15 @@ export type OrganizationStatus = 'active' | 'inactive'
 export type InvitationStatus = 'pending' | 'active' | 'removed'
 
 export interface OrganizationMember {
-    userId: string
+    userId: string | any
     role: OrganizationRole
     joinedAt?: string | null
-    invitedBy: string
+    invitedBy?: string | any
     status: InvitationStatus
     user?: {
-        fullName: string
-        email: string
+        _id?: string
+        fullName?: string
+        email?: string
         profileImage?: string
     }
 }

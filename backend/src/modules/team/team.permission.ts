@@ -67,6 +67,17 @@ export async function requireTeamOwnerOrAdmin(req: Request, res: Response, next:
         return sendError(res, 404, 'Team not found')
     }
 
+    try {
+        const organization = await getOrganizationById(team.organizationId.toString())
+        const orgMember = organization ? getMemberFromOrganization(organization, userId) : null
+        if (orgMember && ['owner', 'admin'].includes(orgMember.role)) {
+            return next()
+        }
+        if (organization && organization.ownerId && organization.ownerId.equals(new Types.ObjectId(userId))) {
+            return next()
+        }
+    } catch (_) {}
+
     const member = getMemberFromTeam(team, userId)
     if (!member || !['owner', 'admin'].includes(member.role)) {
         return sendError(res, 403, 'Forbidden')

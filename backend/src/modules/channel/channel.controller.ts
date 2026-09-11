@@ -19,6 +19,7 @@ import {
     createGeneralChannel,
     getChannelMembersPaginated
 } from './channel.service'
+import { listChannelFiles } from '../file/file.service'
 import {
     validateCreateChannel,
     validateUpdateChannel,
@@ -311,5 +312,19 @@ export const channelController = {
         }
 
         return sendSuccess(res, members, 'Channel members retrieved')
+    },
+
+    getFiles: async (req: AuthRequest, res: Response) => {
+        const channelId = Array.isArray(req.params.channelId) ? req.params.channelId[0] : req.params.channelId
+        if (!channelId) {
+            return sendError(res, 400, 'channelId is required')
+        }
+
+        try {
+            const files = await listChannelFiles(channelId)
+            return sendSuccess(res, files, 'Channel files retrieved')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to get channel files')
+        }
     }
 }

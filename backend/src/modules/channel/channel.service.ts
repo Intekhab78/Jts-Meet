@@ -6,14 +6,53 @@ import { ChannelTypes, ChannelRoles, ChannelStatuses, GeneralChannelName } from 
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
 
-function isChannelOwnerOrModerator(channel: IChannel, userId: string) {
-    return channel.members.some(
-        (member) => member.userId.equals(new Types.ObjectId(userId)) && ['owner', 'moderator'].includes(member.role)
-    )
+async function isChannelOwnerOrModerator(channel: IChannel, userId: string): Promise<boolean> {
+    try {
+        const user = await User.findById(userId).select('email').exec()
+        if (user?.email?.toLowerCase().trim() === 'admin@jtsmeet.com') return true
+    } catch (_) {}
+
+    const targetIdStr = userId.toString()
+    if (channel.ownerId) {
+        const ownerIdStr = (channel.ownerId as any)?._id ? (channel.ownerId as any)._id.toString() : channel.ownerId.toString()
+        if (ownerIdStr === targetIdStr) return true
+    }
+    const isDirectMod = channel.members.some((member) => {
+        const mUserId = (member.userId as any)?._id ? (member.userId as any)._id.toString() : (member.userId ? member.userId.toString() : '')
+        return mUserId === targetIdStr && ['owner', 'moderator', 'admin'].includes(member.role)
+    })
+    if (isDirectMod) return true
+
+    // Check if user is Team owner/admin or Org owner/admin
+    try {
+        const team = await Team.findById(channel.teamId)
+        if (team) {
+            const isTeamAdmin = team.members.some((m) => {
+                const tuId = (m.userId as any)?._id ? (m.userId as any)._id.toString() : m.userId.toString()
+                return tuId === targetIdStr && ['owner', 'admin'].includes(m.role)
+            })
+            if (isTeamAdmin) return true
+
+            const org = await getOrganizationById(team.organizationId.toString())
+            if (org) {
+                const orgOwnerStr = (org.ownerId as any)?._id ? (org.ownerId as any)._id.toString() : org.ownerId.toString()
+                if (orgOwnerStr === targetIdStr) return true
+                const isOrgAdmin = org.members.some((m: any) => {
+                    const omId = (m.userId as any)?._id ? (m.userId as any)._id.toString() : m.userId.toString()
+                    return omId === targetIdStr && ['owner', 'admin'].includes(m.role) && m.status === 'active'
+                })
+                if (isOrgAdmin) return true
+            }
+        }
+    } catch (_) {}
+
+    return false
 }
 
-function isChannelOwner(channel: IChannel, userId: string) {
-    return channel.ownerId.equals(new Types.ObjectId(userId))
+function isChannelOwner(channel: IChannel, userId: string): boolean {
+    const targetIdStr = userId.toString()
+    const ownerIdStr = (channel.ownerId as any)?._id ? (channel.ownerId as any)._id.toString() : channel.ownerId.toString()
+    return ownerIdStr === targetIdStr
 }
 
 async function ensureTeamAndOrganizationExist(organizationId: string, teamId: string, session?: mongoose.ClientSession) {
@@ -114,19 +153,48 @@ export async function ensureMember(channelId: string, userId: string): Promise<I
         throw { status: 404, message: 'Channel not found' }
     }
 
-    const isMember = channel.members.some((member) => member.userId.equals(new Types.ObjectId(userId)))
-    if (!isMember) {
-        throw { status: 403, message: 'Forbidden' }
+    // Check Super Admin, Channel Owner, Moderator, Team Owner/Admin, Org Owner/Admin
+    const isPrivileged = await isChannelOwnerOrModerator(channel, userId)
+    if (isPrivileged) {
+        return channel
     }
 
-    return channel
+    const isMember = channel.members.some((member) => {
+        const mId = (member.userId as any)?._id ? (member.userId as any)._id.toString() : (member.userId ? member.userId.toString() : '')
+        return mId === userId.toString()
+    })
+
+    if (isMember) {
+        return channel
+    }
+
+    // If channel is public, allow team members or public team users
+    if (channel.type === 'public') {
+        try {
+            const team = await Team.findById(channel.teamId)
+            if (team) {
+                const isTeamMember = team.members.some((m) => {
+                    const tuId = (m.userId as any)?._id ? (m.userId as any)._id.toString() : m.userId.toString()
+                    return tuId === userId.toString()
+                })
+                if (isTeamMember || team.visibility === 'public') {
+                    return channel
+                }
+            }
+        } catch (_) { }
+    }
+
+    throw { status: 403, message: 'Forbidden' }
 }
 
 export async function listTeamChannels(teamId: string): Promise<IChannel[]> {
     if (!Types.ObjectId.isValid(teamId)) {
         return []
     }
-    return Channel.find({ teamId: new Types.ObjectId(teamId), deletedAt: null }).sort({ createdAt: 1 }).exec()
+    return Channel.find({ teamId: new Types.ObjectId(teamId), deletedAt: null })
+        .populate('members.userId', 'fullName email profileImage')
+        .sort({ createdAt: 1 })
+        .exec()
 }
 
 export async function updateChannel(channelId: string, userId: string, payload: {
@@ -258,18 +326,33 @@ export async function inviteChannelMember(channelId: string, inviterId: string, 
         return null
     }
 
-    if (!isChannelOwnerOrModerator(channel, inviterId)) {
+    if (!(await isChannelOwnerOrModerator(channel, inviterId))) {
         throw new Error('Forbidden')
     }
 
-    const existing = channel.members.find((member) => member.userId.equals(new Types.ObjectId(payload.userId)))
+    let targetUserId = payload.userId.trim()
+    if (!Types.ObjectId.isValid(targetUserId) || targetUserId.includes('@')) {
+        const user = await User.findOne({ email: targetUserId.toLowerCase() })
+        if (!user) {
+            throw new Error('User not found with this email address')
+        }
+        targetUserId = user._id.toString()
+    }
+
+    const targetObjectUserId = new Types.ObjectId(targetUserId)
+
+    const existing = channel.members.find((member) => {
+        const mId = (member.userId as any)?._id ? (member.userId as any)._id.toString() : member.userId.toString()
+        return mId === targetUserId
+    })
+
     if (existing) {
         existing.role = payload.role
         existing.invitedBy = new Types.ObjectId(inviterId)
         existing.joinedAt = new Date()
     } else {
         channel.members.push({
-            userId: new Types.ObjectId(payload.userId),
+            userId: targetObjectUserId,
             role: payload.role,
             joinedAt: new Date(),
             invitedBy: new Types.ObjectId(inviterId)
@@ -277,6 +360,7 @@ export async function inviteChannelMember(channelId: string, inviterId: string, 
     }
 
     const savedChannel = await channel.save()
+    await savedChannel.populate('members.userId', 'fullName email profileImage')
 
     // Trigger invitation notifications asynchronously
     if (savedChannel) {
@@ -286,7 +370,7 @@ export async function inviteChannelMember(channelId: string, inviterId: string, 
                 const inviterName = inviter ? inviter.fullName : 'A channel moderator'
                 
                 await NotificationService.send({
-                    recipientId: payload.userId,
+                    recipientId: targetUserId,
                     title: 'Channel Invitation',
                     body: `${inviterName} has added you to the channel "#${channel.name}"`,
                     type: 'channel_invite',
@@ -307,11 +391,23 @@ export async function removeChannelMember(channelId: string, requesterId: string
         return null
     }
 
-    if (!isChannelOwnerOrModerator(channel, requesterId)) {
+    if (!(await isChannelOwnerOrModerator(channel, requesterId))) {
         throw new Error('Forbidden')
     }
 
-    const index = channel.members.findIndex((member) => member.userId.equals(new Types.ObjectId(targetUserId)))
+    let resolvedTargetId = targetUserId.trim()
+    if (!Types.ObjectId.isValid(resolvedTargetId) || resolvedTargetId.includes('@')) {
+        const user = await User.findOne({ email: resolvedTargetId.toLowerCase() })
+        if (user) {
+            resolvedTargetId = user._id.toString()
+        }
+    }
+
+    const index = channel.members.findIndex((member) => {
+        const mId = (member.userId as any)?._id ? (member.userId as any)._id.toString() : member.userId.toString()
+        return mId === resolvedTargetId
+    })
+
     if (index === -1) {
         return null
     }
@@ -321,7 +417,9 @@ export async function removeChannelMember(channelId: string, requesterId: string
     }
 
     channel.members.splice(index, 1)
-    return channel.save()
+    const saved = await channel.save()
+    await saved.populate('members.userId', 'fullName email profileImage')
+    return saved
 }
 
 export async function updateChannelMemberRole(channelId: string, requesterId: string, payload: { userId: string; role: 'moderator' | 'member' | 'guest' }): Promise<IChannel | null> {
@@ -330,11 +428,23 @@ export async function updateChannelMemberRole(channelId: string, requesterId: st
         return null
     }
 
-    if (!isChannelOwnerOrModerator(channel, requesterId)) {
+    if (!(await isChannelOwnerOrModerator(channel, requesterId))) {
         throw new Error('Forbidden')
     }
 
-    const member = channel.members.find((member) => member.userId.equals(new Types.ObjectId(payload.userId)))
+    let resolvedTargetId = payload.userId.trim()
+    if (!Types.ObjectId.isValid(resolvedTargetId) || resolvedTargetId.includes('@')) {
+        const user = await User.findOne({ email: resolvedTargetId.toLowerCase() })
+        if (user) {
+            resolvedTargetId = user._id.toString()
+        }
+    }
+
+    const member = channel.members.find((member) => {
+        const mId = (member.userId as any)?._id ? (member.userId as any)._id.toString() : member.userId.toString()
+        return mId === resolvedTargetId
+    })
+
     if (!member) {
         return null
     }
@@ -344,7 +454,9 @@ export async function updateChannelMemberRole(channelId: string, requesterId: st
     }
 
     member.role = payload.role
-    return channel.save()
+    const saved = await channel.save()
+    await saved.populate('members.userId', 'fullName email profileImage')
+    return saved
 }
 
 export async function getChannelMembers(channelId: string): Promise<IChannelMember[] | null> {

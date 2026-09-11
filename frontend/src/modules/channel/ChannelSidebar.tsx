@@ -56,23 +56,47 @@ export function ChannelSidebar({ channels, selectedChannelId, onSelectChannel, o
             </div>
 
             {channels.length > 4 && (
-                <input
-                    type="text"
-                    placeholder="Search channels..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    style={{
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid rgba(255, 255, 255, 0.08)',
-                        borderRadius: 6,
-                        padding: '4px 8px',
-                        fontSize: '0.75rem',
-                        color: '#fff',
-                        outline: 'none',
-                        width: '100%',
-                        boxSizing: 'border-box'
-                    }}
-                />
+                <div style={{ position: 'relative', width: '100%' }}>
+                    <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{
+                            position: 'absolute',
+                            left: 8,
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            color: 'var(--color-text-muted)',
+                            pointerEvents: 'none',
+                            opacity: 0.75
+                        }}
+                    >
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input
+                        type="text"
+                        placeholder="Search channels..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            borderRadius: 6,
+                            padding: '4px 8px 4px 28px',
+                            fontSize: '0.75rem',
+                            color: '#fff',
+                            outline: 'none',
+                            width: '100%',
+                            boxSizing: 'border-box'
+                        }}
+                    />
+                </div>
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 420, overflowY: 'auto' }}>

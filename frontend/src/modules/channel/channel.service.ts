@@ -121,3 +121,35 @@ export async function getChannelMembers(channelId: string, token: string): Promi
     })
     return parseResponse<Channel['members']>(response)
 }
+
+export async function listChannelFiles(channelId: string, token: string): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/api/channel/${channelId}/files`, {
+        headers: authHeaders(token)
+    })
+    return parseResponse<any[]>(response)
+}
+
+export async function uploadChannelFile(channelId: string, file: File, token: string): Promise<any> {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('contextType', 'channel')
+    formData.append('contextId', channelId)
+
+    const response = await fetch(`${API_BASE}/api/file/upload`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        },
+        body: formData
+    })
+    return parseResponse<any>(response)
+}
+
+export async function addChannelMessageReaction(channelId: string, messageId: string, emoji: string, token: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/api/channel/${channelId}/chat/${messageId}/reaction`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({ emoji })
+    })
+    return parseResponse<any>(response)
+}

@@ -210,14 +210,38 @@ export function InviteTeamMemberModal({
                                 </label>
 
                                 {eligibleMembers.length > 3 && (
-                                    <input
-                                        type="text"
-                                        placeholder="Search by name or email..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="input"
-                                        style={{ padding: '8px 12px', fontSize: '0.8rem', borderRadius: 8 }}
-                                    />
+                                    <div style={{ position: 'relative', width: '100%' }}>
+                                        <svg
+                                            width="14"
+                                            height="14"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="2.2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            style={{
+                                                position: 'absolute',
+                                                left: 10,
+                                                top: '50%',
+                                                transform: 'translateY(-50%)',
+                                                color: 'var(--color-text-muted)',
+                                                pointerEvents: 'none',
+                                                opacity: 0.75
+                                            }}
+                                        >
+                                            <circle cx="11" cy="11" r="8" />
+                                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                        </svg>
+                                        <input
+                                            type="text"
+                                            placeholder="Search by name or email..."
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                            className="input"
+                                            style={{ width: '100%', padding: '8px 12px 8px 34px', fontSize: '0.8rem', borderRadius: 8, boxSizing: 'border-box' }}
+                                        />
+                                    </div>
                                 )}
 
                                 <div style={{

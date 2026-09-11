@@ -190,7 +190,21 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                     <span style={{ fontSize: '3rem', display: 'block', marginBottom: 16 }}>⚠️</span>
                     <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: 12, color: '#f87171' }}>Meeting Unavailable</h3>
                     <p style={{ color: 'var(--color-text-muted)', marginBottom: 24, fontSize: '0.9375rem', lineHeight: 1.5 }}>{errorInfo}</p>
-                    <button onClick={() => window.location.href = '/'} className="btn btn-primary" style={{ width: '100%' }}>
+                    <button
+                        onClick={() => {
+                            try {
+                                localStorage.removeItem('jts_guest_token')
+                                localStorage.removeItem('jts_guest_user_id')
+                                localStorage.removeItem('jts_guest_details')
+                                sessionStorage.removeItem('jts_active_meeting_id')
+                                sessionStorage.removeItem('jts_meeting_joined')
+                                localStorage.removeItem('jts_last_meeting_id')
+                            } catch (e) {}
+                            window.location.href = '/'
+                        }}
+                        className="btn btn-primary"
+                        style={{ width: '100%' }}
+                    >
                         Back to Home
                     </button>
                 </div>
@@ -207,7 +221,21 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                     <p style={{ color: 'var(--color-text-muted)', marginBottom: 28, fontSize: '0.9375rem', lineHeight: 1.5 }}>
                         This meeting is restricted to organization members. External guests are not allowed to join this session.
                     </p>
-                    <button onClick={() => window.location.href = '/'} className="btn btn-primary" style={{ width: '100%', padding: 12, fontWeight: 750 }}>
+                    <button
+                        onClick={() => {
+                            try {
+                                localStorage.removeItem('jts_guest_token')
+                                localStorage.removeItem('jts_guest_user_id')
+                                localStorage.removeItem('jts_guest_details')
+                                sessionStorage.removeItem('jts_active_meeting_id')
+                                sessionStorage.removeItem('jts_meeting_joined')
+                                localStorage.removeItem('jts_last_meeting_id')
+                            } catch (e) {}
+                            window.location.href = '/'
+                        }}
+                        className="btn btn-primary"
+                        style={{ width: '100%', padding: 12, fontWeight: 750 }}
+                    >
                         Back to Home
                     </button>
                 </div>
@@ -220,14 +248,61 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
     return (
         <div style={{
             display: 'flex',
+            flexDirection: 'column',
             minHeight: '100vh',
             background: 'radial-gradient(circle at top left, #12131a 0%, #08090d 100%)',
             color: '#fff',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: isMobile ? '20px 16px' : '30px 24px',
-            boxSizing: 'border-box'
+            padding: isMobile ? '60px 16px 20px' : '70px 24px 30px',
+            boxSizing: 'border-box',
+            position: 'relative'
         }}>
+            {/* Top Navigation Bar */}
+            <div style={{
+                position: 'absolute',
+                top: 20,
+                left: isMobile ? 16 : 32,
+                right: isMobile ? 16 : 32,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                maxWidth: 960,
+                margin: '0 auto',
+                width: isMobile ? 'calc(100% - 32px)' : 'calc(100% - 64px)'
+            }}>
+                <button
+                    type="button"
+                    onClick={() => {
+                        try {
+                            sessionStorage.removeItem('jts_active_meeting_id')
+                            sessionStorage.removeItem('jts_meeting_joined')
+                            localStorage.removeItem('jts_last_meeting_id')
+                        } catch (e) {}
+                        if (stream) {
+                            stream.getTracks().forEach(t => t.stop())
+                        }
+                        onNavigate('landing')
+                        window.history.pushState({}, '', '/')
+                    }}
+                    style={{
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: 8,
+                        color: '#e2e8f0',
+                        padding: '6px 14px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6
+                    }}
+                >
+                    ← Back to Landing Page
+                </button>
+            </div>
+
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: isMobile ? '1fr' : '1.10fr 0.90fr',

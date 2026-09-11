@@ -16,12 +16,16 @@ import {
     unmuteUser,
     blockUser,
     toggleWaitingRoom,
-    toggleGuestJoin
+    toggleGuestJoin,
+    deleteMeeting,
+    updateMeeting
 } from './meeting.service'
 import { validateCreateMeeting, validateMeetingAction } from './meeting.validator'
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
+import { Team } from '../team/team.model'
+import { FRONTEND_URL } from '../../config'
 import { parseCursorQuery, executeCursorQuery } from '../../utils/paginationHelper'
 
 export const meetingController = {
@@ -319,28 +323,72 @@ export const meetingController = {
 
             const hostUser = await User.findById(userId)
             const hostName = hostUser?.fullName || 'Organizer'
-            const origin = req.headers.origin || 'http://localhost:5173'
+            const origin = req.headers.origin || FRONTEND_URL || 'http://localhost:3000'
             const fullInviteLink = `${origin}/meet/${meetingId}`
 
             const recipientUser = await User.findOne({ email: toEmail.toLowerCase().trim() })
             const recipientId = recipientUser ? recipientUser._id.toString() : userId
+
+            let teamName: string | undefined
+            if (meeting.teamId) {
+                const team = await Team.findById(meeting.teamId).select('name')
+                if (team) teamName = team.name
+            }
 
             await NotificationService.send({
                 recipientId,
                 title: 'Meeting Invitation',
                 body: `${hostName} has invited you to join the meeting "${meeting.title}"`,
                 type: 'meeting_invite',
-                metadata: { meetingId, hostName, title: meeting.title },
+                metadata: { meetingId, hostName, title: meeting.title, teamName },
                 emailData: {
                     to: toEmail,
                     template: 'meeting_invite',
-                    params: { meetingId, meetingTitle: meeting.title, hostName, inviteLink: fullInviteLink }
+                    params: {
+                        meetingId,
+                        meetingTitle: meeting.title,
+                        hostName,
+                        inviteLink: fullInviteLink,
+                        scheduledDate: meeting.scheduledDate,
+                        scheduledTime: meeting.scheduledTime,
+                        teamName
+                    }
                 }
             })
 
             return sendSuccess(res, null, 'Invitation email sent successfully')
         } catch (error: any) {
             return sendError(res, 500, error.message || 'Failed to send invitation')
+        }
+    },
+
+    deleteMeeting: async (req: AuthRequest, res: Response) => {
+        const meetingId = Array.isArray(req.params.meetingId) ? req.params.meetingId[0] : req.params.meetingId
+        const userId = req.userId
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        const success = await deleteMeeting(meetingId, userId)
+        if (!success) {
+            return sendError(res, 404, 'Meeting not found')
+        }
+        return sendSuccess(res, null, 'Meeting removed from history')
+    },
+
+    updateMeeting: async (req: AuthRequest, res: Response) => {
+        const meetingId = Array.isArray(req.params.meetingId) ? req.params.meetingId[0] : req.params.meetingId
+        const userId = req.userId
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        try {
+            const updated = await updateMeeting(meetingId, userId, req.body)
+            if (!updated) {
+                return sendError(res, 404, 'Meeting not found')
+            }
+            return sendSuccess(res, updated, 'Meeting schedule updated successfully')
+        } catch (error: any) {
+            return sendError(res, 400, error.message || 'Failed to update meeting')
         }
     }
 }

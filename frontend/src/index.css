@@ -592,6 +592,10 @@
     opacity: 0.4;
     cursor: not-allowed;
   }
+  .input[class*="pl-8"],
+  .input.input-search {
+    padding-left: 38px !important;
+  }
 
   /* ----------------------------------------------------------
      LABEL
@@ -1306,4 +1310,16 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   white-space: nowrap;
 }
+
+@keyframes teamsToastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 

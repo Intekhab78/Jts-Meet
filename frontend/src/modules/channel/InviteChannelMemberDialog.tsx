@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { ChannelRole } from './channel.types'
 
@@ -14,10 +14,29 @@ export function InviteChannelMemberDialog({ open, onClose, onInvite }: InviteCha
     const [error, setError] = useState('')
     const [submitting, setSubmitting] = useState(false)
 
+    useEffect(() => {
+        if (open) {
+            setUserId('')
+            setRole('member')
+            setError('')
+            setSubmitting(false)
+        }
+    }, [open])
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && open && !submitting) {
+                onClose()
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [open, submitting, onClose])
+
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault()
         if (!userId.trim()) {
-            setError('User ID is required')
+            setError('Please enter user email or User ID')
             return
         }
 
@@ -35,116 +54,228 @@ export function InviteChannelMemberDialog({ open, onClose, onInvite }: InviteCha
         }
     }
 
-    console.log('InviteChannelMemberDialog rendered. open =', open)
     if (!open) {
         return null
     }
 
-    console.log('InviteChannelMemberDialog rendering portal to body...');
     return createPortal(
-        <div className="anim-fade-in" style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 9999,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '24px'
-        }}>
-            <div className="anim-scale-in" style={{
-                width: '100%',
-                maxWidth: '440px',
-                background: 'rgba(15, 17, 24, 0.98)',
-                border: '1px solid var(--color-border-strong)',
-                borderRadius: 'var(--radius-lg)',
-                padding: '28px',
-                boxShadow: 'var(--shadow-xl)',
-                color: '#fff',
+        <div
+            style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100vw',
+                height: '100vh',
+                zIndex: 9999999,
+                backgroundColor: 'rgba(5, 7, 14, 0.85)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
                 display: 'flex',
-                flexDirection: 'column',
-                gap: '20px'
-            }}>
-                <div style={{
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px 16px',
+                boxSizing: 'border-box'
+            }}
+            onClick={(e) => {
+                if (e.target === e.currentTarget && !submitting) {
+                    onClose()
+                }
+            }}
+        >
+            <div
+                className="anim-scale-in"
+                style={{
+                    width: '100%',
+                    maxWidth: 480,
+                    background: '#161722',
+                    border: '1px solid rgba(91, 95, 199, 0.4)',
+                    borderRadius: 16,
+                    boxShadow: '0 24px 60px -10px rgba(0, 0, 0, 0.9), 0 0 35px rgba(91, 95, 199, 0.25)',
+                    color: '#fff',
                     display: 'flex',
-                    justifyContent: 'space-between',
+                    flexDirection: 'column',
+                    maxHeight: 'min(88vh, 600px)',
+                    overflow: 'hidden',
+                    position: 'relative'
+                }}
+            >
+                {/* MS Teams Style Header */}
+                <div style={{
+                    padding: '16px 22px',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
                     alignItems: 'center',
-                    borderBottom: '1px solid var(--color-border)',
-                    paddingBottom: '16px'
+                    justifyContent: 'space-between',
+                    background: 'linear-gradient(180deg, rgba(91, 95, 199, 0.15) 0%, rgba(22, 23, 34, 0) 100%)',
+                    flexShrink: 0
                 }}>
-                    <h2 style={{ fontSize: '1.125rem', fontWeight: 800, margin: 0 }}>Invite Channel Member</h2>
-                    <button type="button" onClick={onClose} style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--color-text-muted)',
-                        cursor: 'pointer',
-                        padding: 6,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: '50%',
-                        transition: 'background 0.15s'
-                    }} className="hover:bg-white/10">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 10,
+                            background: 'linear-gradient(135deg, #5b5fc7 0%, #444791 100%)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 4px 12px rgba(91, 95, 199, 0.35)',
+                            color: '#fff',
+                            flexShrink: 0
+                        }}>
+                            💬
+                        </div>
+                        <div>
+                            <h2 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#fff', lineHeight: 1.2 }}>
+                                Add Channel Member
+                            </h2>
+                            <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: '#a1a4c9', lineHeight: 1.2 }}>
+                                Grant access to this channel discussion
+                            </p>
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={submitting}
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            color: '#c5c7d8',
+                            cursor: 'pointer',
+                            width: 30,
+                            height: 30,
+                            borderRadius: 8,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.9rem'
+                        }}
+                    >
+                        ✕
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label className="label">User ID</label>
-                        <input
-                            value={userId}
-                            onChange={(e) => setUserId(e.target.value)}
-                            className="input"
-                            placeholder="Enter member's User ID"
-                            required
-                        />
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label className="label">Assign Role</label>
-                        <select
-                            value={role}
-                            onChange={(e) => setRole(e.target.value as Exclude<ChannelRole, 'owner'>)}
-                            className="input py-2"
-                            style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: '#fff', outline: 'none' }}
-                        >
-                            <option value="moderator">Moderator</option>
-                            <option value="member">Member</option>
-                            <option value="guest">Guest</option>
-                        </select>
-                    </div>
-
-                    {error && (
-                        <div style={{
-                            padding: '12px',
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                            color: '#f87171',
-                            fontSize: '0.75rem',
-                            borderRadius: 'var(--radius-sm)'
-                        }}>
-                            {error}
+                {/* Form */}
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                    <div style={{
+                        flex: 1,
+                        overflowY: 'auto',
+                        padding: '18px 22px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 16
+                    }}>
+                        <div>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#e2e4f0', display: 'block', marginBottom: 6 }}>
+                                User Email or User ID <span style={{ color: '#f87171' }}>*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={userId}
+                                onChange={(e) => setUserId(e.target.value)}
+                                placeholder="e.g. aniket@jtsmiddleeast.com or user_id"
+                                required
+                                autoFocus
+                                style={{
+                                    width: '100%',
+                                    background: '#101118',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    borderRadius: 8,
+                                    padding: '10px 14px',
+                                    color: '#fff',
+                                    fontSize: '0.88rem',
+                                    outline: 'none',
+                                    boxSizing: 'border-box'
+                                }}
+                            />
                         </div>
-                    )}
 
+                        <div>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#e2e4f0', display: 'block', marginBottom: 6 }}>
+                                Channel Permission Role
+                            </label>
+                            <select
+                                value={role}
+                                onChange={(e) => setRole(e.target.value as Exclude<ChannelRole, 'owner'>)}
+                                style={{
+                                    width: '100%',
+                                    background: '#101118',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    borderRadius: 8,
+                                    padding: '9px 12px',
+                                    color: '#fff',
+                                    fontSize: '0.85rem',
+                                    outline: 'none',
+                                    boxSizing: 'border-box',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                <option value="member">Member (Can chat & join channel meetings)</option>
+                                <option value="moderator">Moderator (Can manage messages & members)</option>
+                                <option value="guest">Guest (Read & listen only)</option>
+                            </select>
+                        </div>
+
+                        {error && (
+                            <div style={{
+                                padding: '10px 14px',
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
+                                color: '#fca5a5',
+                                fontSize: '0.8rem',
+                                borderRadius: 8
+                            }}>
+                                ⚠️ {error}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Actions Footer */}
                     <div style={{
                         display: 'flex',
+                        alignItems: 'center',
                         justifyContent: 'flex-end',
-                        gap: '12px',
-                        borderTop: '1px solid var(--color-border)',
-                        paddingTop: '20px',
-                        marginTop: '8px'
+                        gap: 12,
+                        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                        padding: '14px 22px',
+                        background: '#13141e',
+                        flexShrink: 0
                     }}>
-                        <button type="button" onClick={onClose} className="btn btn-secondary" style={{ padding: '8px 16px' }}>Cancel</button>
-                        <button type="submit" disabled={submitting} className="btn btn-primary" style={{ padding: '8px 20px' }}>
-                            {submitting ? 'Inviting...' : 'Invite'}
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={submitting}
+                            style={{
+                                background: 'transparent',
+                                border: '1px solid rgba(255, 255, 255, 0.15)',
+                                color: '#d1d3e2',
+                                padding: '8px 16px',
+                                borderRadius: 8,
+                                fontSize: '0.85rem',
+                                fontWeight: 600,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={submitting}
+                            style={{
+                                background: 'linear-gradient(135deg, #5b5fc7 0%, #444791 100%)',
+                                border: 'none',
+                                color: '#fff',
+                                padding: '8px 22px',
+                                borderRadius: 8,
+                                fontSize: '0.875rem',
+                                fontWeight: 700,
+                                cursor: submitting ? 'not-allowed' : 'pointer',
+                                opacity: submitting ? 0.7 : 1,
+                                boxShadow: '0 4px 14px rgba(91, 95, 199, 0.4)'
+                            }}
+                        >
+                            {submitting ? 'Adding...' : 'Add Member ➔'}
                         </button>
                     </div>
                 </form>
@@ -153,4 +284,3 @@ export function InviteChannelMemberDialog({ open, onClose, onInvite }: InviteCha
         document.body
     )
 }
-

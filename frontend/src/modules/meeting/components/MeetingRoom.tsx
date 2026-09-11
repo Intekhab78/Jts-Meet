@@ -20,6 +20,11 @@ import { MeetingNotesPanel } from './MeetingNotesPanel'
 import { LayoutSwitcherModal, MeetingLayoutMode } from './LayoutSwitcherModal'
 import { VirtualBackgroundModal } from './VirtualBackgroundModal'
 import { virtualBackgroundService } from '../../../services/virtualBackground.service'
+import { ScreenAnnotationOverlay } from './ScreenAnnotationOverlay'
+import { MeetingQAPanel } from './MeetingQAPanel'
+import { BreakoutRoomsModal } from './BreakoutRoomsModal'
+import { soundEffects } from '../../../utils/soundEffects'
+import { noiseCancellationService } from '../services/noiseCancellation.service'
 
 const parseJwt = (token: string) => {
     try {
@@ -73,7 +78,7 @@ const IconFiles = () => (
 )
 const IconPhoneOff = () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 9c-2.2 0-4.3.4-6.2 1.1-.6.2-1 .7-1 1.3v3c0 .6.4 1 1 1 1.4-.4 2.8-1.1 4-2v-3.4c.7-.2 1.5-.3 2.2-.3s1.5.1 2.2.3v3.4c1.2.9 2.6 1.6 4 2 .6 0 1-.4 1-1v-3c0-.6-.4-1.1-1-1.3C16.3 9.4 14.2 9 12 9z"/>
+        <path d="M12 9c-2.2 0-4.3.4-6.2 1.1-.6.2-1 .7-1 1.3v3c0 .6.4 1 1 1 1.4-.4 2.8-1.1 4-2v-3.4c.7-.2 1.5-.3 2.2-.3s1.5.1 2.2.3v3.4c1.2.9 2.6 1.6 4 2 .6 0 1-.4 1-1v-3c0-.6-.4-1.1-1-1.3C16.3 9.4 14.2 9 12 9z" />
     </svg>
 )
 const IconX = () => (
@@ -108,7 +113,7 @@ const IconChevronRight = () => (
     </svg>
 )
 
-type ActivePanel = 'participants' | 'chat' | 'files' | 'settings' | 'notes' | null
+type ActivePanel = 'participants' | 'chat' | 'files' | 'settings' | 'notes' | 'qa' | null
 
 /* ──────────────────────────────────────────────────────────
    Helper: get initials from a fullName string
@@ -125,7 +130,7 @@ function createDummyVideoTrack(): MediaStreamTrack {
     const stream = (canvas as any).captureStream(1)
     const track = stream.getVideoTracks()[0]
     if (track) {
-        ;(track as any).isDummy = true
+        ; (track as any).isDummy = true
     }
     return track
 }
@@ -154,13 +159,13 @@ function getUserIdFromToken(token: string): string {
 
 function getAvatarGradient(name: string): string {
     if (!name) return 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)'
-    
+
     // Hash function to get a consistent number
     let hash = 0
     for (let i = 0; i < name.length; i++) {
         hash = name.charCodeAt(i) + ((hash << 5) - hash)
     }
-    
+
     // Curated list of premium gradients
     const gradients = [
         'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', // Indigo to Purple
@@ -172,7 +177,7 @@ function getAvatarGradient(name: string): string {
         'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', // Cyan to Dark Cyan
         'linear-gradient(135deg, #f43f5e 0%, #be123c 100%)'  // Rose to Dark Rose
     ]
-    
+
     const index = Math.abs(hash) % gradients.length
     return gradients[index]
 }
@@ -212,8 +217,8 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
     const isLocalUser = label.toLowerCase().includes('you') || label === 'me'
     const [isMuted, setIsMuted] = useState(false)
     const [isVideoOffInternal, setIsVideoOffInternal] = useState(false)
-    const isVideoOff = isVideoOffProp !== undefined 
-        ? isVideoOffProp 
+    const isVideoOff = isVideoOffProp !== undefined
+        ? isVideoOffProp
         : (!stream || stream.getVideoTracks().length === 0 || isVideoOffInternal)
     const [isSpeaking, setIsSpeaking] = useState(false)
     const activeSpeakerSpeaking = isActiveSpeaker || isSpeaking
@@ -264,15 +269,15 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
             const isTrackMuted = vTrack ? vTrack.muted : false
 
             // Video is considered actively rendering if track is present, enabled, live, not muted, and not dummy
-            const videoActive = !!vTrack && 
-                                vTrack.enabled && 
-                                vTrack.readyState === 'live' && 
-                                !isTrackMuted && 
-                                !isDummy
+            const videoActive = !!vTrack &&
+                vTrack.enabled &&
+                vTrack.readyState === 'live' &&
+                !isTrackMuted &&
+                !isDummy
 
-            const audioActive = audioTracks.length > 0 && 
-                                audioTracks[0].enabled &&
-                                !audioTracks[0].muted
+            const audioActive = audioTracks.length > 0 &&
+                audioTracks[0].enabled &&
+                !audioTracks[0].muted
 
             setIsVideoOffInternal(!videoActive)
             setIsMuted(!audioActive)
@@ -283,7 +288,7 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
         const handleUnmute = () => {
             const el = videoRef.current
             if (el && el.paused) {
-                el.play().catch(() => {})
+                el.play().catch(() => { })
             }
             checkTracks()
         }
@@ -291,14 +296,14 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
         const handleWindowActive = () => {
             const el = videoRef.current
             if (el && el.paused) {
-                el.play().catch(() => {})
+                el.play().catch(() => { })
             }
             checkTracks()
         }
 
         window.addEventListener('focus', handleWindowActive)
         document.addEventListener('visibilitychange', handleWindowActive)
-        
+
         // Listen to WebRTC track level mute/unmute/ended events
         const vTracks = stream.getVideoTracks()
         vTracks.forEach(t => {
@@ -319,13 +324,13 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
         if (videoEl) {
             videoEl.addEventListener('resize', checkTracks)
             videoEl.addEventListener('loadedmetadata', () => {
-                videoEl.play().catch(() => {})
+                videoEl.play().catch(() => { })
                 checkTracks()
             })
             videoEl.addEventListener('play', checkTracks)
             videoEl.addEventListener('pause', () => {
                 if (stream && document.visibilityState === 'visible') {
-                    videoEl.play().catch(() => {})
+                    videoEl.play().catch(() => { })
                 }
                 checkTracks()
             })
@@ -425,8 +430,8 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                 borderRadius: isPrimary ? 'var(--radius-xl)' : 'var(--radius-lg)',
                 minHeight: isPrimary ? 0 : undefined,
                 transition: 'all 0.25s ease',
-                border: activeSpeakerSpeaking ? '2.5px solid #22c55e' : '2.5px solid transparent',
-                boxShadow: activeSpeakerSpeaking ? '0 0 0 2px #22c55e, 0 0 20px rgba(34, 197, 94, 0.45)' : 'none',
+                border: 'none',
+                boxShadow: 'none',
                 background: 'transparent'
             }}
         >
@@ -453,7 +458,7 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     ref={(el) => {
                         if (el && el.srcObject !== stream) {
                             el.srcObject = stream
-                            el.play().catch(() => {})
+                            el.play().catch(() => { })
                         }
                     }}
                     autoPlay
@@ -485,8 +490,8 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
             />
 
             {/* Center Avatar & First Name Placeholder (Active when Camera is OFF) */}
-            <div 
-                className="video-avatar-placeholder" 
+            <div
+                className="video-avatar-placeholder"
                 style={{
                     background: 'var(--color-surface-2)',
                     width: '100%',
@@ -632,21 +637,6 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                                 HOST
                             </span>
                         )}
-                        {isGuest && (
-                            <span style={{
-                                background: 'rgba(255,255,255,0.18)',
-                                color: 'rgba(255,255,255,0.85)',
-                                padding: '1px 5px',
-                                borderRadius: 8,
-                                fontSize: '0.55rem',
-                                fontWeight: 600,
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                display: 'inline-flex',
-                                alignItems: 'center'
-                            }}>
-                                GUEST
-                            </span>
-                        )}
                     </div>
                 )}
 
@@ -677,7 +667,7 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     borderRadius: 'var(--radius-full)',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 4, 
+                    gap: 4,
                     color: connectionQuality === 'Good' ? 'var(--color-success)' : 'var(--color-warning)',
                     fontSize: isCompact ? '0.575rem' : '0.625rem',
                     fontWeight: 600,
@@ -808,8 +798,8 @@ function ParticipantsPanel({
         const hasPerm = recordingAllowedUserIds.includes(userId)
         onTogglePermission?.(userId, 'recording', !hasPerm)
         addToast(
-            !hasPerm 
-                ? `Granted recording permission to ${renamedUsers[userId] || userId}` 
+            !hasPerm
+                ? `Granted recording permission to ${renamedUsers[userId] || userId}`
                 : `Revoked recording permission from ${renamedUsers[userId] || userId}`,
             !hasPerm ? 'success' : 'info'
         )
@@ -820,8 +810,8 @@ function ParticipantsPanel({
         const hasPerm = whiteboardAllowedUserIds.includes(userId)
         onTogglePermission?.(userId, 'whiteboard', !hasPerm)
         addToast(
-            !hasPerm 
-                ? `Granted whiteboard access to ${renamedUsers[userId] || userId}` 
+            !hasPerm
+                ? `Granted whiteboard access to ${renamedUsers[userId] || userId}`
                 : `Revoked whiteboard access from ${renamedUsers[userId] || userId}`,
             !hasPerm ? 'success' : 'info'
         )
@@ -869,23 +859,47 @@ function ParticipantsPanel({
 
             {/* Search filter input */}
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
-                <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search participants..."
-                    style={{
-                        width: '100%',
-                        background: 'var(--color-surface-2)',
-                        border: '1px solid var(--color-border)',
-                        borderRadius: 'var(--radius-sm)',
-                        padding: '8px 12px',
-                        fontSize: '0.8125rem',
-                        color: 'var(--color-text-primary)',
-                        outline: 'none',
-                        boxSizing: 'border-box'
-                    }}
-                />
+                <div style={{ position: 'relative', width: '100%' }}>
+                    <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{
+                            position: 'absolute',
+                            left: 10,
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            color: 'var(--color-text-muted)',
+                            pointerEvents: 'none',
+                            opacity: 0.75
+                        }}
+                    >
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input
+                        type="text"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Search participants..."
+                        style={{
+                            width: '100%',
+                            background: 'var(--color-surface-2)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '8px 12px 8px 34px',
+                            fontSize: '0.8125rem',
+                            color: 'var(--color-text-primary)',
+                            outline: 'none',
+                            boxSizing: 'border-box'
+                        }}
+                    />
+                </div>
             </div>
 
             {/* Host Quick-Action Toolbar */}
@@ -1712,7 +1726,7 @@ function SettingsPanel({
                     {activeTab === 'host' && isHost && (
                         <div className="anim-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                             <h4 style={{ fontSize: '0.9375rem', fontWeight: 700, margin: 0 }}>Host Room Control</h4>
-                            
+
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                                 <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600 }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -1946,6 +1960,20 @@ function SetupScreen({
         return `room-${rand}`
     })
 
+    const [recentMeetingId, setRecentMeetingId] = useState<string | null>(() => {
+        try {
+            return localStorage.getItem('jts_last_meeting_id')
+        } catch {
+            return null
+        }
+    })
+
+    useEffect(() => {
+        try {
+            setRecentMeetingId(localStorage.getItem('jts_last_meeting_id'))
+        } catch { }
+    }, [meetingInput])
+
     const toggleMute = () => {
         if (localStream) {
             localStream.getAudioTracks().forEach(track => {
@@ -1994,7 +2022,7 @@ function SetupScreen({
         if (activeTab === 'create') {
             try {
                 sessionStorage.setItem(`jts_created_meeting_${targetMeetingId.trim()}`, 'true')
-            } catch (e) {}
+            } catch (e) { }
         }
 
         setMeetingInput(targetMeetingId.trim())
@@ -2067,7 +2095,17 @@ function SetupScreen({
                             Establishing secure encrypted signaling connection
                         </p>
                         <button
-                            onClick={() => window.location.href = '/'}
+                            onClick={() => {
+                                try {
+                                    localStorage.removeItem('jts_guest_token')
+                                    localStorage.removeItem('jts_guest_user_id')
+                                    localStorage.removeItem('jts_guest_details')
+                                    sessionStorage.removeItem('jts_active_meeting_id')
+                                    sessionStorage.removeItem('jts_meeting_joined')
+                                    localStorage.removeItem('jts_last_meeting_id')
+                                } catch (e) { }
+                                window.location.href = '/'
+                            }}
                             className="btn btn-secondary"
                             style={{ padding: '8px 20px', fontSize: '0.8125rem' }}
                         >
@@ -2174,7 +2212,17 @@ function SetupScreen({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                         <button
-                            onClick={() => window.location.href = '/'}
+                            onClick={() => {
+                                try {
+                                    localStorage.removeItem('jts_guest_token')
+                                    localStorage.removeItem('jts_guest_user_id')
+                                    localStorage.removeItem('jts_guest_details')
+                                    sessionStorage.removeItem('jts_active_meeting_id')
+                                    sessionStorage.removeItem('jts_meeting_joined')
+                                    localStorage.removeItem('jts_last_meeting_id')
+                                } catch (e) { }
+                                window.location.href = '/'
+                            }}
                             style={{
                                 background: 'rgba(255, 255, 255, 0.05)',
                                 border: '1px solid var(--color-border)',
@@ -2288,8 +2336,38 @@ function SetupScreen({
                         </div>
 
                         {mediaError && (
-                            <div className="badge badge-warning text-center" style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', display: 'block', textTransform: 'none' }}>
-                                {mediaError}
+                            <div style={{
+                                background: 'rgba(234, 179, 8, 0.08)',
+                                border: '1px solid rgba(234, 179, 8, 0.25)',
+                                borderRadius: 'var(--radius-md)',
+                                padding: '10px 14px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 10
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                    <span style={{ fontSize: '1rem', lineHeight: 1 }}>⚠️</span>
+                                    <span style={{ fontSize: '0.75rem', color: '#fde047', lineHeight: 1.4 }}>
+                                        {mediaError}
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => onConnect()}
+                                    className="btn btn-secondary"
+                                    style={{
+                                        padding: '4px 10px',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 700,
+                                        borderRadius: '6px',
+                                        flexShrink: 0,
+                                        border: '1px solid rgba(234, 179, 8, 0.3)',
+                                        color: '#fde047'
+                                    }}
+                                >
+                                    Retry
+                                </button>
                             </div>
                         )}
                     </div>
@@ -2333,28 +2411,26 @@ function SetupScreen({
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
                             {activeTab === 'join' ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                                    {(() => {
-                                        const recentMeetingId = localStorage.getItem('jts_last_meeting_id')
-                                        if (!recentMeetingId) return null
-                                        return (
-                                            <div style={{
-                                                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%)',
-                                                border: '1px solid rgba(99, 102, 241, 0.3)',
-                                                borderRadius: 'var(--radius-md)',
-                                                padding: '12px 16px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between',
-                                                gap: 12
-                                            }}>
-                                                <div style={{ minWidth: 0, flex: 1 }}>
-                                                    <div style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#a5b4fc', fontWeight: 700 }}>
-                                                        🔄 Last Active Meeting
-                                                    </div>
-                                                    <div style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 600, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                                                        {recentMeetingId}
-                                                    </div>
+                                    {recentMeetingId && (
+                                        <div style={{
+                                            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                                            borderRadius: 'var(--radius-md)',
+                                            padding: '12px 16px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            gap: 12
+                                        }}>
+                                            <div style={{ minWidth: 0, flex: 1 }}>
+                                                <div style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#a5b4fc', fontWeight: 700 }}>
+                                                    🔄 Last Active Meeting
                                                 </div>
+                                                <div style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 600, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                                                    {recentMeetingId}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                                                 <button
                                                     type="button"
                                                     onClick={() => {
@@ -2362,13 +2438,50 @@ function SetupScreen({
                                                         onJoin(recentMeetingId)
                                                     }}
                                                     className="btn btn-primary"
-                                                    style={{ padding: '6px 14px', fontSize: '0.75rem', fontWeight: 700, flexShrink: 0, borderRadius: '8px' }}
+                                                    style={{ padding: '6px 14px', fontSize: '0.75rem', fontWeight: 700, borderRadius: '8px' }}
                                                 >
                                                     Rejoin Room ↗
                                                 </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        try {
+                                                            localStorage.removeItem('jts_last_meeting_id')
+                                                        } catch { }
+                                                        setRecentMeetingId(null)
+                                                        if (meetingInput === recentMeetingId) {
+                                                            setMeetingInput('')
+                                                        }
+                                                    }}
+                                                    title="Dismiss recent meeting"
+                                                    style={{
+                                                        background: 'rgba(255, 255, 255, 0.08)',
+                                                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                                                        borderRadius: '6px',
+                                                        color: 'var(--color-text-muted)',
+                                                        cursor: 'pointer',
+                                                        padding: '6px 9px',
+                                                        fontSize: '0.8125rem',
+                                                        lineHeight: 1,
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        transition: 'all 0.15s ease'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'
+                                                        e.currentTarget.style.color = '#f87171'
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
+                                                        e.currentTarget.style.color = 'var(--color-text-muted)'
+                                                    }}
+                                                >
+                                                    ✕
+                                                </button>
                                             </div>
-                                        )
-                                    })()}
+                                        </div>
+                                    )}
 
                                     <div>
                                         <label className="label" htmlFor="lobby-join-id">Meeting ID</label>
@@ -2504,7 +2617,7 @@ export function MeetingRoom({
             if (decoded) {
                 name = decoded.guestName || decoded.fullName || decoded.email || name
             }
-        } catch (e) {}
+        } catch (e) { }
         return name || 'Participant'
     }, [token, initialToken])
 
@@ -2517,12 +2630,12 @@ export function MeetingRoom({
     const { socket, connectSocket, connected } = useSocketContext()
     useEffect(() => {
         if (!socket) return
-        
+
         const handleRecordToggle = (data: { userId: string; isRecording: boolean }) => {
             setIsRemoteRecording(data.isRecording)
             addToast(`Meeting recording has been ${data.isRecording ? 'started' : 'stopped'} by another participant.`, 'info')
         }
-        
+
         socket.on('meeting:record-toggle', handleRecordToggle)
         return () => {
             socket.off('meeting:record-toggle', handleRecordToggle)
@@ -2533,15 +2646,33 @@ export function MeetingRoom({
     const {
         localStream, remoteStreams, connectToMeeting, leaveMeeting,
         startScreenShare, stopScreenShare, screenSharingUserId,
-        screenError, clearScreenError, mediaError, mediaLoading, replaceTrackOnPeers
+        screenError, clearScreenError, mediaError, mediaLoading, replaceTrackOnPeers,
+        requestMedia, stopMedia
     } = useWebRTCContext()
     const { messages, typingUsers, sendMessage, emitTyping, emitStopTyping, toggleChatReaction } = useMeetingChat()
+
+    const requestMediaRef = useRef(requestMedia)
+    const stopMediaRef = useRef(stopMedia)
+    useEffect(() => {
+        requestMediaRef.current = requestMedia
+        stopMediaRef.current = stopMedia
+    })
+
+    useEffect(() => {
+        // Automatically request camera and microphone ONLY when entering MeetingRoom
+        requestMediaRef.current()
+
+        return () => {
+            // When leaving MeetingRoom (switching tab or exiting), shut down camera & mic hardware completely
+            stopMediaRef.current()
+        }
+    }, [])
 
 
     // Listen to guest display names and camera states sharing from signaling
     useEffect(() => {
         if (!socket) return
-        
+
         const handleUserJoinedName = (data: { userId: string; displayName?: string; isVideoOff?: boolean }) => {
             if (data.displayName) {
                 setRenamedUsers(prev => {
@@ -2583,7 +2714,7 @@ export function MeetingRoom({
                 return next
             })
         }
-        
+
         const handleWebrtcJoinAck = (data: { meetingId: string; participants: number; peers?: Array<{ userId: string; displayName?: string; isVideoOff?: boolean }> }) => {
             if (data.peers && Array.isArray(data.peers)) {
                 setRenamedUsers(prev => {
@@ -2612,7 +2743,7 @@ export function MeetingRoom({
         socket.on('webrtc:answer', handleOfferName)
         socket.on('webrtc:join', handleWebrtcJoinAck)
         socket.on('meeting:camera-toggle', handleCameraToggle)
-        
+
         return () => {
             socket.off('webrtc:user-joined', handleUserJoinedName)
             socket.off('webrtc:offer', handleOfferName)
@@ -2640,7 +2771,7 @@ export function MeetingRoom({
             const searchParams = new URLSearchParams(window.location.search)
             const qId = searchParams.get('id') || searchParams.get('meetingId')
             if (qId) return qId
-        } catch (e) {}
+        } catch (e) { }
         return sessionStorage.getItem('jts_active_meeting_id') || localStorage.getItem('jts_last_meeting_id') || ''
     })
     const [activePanel, setActivePanel] = useState<ActivePanel>(null)
@@ -2699,7 +2830,7 @@ export function MeetingRoom({
                 if (decoded) {
                     myName = decoded.guestName || decoded.fullName || myName
                 }
-            } catch (e) {}
+            } catch (e) { }
             connectToMeetingRef.current(meetingId, myName)
         }
         wasConnectedRef.current = connected
@@ -2752,7 +2883,7 @@ export function MeetingRoom({
     const [coHostIds, setCoHostIds] = useState<string[]>([])
     const [renamedUsers, setRenamedUsers] = useState<{ [key: string]: string }>({})
     const [handRaised, setHandRaised] = useState(false)
-    
+
     // 6 Enterprise Features States
     const [isWatermarkEnabled, setIsWatermarkEnabled] = useState(false)
     const [lowBandwidthMode, setLowBandwidthMode] = useState(false)
@@ -2835,6 +2966,13 @@ export function MeetingRoom({
     const rawCameraTrackRef = useRef<MediaStreamTrack | null>(null)
     const [activeLocalStream, setActiveLocalStream] = useState<MediaStream | null>(null)
     const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = useState(true)
+    const [isAnnotationActive, setIsAnnotationActive] = useState(false)
+    const [isBreakoutModalOpen, setIsBreakoutModalOpen] = useState(false)
+    const [activeBreakoutSession, setActiveBreakoutSession] = useState<{
+        isActive: boolean
+        rooms: Array<{ id: string; name: string; participantIds: string[] }>
+        endsAt: number | null
+    } | null>(null)
 
     // Layout & Studio lighting states
     const [layoutMode, setLayoutMode] = useState<MeetingLayoutMode>('auto')
@@ -2993,11 +3131,12 @@ export function MeetingRoom({
         if (!AudioContextClass) return
         const audioContext = new AudioContextClass()
         const analysers: { [key: string]: { analyser: AnalyserNode, source: MediaStreamAudioSourceNode } } = {}
-        
+        let silenceTimer: any = null
+
         const interval = setInterval(() => {
             let maxVal = 0
             let loudestUser: string | null = null
-            
+
             // Check local mic volume
             if (localStream && !isMuted) {
                 const tracks = localStream.getAudioTracks()
@@ -3008,18 +3147,18 @@ export function MeetingRoom({
                             const analyser = audioContext.createAnalyser()
                             source.connect(analyser)
                             analysers['me'] = { analyser, source }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                     const data = new Uint8Array(16)
                     analysers['me']?.analyser.getByteFrequencyData(data)
                     const avg = data.reduce((a, b) => a + b, 0) / data.length
-                    if (avg > 15 && avg > maxVal) {
+                    if (avg > 30 && avg > maxVal) {
                         maxVal = avg
                         loudestUser = 'me'
                     }
                 }
             }
-            
+
             // Check remote streams volume
             Object.entries(remoteStreams).forEach(([userId, stream]) => {
                 const tracks = stream.getAudioTracks()
@@ -3030,31 +3169,36 @@ export function MeetingRoom({
                             const analyser = audioContext.createAnalyser()
                             source.connect(analyser)
                             analysers[userId] = { analyser, source }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                     const data = new Uint8Array(16)
                     analysers[userId]?.analyser.getByteFrequencyData(data)
                     const avg = data.reduce((a, b) => a + b, 0) / data.length
-                    if (avg > 15 && avg > maxVal) {
+                    if (avg > 30 && avg > maxVal) {
                         maxVal = avg
                         loudestUser = userId
                     }
                 }
             })
-            
+
             if (loudestUser) {
+                if (silenceTimer) clearTimeout(silenceTimer)
                 setActiveSpeaker(loudestUser)
+                silenceTimer = setTimeout(() => {
+                    setActiveSpeaker(null)
+                }, 1200)
             }
-        }, 1000)
-        
+        }, 400)
+
         return () => {
             clearInterval(interval)
+            if (silenceTimer) clearTimeout(silenceTimer)
             Object.values(analysers).forEach(a => {
                 try {
                     a.source.disconnect()
-                } catch(e){}
+                } catch (e) { }
             })
-            audioContext.close().catch(() => {})
+            audioContext.close().catch(() => { })
         }
     }, [localStream, remoteStreams, isMuted])
 
@@ -3078,12 +3222,12 @@ export function MeetingRoom({
                 setMeetingInfo(meetingInfoData)
                 const newRenames = { ...renamedUsers }
                 let modified = false
-                
+
                 if (meetingInfoData.host && newRenames[meetingInfoData.host._id] !== meetingInfoData.host.fullName) {
                     newRenames[meetingInfoData.host._id] = meetingInfoData.host.fullName
                     modified = true
                 }
-                
+
                 if (meetingInfoData.participants && Array.isArray(meetingInfoData.participants)) {
                     meetingInfoData.participants.forEach((p: any) => {
                         if (p && p._id && p.fullName && newRenames[p._id] !== p.fullName) {
@@ -3092,7 +3236,7 @@ export function MeetingRoom({
                         }
                     })
                 }
-                
+
                 if (modified) {
                     setRenamedUsers(newRenames)
                 }
@@ -3139,6 +3283,7 @@ export function MeetingRoom({
         const id = Date.now() + Math.random()
         const left = 20 + Math.random() * 60
         setFloatingReactions(prev => [...prev.slice(-15), { id, emoji, left, senderName: senderName || '' }])
+        soundEffects.playReactionPop()
         setTimeout(() => {
             setFloatingReactions(prev => prev.filter(r => r.id !== id))
         }, 2600)
@@ -3155,6 +3300,81 @@ export function MeetingRoom({
             })
         }
     }
+
+    const handleTriggerSoundboard = (soundType: 'applause' | 'drumroll' | 'cheer' | 'bell') => {
+        if (soundType === 'applause') soundEffects.playApplause()
+        else if (soundType === 'drumroll') soundEffects.playDrumroll()
+        else if (soundType === 'cheer') soundEffects.playCheer()
+        else if (soundType === 'bell') soundEffects.playBell()
+
+        const sender = myDisplayName || 'You'
+        if (socket && (meetingId || meetingInput)) {
+            socket.emit('meeting:soundboard', {
+                meetingId: meetingId || meetingInput,
+                soundType,
+                senderName: sender
+            })
+        }
+    }
+
+    // Socket listeners for Reactions, Soundboard and Breakout Rooms
+    useEffect(() => {
+        if (!socket) return
+
+        const handleReaction = (payload: { emoji: string; senderName?: string }) => {
+            spawnReaction(payload.emoji, payload.senderName)
+        }
+
+        const handleSoundboard = (payload: { soundType: string; senderName?: string }) => {
+            if (payload.soundType === 'applause') soundEffects.playApplause()
+            else if (payload.soundType === 'drumroll') soundEffects.playDrumroll()
+            else if (payload.soundType === 'cheer') soundEffects.playCheer()
+            else if (payload.soundType === 'bell') soundEffects.playBell()
+
+            if (payload.senderName) {
+                addToast(`🔊 ${payload.senderName} played sound: ${payload.soundType}!`, 'info')
+            }
+        }
+
+        const handleBreakoutStarted = (payload: any) => {
+            setActiveBreakoutSession({
+                isActive: true,
+                rooms: payload.rooms || [],
+                endsAt: payload.endsAt || null
+            })
+            const myId = parseJwt(token)?.userId || 'me'
+            const myRoom = payload.rooms?.find((r: any) => r.participantIds?.includes(myId) || r.participantIds?.includes(socket.id))
+            if (myRoom) {
+                addToast(`👥 You were assigned to ${myRoom.name}`, 'info')
+            } else {
+                addToast('👥 Breakout rooms have started!', 'info')
+            }
+        }
+
+        const handleBreakoutAnnouncement = (payload: any) => {
+            addToast(`📢 Host Announcement: ${payload.message}`, 'warning')
+            soundEffects.playKnockChime()
+        }
+
+        const handleBreakoutEnded = () => {
+            setActiveBreakoutSession(null)
+            addToast('👥 Breakout session ended. Returned to main room.', 'info')
+        }
+
+        socket.on('meeting:reaction', handleReaction)
+        socket.on('meeting:soundboard', handleSoundboard)
+        socket.on('breakout:started', handleBreakoutStarted)
+        socket.on('breakout:announcement', handleBreakoutAnnouncement)
+        socket.on('breakout:ended', handleBreakoutEnded)
+
+        return () => {
+            socket.off('meeting:reaction', handleReaction)
+            socket.off('meeting:soundboard', handleSoundboard)
+            socket.off('breakout:started', handleBreakoutStarted)
+            socket.off('breakout:announcement', handleBreakoutAnnouncement)
+            socket.off('breakout:ended', handleBreakoutEnded)
+        }
+    }, [socket, token])
 
     // Adaptive Low-Bandwidth Mode: Pause/resume incoming video tracks to save data
     useEffect(() => {
@@ -3325,7 +3545,7 @@ export function MeetingRoom({
 
         const attendeeList = Object.values(attendanceRecordsRef.current).length > 0
             ? Object.values(attendanceRecordsRef.current).map(a => `- **${a.name}** (${a.role}) — Joined: ${a.joinTime}${a.leaveTime ? `, Left: ${a.leaveTime}` : ' (Active)'}`).join('\n')
-            : (participants.length > 0 
+            : (participants.length > 0
                 ? [`- **${myDisplayName}** (Host / You)`].concat(participants.map(p => `- **${renamedUsers[p] || p}** (Participant)`)).join('\n')
                 : `- **${myDisplayName}** (Host / Active)`)
 
@@ -3597,8 +3817,20 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         noiseSuppression: next,
                         echoCancellation: true
                     })
-                    addToast(next ? 'Noise suppression enabled' : 'Noise suppression disabled', 'info')
-                } catch (e) {}
+                    if (next) {
+                        const cleanTrack = noiseCancellationService.processAudioTrack(audioTrack)
+                        localStream.removeTrack(audioTrack)
+                        localStream.addTrack(cleanTrack)
+                        replaceTrackOnPeers(cleanTrack)
+                        cleanTrack.enabled = !isMuted
+                        addToast('🔕 AI Ultra-Deep Noise Cancellation active (120Hz filter + VAD gate)', 'success')
+                    } else {
+                        noiseCancellationService.cleanup()
+                        addToast('Standard audio mode active (Noise cancellation off)', 'info')
+                    }
+                } catch (e) {
+                    addToast(next ? 'AI Noise Suppression enabled' : 'Noise Suppression disabled', 'info')
+                }
             }
         }
     }
@@ -3803,14 +4035,14 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         const id = (typeof customId === 'string' ? customId : meetingInput).trim()
         if (!socket || !id) return
         setMeetingId(id)
-        
+
         let myName = localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || ''
         try {
             const decoded = parseJwt(token || initialToken)
             if (decoded) {
                 myName = decoded.guestName || decoded.fullName || myName
             }
-        } catch (e) {}
+        } catch (e) { }
 
         sessionStorage.setItem('jts_active_meeting_id', id)
         localStorage.setItem('jts_last_meeting_id', id)
@@ -3848,7 +4080,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         const searchParams = new URLSearchParams(window.location.search)
                         urlMeetingId = searchParams.get('id') || searchParams.get('meetingId') || ''
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
 
             const activeSessionId = sessionStorage.getItem('jts_active_meeting_id')
@@ -4001,11 +4233,11 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 if (response.ok && data?.success) {
                     setMeetingInfo(data.data)
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
         addToast(
-            enabled 
-                ? '🛡️ Waiting Room enabled (Host approval required for invitees)' 
+            enabled
+                ? '🛡️ Waiting Room enabled (Host approval required for invitees)'
                 : '🔓 Open Access enabled (Everyone can join without approval)',
             'success'
         )
@@ -4031,6 +4263,11 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         }
 
         const onEndAllEvent = () => {
+            try {
+                localStorage.removeItem('jts_last_meeting_id')
+                sessionStorage.removeItem('jts_active_meeting_id')
+            } catch (e) { }
+            setMeetingInput('')
             addToast('The host has ended this meeting for everyone', 'warning')
             leaveMeeting()
         }
@@ -4085,22 +4322,22 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     const isStageLayoutActive = layoutMode === 'tiled'
         ? !!fullScreenUserId
         : layoutMode === 'spotlight' || layoutMode === 'sidebar'
-        ? true
-        : (isScreenShareActive || !!pinnedUserId || !!fullScreenUserId)
-    
+            ? true
+            : (isScreenShareActive || !!pinnedUserId || !!fullScreenUserId)
+
     // The main participant shown enlarged in focus zone
     const primaryUser = fullScreenUserId || screenSharingUserId || pinnedUserId || (activeSpeaker && activeSpeaker !== 'me' ? activeSpeaker : (participants.length > 0 ? participants[0] : 'me'))
-    
+
     // Stream to display in the main enlarged slot
     const primaryStream = primaryUser === 'me' ? (activeLocalStream || localStream) : remoteStreams[primaryUser]
-    
+
     // Presenter details
     const presenterName = primaryUser === 'me' ? 'You' : (renamedUsers[primaryUser] || (primaryUser.startsWith('guest_') ? 'Guest' : primaryUser))
 
     // All active users in the room
     const allUsers = ['me', ...participants]
     const displayedUsers = layoutMode === 'tiled' ? allUsers.slice(0, maxGridTiles) : allUsers
-    
+
     // All other users rendered in the right filmstrip when in presenter mode
     const stripUsers = allUsers
         .filter(u => u !== primaryUser)
@@ -4132,13 +4369,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
                     const destination = audioCtx.createMediaStreamDestination();
                     let hasAudioSources = false;
-                    
+
                     if (displayStream.getAudioTracks().length > 0) {
                         const tabAudioSource = audioCtx.createMediaStreamSource(new MediaStream([displayStream.getAudioTracks()[0]]));
                         tabAudioSource.connect(destination);
                         hasAudioSources = true;
                     }
-                    
+
                     const micAudioSource = audioCtx.createMediaStreamSource(new MediaStream([localStream.getAudioTracks()[0]]));
                     micAudioSource.connect(destination);
                     hasAudioSources = true;
@@ -4182,7 +4419,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-                
+
                 displayStream.getTracks().forEach(t => t.stop());
                 setIsRecording(false);
                 addToast('Meeting recording saved and downloaded successfully!', 'success');
@@ -4199,7 +4436,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             recordingStreamRef.current = displayStream;
             setIsRecording(true);
             addToast('Recording started! Select the meeting tab with "Share tab audio" for best results.', 'success');
-            
+
             socket?.emit('meeting:record-toggle', { meetingId: meetingId || meetingInput, isRecording: true });
 
         } catch (err: any) {
@@ -4237,8 +4474,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     height: '100%',
                     position: 'relative',
                     borderRadius: isCompact ? 'var(--radius-md)' : 'var(--radius-lg)',
-                    border: isUserSpeaking ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.08)',
-                    boxShadow: isUserSpeaking ? '0 0 0 2px #22c55e, 0 0 20px rgba(34, 197, 94, 0.45)' : 'var(--shadow-sm)',
+                    border: isUserSpeaking ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
+                    boxShadow: isUserSpeaking ? '0 0 0 2px rgba(59, 130, 246, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3)' : 'var(--shadow-sm)',
                     overflow: 'hidden',
                     background: 'var(--color-surface-2)',
                     transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -4387,11 +4624,11 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         }
     }
 
-    const layoutStyle: React.CSSProperties = isMobile 
+    const layoutStyle: React.CSSProperties = isMobile
         ? { display: 'flex', flexDirection: 'column', height: '100%', width: '100%', gap: 12, overflow: 'hidden' }
         : isTablet
-        ? { display: 'flex', flexDirection: 'column', height: '100%', width: '100%', gap: 16, overflow: 'hidden' }
-        : { display: 'flex', flexDirection: 'row', height: '100%', width: '100%', gap: 20, overflow: 'hidden' }
+            ? { display: 'flex', flexDirection: 'column', height: '100%', width: '100%', gap: 16, overflow: 'hidden' }
+            : { display: 'flex', flexDirection: 'row', height: '100%', width: '100%', gap: 20, overflow: 'hidden' }
 
     return (
         <div style={{
@@ -4555,7 +4792,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 boxSizing: 'border-box'
             }}>
                 <div style={{ display: 'flex', width: '100%', height: '100%', gap: 16 }}>
-                    
+
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
                         {/* Screen share error */}
                         {screenError && (
@@ -4607,8 +4844,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                         position: 'relative',
                                         borderRadius: 'var(--radius-xl)',
                                         overflow: 'hidden',
-                                        border: activeSpeaker === primaryUser ? '2px solid #22c55e' : '2px solid var(--color-border)',
-                                        boxShadow: activeSpeaker === primaryUser ? '0 0 0 2px #22c55e, 0 0 24px rgba(34, 197, 94, 0.45)' : 'var(--shadow-sm)',
+                                        border: activeSpeaker === primaryUser ? '2px solid #3b82f6' : '1px solid var(--color-border)',
+                                        boxShadow: activeSpeaker === primaryUser ? '0 0 0 2px rgba(59, 130, 246, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3)' : 'var(--shadow-sm)',
                                         transition: 'border-color 0.3s ease'
                                     }}>
                                         <VideoTile
@@ -4627,6 +4864,48 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             isActiveSpeaker={activeSpeaker === primaryUser}
                                             isMutedProp={primaryUser === 'me' ? isMuted : !primaryStream?.getAudioTracks()[0]?.enabled}
                                         />
+
+                                        {/* Screen Share Live Annotation & Laser Pointer Trigger (Only visible to the presenter) */}
+                                        {isScreenShareActive && screenSharingUserId === 'me' && (
+                                            <button
+                                                onClick={() => setIsAnnotationActive(prev => !prev)}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: 16,
+                                                    right: fullScreenUserId ? 180 : 16,
+                                                    background: isAnnotationActive ? 'rgba(139, 92, 246, 0.95)' : 'rgba(10, 11, 15, 0.8)',
+                                                    backdropFilter: 'blur(8px)',
+                                                    border: isAnnotationActive ? '1px solid #c4b5fd' : '1px solid rgba(255,255,255,0.15)',
+                                                    borderRadius: 'var(--radius-full)',
+                                                    padding: '6px 14px',
+                                                    color: '#fff',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 700,
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 6,
+                                                    zIndex: 45,
+                                                    boxShadow: isAnnotationActive ? '0 0 16px rgba(139, 92, 246, 0.5)' : 'var(--shadow-md)',
+                                                    transition: 'all 0.2s ease'
+                                                }}
+                                                title="Toggle interactive drawing & laser pointer on screen"
+                                            >
+                                                <span>🖊️</span>
+                                                <span>{isAnnotationActive ? 'Drawing Active' : 'Annotate & Laser'}</span>
+                                            </button>
+                                        )}
+
+                                        {/* Screen Share Live Annotation Canvas Overlay */}
+                                        {isScreenShareActive && (
+                                            <ScreenAnnotationOverlay
+                                                isActive={screenSharingUserId === 'me' ? isAnnotationActive : true}
+                                                isPresenter={screenSharingUserId === 'me'}
+                                                socket={socket}
+                                                meetingId={meetingInfo?.customId || meetingInfo?.id || meetingId || initialMeetingId}
+                                                onClose={() => setIsAnnotationActive(false)}
+                                            />
+                                        )}
 
                                         {/* Exit Full Screen Button Overlay */}
                                         {fullScreenUserId && (
@@ -4695,7 +4974,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
                                     {/* Participants Strip (Right / Bottom) - hidden in fullScreenUserId or Spotlight mode */}
                                     {!fullScreenUserId && layoutMode !== 'spotlight' && (
-                                        <div 
+                                        <div
                                             className="sidebar-filmstrip custom-scrollbar"
                                             style={{
                                                 flex: (isMobile || isTablet) ? '0 0 110px' : '0 0 clamp(210px, 18vw, 240px)',
@@ -4706,8 +4985,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                 flexDirection: (isMobile || isTablet) ? 'row' : 'column',
                                                 gap: (isMobile || isTablet) ? 10 : 8,
                                                 overflowX: (isMobile || isTablet) ? 'auto' : 'hidden',
-                                                overflowY: (isMobile || isTablet) 
-                                                    ? 'hidden' 
+                                                overflowY: (isMobile || isTablet)
+                                                    ? 'hidden'
                                                     : (stripUsers.length > 4 ? 'auto' : 'hidden'),
                                                 padding: '2px',
                                                 boxSizing: 'border-box',
@@ -4723,10 +5002,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                         height: stripUsers.length <= 1
                                                             ? 'min(170px, 100%)'
                                                             : stripUsers.length === 2
-                                                            ? 'min(150px, calc((100% - 8px) / 2))'
-                                                            : stripUsers.length === 3
-                                                            ? 'min(135px, calc((100% - 16px) / 3))'
-                                                            : 'calc((100% - 24px) / 4)',
+                                                                ? 'min(150px, calc((100% - 8px) / 2))'
+                                                                : stripUsers.length === 3
+                                                                    ? 'min(135px, calc((100% - 16px) / 3))'
+                                                                    : 'calc((100% - 24px) / 4)',
                                                         minHeight: stripUsers.length >= 4 ? '95px' : undefined,
                                                         maxHeight: stripUsers.length <= 3 ? '160px' : undefined,
                                                         aspectRatio: '16/9',
@@ -4819,7 +5098,17 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             meetingId={meetingId || meetingInput.trim()}
                             socket={socket}
                             onClose={() => setActivePanel(null)}
-                            authorName={renamedUsers['me'] || (parseJwt(token)?.fullName || 'You')}
+                            authorName={renamedUsers['me'] || myDisplayName || (parseJwt(token)?.fullName || 'You')}
+                        />
+                    )}
+                    {activePanel === 'qa' && (
+                        <MeetingQAPanel
+                            meetingId={meetingId || meetingInput.trim()}
+                            socket={socket}
+                            currentUserId={parseJwt(token)?.userId || 'me'}
+                            currentUserName={myDisplayName}
+                            isHost={canManageParticipants || isLocalHost}
+                            onClose={() => setActivePanel(null)}
                         />
                     )}
                     {activePanel === 'settings' && (
@@ -5077,6 +5366,16 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     )}
                 </button>
 
+                {/* Q&A drawer toggle */}
+                <button
+                    className={`btn-icon ${activePanel === 'qa' ? 'active' : ''}`}
+                    onClick={() => togglePanel('qa')}
+                    title="Q&A with Upvoting"
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'qa' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'qa' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0, fontSize: '1.1rem' }}
+                >
+                    ❓
+                </button>
+
                 <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
 
                 {/* Consolidated Google Meet Style [⋮ More Options] */}
@@ -5234,6 +5533,56 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             </button>
                         )}
 
+                        {/* Breakout Rooms (Host / Co-Host) */}
+                        {(canManageParticipants || isLocalHost) && (
+                            <button
+                                onClick={() => {
+                                    setShowMoreMenu(false)
+                                    setIsBreakoutModalOpen(true)
+                                }}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                    background: 'transparent', border: 'none', borderRadius: '10px',
+                                    color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                    transition: 'background 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                            >
+                                <span style={{ fontSize: '1rem' }}>👥</span>
+                                <span style={{ flex: 1, textAlign: 'left' }}>Breakout Rooms</span>
+                                {activeBreakoutSession?.isActive && (
+                                    <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#c084fc', background: 'rgba(168,85,247,0.2)', padding: '2px 6px', borderRadius: '6px' }}>
+                                        ACTIVE
+                                    </span>
+                                )}
+                            </button>
+                        )}
+
+                        {/* Structured Q&A Panel */}
+                        <button
+                            onClick={() => {
+                                setShowMoreMenu(false)
+                                togglePanel('qa')
+                            }}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                background: 'transparent', border: 'none', borderRadius: '10px',
+                                color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <span style={{ fontSize: '1rem' }}>❓</span>
+                            <span style={{ flex: 1, textAlign: 'left' }}>Q&amp;A Panel</span>
+                            {activePanel === 'qa' && (
+                                <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>
+                                    OPEN
+                                </span>
+                            )}
+                        </button>
+
                         {/* Live Captions (CC) */}
                         <button
                             onClick={() => {
@@ -5325,27 +5674,25 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             </button>
                         )}
 
-                        {/* Collaborative Notes */}
-                        {(!isGuest || canManageParticipants) && (
-                            <button
-                                onClick={() => {
-                                    setShowMoreMenu(false)
-                                    togglePanel('notes')
-                                }}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
-                                    background: 'transparent', border: 'none', borderRadius: '10px',
-                                    color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
-                                    transition: 'background 0.15s ease'
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                            >
-                                <span style={{ fontSize: '1rem' }}>📝</span>
-                                <span style={{ flex: 1, textAlign: 'left' }}>Meeting Notes</span>
-                                {activePanel === 'notes' && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>OPEN</span>}
-                            </button>
-                        )}
+                        {/* Collaborative Notes (Enabled for all participants including guests) */}
+                        <button
+                            onClick={() => {
+                                setShowMoreMenu(false)
+                                togglePanel('notes')
+                            }}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                background: 'transparent', border: 'none', borderRadius: '10px',
+                                color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <span style={{ fontSize: '1rem' }}>📝</span>
+                            <span style={{ flex: 1, textAlign: 'left' }}>Meeting Notes</span>
+                            {activePanel === 'notes' && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>OPEN</span>}
+                        </button>
 
                         {/* Picture in Picture */}
                         <button
@@ -5373,7 +5720,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 setShowMoreMenu(false)
                                 setLowBandwidthMode(!lowBandwidthMode)
                                 addToast(
-                                    !lowBandwidthMode 
+                                    !lowBandwidthMode
                                         ? '⚡ Low-Bandwidth Mode active: Video decoding paused to save ~85% data.'
                                         : '⚡ Low-Bandwidth Mode disabled: Full video stream restored.',
                                     'info'
@@ -5565,6 +5912,11 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 }}
                 onEndForAll={() => {
                     setShowEndMeetingModal(false)
+                    try {
+                        localStorage.removeItem('jts_last_meeting_id')
+                        sessionStorage.removeItem('jts_active_meeting_id')
+                    } catch (e) { }
+                    setMeetingInput('')
                     socket?.emit('meeting:end-all', { meetingId: meetingId || meetingInput.trim() })
                     leaveMeeting()
                 }}
@@ -5656,6 +6008,66 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 localStream={activeLocalStream || localStream}
                 isApplying={isApplyingVirtualBg}
             />
+
+            {/* Breakout Rooms Management Modal */}
+            <BreakoutRoomsModal
+                isOpen={isBreakoutModalOpen}
+                onClose={() => setIsBreakoutModalOpen(false)}
+                meetingId={meetingId || meetingInput.trim()}
+                socket={socket}
+                participants={[
+                    { id: 'me', name: `${myDisplayName} (You)` },
+                    ...participants.map(p => ({
+                        id: p,
+                        name: renamedUsers[p] || p
+                    }))
+                ]}
+                isHost={canManageParticipants || isLocalHost}
+                activeBreakoutSession={activeBreakoutSession}
+            />
+
+            {/* Active Breakout Session Floating Banner */}
+            {activeBreakoutSession?.isActive && (
+                <div style={{
+                    position: 'fixed',
+                    top: 16,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 10002,
+                    background: 'rgba(88, 28, 135, 0.94)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1px solid rgba(192, 132, 252, 0.4)',
+                    borderRadius: 30,
+                    padding: '6px 18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    color: '#fff',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    boxShadow: '0 8px 32px rgba(88, 28, 135, 0.5)'
+                }}>
+                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#a855f7', animation: 'jts-pulse 1.5s infinite' }} />
+                    <span>Breakout Rooms Active &bull; {activeBreakoutSession.rooms.length} Rooms</span>
+                    {(canManageParticipants || isLocalHost) && (
+                        <button
+                            onClick={() => setIsBreakoutModalOpen(true)}
+                            style={{
+                                background: '#c084fc',
+                                border: 'none',
+                                color: '#3b0764',
+                                borderRadius: 20,
+                                padding: '3px 12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Manage
+                        </button>
+                    )}
+                </div>
+            )}
 
             {/* Network Offline / Reconnection Banner */}
             {isNetworkOffline && (
@@ -5810,6 +6222,119 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 {emoji}
                             </button>
                         ))}
+
+                        <div style={{ width: 1, height: 26, background: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
+
+                        {/* Soundboard Audio Triggers */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleTriggerSoundboard('applause')
+                                    setShowReactionsPopover(false)
+                                }}
+                                style={{
+                                    background: 'rgba(255,255,255,0.08)',
+                                    border: '1px solid rgba(255,255,255,0.14)',
+                                    fontSize: '1.1rem',
+                                    cursor: 'pointer',
+                                    padding: '4px 8px',
+                                    borderRadius: '16px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    color: '#fff',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                title="Soundboard: Applause / Clapping (Everyone in meeting hears)"
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                            >
+                                <span>👏</span>
+                                <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#93c5fd' }}>Clap</span>
+                            </button>
+
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleTriggerSoundboard('cheer')
+                                    setShowReactionsPopover(false)
+                                }}
+                                style={{
+                                    background: 'rgba(255,255,255,0.08)',
+                                    border: '1px solid rgba(255,255,255,0.14)',
+                                    fontSize: '1.1rem',
+                                    cursor: 'pointer',
+                                    padding: '4px 8px',
+                                    borderRadius: '16px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    color: '#fff',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                title="Soundboard: Celebration Cheer (Everyone in meeting hears)"
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                            >
+                                <span>🎉</span>
+                                <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#fbcfe8' }}>Cheer</span>
+                            </button>
+
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleTriggerSoundboard('drumroll')
+                                    setShowReactionsPopover(false)
+                                }}
+                                style={{
+                                    background: 'rgba(255,255,255,0.08)',
+                                    border: '1px solid rgba(255,255,255,0.14)',
+                                    fontSize: '1.1rem',
+                                    cursor: 'pointer',
+                                    padding: '4px 8px',
+                                    borderRadius: '16px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    color: '#fff',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                title="Soundboard: Dramatic Drumroll (Everyone in meeting hears)"
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                            >
+                                <span>🥁</span>
+                                <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#fef08a' }}>Roll</span>
+                            </button>
+
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleTriggerSoundboard('bell')
+                                    setShowReactionsPopover(false)
+                                }}
+                                style={{
+                                    background: 'rgba(255,255,255,0.08)',
+                                    border: '1px solid rgba(255,255,255,0.14)',
+                                    fontSize: '1.1rem',
+                                    cursor: 'pointer',
+                                    padding: '4px 8px',
+                                    borderRadius: '16px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    color: '#fff',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                title="Soundboard: Service Bell (Everyone in meeting hears)"
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                            >
+                                <span>🔔</span>
+                                <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#fed7aa' }}>Bell</span>
+                            </button>
+                        </div>
                     </div>
                 )
             })()}
@@ -6020,8 +6545,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             pointerEvents: 'auto',
                             background: 'rgba(15, 17, 23, 0.96)',
                             border: `1px solid ${t.type === 'success' ? 'rgba(34, 197, 94, 0.25)' :
-                                    t.type === 'warning' ? 'rgba(245, 158, 11, 0.25)' :
-                                        'var(--color-border-strong)'
+                                t.type === 'warning' ? 'rgba(245, 158, 11, 0.25)' :
+                                    'var(--color-border-strong)'
                                 }`,
                             borderRadius: 'var(--radius-lg)',
                             padding: '12px 18px',
@@ -6175,7 +6700,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
                             {/* Modal Body */}
                             <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
-                                
+
                                 {/* Link Copy Section */}
                                 <div>
                                     <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>

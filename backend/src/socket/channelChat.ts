@@ -4,19 +4,23 @@ import { ChannelChatService } from '../modules/channel-chat/channelChat.service'
 export function registerChannelChatHandlers(io: Server, socket: Socket) {
     socket.on('channel:message:send', (payload: any) => {
         if (payload?.channelId) {
-            io.to(payload.channelId).emit('channel:message:receive', payload)
+            const cId = (payload.channelId?._id || payload.channelId).toString()
+            io.to(cId).to(`channel:${cId}`).emit('channel:message:receive', payload)
+            io.emit('channel:message:receive', payload)
         }
     })
 
     socket.on('channel:join', async (payload: { channelId: string }) => {
         if (payload?.channelId) {
-            socket.join(payload.channelId)
+            const cId = (payload.channelId as any)?._id ? (payload.channelId as any)._id.toString() : payload.channelId.toString()
+            socket.join(cId)
+            socket.join(`channel:${cId}`)
             const userId = (socket as any).userId
             if (userId) {
                 try {
-                    await ChannelChatService.markChannelMessagesRead(payload.channelId, userId)
-                    io.to(payload.channelId).emit('channel:read-receipt:update', {
-                        channelId: payload.channelId,
+                    await ChannelChatService.markChannelMessagesRead(cId, userId)
+                    io.to(cId).to(`channel:${cId}`).emit('channel:read-receipt:update', {
+                        channelId: cId,
                         userId,
                         readAt: new Date()
                     })
@@ -29,7 +33,9 @@ export function registerChannelChatHandlers(io: Server, socket: Socket) {
 
     socket.on('channel:leave', (payload: { channelId: string }) => {
         if (payload?.channelId) {
-            socket.leave(payload.channelId)
+            const cId = (payload.channelId as any)?._id ? (payload.channelId as any)._id.toString() : payload.channelId.toString()
+            socket.leave(cId)
+            socket.leave(`channel:${cId}`)
         }
     })
 

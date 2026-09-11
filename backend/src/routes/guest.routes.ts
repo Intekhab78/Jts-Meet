@@ -44,7 +44,9 @@ router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
                 title: meeting.title,
                 hostName: (meeting.host as any)?.fullName || 'Organizer',
                 isWaitingRoomEnabled: meeting.isWaitingRoomEnabled !== false,
-                isGuestJoinEnabled: (meeting as any).isGuestJoinEnabled !== false
+                isGuestJoinEnabled: (meeting as any).isGuestJoinEnabled !== false,
+                meetingStatus: meeting.status,
+                isHostOnline: meeting.status === 'active'
             }
         })
     } catch (error: any) {

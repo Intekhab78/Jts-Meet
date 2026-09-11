@@ -4,8 +4,11 @@ import type { Organization, UpdateOrganizationPayload } from './organization.typ
 import { CreateOrganizationModal } from './CreateOrganizationModal'
 import { InviteMemberModal } from './InviteMemberModal'
 import { MemberList } from './MemberList'
-import { listOrganizationTeams } from '../team/team.service'
+import { listOrganizationTeams, createTeam } from '../team/team.service'
 import { listTeamChannels } from '../channel/channel.service'
+import { CreateTeamModal } from '../team/CreateTeamModal'
+import type { Team } from '../team/team.types'
+import type { Channel } from '../channel/channel.types'
 
 interface OrganizationSettingsPageProps {
     token: string
@@ -27,13 +30,15 @@ export function OrganizationSettingsPage({
     const [saving, setSaving] = useState(false)
     const [showCreateModal, setShowCreateModal] = useState(false)
     const [showInviteModal, setShowInviteModal] = useState(false)
+    const [showCreateTeamModal, setShowCreateTeamModal] = useState(false)
     const [error, setError] = useState('')
     const [successMessage, setSuccessMessage] = useState('')
-    const [teamsCount, setTeamsCount] = useState(0)
-    const [channelsCount, setChannelsCount] = useState(0)
-    const [activeSubTab, setActiveSubTab] = useState<'members' | 'settings' | 'roles' | 'danger'>('members')
+    const [teams, setTeams] = useState<Team[]>([])
+    const [channels, setChannels] = useState<(Channel & { teamName?: string })[]>([])
+    const [activeSubTab, setActiveSubTab] = useState<'members' | 'departments' | 'channels' | 'roles' | 'settings' | 'danger'>('members')
     const [copiedOwner, setCopiedOwner] = useState(false)
     const [copiedSlug, setCopiedSlug] = useState(false)
+    const [copiedInviteLink, setCopiedInviteLink] = useState(false)
 
     // Edit form state
     const [formName, setFormName] = useState('')
@@ -41,54 +46,68 @@ export function OrganizationSettingsPage({
     const [formDescription, setFormDescription] = useState('')
     const retryTimeoutRef = React.useRef<any>(null)
 
-    const loadOrganization = async (orgId: string) => {
+    const loadOrganization = async (orgId: string, isSilent = false) => {
         if (!orgId) return
-        setLoading(true)
+        if (!isSilent) {
+            setLoading(true)
+        }
         setError('')
         try {
             const org = await getOrganization(orgId, token)
-            setOrganization(org)
             if (org) {
+                setOrganization(org)
                 setFormName(org.name || '')
-                setFormTimezone(org.timezone || 'Asia/Dubai')
+                setFormTimezone(org.timezone || 'Asia/Kolkata')
                 setFormDescription(org.description || '')
             }
-            setLoading(false) // Unblock profile UI immediately!
+            setLoading(false)
 
-            // Load teams & channel counts in parallel in background
+            // Load teams & channels in parallel in background
             try {
                 const teamsList = await listOrganizationTeams(orgId, token)
-                setTeamsCount(teamsList.length)
+                setTeams(teamsList)
 
-                const channelPromises = teamsList.map(t => listTeamChannels(t._id, token).catch(() => []))
-                const allChannelLists = await Promise.all(channelPromises)
-                let totalChannels = 0
-                for (const list of allChannelLists) {
-                    totalChannels += (list?.length || 0)
-                }
-                setChannelsCount(totalChannels)
+                const channelPromises = teamsList.map(async (t) => {
+                    const chs = await listTeamChannels(t._id, token).catch(() => [] as Channel[])
+                    return chs.map(c => ({ ...c, teamName: t.name }))
+                })
+                const allChannelsNested = await Promise.all(channelPromises)
+                const flatChannels = allChannelsNested.flat()
+                setChannels(flatChannels)
             } catch (teamErr) {
-                console.error('Failed to load teams/channels for stats:', teamErr)
+                console.error('Failed to load teams/channels for org:', teamErr)
             }
         } catch (err: any) {
             const msg = err?.message || 'Unable to load organization'
             setError(msg)
             setLoading(false)
 
-            // Auto-retry once after 1.5s if transient network error during reload
+            // Auto-retry once after 1.5s if transient network error
             if (msg.toLowerCase().includes('failed to fetch')) {
                 if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
                 retryTimeoutRef.current = setTimeout(() => {
-                    if (orgId) loadOrganization(orgId)
+                    if (orgId) loadOrganization(orgId, true)
                 }, 1500)
             }
         }
     }
 
     useEffect(() => {
-        const targetId = organizationId || (organizations.length === 1 ? organizations[0]._id : undefined)
+        const targetId = organizationId || (organizations.length > 0 ? organizations[0]._id : undefined)
         if (targetId) {
-            loadOrganization(targetId)
+            // Instant optimistic render if organization data already exists in memory!
+            const cachedOrg = organizations.find(o => o._id === targetId)
+            if (cachedOrg) {
+                setOrganization(cachedOrg)
+                setFormName(cachedOrg.name || '')
+                setFormTimezone(cachedOrg.timezone || 'Asia/Kolkata')
+                setFormDescription(cachedOrg.description || '')
+                setLoading(false)
+                // Background refresh without blocking UI
+                loadOrganization(targetId, true)
+            } else {
+                loadOrganization(targetId, false)
+            }
         } else {
             setOrganization(null)
             setLoading(false)
@@ -96,7 +115,7 @@ export function OrganizationSettingsPage({
         return () => {
             if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
         }
-    }, [organizationId, organizations.length])
+    }, [organizationId, organizations])
 
     const handleCreateOrganization = async (payload: any) => {
         const org = await createOrganization(payload, token)
@@ -141,6 +160,8 @@ export function OrganizationSettingsPage({
         if (!organization) return
         const org = await removeOrganizationMember({ organizationId: organization._id, userId }, token)
         setOrganization(org)
+        setSuccessMessage('Member removed from workspace.')
+        setTimeout(() => setSuccessMessage(''), 3500)
     }
 
     const handleLeaveOrganization = async () => {
@@ -149,16 +170,34 @@ export function OrganizationSettingsPage({
         setOrganization(null)
     }
 
-    const copyToClipboard = (text: string, type: 'owner' | 'slug') => {
+    const handleCreateTeam = async (payload: any) => {
+        if (!organization) return
+        try {
+            await createTeam({ ...payload, organizationId: organization._id }, token)
+            const updatedTeams = await listOrganizationTeams(organization._id, token)
+            setTeams(updatedTeams)
+            setSuccessMessage(`Department "${payload.name}" created successfully!`)
+            setTimeout(() => setSuccessMessage(''), 3500)
+        } catch (err: any) {
+            setError(err?.message || 'Failed to create department')
+        }
+    }
+
+    const copyToClipboard = (text: string, type: 'owner' | 'slug' | 'invite') => {
         navigator.clipboard.writeText(text)
         if (type === 'owner') {
             setCopiedOwner(true)
             setTimeout(() => setCopiedOwner(false), 2000)
-        } else {
+        } else if (type === 'slug') {
             setCopiedSlug(true)
             setTimeout(() => setCopiedSlug(false), 2000)
+        } else {
+            setCopiedInviteLink(true)
+            setTimeout(() => setCopiedInviteLink(false), 2000)
         }
     }
+
+    const inviteLinkUrl = organization ? `${window.location.origin}/#organization?invite=${organization.slug || organization._id}` : ''
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', color: '#fff', fontFamily: 'var(--font-sans)' }}>
@@ -192,12 +231,12 @@ export function OrganizationSettingsPage({
             {loading ? (
                 <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.875rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                     <div className="animate-spin" style={{ width: '24px', height: '24px', border: '2px solid rgba(99,102,241,0.2)', borderTopColor: '#6366F1', borderRadius: '50%' }} />
-                    Loading organization profile...
+                    Loading enterprise workspace profile...
                 </div>
             ) : organization ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-                    {/* TOP HERO CARD: COMPACT, INLINE & MODERN */}
+                    {/* TOP HERO CARD: TEAMS / SLACK STYLE ENTERPRISE HEADER */}
                     <div className="glass-card" style={{ padding: '16px 20px', borderRadius: '14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                             
@@ -277,6 +316,31 @@ export function OrganizationSettingsPage({
 
                             {/* Right: Inline Compact Action Buttons */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(inviteLinkUrl, 'invite')}
+                                    className="btn btn-secondary"
+                                    style={{
+                                        height: 32,
+                                        padding: '0 12px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                        borderRadius: 8,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        background: 'rgba(99, 102, 241, 0.1)',
+                                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                                        color: copiedInviteLink ? '#4ade80' : '#818cf8',
+                                        whiteSpace: 'nowrap',
+                                        cursor: 'pointer'
+                                    }}
+                                    title="Copy public invitation link"
+                                >
+                                    <span>{copiedInviteLink ? '✓' : '🔗'}</span>
+                                    <span>{copiedInviteLink ? 'Link Copied!' : 'Copy Invite Link'}</span>
+                                </button>
+
                                 <button
                                     onClick={() => setShowInviteModal(true)}
                                     className="btn btn-primary"
@@ -358,7 +422,7 @@ export function OrganizationSettingsPage({
                             </div>
                         </div>
 
-                        {/* COMPACT INLINE METADATA BAR (Zero big gaps!) */}
+                        {/* COMPACT INLINE METADATA BAR */}
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -386,11 +450,11 @@ export function OrganizationSettingsPage({
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <span style={{ color: 'var(--color-text-muted)' }}>🔑 Owner ID:</span>
                                 <span style={{ fontFamily: 'monospace', color: '#e4e4e7', background: 'rgba(255,255,255,0.04)', padding: '1px 6px', borderRadius: 4 }}>
-                                    {organization.ownerId?.slice(0, 12)}...
+                                    {String(organization.ownerId || '').slice(0, 12)}...
                                 </span>
                                 <button
                                     type="button"
-                                    onClick={() => copyToClipboard(organization.ownerId || '', 'owner')}
+                                    onClick={() => copyToClipboard(String(organization.ownerId || ''), 'owner')}
                                     title="Copy full owner ID"
                                     style={{ background: 'transparent', border: 'none', color: copiedOwner ? '#4ade80' : '#818cf8', cursor: 'pointer', padding: 0, fontSize: '0.7rem' }}
                                 >
@@ -400,10 +464,11 @@ export function OrganizationSettingsPage({
                         </div>
                     </div>
 
-                    {/* COMPACT 4-STAT METRIC ROW */}
+                    {/* COMPACT 4-STAT INTERACTIVE METRIC ROW (Teams Style - Clickable!) */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
                         {[
                             {
+                                id: 'members',
                                 label: 'Members',
                                 val: organization.members?.length || 0,
                                 sub: 'Collaborators',
@@ -415,8 +480,9 @@ export function OrganizationSettingsPage({
                                 )
                             },
                             {
+                                id: 'departments',
                                 label: 'Departments',
-                                val: teamsCount,
+                                val: teams.length,
                                 sub: 'Active teams',
                                 color: '#8B5CF6',
                                 icon: (
@@ -426,8 +492,9 @@ export function OrganizationSettingsPage({
                                 )
                             },
                             {
+                                id: 'channels',
                                 label: 'Channels',
-                                val: channelsCount,
+                                val: channels.length,
                                 sub: 'Chat streams',
                                 color: '#22C55E',
                                 icon: (
@@ -438,6 +505,7 @@ export function OrganizationSettingsPage({
                                 )
                             },
                             {
+                                id: 'pending',
                                 label: 'Pending',
                                 val: organization.members?.filter(m => m.status === 'pending').length || 0,
                                 sub: 'Invites sent',
@@ -448,9 +516,16 @@ export function OrganizationSettingsPage({
                                     </svg>
                                 )
                             }
-                        ].map((item, idx) => (
+                        ].map((item) => (
                             <div
-                                key={idx}
+                                key={item.id}
+                                onClick={() => {
+                                    if (item.id === 'pending') {
+                                        setActiveSubTab('members')
+                                    } else {
+                                        setActiveSubTab(item.id as any)
+                                    }
+                                }}
                                 className="glass-card"
                                 style={{
                                     padding: '10px 14px',
@@ -458,7 +533,19 @@ export function OrganizationSettingsPage({
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
-                                    border: '1px solid rgba(255, 255, 255, 0.06)'
+                                    border: activeSubTab === item.id ? `1px solid ${item.color}` : '1px solid rgba(255, 255, 255, 0.06)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-1px)'
+                                    e.currentTarget.style.borderColor = item.color
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)'
+                                    if (activeSubTab !== item.id) {
+                                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)'
+                                    }
                                 }}
                             >
                                 <div>
@@ -473,7 +560,7 @@ export function OrganizationSettingsPage({
                         ))}
                     </div>
 
-                    {/* QUICK WORKSPACE SHORTCUT BAR (Inline, Compact, No giant green bar!) */}
+                    {/* QUICK WORKSPACE SHORTCUT BAR */}
                     <div className="glass-card" style={{ padding: '10px 16px', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <span style={{ fontSize: '0.85rem' }}>⚡</span>
@@ -500,6 +587,28 @@ export function OrganizationSettingsPage({
                             >
                                 <span>+</span>
                                 <span>Invite Member</span>
+                            </button>
+
+                            <button
+                                onClick={() => setShowCreateTeamModal(true)}
+                                className="btn"
+                                style={{
+                                    height: 28,
+                                    padding: '0 12px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    borderRadius: 6,
+                                    background: 'rgba(99, 102, 241, 0.15)',
+                                    color: '#818cf8',
+                                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 5
+                                }}
+                            >
+                                <span>+</span>
+                                <span>New Department</span>
                             </button>
 
                             <button
@@ -548,12 +657,14 @@ export function OrganizationSettingsPage({
                         </div>
                     </div>
 
-                    {/* SEGMENTED TAB NAVIGATION */}
-                    <div style={{ display: 'flex', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', gap: 8 }}>
+                    {/* SEGMENTED TAB NAVIGATION (Teams Style) */}
+                    <div style={{ display: 'flex', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
                         {[
                             { id: 'members', label: `Members (${organization.members?.length || 0})`, icon: '👥' },
-                            { id: 'settings', label: 'Organization Profile', icon: '⚙️' },
+                            { id: 'departments', label: `Departments (${teams.length})`, icon: '🏢' },
+                            { id: 'channels', label: `Channels (${channels.length})`, icon: '💬' },
                             { id: 'roles', label: 'Roles & Access', icon: '🛡️' },
+                            { id: 'settings', label: 'Organization Profile', icon: '⚙️' },
                             { id: 'danger', label: 'Danger Zone', icon: '⚠️' }
                         ].map(tab => (
                             <button
@@ -571,6 +682,7 @@ export function OrganizationSettingsPage({
                                     display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: 6,
+                                    whiteSpace: 'nowrap',
                                     transition: 'all 0.15s ease'
                                 }}
                             >
@@ -580,14 +692,318 @@ export function OrganizationSettingsPage({
                         ))}
                     </div>
 
-                    {/* TAB CONTENT 1: MEMBERS */}
+                    {/* TAB 1: MEMBERS */}
                     {activeSubTab === 'members' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <MemberList organizationId={organization._id} token={token} onRemove={handleRemoveMember} />
+                            <MemberList
+                                organizationId={organization._id}
+                                token={token}
+                                initialMembers={organization.members}
+                                onRemove={handleRemoveMember}
+                                onRoleUpdated={() => loadOrganization(organization._id)}
+                                onInviteClick={() => setShowInviteModal(true)}
+                            />
                         </div>
                     )}
 
-                    {/* TAB CONTENT 2: PROFILE & SETTINGS */}
+                    {/* TAB 2: DEPARTMENTS & TEAMS */}
+                    {activeSubTab === 'departments' && (
+                        <div className="glass-card" style={{ padding: '18px 20px', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                                <div>
+                                    <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span>Active Departments & Teams</span>
+                                        <span style={{ fontSize: '0.72rem', background: 'rgba(139, 92, 246, 0.15)', color: '#c084fc', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
+                                            {teams.length} Active
+                                        </span>
+                                    </h3>
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
+                                        Cross-functional units, departments, and project workgroups in {organization.name}.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCreateTeamModal(true)}
+                                    className="btn btn-primary"
+                                    style={{
+                                        height: 32,
+                                        padding: '0 14px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                        borderRadius: 8,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
+                                        border: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <span>+</span>
+                                    <span>New Department</span>
+                                </button>
+                            </div>
+
+                            {teams.length === 0 ? (
+                                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                    <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>🏢</div>
+                                    <div style={{ fontWeight: 600, color: '#fff' }}>No departments created yet</div>
+                                    <p style={{ fontSize: '0.75rem', margin: '4px 0 12px' }}>Create departments like Engineering, Sales, or Marketing to organize your company.</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCreateTeamModal(true)}
+                                        className="btn btn-primary"
+                                        style={{ fontSize: '0.75rem', padding: '6px 14px', borderRadius: 8 }}
+                                    >
+                                        Create Department
+                                    </button>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                                    {teams.map((t) => {
+                                        const teamChannels = channels.filter(c => c.teamId === t._id)
+                                        return (
+                                            <div
+                                                key={t._id}
+                                                style={{
+                                                    background: 'rgba(255, 255, 255, 0.02)',
+                                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                    borderRadius: 12,
+                                                    padding: '14px 16px',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    justifyContent: 'space-between',
+                                                    gap: 12,
+                                                    transition: 'all 0.15s ease'
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.4)'
+                                                    e.currentTarget.style.transform = 'translateY(-2px)'
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)'
+                                                    e.currentTarget.style.transform = 'translateY(0)'
+                                                }}
+                                            >
+                                                <div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                            <div style={{
+                                                                width: 28,
+                                                                height: 28,
+                                                                borderRadius: 7,
+                                                                background: t.color ? `${t.color}25` : 'rgba(99, 102, 241, 0.2)',
+                                                                border: `1px solid ${t.color || '#6366F1'}`,
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 700,
+                                                                color: t.color || '#6366F1'
+                                                            }}>
+                                                                {t.name.slice(0, 2).toUpperCase()}
+                                                            </div>
+                                                            <h4 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#fff' }}>{t.name}</h4>
+                                                        </div>
+                                                        <span style={{
+                                                            fontSize: '0.625rem',
+                                                            fontWeight: 700,
+                                                            padding: '2px 6px',
+                                                            borderRadius: 4,
+                                                            background: t.visibility === 'public' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                                            color: t.visibility === 'public' ? '#4ade80' : '#fbbf24',
+                                                            textTransform: 'uppercase'
+                                                        }}>
+                                                            {t.visibility}
+                                                        </span>
+                                                    </div>
+
+                                                    <p style={{ margin: 0, fontSize: '0.725rem', color: 'var(--color-text-muted)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                                        {t.description || 'General department workspace for cross-team coordination and files.'}
+                                                    </p>
+                                                </div>
+
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: 10 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
+                                                        <span>👥 {t.members?.length || 0} members</span>
+                                                        <span>•</span>
+                                                        <span>💬 {teamChannels.length} channels</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            window.location.hash = '#team'
+                                                        }}
+                                                        style={{
+                                                            padding: '3px 10px',
+                                                            fontSize: '0.7rem',
+                                                            fontWeight: 600,
+                                                            background: 'rgba(99, 102, 241, 0.12)',
+                                                            border: '1px solid rgba(99, 102, 241, 0.25)',
+                                                            borderRadius: 6,
+                                                            color: '#818cf8',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        Manage →
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* TAB 3: CHANNELS */}
+                    {activeSubTab === 'channels' && (
+                        <div className="glass-card" style={{ padding: '18px 20px', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div>
+                                <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span>Organization Channels & Chat Streams</span>
+                                    <span style={{ fontSize: '0.72rem', background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
+                                        {channels.length} Total
+                                    </span>
+                                </h3>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
+                                    Persistent chat rooms, topic threads, and announcement channels across all departments.
+                                </p>
+                            </div>
+
+                            {channels.length === 0 ? (
+                                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                    <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>💬</div>
+                                    <div style={{ fontWeight: 600, color: '#fff' }}>No channels found in this organization</div>
+                                    <p style={{ fontSize: '0.75rem', margin: '4px 0 12px' }}>Channels are hosted within departments. Open a department to create channels.</p>
+                                </div>
+                            ) : (
+                                <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, background: 'rgba(255,255,255,0.01)' }}>
+                                    <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.75rem' }}>
+                                        <thead>
+                                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
+                                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Channel Name</th>
+                                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Department</th>
+                                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Type</th>
+                                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Members</th>
+                                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'right' }}>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {channels.map((ch) => (
+                                                <tr key={ch._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }} className="hover:bg-white/2">
+                                                    <td style={{ padding: '10px 14px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                            <span style={{ color: '#818cf8', fontWeight: 700, fontSize: '0.85rem' }}>#</span>
+                                                            <div>
+                                                                <span style={{ fontWeight: 600, color: '#fff' }}>{ch.name}</span>
+                                                                {ch.description && (
+                                                                    <div style={{ fontSize: '0.675rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>
+                                                                        {ch.description}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ padding: '10px 14px', color: '#e4e4e7', fontWeight: 500 }}>
+                                                        {ch.teamName || 'General'}
+                                                    </td>
+                                                    <td style={{ padding: '10px 14px' }}>
+                                                        <span style={{
+                                                            fontSize: '0.65rem',
+                                                            fontWeight: 700,
+                                                            padding: '2px 6px',
+                                                            borderRadius: 4,
+                                                            background: ch.type === 'public' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                                            color: ch.type === 'public' ? '#4ade80' : '#fbbf24',
+                                                            textTransform: 'uppercase'
+                                                        }}>
+                                                            {ch.type}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>
+                                                        {ch.members?.length || 0} participants
+                                                    </td>
+                                                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                window.location.hash = '#channel'
+                                                            }}
+                                                            style={{
+                                                                padding: '4px 10px',
+                                                                fontSize: '0.7rem',
+                                                                fontWeight: 600,
+                                                                background: 'rgba(34, 197, 94, 0.1)',
+                                                                border: '1px solid rgba(34, 197, 94, 0.25)',
+                                                                borderRadius: 6,
+                                                                color: '#4ade80',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            Open Chat →
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* TAB 4: ROLES & ACCESS MATRIX (Teams Style) */}
+                    {activeSubTab === 'roles' && (
+                        <div className="glass-card" style={{ padding: '18px 20px', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div>
+                                <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span>Enterprise Role & Permissions Matrix</span>
+                                </h3>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
+                                    Hierarchical privileges and capability access levels granted to members across this organization.
+                                </p>
+                            </div>
+
+                            <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, background: 'rgba(255,255,255,0.01)' }}>
+                                <table style={{ width: '100%', minWidth: 620, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.75rem' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
+                                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', width: '38%' }}>Workspace Capability</th>
+                                            <th style={{ padding: '10px 14px', fontWeight: 700, color: '#F59E0B', textAlign: 'center' }}>Owner</th>
+                                            <th style={{ padding: '10px 14px', fontWeight: 700, color: '#A78BFA', textAlign: 'center' }}>Admin</th>
+                                            <th style={{ padding: '10px 14px', fontWeight: 700, color: '#4ADE80', textAlign: 'center' }}>Member</th>
+                                            <th style={{ padding: '10px 14px', fontWeight: 700, color: '#94A3B8', textAlign: 'center' }}>Guest</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {[
+                                            { cap: 'Organization Profile & Billing Settings', owner: true, admin: false, member: false, guest: false },
+                                            { cap: 'Invite New Collaborators & Guests', owner: true, admin: true, member: false, guest: false },
+                                            { cap: 'Promote / Demote Member Roles', owner: true, admin: true, member: false, guest: false },
+                                            { cap: 'Create & Manage Departments/Teams', owner: true, admin: true, member: true, guest: false },
+                                            { cap: 'Create & Archive Chat Channels', owner: true, admin: true, member: true, guest: false },
+                                            { cap: 'Host Video Meetings & Breakout Rooms', owner: true, admin: true, member: true, guest: true },
+                                            { cap: 'Live Screen Share & Annotation Tools', owner: true, admin: true, member: true, guest: true },
+                                            { cap: 'AI Noise Cancellation & Audio Soundboard', owner: true, admin: true, member: true, guest: true },
+                                            { cap: 'Structured Q&A & Poll Moderation', owner: true, admin: true, member: true, guest: false },
+                                            { cap: 'Delete / Transfer Organization', owner: true, admin: false, member: false, guest: false }
+                                        ].map((row, idx) => (
+                                            <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }} className="hover:bg-white/2">
+                                                <td style={{ padding: '9px 14px', fontWeight: 500, color: '#e4e4e7' }}>{row.cap}</td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.owner ? <span style={{ color: '#4ade80', fontWeight: 800 }}>✓</span> : <span style={{ color: '#52525b' }}>—</span>}</td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.admin ? <span style={{ color: '#4ade80', fontWeight: 800 }}>✓</span> : <span style={{ color: '#52525b' }}>—</span>}</td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.member ? <span style={{ color: '#4ade80', fontWeight: 800 }}>✓</span> : <span style={{ color: '#52525b' }}>—</span>}</td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.guest ? <span style={{ color: '#4ade80', fontWeight: 800 }}>✓</span> : <span style={{ color: '#52525b' }}>—</span>}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* TAB 5: PROFILE & SETTINGS */}
                     {activeSubTab === 'settings' && (
                         <div className="glass-card" style={{ padding: '18px 20px', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
                             <div>
@@ -699,36 +1115,7 @@ export function OrganizationSettingsPage({
                         </div>
                     )}
 
-                    {/* TAB CONTENT 3: ROLES & ACCESS */}
-                    {activeSubTab === 'roles' && (
-                        <div className="glass-card" style={{ padding: '18px 20px', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                            <div>
-                                <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff', margin: 0 }}>Roles & Workspace Permissions</h3>
-                                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
-                                    Standard access tiers and capabilities granted to members within this organization.
-                                </p>
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-                                {[
-                                    { title: 'Owner', desc: 'Full administration, billing management, organization deletion, and credential keys.', color: '#F59E0B' },
-                                    { title: 'Admin', desc: 'Can manage workspace channels, invites, team assignments, and member moderation.', color: '#8B5CF6' },
-                                    { title: 'Member', desc: 'Standard access, joining authorized rooms, channel chat, and screen sharing.', color: '#22C55E' },
-                                    { title: 'Guest', desc: 'External collaborators with restricted view, meeting attendance, and read logs.', color: '#A1A1AA' }
-                                ].map((role, idx) => (
-                                    <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: role.color }} />
-                                            <span style={{ fontWeight: 700, fontSize: '0.8125rem', color: '#fff' }}>{role.title}</span>
-                                        </div>
-                                        <p style={{ margin: 0, fontSize: '0.725rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>{role.desc}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* TAB CONTENT 4: DANGER ZONE */}
+                    {/* TAB 6: DANGER ZONE */}
                     {activeSubTab === 'danger' && (
                         <div className="glass-card" style={{ padding: '18px 20px', borderRadius: 12, border: '1px solid rgba(239, 68, 68, 0.25)', display: 'flex', flexDirection: 'column', gap: 12 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -861,6 +1248,7 @@ export function OrganizationSettingsPage({
 
             <CreateOrganizationModal open={showCreateModal} onClose={() => setShowCreateModal(false)} onCreate={handleCreateOrganization} />
             <InviteMemberModal open={showInviteModal} onClose={() => setShowInviteModal(false)} onInvite={handleInviteMember} />
+            <CreateTeamModal open={showCreateTeamModal} onClose={() => setShowCreateTeamModal(false)} onCreate={handleCreateTeam} />
         </div>
     )
 }

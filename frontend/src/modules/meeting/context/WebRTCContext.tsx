@@ -6,6 +6,7 @@ import { useWebRTC } from '../hooks/useWebRTC'
 
 interface WebRTCContextValue {
     localStream: MediaStream | null
+    cameraStream: MediaStream | null
     remoteStreams: Record<string, MediaStream>
     connectToMeeting: (meetingId: string, displayName?: string) => void
     leaveMeeting: () => void
@@ -17,6 +18,8 @@ interface WebRTCContextValue {
     mediaError: string | null
     mediaLoading: boolean
     replaceTrackOnPeers: (newTrack: MediaStreamTrack | null) => void
+    requestMedia: () => Promise<void>
+    stopMedia: () => void
 }
 
 const WebRTCContext = createContext<WebRTCContextValue | undefined>(undefined)
@@ -38,16 +41,13 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
 
     const leaveRef = React.useRef(leaveMeeting)
     const stopRef = React.useRef(stopMedia)
-    const requestRef = React.useRef(requestMedia)
 
     React.useEffect(() => {
         leaveRef.current = leaveMeeting
         stopRef.current = stopMedia
-        requestRef.current = requestMedia
     })
 
     React.useEffect(() => {
-        requestRef.current()
         return () => {
             leaveRef.current()
             stopRef.current()
@@ -55,7 +55,23 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     }, [])
 
     return (
-        <WebRTCContext.Provider value={{ localStream, remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, clearScreenError, mediaError, mediaLoading, replaceTrackOnPeers }}>
+        <WebRTCContext.Provider value={{
+            localStream,
+            cameraStream,
+            remoteStreams,
+            connectToMeeting,
+            leaveMeeting,
+            startScreenShare,
+            stopScreenShare,
+            screenSharingUserId,
+            screenError,
+            clearScreenError,
+            mediaError,
+            mediaLoading,
+            replaceTrackOnPeers,
+            requestMedia,
+            stopMedia
+        }}>
             {children}
         </WebRTCContext.Provider>
     )

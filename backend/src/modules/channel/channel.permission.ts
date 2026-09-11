@@ -3,30 +3,67 @@ import { Types } from 'mongoose'
 import { Channel } from './channel.model'
 import { Team } from '../team/team.model'
 import { getOrganizationById } from '../organization/organization.service'
+import { User } from '../../models/user.model'
 import { sendError } from '../../utils/responseHelper'
 
+async function isSuperAdmin(userId: string): Promise<boolean> {
+    try {
+        const user = await User.findById(userId).select('email').exec()
+        return user?.email?.toLowerCase().trim() === 'admin@jtsmeet.com'
+    } catch {
+        return false
+    }
+}
+
 function getTeamMember(team: any, userId: string) {
-    return team?.members?.find((member: any) => member.userId.equals(new Types.ObjectId(userId)))
+    return team?.members?.find((member: any) =>
+        member?.userId?.toString() === userId ||
+        (member?.userId?.equals && member.userId.equals(new Types.ObjectId(userId)))
+    )
 }
 
 function getChannelMember(channel: any, userId: string) {
-    return channel?.members?.find((member: any) => member.userId.equals(new Types.ObjectId(userId)))
+    return channel?.members?.find((member: any) =>
+        member?.userId?.toString() === userId ||
+        (member?.userId?.equals && member.userId.equals(new Types.ObjectId(userId)))
+    )
 }
 
 async function isUserAuthorizedForTeam(team: any, userId: string): Promise<boolean> {
+    if (await isSuperAdmin(userId)) {
+        return true
+    }
+
+    if (
+        team?.ownerId?.toString() === userId ||
+        team?.createdBy?.toString() === userId
+    ) {
+        return true
+    }
+
     const member = getTeamMember(team, userId)
     if (member) return true
 
-    if (team.organizationId) {
+    if (team?.organizationId) {
         try {
-            const organization = await getOrganizationById(team.organizationId.toString())
+            const orgId = (team.organizationId as any)?._id ? (team.organizationId as any)._id.toString() : team.organizationId.toString()
+            const organization = await getOrganizationById(orgId)
             if (organization) {
-                const orgMember = organization.members?.find((m: any) => (m.userId?.equals ? m.userId.equals(new Types.ObjectId(userId)) : m.userId?.toString() === userId) && m.status === 'active')
+                if (
+                    organization.ownerId?.toString() === userId ||
+                    (organization as any).createdBy?.toString() === userId
+                ) {
+                    return true
+                }
+                const orgMember = organization.members?.find((m: any) =>
+                    (m.userId?.equals ? m.userId.equals(new Types.ObjectId(userId)) : m.userId?.toString() === userId) &&
+                    m.status === 'active'
+                )
                 if (orgMember) {
                     if (['owner', 'admin'].includes(orgMember.role)) {
                         return true
                     }
-                    if (team.isPublic !== false) {
+                    if (team.visibility === 'public' || (team as any).isPublic !== false) {
                         return true
                     }
                 }
@@ -44,6 +81,10 @@ export async function requireTeamMember(req: Request, res: Response, next: NextF
 
     if (!teamId || !userId) {
         return sendError(res, 401, 'Unauthorized access')
+    }
+
+    if (await isSuperAdmin(userId)) {
+        return next()
     }
 
     if (!Types.ObjectId.isValid(teamId)) {
@@ -69,6 +110,10 @@ export async function requireTeamMemberFromChannel(req: Request, res: Response, 
 
     if (!channelId || !userId) {
         return sendError(res, 401, 'Unauthorized access')
+    }
+
+    if (await isSuperAdmin(userId)) {
+        return next()
     }
 
     if (!Types.ObjectId.isValid(channelId)) {
@@ -101,6 +146,10 @@ export async function requireChannelAccess(req: Request, res: Response, next: Ne
         return sendError(res, 401, 'Unauthorized access')
     }
 
+    if (await isSuperAdmin(userId)) {
+        return next()
+    }
+
     if (!Types.ObjectId.isValid(channelId)) {
         return sendError(res, 400, 'Invalid channelId')
     }
@@ -128,7 +177,8 @@ export async function requireChannelAccess(req: Request, res: Response, next: Ne
     if (!member) {
         if (team.organizationId) {
             try {
-                const organization = await getOrganizationById(team.organizationId.toString())
+                const orgId = (team.organizationId as any)?._id ? (team.organizationId as any)._id.toString() : team.organizationId.toString()
+                const organization = await getOrganizationById(orgId)
                 const orgMember = organization?.members?.find((m: any) => (m.userId?.equals ? m.userId.equals(new Types.ObjectId(userId)) : m.userId?.toString() === userId) && m.status === 'active')
                 if (orgMember && ['owner', 'admin'].includes(orgMember.role)) {
                     return next()
@@ -149,6 +199,10 @@ export async function requireChannelMember(req: Request, res: Response, next: Ne
 
     if (!channelId || !userId) {
         return sendError(res, 401, 'Unauthorized access')
+    }
+
+    if (await isSuperAdmin(userId)) {
+        return next()
     }
 
     if (!Types.ObjectId.isValid(channelId)) {
@@ -174,6 +228,10 @@ export async function requireChannelOwnerOrModerator(req: Request, res: Response
 
     if (!channelId || !userId) {
         return sendError(res, 401, 'Unauthorized access')
+    }
+
+    if (await isSuperAdmin(userId)) {
+        return next()
     }
 
     if (!Types.ObjectId.isValid(channelId)) {
