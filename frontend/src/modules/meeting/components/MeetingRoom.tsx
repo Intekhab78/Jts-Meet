@@ -2616,20 +2616,30 @@ export function MeetingRoom({
     initialToken = '',
     isAdminOrOwner = false,
     initialMeetingId = '',
-    autoJoin = false
+    autoJoin = false,
+    onLeave
 }: {
     initialToken?: string
     isAdminOrOwner?: boolean
     initialMeetingId?: string
     autoJoin?: boolean
+    onLeave?: () => void
 }) {
     const [token, setToken] = useState(initialToken)
+    const hasLeftRef = useRef(false)
+    const hasAutoJoinedRef = useRef(false)
 
     useEffect(() => {
         if (initialToken && initialToken !== token) {
             setToken(initialToken)
         }
     }, [initialToken])
+
+    useEffect(() => {
+        if (initialMeetingId && initialMeetingId !== meetingInput) {
+            setMeetingInput(initialMeetingId)
+        }
+    }, [initialMeetingId])
 
     const myDisplayName = useMemo(() => {
         let name = localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || ''
@@ -4418,6 +4428,41 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
     // Auto-join meeting if guest token is authorized, or if page was refreshed during an active session
     const autoRejoinAttemptedRef = useRef(false)
+
+    useEffect(() => {
+        if (initialMeetingId) {
+            autoRejoinAttemptedRef.current = false
+            hasLeftRef.current = false
+            hasAutoJoinedRef.current = false
+        }
+    }, [initialMeetingId])
+
+    const handleExitMeeting = useCallback(() => {
+        hasLeftRef.current = true
+        hasAutoJoinedRef.current = true
+        try {
+            sessionStorage.removeItem('jts_active_meeting_id')
+            sessionStorage.removeItem('jts_meeting_joined')
+            localStorage.removeItem('jts_last_meeting_id')
+        } catch (e) { }
+        leaveMeeting()
+        if (onLeave) {
+            onLeave()
+        }
+    }, [leaveMeeting, onLeave])
+
+    // Direct autoJoin trigger: Only auto-joins ONCE upon entry, never if user has left!
+    useEffect(() => {
+        if (autoJoin && connected && !joined && !hasLeftRef.current && !hasAutoJoinedRef.current) {
+            const target = (initialMeetingId || meetingInput || sessionStorage.getItem('jts_active_meeting_id') || '').trim()
+            if (target) {
+                hasAutoJoinedRef.current = true
+                autoRejoinAttemptedRef.current = true
+                handleJoinMeeting(target)
+            }
+        }
+    }, [autoJoin, connected, joined, initialMeetingId, meetingInput])
+
     useEffect(() => {
         if (connected && !joined && !mediaLoading && !autoRejoinAttemptedRef.current) {
             const decoded = parseJwt(initialToken || token)
@@ -4627,13 +4672,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         }
 
         const onEndAllEvent = () => {
-            try {
-                localStorage.removeItem('jts_last_meeting_id')
-                sessionStorage.removeItem('jts_active_meeting_id')
-            } catch (e) { }
             setMeetingInput('')
             addToast('The host has ended this meeting for everyone', 'warning')
-            leaveMeeting()
+            handleExitMeeting()
         }
 
         const onWatermarkToggleEvent = (data: { enabled: boolean }) => {
@@ -6056,7 +6097,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         if (isLocalHost) {
                             setShowEndMeetingModal(true)
                         } else {
-                            leaveMeeting()
+                            handleExitMeeting()
                         }
                     }}
                     style={{ background: 'var(--color-danger)', border: 'none', borderRadius: '24px', padding: windowWidth < 640 ? '6px 14px' : '8px 20px', color: '#fff', fontWeight: 700, fontSize: windowWidth < 640 ? '0.75rem' : '0.8125rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)' }}
@@ -6586,17 +6627,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 onClose={() => setShowEndMeetingModal(false)}
                 onLeaveOnly={() => {
                     setShowEndMeetingModal(false)
-                    leaveMeeting()
+                    handleExitMeeting()
                 }}
                 onEndForAll={() => {
                     setShowEndMeetingModal(false)
-                    try {
-                        localStorage.removeItem('jts_last_meeting_id')
-                        sessionStorage.removeItem('jts_active_meeting_id')
-                    } catch (e) { }
                     setMeetingInput('')
                     socket?.emit('meeting:end-all', { meetingId: meetingId || meetingInput.trim() })
-                    leaveMeeting()
+                    handleExitMeeting()
                 }}
             />
 

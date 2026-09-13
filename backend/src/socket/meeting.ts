@@ -6,7 +6,8 @@ import {
     createMeeting,
     joinMeeting as joinMeetingService,
     leaveMeeting as leaveMeetingService,
-    endMeeting as endMeetingService
+    endMeeting as endMeetingService,
+    computeNextOccurrenceDate
 } from '../modules/meeting/meeting.service'
 import { Meeting } from '../modules/meeting/meeting.model'
 import { SocketEvents } from './events'
@@ -388,7 +389,19 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     socket.on(SocketEvents.MEETING_END_ALL, async (payload: { meetingId: string }) => {
         if (!userId || !payload?.meetingId) return
         try {
-            await Meeting.findOneAndUpdate({ meetingId: payload.meetingId }, { status: 'ended', endedAt: new Date() })
+            const meeting = await Meeting.findOne({ meetingId: payload.meetingId })
+            if (meeting) {
+                meeting.endedAt = new Date()
+                if (meeting.isRecurring && meeting.recurrencePattern && meeting.recurrencePattern !== 'none') {
+                    const baseDate = meeting.scheduledDate || new Date().toISOString().slice(0, 10)
+                    meeting.scheduledDate = computeNextOccurrenceDate(baseDate, meeting.recurrencePattern)
+                    meeting.status = 'scheduled'
+                    meeting.startedAt = null
+                } else {
+                    meeting.status = 'ended'
+                }
+                await meeting.save()
+            }
             io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_END, {
                 meetingId: payload.meetingId,
                 endedByHost: true

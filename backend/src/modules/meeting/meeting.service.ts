@@ -197,6 +197,38 @@ export async function leaveMeeting(meetingId: string, userId: string): Promise<I
     return meeting
 }
 
+export function computeNextOccurrenceDate(currentDateStr?: string, pattern?: string): string {
+    const today = new Date()
+    const base = currentDateStr ? new Date(currentDateStr) : today
+    let d = isNaN(base.getTime()) ? new Date() : new Date(base)
+
+    const nowZero = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+    const dZero = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+
+    if (dZero <= nowZero) {
+        d = new Date(today)
+        if (pattern === 'daily') {
+            d.setDate(d.getDate() + 1)
+        } else if (pattern === 'weekdays') {
+            const day = d.getDay()
+            if (day === 5) d.setDate(d.getDate() + 3) // Friday -> Monday
+            else if (day === 6) d.setDate(d.getDate() + 2) // Saturday -> Monday
+            else d.setDate(d.getDate() + 1)
+        } else if (pattern === 'weekly') {
+            d.setDate(d.getDate() + 7)
+        } else if (pattern === 'monthly') {
+            d.setMonth(d.getMonth() + 1)
+        } else {
+            d.setDate(d.getDate() + 1)
+        }
+    }
+
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+}
+
 export async function endMeeting(meetingId: string, userId: string): Promise<IMeeting | null> {
     const meeting = await Meeting.findOne({ meetingId }).exec()
     if (!meeting) {
@@ -212,8 +244,17 @@ export async function endMeeting(meetingId: string, userId: string): Promise<IMe
         throw new Error('Only the host or co-hosts can end the meeting')
     }
 
-    meeting.status = 'ended'
     meeting.endedAt = new Date()
+
+    if (meeting.isRecurring && meeting.recurrencePattern && meeting.recurrencePattern !== 'none') {
+        const baseDate = meeting.scheduledDate || new Date().toISOString().slice(0, 10)
+        meeting.scheduledDate = computeNextOccurrenceDate(baseDate, meeting.recurrencePattern)
+        meeting.status = 'scheduled'
+        meeting.startedAt = null
+    } else {
+        meeting.status = 'ended'
+    }
+
     return meeting.save()
 }
 

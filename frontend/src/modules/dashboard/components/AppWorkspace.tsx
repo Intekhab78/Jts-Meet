@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, Suspense } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react'
 import { useMeetingContext } from '../../meeting/context/MeetingContext'
 import { useSocketContext } from '../../meeting/context/SocketContext'
 import { useWebRTCContext } from '../../meeting/context/WebRTCContext'
@@ -86,12 +86,61 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     const [searchQuery, setSearchQuery] = useState('')
     const [historyFilter, setHistoryFilter] = useState<'all' | 'recorded' | 'regular'>('all')
 
-    const { joined, setMeetingId } = useMeetingContext()
+    const { joined, setMeetingId, meetingId } = useMeetingContext()
     const { socket, connectSocket, connected } = useSocketContext()
     const { stopMedia } = useWebRTCContext()
     const [incomingCall, setIncomingCall] = useState<IncomingCallData | null>(null)
     const [showDirectDialModal, setShowDirectDialModal] = useState(false)
     const [directDialTarget, setDirectDialTarget] = useState('')
+
+    const [activeMeetingRoomId, setActiveMeetingRoomId] = useState<string>(() => {
+        try {
+            const hashParts = window.location.hash.split('?')
+            if (hashParts.length > 1) {
+                const params = new URLSearchParams(hashParts[1])
+                const qId = params.get('id') || params.get('meetingId')
+                if (qId) return qId
+            }
+            return sessionStorage.getItem('jts_active_meeting_id') || ''
+        } catch {
+            return ''
+        }
+    })
+
+    const handleLaunchMeeting = useCallback((targetMeetingId?: string) => {
+        const cleanId = (targetMeetingId || `room-${Math.random().toString(36).substring(2, 8)}`).trim()
+        try {
+            sessionStorage.setItem('jts_active_meeting_id', cleanId)
+            sessionStorage.setItem(`jts_created_meeting_${cleanId}`, 'true')
+            localStorage.setItem('jts_last_meeting_id', cleanId)
+        } catch (e) { }
+        setMeetingId(cleanId)
+        setActiveMeetingRoomId(cleanId)
+        window.history.replaceState(null, '', `/#meeting?id=${encodeURIComponent(cleanId)}`)
+        setActiveTab('meeting')
+    }, [setMeetingId])
+
+    const handleLeaveMeetingRoom = useCallback(() => {
+        setActiveMeetingRoomId('')
+        setMeetingId('')
+        try {
+            sessionStorage.removeItem('jts_active_meeting_id')
+            sessionStorage.removeItem('jts_meeting_joined')
+            localStorage.removeItem('jts_last_meeting_id')
+        } catch (e) { }
+        window.history.replaceState(null, '', '/#dashboard')
+        window.location.hash = '#dashboard'
+        setActiveTab('dashboard')
+    }, [setMeetingId])
+
+    useEffect(() => {
+        if (!joined) {
+            const stored = sessionStorage.getItem('jts_active_meeting_id')
+            if (!stored && activeMeetingRoomId) {
+                setActiveMeetingRoomId('')
+            }
+        }
+    }, [joined, activeMeetingRoomId])
 
     // Automatically release and turn off camera & microphone hardware when switching away from meeting room
     useEffect(() => {
@@ -141,9 +190,8 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                 meetingId: call.meetingId
             })
         }
-        setMeetingId(call.meetingId)
         setIncomingCall(null)
-        setActiveTab('meeting')
+        handleLaunchMeeting(call.meetingId)
     }
 
     const handleDeclineCall = (call: IncomingCallData) => {
@@ -164,10 +212,9 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
             callerName: profileName || 'Colleague',
             meetingId: newMeetingId
         })
-        setMeetingId(newMeetingId)
         setShowDirectDialModal(false)
         setDirectDialTarget('')
-        setActiveTab('meeting')
+        handleLaunchMeeting(newMeetingId)
     }
 
     const [sidebarExpanded, setSidebarExpanded] = useState(false)
@@ -322,24 +369,54 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                         }
                     })
 
-                    // Map to scheduled list
-                    const scheduled = list.filter(m => m.status === 'scheduled' || m.status === 'active').map(m => ({
-                        id: m.meetingId,
-                        title: m.title || `Conference ${m.meetingId}`,
-                        date: m.scheduledDate || (m.createdAt ? new Date(m.createdAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)),
-                        time: m.scheduledTime ? `${m.scheduledTime}` : (m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '11:00 AM'),
-                        duration: '30m',
-                        host: typeof m.host === 'object' ? m.host?.fullName || 'Host' : (m.host || 'Host'),
-                        hostId: typeof m.host === 'object' ? m.host?._id || m.host?.id : m.host,
-                        isRecurring: m.isRecurring || false,
-                        recurrencePattern: m.recurrencePattern || 'none',
-                        notifyByEmail: m.notifyByEmail !== false,
-                        isWaitingRoomEnabled: m.isWaitingRoomEnabled !== false,
-                        organizationId: m.organizationId,
-                        teamId: m.teamId ? (typeof m.teamId === 'object' ? m.teamId?._id : m.teamId) : '',
-                        teamName: m.teamId && typeof m.teamId === 'object' ? m.teamId?.name : '',
-                        status: m.status || 'scheduled'
-                    }))
+                    // Helper to compute next occurrence date for recurring series
+                    const computeNextDate = (currentDateStr?: string, pattern?: string) => {
+                        const today = new Date()
+                        const base = currentDateStr ? new Date(currentDateStr) : today
+                        let d = isNaN(base.getTime()) ? new Date() : new Date(base)
+                        const nowZero = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+                        const dZero = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+                        if (dZero <= nowZero) {
+                            d = new Date(today)
+                            if (pattern === 'daily') d.setDate(d.getDate() + 1)
+                            else if (pattern === 'weekdays') {
+                                const day = d.getDay()
+                                if (day === 5) d.setDate(d.getDate() + 3)
+                                else if (day === 6) d.setDate(d.getDate() + 2)
+                                else d.setDate(d.getDate() + 1)
+                            }
+                            else if (pattern === 'weekly') d.setDate(d.getDate() + 7)
+                            else if (pattern === 'monthly') d.setMonth(d.getMonth() + 1)
+                            else d.setDate(d.getDate() + 1)
+                        }
+                        return d.toISOString().slice(0, 10)
+                    }
+
+                    // Map to scheduled list (includes active, scheduled, and all recurring series)
+                    const scheduled = list.filter(m => m.status === 'scheduled' || m.status === 'active' || (m.isRecurring && m.recurrencePattern && m.recurrencePattern !== 'none')).map(m => {
+                        const isRecurringSeries = Boolean(m.isRecurring && m.recurrencePattern && m.recurrencePattern !== 'none')
+                        let meetingDate = m.scheduledDate || (m.createdAt ? new Date(m.createdAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10))
+                        if (isRecurringSeries && m.status === 'ended') {
+                            meetingDate = computeNextDate(meetingDate, m.recurrencePattern)
+                        }
+                        return {
+                            id: m.meetingId,
+                            title: m.title || `Conference ${m.meetingId}`,
+                            date: meetingDate,
+                            time: m.scheduledTime ? `${m.scheduledTime}` : (m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '11:00 AM'),
+                            duration: '30m',
+                            host: typeof m.host === 'object' ? m.host?.fullName || 'Host' : (m.host || 'Host'),
+                            hostId: typeof m.host === 'object' ? m.host?._id || m.host?.id : m.host,
+                            isRecurring: m.isRecurring || false,
+                            recurrencePattern: m.recurrencePattern || 'none',
+                            notifyByEmail: m.notifyByEmail !== false,
+                            isWaitingRoomEnabled: m.isWaitingRoomEnabled !== false,
+                            organizationId: m.organizationId,
+                            teamId: m.teamId ? (typeof m.teamId === 'object' ? m.teamId?._id : m.teamId) : '',
+                            teamName: m.teamId && typeof m.teamId === 'object' ? m.teamId?.name : '',
+                            status: isRecurringSeries && m.status === 'ended' ? 'scheduled' : (m.status || 'scheduled')
+                        }
+                    })
 
                     setHistoryItems(history)
                     setScheduledItems(scheduled)
@@ -872,7 +949,14 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                     {/* MEETING TAB */}
                     {activeTab === 'meeting' && (
                         <div style={{ width: '100%', height: '100%' }}>
-                            <MeetingRoom initialToken={token} isAdminOrOwner={isOrgAdminOrOwner} />
+                            <MeetingRoom
+                                key={activeMeetingRoomId || meetingId || 'lobby'}
+                                initialToken={token}
+                                initialMeetingId={activeMeetingRoomId || meetingId || undefined}
+                                autoJoin={Boolean(activeMeetingRoomId || meetingId)}
+                                isAdminOrOwner={isOrgAdminOrOwner}
+                                onLeave={handleLeaveMeetingRoom}
+                            />
                         </div>
                     )}
 
@@ -891,12 +975,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                 currentOrgId={currentOrgId}
                                 teams={teams}
                                 currentTeamId={currentTeamId}
-                                onStartMeeting={(meetId) => {
-                                    if (meetId) {
-                                        setMeetingId(meetId)
-                                    }
-                                    setActiveTab('meeting')
-                                }}
+                                onStartMeeting={handleLaunchMeeting}
                                 onNavigateTab={(tab) => setActiveTab(tab)}
                                 onOpenDirectDial={(targetId) => {
                                     if (targetId) {
@@ -916,10 +995,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                 historyItems={historyItems}
                                 token={token}
                                 currentUserId={userId}
-                                onStartMeeting={(mId) => {
-                                    setMeetingId(mId)
-                                    setActiveTab('meeting')
-                                }}
+                                onStartMeeting={handleLaunchMeeting}
                                 onRefresh={fetchMeetings}
                                 onDeleteSuccess={(mId) => {
                                     setHistoryItems(prev => prev.filter(item => item.id !== mId))
@@ -937,10 +1013,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                 currentUserId={userId}
                                 currentOrgId={currentOrgId || undefined}
                                 teams={teams}
-                                onStartMeeting={(mId) => {
-                                    setMeetingId(mId)
-                                    setActiveTab('meeting')
-                                }}
+                                onStartMeeting={handleLaunchMeeting}
                                 onRefresh={fetchMeetings}
                                 onMeetingCreated={fetchMeetings}
                             />
@@ -982,10 +1055,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                     currentUserId={userId}
                                     teams={teams}
                                     onSelectTeam={(newTeamId) => setCurrentTeamId(newTeamId)}
-                                    onStartMeeting={(meetId) => {
-                                        setMeetingId(meetId)
-                                        setActiveTab('meeting')
-                                    }}
+                                    onStartMeeting={handleLaunchMeeting}
                                 />
                             ) : (loadingOrgs || loadingTeams) ? (
                                 <WorkspaceTabSkeleton />
