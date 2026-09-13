@@ -15,5 +15,6 @@ router.post('/remove', authenticate, asyncWrapper(organizationController.removeM
 router.post('/leave', authenticate, asyncWrapper(organizationController.leaveOrganization))
 router.get('/:organizationId/members', authenticate, asyncWrapper(organizationController.getMembers))
 router.patch('/:organizationId/members/:targetUserId/role', authenticate, asyncWrapper(organizationController.updateMemberRole))
+router.delete('/:organizationId', authenticate, asyncWrapper(organizationController.deleteOrganization))
 
 export default router

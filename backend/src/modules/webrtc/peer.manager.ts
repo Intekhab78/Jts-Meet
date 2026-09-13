@@ -4,20 +4,22 @@ export interface PeerSession {
     socketId: string
     displayName?: string
     isVideoOff?: boolean
+    isMuted?: boolean
 }
 
 const peersByUserId = new Map<string, PeerSession>()
 const peersBySocketId = new Map<string, PeerSession>()
 const meetingPeers = new Map<string, Set<string>>()
 
-export function addPeerSession(userId: string, meetingId: string, socketId: string, displayName?: string, isVideoOff?: boolean) {
+export function addPeerSession(userId: string, meetingId: string, socketId: string, displayName?: string, isVideoOff?: boolean, isMuted?: boolean) {
     const existing = peersByUserId.get(userId)
     const session: PeerSession = { 
         userId, 
         meetingId, 
         socketId,
         displayName: displayName || existing?.displayName,
-        isVideoOff: isVideoOff !== undefined ? isVideoOff : existing?.isVideoOff
+        isVideoOff: isVideoOff !== undefined ? isVideoOff : existing?.isVideoOff,
+        isMuted: isMuted !== undefined ? isMuted : existing?.isMuted
     }
     peersByUserId.set(userId, session)
     peersBySocketId.set(socketId, session)
@@ -41,7 +43,8 @@ export function getMeetingPeersInfo(meetingId: string) {
         return {
             userId: uId,
             displayName: s?.displayName || '',
-            isVideoOff: s?.isVideoOff
+            isVideoOff: s?.isVideoOff,
+            isMuted: s?.isMuted
         }
     })
 }

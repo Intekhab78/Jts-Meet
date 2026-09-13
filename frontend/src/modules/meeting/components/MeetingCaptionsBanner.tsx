@@ -26,14 +26,35 @@ export function MeetingCaptionsBanner({
 }: MeetingCaptionsBannerProps) {
     const [displayText, setDisplayText] = useState<string>('')
     const [currentSpeaker, setCurrentSpeaker] = useState<string>('')
+    const [isUnsupportedBrowser, setIsUnsupportedBrowser] = useState<boolean>(false)
+    const [showIdleNotice, setShowIdleNotice] = useState<boolean>(true)
     const transcriptRef = useRef<CaptionEntry[]>([])
     const recognitionRef = useRef<any>(null)
     const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const idleNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const speakerNameRef = useRef(speakerName)
     const meetingIdRef = useRef(meetingId)
     const socketRef = useRef(socket)
     const onTranscriptUpdateRef = useRef(onTranscriptUpdate)
+
+    // Auto-hide idle notice (including "Mic is Muted") after 3 seconds
+    useEffect(() => {
+        if (isEnabled) {
+            setShowIdleNotice(true)
+            if (idleNoticeTimerRef.current) clearTimeout(idleNoticeTimerRef.current)
+            idleNoticeTimerRef.current = setTimeout(() => {
+                setShowIdleNotice(false)
+            }, 3000)
+        } else {
+            setShowIdleNotice(false)
+            if (idleNoticeTimerRef.current) clearTimeout(idleNoticeTimerRef.current)
+        }
+
+        return () => {
+            if (idleNoticeTimerRef.current) clearTimeout(idleNoticeTimerRef.current)
+        }
+    }, [isEnabled, isLocalMuted])
 
     useEffect(() => {
         speakerNameRef.current = speakerName
@@ -88,9 +109,11 @@ export function MeetingCaptionsBanner({
 
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
         if (!SpeechRecognition) {
+            setIsUnsupportedBrowser(true)
             console.warn('SpeechRecognition API is not supported in this browser environment')
             return
         }
+        setIsUnsupportedBrowser(false)
 
         let isStoppedManually = false
         let recognitionInstance: any = null
@@ -191,6 +214,29 @@ export function MeetingCaptionsBanner({
     if (!isEnabled) return null
 
     if (!displayText) {
+        if (!showIdleNotice) return null
+
+        if (isUnsupportedBrowser) {
+            return (
+                <div style={{
+                    position: 'absolute', bottom: 96, left: '50%', transform: 'translateX(-50%)',
+                    zIndex: 80, padding: '8px 20px',
+                    background: 'rgba(10, 11, 15, 0.94)', backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
+                    border: '1px solid rgba(245, 158, 11, 0.5)',
+                    borderRadius: 'var(--radius-full)',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6)',
+                    textAlign: 'center', pointerEvents: 'none',
+                    display: 'flex', alignItems: 'center', gap: 8
+                }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#fde68a' }}>
+                        ⚠️ Live speech recognition requires Chrome or Edge. Remote captions from other users will still appear.
+                    </span>
+                </div>
+            )
+        }
+
         return (
             <div style={{
                 position: 'absolute', bottom: 96, left: '50%', transform: 'translateX(-50%)',

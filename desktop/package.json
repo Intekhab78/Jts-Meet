@@ -1,0 +1,56 @@
+{
+  "name": "jts-meet-desktop",
+  "version": "1.0.0",
+  "description": "JTS Meet - Enterprise Video Conferencing with AnyDesk-Style Remote Desktop Control",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --dev",
+    "dev": "electron . --dev",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win nsis"
+  },
+  "keywords": [
+    "jts-meet",
+    "video-conferencing",
+    "remote-control",
+    "electron"
+  ],
+  "author": "JTS Technologies",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^28.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.jtsmeet.desktop",
+    "productName": "JTS Meet",
+    "copyright": "Copyright © 2026 JTS Technologies",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "JTS Meet"
+    }
+  }
+}

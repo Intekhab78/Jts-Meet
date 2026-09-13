@@ -25,6 +25,16 @@ export function registerPollHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
     const userId = authSocket.userId
 
+    // Late-joiner / modal open initial poll retrieval
+    socket.on('poll:get_all', (payload: { meetingId: string }) => {
+        if (!payload?.meetingId) return
+        const polls = meetingPollsMap.get(payload.meetingId) || []
+        socket.emit(SocketEvents.POLL_UPDATE, {
+            meetingId: payload.meetingId,
+            polls
+        })
+    })
+
     socket.on(SocketEvents.POLL_CREATE, (payload: {
         meetingId: string
         question: string

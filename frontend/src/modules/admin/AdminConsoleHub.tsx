@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { API_BASE } from '../../config'
+import { IntegrationsTab } from './components/IntegrationsTab'
 
 interface AdminConsoleHubProps {
     token: string
@@ -14,10 +15,10 @@ export function AdminConsoleHub({
     currentOrgId,
     organizations
 }: AdminConsoleHubProps) {
-    const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'recordings'>(() => {
+    const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'recordings' | 'integrations'>(() => {
         try {
             const saved = localStorage.getItem('jts_admin_tab')
-            if (saved && ['users', 'audit', 'recordings'].includes(saved)) {
+            if (saved && ['users', 'audit', 'recordings', 'integrations'].includes(saved)) {
                 return saved as any
             }
         } catch (_) {}
@@ -578,7 +579,8 @@ export function AdminConsoleHub({
                 {[
                     { id: 'users', label: 'Users & Role Management (RBAC)', icon: '👥' },
                     { id: 'audit', label: 'Security & Audit Logs', icon: '📜' },
-                    { id: 'recordings', label: 'Cloud Recordings & Storage Vault', icon: '☁️' }
+                    { id: 'recordings', label: 'Cloud Recordings & Storage Vault', icon: '☁️' },
+                    { id: 'integrations', label: 'Integrations & Webhooks', icon: '🔌' }
                 ].map((tab) => {
                     const isActive = activeTab === tab.id
                     return (
@@ -1879,6 +1881,13 @@ export function AdminConsoleHub({
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* TAB 4: ENTERPRISE INTEGRATIONS & WEBHOOKS HUB */}
+            {/* ========================================================================= */}
+            {activeTab === 'integrations' && (
+                <IntegrationsTab token={token} currentOrgId={currentOrgId} />
             )}
 
             {/* 4. VIDEO LIGHTBOX PLAYER MODAL */}

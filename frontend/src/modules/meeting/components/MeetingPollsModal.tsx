@@ -50,6 +50,10 @@ export function MeetingPollsModal({
         }
 
         socket.on(SocketEvents.POLL_UPDATE, handlePollUpdate)
+
+        // Request all current polls from server for late-joiner sync
+        socket.emit('poll:get_all', { meetingId })
+
         return () => {
             socket.off(SocketEvents.POLL_UPDATE, handlePollUpdate)
         }

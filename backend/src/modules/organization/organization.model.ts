@@ -1,7 +1,7 @@
 import { Schema, model, Document, Types } from 'mongoose'
 
 export type OrganizationRole = 'owner' | 'admin' | 'member' | 'guest'
-export type OrganizationStatus = 'active' | 'inactive'
+export type OrganizationStatus = 'active' | 'inactive' | 'deleted'
 export type OrganizationMemberStatus = 'pending' | 'active' | 'removed'
 
 export interface IOrganizationMember {
@@ -47,7 +47,7 @@ const OrganizationSchema = new Schema<IOrganization>(
         description: { type: String, default: '' },
         ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         members: { type: [OrganizationMemberSchema], default: [] },
-        status: { type: String, enum: ['active', 'inactive'], default: 'active' },
+        status: { type: String, enum: ['active', 'inactive', 'deleted'], default: 'active' },
         timezone: { type: String, default: 'UTC' },
         planTier: { type: String, enum: ['free', 'starter', 'enterprise'], default: 'enterprise' },
         maxSeats: { type: Number, default: 50 },

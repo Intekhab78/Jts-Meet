@@ -21,14 +21,16 @@ export interface CreateMeetingOptions {
 export async function createMeeting(hostId: string, options: string | CreateMeetingOptions): Promise<IMeeting> {
     const opts: CreateMeetingOptions = typeof options === 'string' ? { title: options } : options
     const meetingId = `meet_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-    const hostObjectId = new Types.ObjectId(hostId)
-    const participantsSet = new Set<string>([hostId])
+    const hostObjectId = Types.ObjectId.isValid(hostId) ? new Types.ObjectId(hostId) : new Types.ObjectId()
+    const participantsSet = new Set<string>(Types.ObjectId.isValid(hostId) ? [hostId] : [])
 
     // If teamId provided, add all team members to participants
     if (opts.teamId && Types.ObjectId.isValid(opts.teamId)) {
         const team = await Team.findById(opts.teamId).select('members').exec()
         if (team && team.members) {
-            team.members.forEach(m => participantsSet.add(m.userId.toString()))
+            team.members.forEach(m => {
+                if (m.userId) participantsSet.add(m.userId.toString())
+            })
         }
     }
 
@@ -36,11 +38,15 @@ export async function createMeeting(hostId: string, options: string | CreateMeet
     if (opts.organizationId && Types.ObjectId.isValid(opts.organizationId)) {
         const org = await Organization.findById(opts.organizationId).select('members').exec()
         if (org && org.members) {
-            org.members.forEach(m => participantsSet.add(m.userId.toString()))
+            org.members.forEach(m => {
+                if (m.userId) participantsSet.add(m.userId.toString())
+            })
         }
     }
 
-    const participantsList = Array.from(participantsSet).map(id => new Types.ObjectId(id))
+    const participantsList = Array.from(participantsSet)
+        .filter(id => Types.ObjectId.isValid(id))
+        .map(id => new Types.ObjectId(id))
 
     const meeting = new Meeting({
         title: opts.title.trim(),
@@ -125,6 +131,9 @@ export async function getMeetingByMeetingId(meetingId: string): Promise<IMeeting
 
 export async function joinMeeting(meetingId: string, userId: string): Promise<IMeeting | null> {
     let meeting = await Meeting.findOne({ meetingId }).exec()
+    if (!Types.ObjectId.isValid(userId)) {
+        return meeting
+    }
     const userObjectId = new Types.ObjectId(userId)
 
     if (!meeting) {
@@ -179,10 +188,13 @@ export async function leaveMeeting(meetingId: string, userId: string): Promise<I
         return null
     }
 
-    const userObjectId = new Types.ObjectId(userId)
-    meeting.participants = meeting.participants.filter((participant) => !participant.equals(userObjectId))
-    meeting.waitingRoom = meeting.waitingRoom.filter((participant) => !participant.equals(userObjectId))
-    return meeting.save()
+    if (Types.ObjectId.isValid(userId)) {
+        const userObjectId = new Types.ObjectId(userId)
+        meeting.participants = meeting.participants.filter((participant) => !participant.equals(userObjectId))
+        meeting.waitingRoom = meeting.waitingRoom.filter((participant) => !participant.equals(userObjectId))
+        return meeting.save()
+    }
+    return meeting
 }
 
 export async function endMeeting(meetingId: string, userId: string): Promise<IMeeting | null> {
@@ -191,6 +203,9 @@ export async function endMeeting(meetingId: string, userId: string): Promise<IMe
         return null
     }
 
+    if (!Types.ObjectId.isValid(userId)) {
+        throw new Error('Only the host or co-hosts can end the meeting')
+    }
     const userObjectId = new Types.ObjectId(userId)
     const isAuthorized = meeting.host.equals(userObjectId) || meeting.coHosts.some((id) => id.equals(userObjectId))
     if (!isAuthorized) {
@@ -203,6 +218,9 @@ export async function endMeeting(meetingId: string, userId: string): Promise<IMe
 }
 
 export async function getMyMeetings(userId: string): Promise<IMeeting[]> {
+    if (!Types.ObjectId.isValid(userId)) {
+        return []
+    }
     const userObjectId = new Types.ObjectId(userId)
     return Meeting.find({
         $or: [

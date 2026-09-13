@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
 import { JWT_SECRET } from '../config'
 import { getMeetingByMeetingId } from '../modules/meeting/meeting.service'
+import { rateLimiter } from '../middleware/rateLimiter'
 
 const router = Router()
 
@@ -54,8 +55,8 @@ router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
     }
 })
 
-// POST /api/guest/request
-router.post('/request', async (req: Request, res: Response) => {
+// POST /api/guest/request (Rate limited: max 60 guest requests/min per IP)
+router.post('/request', rateLimiter(60 * 1000, 60), async (req: Request, res: Response) => {
     try {
         const meetingId = String(req.body.meetingId || '').trim()
         const guestName = String(req.body.guestName || '').trim()

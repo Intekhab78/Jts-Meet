@@ -147,14 +147,33 @@ export function MeetingWhiteboard({ isOpen, onClose, meetingId, socket }: Meetin
             }
         }
 
+        const handleInitState = (payload: { strokes: StrokeData[] }) => {
+            if (Array.isArray(payload?.strokes)) {
+                strokesHistoryRef.current = payload.strokes
+                const canvas = canvasRef.current
+                if (canvas) {
+                    const ctx = canvas.getContext('2d')
+                    if (ctx) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height)
+                        payload.strokes.forEach(s => drawStroke(ctx, s))
+                    }
+                }
+            }
+        }
+
+        socket.on('whiteboard:init_state', handleInitState)
         socket.on(SocketEvents.WHITEBOARD_DRAW, handleRemoteDraw)
         socket.on(SocketEvents.WHITEBOARD_CLEAR, handleRemoteClear)
 
+        // Request current whiteboard state from server for late-joiner sync
+        socket.emit('whiteboard:get_state', { meetingId })
+
         return () => {
+            socket.off('whiteboard:init_state', handleInitState)
             socket.off(SocketEvents.WHITEBOARD_DRAW, handleRemoteDraw)
             socket.off(SocketEvents.WHITEBOARD_CLEAR, handleRemoteClear)
         }
-    }, [socket, isOpen])
+    }, [socket, isOpen, meetingId])
 
     const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>): StrokePoint => {
         const canvas = canvasRef.current

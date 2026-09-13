@@ -3,6 +3,7 @@ import {
     createOrganization,
     getOrganizationById,
     updateOrganization,
+    deleteOrganization,
     inviteMember,
     acceptInvitation,
     removeMember,
@@ -229,5 +230,26 @@ export const organizationController = {
             hasMore: !!result.nextCursor,
             total: result.members.length
         })
+    },
+
+    deleteOrganization: async (req: AuthRequest, res: Response) => {
+        const organizationId = Array.isArray(req.params.organizationId) ? req.params.organizationId[0] : req.params.organizationId
+        if (!organizationId) {
+            return sendError(res, 400, 'organizationId is required')
+        }
+
+        if (!req.userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+
+        try {
+            const org = await deleteOrganization(organizationId, req.userId)
+            if (!org) {
+                return sendError(res, 404, 'Organization not found')
+            }
+            return sendSuccess(res, org, 'Organization and nested teams/channels successfully deleted')
+        } catch (error: any) {
+            return sendError(res, 403, error.message || 'Forbidden')
+        }
     }
 }

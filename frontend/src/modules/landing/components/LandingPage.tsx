@@ -67,6 +67,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     const [meetingCodeInput, setMeetingCodeInput] = useState('')
     const [activeAiTab, setActiveAiTab] = useState<'summary' | 'action' | 'transcript'>('summary')
     const [hostPromptOpen, setHostPromptOpen] = useState(false)
+    const [showDownloadModal, setShowDownloadModal] = useState(false)
+    const [activeLegalModal, setActiveLegalModal] = useState<'privacy' | 'terms' | 'cookies' | null>(null)
 
     const toggleFaq = (index: number) => {
         setFaqOpen(prev => ({ ...prev, [index]: !prev[index] }))
@@ -167,6 +169,154 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                                 style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.82rem', cursor: 'pointer', padding: '6px' }}
                             >
                                 Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* ── Download Desktop App Modal ── */}
+            {showDownloadModal && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0, 0, 0, 0.8)',
+                    backdropFilter: 'blur(14px)',
+                    WebkitBackdropFilter: 'blur(14px)',
+                    zIndex: 2000,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 20
+                }} onClick={() => setShowDownloadModal(false)}>
+                    <div className="glass-card anim-scale-in" style={{
+                        maxWidth: 480,
+                        width: '100%',
+                        padding: '32px 28px',
+                        borderRadius: 20,
+                        background: 'rgba(15, 18, 28, 0.98)',
+                        border: '1px solid rgba(99, 102, 241, 0.35)',
+                        boxShadow: '0 25px 60px rgba(0,0,0,0.7), 0 0 50px rgba(99, 102, 241, 0.25)',
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 18
+                    }} onClick={e => e.stopPropagation()}>
+                        <div style={{
+                            width: 64,
+                            height: 64,
+                            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(168, 85, 247, 0.3) 100%)',
+                            border: '1px solid rgba(99, 102, 241, 0.5)',
+                            borderRadius: 16,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '2rem',
+                            margin: '0 auto'
+                        }}>
+                            💻
+                        </div>
+                        <div>
+                            <h3 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ffffff', margin: '0 0 8px', letterSpacing: '-0.02em' }}>
+                                JTS Meet for Windows
+                            </h3>
+                            <p style={{ fontSize: '0.88rem', color: '#94a3b8', margin: 0, lineHeight: 1.6 }}>
+                                Download the dedicated desktop client for <strong style={{ color: '#ffffff' }}>AnyDesk-Style Remote Desktop Control</strong>, hardware acceleration, and zero browser overhead.
+                            </p>
+                        </div>
+
+                        {/* Feature Badges */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, textAlign: 'left' }}>
+                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', fontSize: '0.78rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ color: '#34d399' }}>✓</span>
+                                <span>OS Remote Control</span>
+                            </div>
+                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', fontSize: '0.78rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ color: '#34d399' }}>✓</span>
+                                <span>Ultra Low Latency</span>
+                            </div>
+                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', fontSize: '0.78rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ color: '#34d399' }}>✓</span>
+                                <span>Hardware Accelerated</span>
+                            </div>
+                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', fontSize: '0.78rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ color: '#34d399' }}>✓</span>
+                                <span>1-Click Meetings</span>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+                            <a
+                                href="/downloads/JTS-Meet-Setup.exe"
+                                download="JTS-Meet-Setup.exe"
+                                className="landing-btn-cta"
+                                style={{ justifyContent: 'center', padding: '13px', fontSize: '0.95rem', textDecoration: 'none', gap: 8 }}
+                                onClick={() => {
+                                    setTimeout(() => setShowDownloadModal(false), 2000)
+                                }}
+                            >
+                                <span>⬇️</span>
+                                <span>Download Windows Installer (.exe)</span>
+                            </a>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <a
+                                    href="/downloads/JTS-Meet-Portable.exe"
+                                    download="JTS-Meet-Portable.exe"
+                                    style={{
+                                        flex: 1,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: 6,
+                                        padding: '10px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                                        borderRadius: '10px',
+                                        color: '#cbd5e1',
+                                        fontSize: '0.82rem',
+                                        fontWeight: 600,
+                                        textDecoration: 'none',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                    onClick={() => {
+                                        setTimeout(() => setShowDownloadModal(false), 2000)
+                                    }}
+                                >
+                                    <span>⚡</span>
+                                    <span>Portable (.exe)</span>
+                                </a>
+                                <a
+                                    href="/downloads/JTS-Meet-Windows.zip"
+                                    download="JTS-Meet-Windows.zip"
+                                    style={{
+                                        flex: 1,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: 6,
+                                        padding: '10px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                                        borderRadius: '10px',
+                                        color: '#cbd5e1',
+                                        fontSize: '0.82rem',
+                                        fontWeight: 600,
+                                        textDecoration: 'none',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                    onClick={() => {
+                                        setTimeout(() => setShowDownloadModal(false), 2000)
+                                    }}
+                                >
+                                    <span>📦</span>
+                                    <span>Zip Package</span>
+                                </a>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowDownloadModal(false)}
+                                style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.82rem', cursor: 'pointer', padding: '6px' }}
+                            >
+                                Close
                             </button>
                         </div>
                     </div>
@@ -589,7 +739,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             {/* ── Enterprise Full-Width Top Navbar ── */}
             <nav className="landing-navbar">
                 {/* 1. Left Side: Brand Logo & Name */}
-                <div className="landing-left-brand" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+                <div 
+                    className="landing-left-brand" 
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => {
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        if (window.location.hash) {
+                            window.history.pushState(null, '', window.location.pathname + window.location.search);
+                        }
+                    }}
+                >
                     <div style={{
                         width: 36,
                         height: 36,
@@ -644,6 +803,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                     </a>
                     <a href="#faq" className="landing-nav-link">
                         FAQ
+                    </a>
+                    <a
+                        href="#download"
+                        onClick={(e) => { e.preventDefault(); setShowDownloadModal(true); }}
+                        className="landing-nav-link"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#c7d2fe', fontWeight: 600 }}
+                    >
+                        <span>💻</span>
+                        <span>Desktop App</span>
                     </a>
                 </div>
 
@@ -1408,7 +1576,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                     <div className="landing-footer-grid">
                         {/* Brand Column */}
                         <div className="landing-footer-brand-col">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div 
+                                style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', width: 'fit-content' }}
+                                onClick={() => {
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    if (window.location.hash) {
+                                        window.history.pushState(null, '', window.location.pathname + window.location.search);
+                                    }
+                                }}
+                            >
                                 <div style={{
                                     width: 34,
                                     height: 34,
@@ -1471,13 +1647,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
                             {/* Social Icons */}
                             <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                                <a href="https://github.com" target="_blank" rel="noreferrer" className="landing-footer-social-btn" aria-label="GitHub">
+                                <a href="https://github.com/Intekhab78/Jts-Meet" target="_blank" rel="noreferrer" className="landing-footer-social-btn" aria-label="GitHub">
                                     <IconGithub />
                                 </a>
-                                <a href="https://twitter.com" target="_blank" rel="noreferrer" className="landing-footer-social-btn" aria-label="Twitter">
+                                <a href="https://twitter.com/jtsmeet" target="_blank" rel="noreferrer" className="landing-footer-social-btn" aria-label="Twitter">
                                     <IconTwitter />
                                 </a>
-                                <a href="https://linkedin.com" target="_blank" rel="noreferrer" className="landing-footer-social-btn" aria-label="LinkedIn">
+                                <a href="https://linkedin.com/company/jts-meet" target="_blank" rel="noreferrer" className="landing-footer-social-btn" aria-label="LinkedIn">
                                     <IconLinkedin />
                                 </a>
                             </div>
@@ -1540,14 +1716,199 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-                            <a href="#privacy" onClick={(e) => e.preventDefault()} className="landing-footer-link" style={{ fontSize: '0.8rem' }}>Privacy Policy</a>
-                            <a href="#terms" onClick={(e) => e.preventDefault()} className="landing-footer-link" style={{ fontSize: '0.8rem' }}>Terms of Service</a>
-                            <a href="#cookies" onClick={(e) => e.preventDefault()} className="landing-footer-link" style={{ fontSize: '0.8rem' }}>Cookie Preferences</a>
+                            <button
+                                type="button"
+                                onClick={() => setActiveLegalModal('privacy')}
+                                className="landing-footer-link"
+                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '0.8rem' }}
+                            >
+                                Privacy Policy
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setActiveLegalModal('terms')}
+                                className="landing-footer-link"
+                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '0.8rem' }}
+                            >
+                                Terms of Service
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setActiveLegalModal('cookies')}
+                                className="landing-footer-link"
+                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '0.8rem' }}
+                            >
+                                Cookie Preferences
+                            </button>
                             <a href="#security" className="landing-footer-link" style={{ fontSize: '0.8rem' }}>Security Center</a>
                         </div>
                     </div>
                 </div>
             </footer>
+
+            {/* ── Enterprise Legal & Compliance Glass Modal ── */}
+            {activeLegalModal && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        zIndex: 2000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(5, 7, 12, 0.82)',
+                        backdropFilter: 'blur(16px)',
+                        WebkitBackdropFilter: 'blur(16px)',
+                        padding: 16
+                    }}
+                    onClick={() => setActiveLegalModal(null)}
+                >
+                    <div
+                        style={{
+                            maxWidth: 680,
+                            width: '100%',
+                            maxHeight: '88vh',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            background: 'rgba(15, 18, 28, 0.96)',
+                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                            borderRadius: 18,
+                            boxShadow: '0 24px 60px rgba(0, 0, 0, 0.7)',
+                            overflow: 'hidden',
+                            color: '#e2e8f0'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Modal Header */}
+                        <div style={{
+                            padding: '20px 24px',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'rgba(255, 255, 255, 0.02)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: '1.4rem' }}>
+                                    {activeLegalModal === 'privacy' && '🛡️'}
+                                    {activeLegalModal === 'terms' && '📜'}
+                                    {activeLegalModal === 'cookies' && '🍪'}
+                                </span>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#ffffff' }}>
+                                        {activeLegalModal === 'privacy' && 'Privacy Policy'}
+                                        {activeLegalModal === 'terms' && 'Terms of Service'}
+                                        {activeLegalModal === 'cookies' && 'Cookie Preferences & Tracking'}
+                                    </h3>
+                                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                                        JTS Meet Enterprise Compliance & Governance
+                                    </span>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setActiveLegalModal(null)}
+                                style={{
+                                    background: 'rgba(255, 255, 255, 0.06)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: '#cbd5e1',
+                                    borderRadius: '50%',
+                                    width: 32,
+                                    height: 32,
+                                    cursor: 'pointer',
+                                    fontSize: '1.1rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div style={{ padding: '24px', overflowY: 'auto', fontSize: '0.88rem', lineHeight: 1.7, color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {activeLegalModal === 'privacy' && (
+                                <>
+                                    <p>
+                                        At <strong>JTS Meet</strong>, your privacy and communication confidentiality are our highest priorities. We design our systems with security-by-design and privacy-by-default principles.
+                                    </p>
+                                    <h4 style={{ color: '#fff', margin: '8px 0 4px', fontSize: '0.95rem' }}>1. Zero Selling of Personal Data</h4>
+                                    <p>We never sell, rent, or trade your personal data, meeting logs, audio/video streams, or shared files to advertisers or third parties under any circumstances.</p>
+
+                                    <h4 style={{ color: '#fff', margin: '8px 0 4px', fontSize: '0.95rem' }}>2. Real-Time WebRTC Media Streams</h4>
+                                    <p>Audio and video media streams travel via encrypted WebRTC DTLS/SRTP directly between participants whenever possible. Server relays do not decrypt media unless server-side transcription or cloud recording is explicitly activated by the meeting host.</p>
+
+                                    <h4 style={{ color: '#fff', margin: '8px 0 4px', fontSize: '0.95rem' }}>3. Data Retention & Control</h4>
+                                    <p>All in-meeting chat notes, whiteboard strokes, and meeting attendance records remain strictly accessible only to authorized members of your organization and meeting attendees.</p>
+                                </>
+                            )}
+
+                            {activeLegalModal === 'terms' && (
+                                <>
+                                    <p>
+                                        Welcome to <strong>JTS Meet</strong>. By accessing our web application, desktop client, or API endpoints, you agree to comply with and be bound by these terms.
+                                    </p>
+                                    <h4 style={{ color: '#fff', margin: '8px 0 4px', fontSize: '0.95rem' }}>1. Acceptable Use Policy</h4>
+                                    <p>Users must not transmit harmful malware, engage in unauthorized network intrusion, or broadcast unlawful content across JTS Meet channels or conference sessions.</p>
+
+                                    <h4 style={{ color: '#fff', margin: '8px 0 4px', fontSize: '0.95rem' }}>2. Remote Desktop Control Safeguards</h4>
+                                    <p>Remote desktop screen control features require explicit bilateral consent between presenter and controller. Presenters may revoke remote control at any instant with a single click.</p>
+
+                                    <h4 style={{ color: '#fff', margin: '8px 0 4px', fontSize: '0.95rem' }}>3. Organization Administration</h4>
+                                    <p>Organization owners maintain governance over their team workspaces, member permissions, audit logs, and meeting policies.</p>
+                                </>
+                            )}
+
+                            {activeLegalModal === 'cookies' && (
+                                <>
+                                    <p>
+                                        We use strictly necessary cookies and local storage items to authenticate your account, maintain WebRTC signaling sessions, and remember your audio/video device preferences.
+                                    </p>
+                                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <div>
+                                                <strong style={{ color: '#fff' }}>Essential Authentication Cookies</strong>
+                                                <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Required for session persistence and guest access</div>
+                                            </div>
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#34d399', background: 'rgba(52, 211, 153, 0.1)', padding: '2px 8px', borderRadius: 6 }}>Always Active</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <div>
+                                                <strong style={{ color: '#fff' }}>Audio & Video Device Preferences</strong>
+                                                <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Remembers chosen camera, mic, and background blur settings</div>
+                                            </div>
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#34d399', background: 'rgba(52, 211, 153, 0.1)', padding: '2px 8px', borderRadius: 6 }}>Active</span>
+                                        </div>
+                                    </div>
+                                    <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                                        JTS Meet does NOT deploy cross-site tracking cookies or third-party ad retargeting pixels.
+                                    </p>
+                                </>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div style={{
+                            padding: '16px 24px',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                            display: 'flex',
+                            justifyContent: 'flex-end',
+                            gap: 12,
+                            background: 'rgba(255, 255, 255, 0.02)'
+                        }}>
+                            <button
+                                type="button"
+                                onClick={() => setActiveLegalModal(null)}
+                                className="landing-btn-cta"
+                                style={{ padding: '8px 20px', fontSize: '0.85rem' }}
+                            >
+                                Understood & Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

@@ -1,4 +1,5 @@
-﻿node_modules/
+
+node_modules/
 dist/
 .env
 .env.local
@@ -11,3 +12,14 @@ dist/
 /frontend/dist/
 /backend/node_modules/
 /backend/dist/
+desktop/release/
+desktop/dist/
+frontend/public/downloads/
+*.exe
+*.zip
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.asar
+

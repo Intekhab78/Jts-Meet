@@ -16,16 +16,18 @@ async function isSuperAdmin(userId: string): Promise<boolean> {
 }
 
 function getTeamMember(team: any, userId: string) {
+    const isValid = Types.ObjectId.isValid(userId)
     return team?.members?.find((member: any) =>
         member?.userId?.toString() === userId ||
-        (member?.userId?.equals && member.userId.equals(new Types.ObjectId(userId)))
+        (isValid && member?.userId?.equals && member.userId.equals(new Types.ObjectId(userId)))
     )
 }
 
 function getChannelMember(channel: any, userId: string) {
+    const isValid = Types.ObjectId.isValid(userId)
     return channel?.members?.find((member: any) =>
         member?.userId?.toString() === userId ||
-        (member?.userId?.equals && member.userId.equals(new Types.ObjectId(userId)))
+        (isValid && member?.userId?.equals && member.userId.equals(new Types.ObjectId(userId)))
     )
 }
 
@@ -55,8 +57,9 @@ async function isUserAuthorizedForTeam(team: any, userId: string): Promise<boole
                 ) {
                     return true
                 }
+                const isValidUser = Types.ObjectId.isValid(userId)
                 const orgMember = organization.members?.find((m: any) =>
-                    (m.userId?.equals ? m.userId.equals(new Types.ObjectId(userId)) : m.userId?.toString() === userId) &&
+                    (isValidUser && m.userId?.equals ? m.userId.equals(new Types.ObjectId(userId)) : m.userId?.toString() === userId) &&
                     m.status === 'active'
                 )
                 if (orgMember) {

@@ -1,18 +1,33 @@
 import { Router, Request, Response } from 'express'
 import { generateMeetingSummary, askMeetingAssistant } from '../services/gemini.service'
-import { authenticate } from '../middleware/authMiddleware'
+import jwt from 'jsonwebtoken'
+import { JWT_SECRET } from '../config'
 
 const router = Router()
 
+const optionalAuth = (req: any, _res: any, next: any) => {
+    const authHeader = req.headers.authorization
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
+    if (token) {
+        try {
+            const payload = jwt.verify(token, JWT_SECRET) as { userId: string }
+            req.userId = payload.userId
+        } catch (e) {}
+    }
+    next()
+}
+
 // Generate AI meeting summary & action items
-router.post('/summary', authenticate, async (req: Request, res: Response): Promise<void> => {
+router.post('/summary', optionalAuth, async (req: Request, res: Response): Promise<void> => {
     try {
-        const { title, participants, duration, notes } = req.body
+        const { title, participants, duration, notes, transcripts, chatMessages } = req.body
         const result = await generateMeetingSummary({
             title: title || 'Team Meeting',
             participants: Array.isArray(participants) ? participants : [],
             duration: duration || '25 mins',
-            notes: notes || ''
+            notes: notes || '',
+            transcripts: Array.isArray(transcripts) ? transcripts : [],
+            chatMessages: Array.isArray(chatMessages) ? chatMessages : []
         })
 
         res.status(200).json({
@@ -29,7 +44,7 @@ router.post('/summary', authenticate, async (req: Request, res: Response): Promi
 })
 
 // Ask JTS AI Companion
-router.post('/assistant', authenticate, async (req: Request, res: Response): Promise<void> => {
+router.post('/assistant', optionalAuth, async (req: Request, res: Response): Promise<void> => {
     try {
         const { prompt, meetingContext } = req.body
         if (!prompt || typeof prompt !== 'string') {

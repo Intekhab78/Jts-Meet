@@ -24,6 +24,7 @@ import { validateCreateMeeting, validateMeetingAction } from './meeting.validato
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
+import { sendMeetingInvitationEmail } from '../../services/email.service'
 import { Team } from '../team/team.model'
 import { FRONTEND_URL } from '../../config'
 import { parseCursorQuery, executeCursorQuery } from '../../utils/paginationHelper'
@@ -327,7 +328,6 @@ export const meetingController = {
             const fullInviteLink = `${origin}/meet/${meetingId}`
 
             const recipientUser = await User.findOne({ email: toEmail.toLowerCase().trim() })
-            const recipientId = recipientUser ? recipientUser._id.toString() : userId
 
             let teamName: string | undefined
             if (meeting.teamId) {
@@ -335,26 +335,36 @@ export const meetingController = {
                 if (team) teamName = team.name
             }
 
-            await NotificationService.send({
-                recipientId,
-                title: 'Meeting Invitation',
-                body: `${hostName} has invited you to join the meeting "${meeting.title}"`,
-                type: 'meeting_invite',
-                metadata: { meetingId, hostName, title: meeting.title, teamName },
-                emailData: {
-                    to: toEmail,
-                    template: 'meeting_invite',
-                    params: {
-                        meetingId,
-                        meetingTitle: meeting.title,
-                        hostName,
-                        inviteLink: fullInviteLink,
-                        scheduledDate: meeting.scheduledDate,
-                        scheduledTime: meeting.scheduledTime,
-                        teamName
+            if (recipientUser) {
+                // Registered JTS Meet user: deliver both in-app notification and email
+                await NotificationService.send({
+                    recipientId: recipientUser._id.toString(),
+                    title: 'Meeting Invitation',
+                    body: `${hostName} has invited you to join the meeting "${meeting.title}"`,
+                    type: 'meeting_invite',
+                    metadata: { meetingId, hostName, title: meeting.title, teamName },
+                    emailData: {
+                        to: toEmail,
+                        template: 'meeting_invite',
+                        params: {
+                            meetingId,
+                            meetingTitle: meeting.title,
+                            hostName,
+                            inviteLink: fullInviteLink,
+                            scheduledDate: meeting.scheduledDate,
+                            scheduledTime: meeting.scheduledTime,
+                            teamName
+                        }
                     }
-                }
-            })
+                })
+            } else {
+                // External guest recipient: send email invitation only (prevents sending in-app notification to host)
+                await sendMeetingInvitationEmail(toEmail, meetingId, meeting.title, hostName, fullInviteLink, {
+                    scheduledDate: meeting.scheduledDate,
+                    scheduledTime: meeting.scheduledTime,
+                    teamName
+                })
+            }
 
             return sendSuccess(res, null, 'Invitation email sent successfully')
         } catch (error: any) {

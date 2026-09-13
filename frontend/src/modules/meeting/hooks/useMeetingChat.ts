@@ -3,6 +3,13 @@ import { useMeetingContext } from '../context/MeetingContext'
 import { useSocketContext } from '../context/SocketContext'
 import { SocketEvents } from '../services/socket.service'
 
+export interface ChatAttachment {
+    name: string
+    size: number
+    type: string
+    dataUrl?: string
+}
+
 export interface MeetingChatMessage {
     _id?: string
     meetingId: string
@@ -12,7 +19,8 @@ export interface MeetingChatMessage {
     recipientName?: string
     isPrivate?: boolean
     message: string
-    messageType: 'text'
+    messageType: 'text' | 'file' | 'code'
+    attachment?: ChatAttachment
     reactions?: { userId: string; emoji: string; createdAt: string }[]
     status?: 'sent' | 'delivered' | 'read'
     createdAt: string
@@ -26,8 +34,8 @@ export function useMeetingChat() {
     const [typingUsers, setTypingUsers] = useState<string[]>([])
 
     const sendMessage = useCallback(
-        (message: string, recipientId?: string, recipientName?: string) => {
-            if (!socket || !meetingId || !message.trim()) {
+        (message: string, recipientId?: string, recipientName?: string, attachment?: ChatAttachment, messageType: 'text' | 'file' | 'code' = 'text') => {
+            if (!socket || !meetingId || (!message.trim() && !attachment)) {
                 return
             }
             const isPrivate = !!recipientId && recipientId !== 'everyone'
@@ -39,8 +47,9 @@ export function useMeetingChat() {
                 recipientId: isPrivate ? recipientId : undefined,
                 recipientName: isPrivate ? recipientName : undefined,
                 isPrivate,
-                message: message.trim(),
-                messageType: 'text',
+                message: message.trim() || (attachment ? `Shared a file: ${attachment.name}` : ''),
+                messageType,
+                attachment,
                 status: 'sent',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
@@ -48,7 +57,9 @@ export function useMeetingChat() {
             setMessages((prev) => [...prev, localMsg])
             socket.emit(SocketEvents.MEETING_CHAT_SEND, {
                 meetingId,
-                message: message.trim(),
+                message: localMsg.message,
+                messageType,
+                attachment,
                 recipientId: isPrivate ? recipientId : undefined,
                 recipientName: isPrivate ? recipientName : undefined
             })

@@ -4,6 +4,7 @@ import { Request, Response } from 'express'
 import { createFileMetadata, getFileMetadata, softDeleteFile, computeChecksum } from './file.service'
 import { sendSuccess, sendError } from '../../utils/responseHelper'
 import { fileUpload, isAllowedMimeType } from './file.validator'
+import { Organization } from '../organization/organization.model'
 
 interface AuthRequest extends Request {
     userId?: string
@@ -64,6 +65,17 @@ export const fileController = {
             return sendError(res, 404, 'File not found')
         }
 
+        // IDOR Access Authorization Guard
+        const isOwner = metadata.uploadedBy?.toString() === userId
+        const isPublicContext = metadata.contextType === 'profile'
+        if (!isOwner && !isPublicContext && metadata.organizationId) {
+            const org = await Organization.findById(metadata.organizationId).select('members ownerId')
+            const isMember = org?.ownerId?.toString() === userId || org?.members?.some((m: any) => m.userId?.toString() === userId)
+            if (!isMember) {
+                return sendError(res, 403, 'Forbidden: You do not have permission to access this file')
+            }
+        }
+
         return sendSuccess(res, metadata)
     },
 
@@ -78,6 +90,17 @@ export const fileController = {
         const metadata = await getFileMetadata(fileId)
         if (!metadata || metadata.deletedAt) {
             return sendError(res, 404, 'File not found')
+        }
+
+        // IDOR Access Authorization Guard
+        const isOwner = metadata.uploadedBy?.toString() === userId
+        const isPublicContext = metadata.contextType === 'profile'
+        if (!isOwner && !isPublicContext && metadata.organizationId) {
+            const org = await Organization.findById(metadata.organizationId).select('members ownerId')
+            const isMember = org?.ownerId?.toString() === userId || org?.members?.some((m: any) => m.userId?.toString() === userId)
+            if (!isMember) {
+                return sendError(res, 403, 'Forbidden: You do not have permission to download this file')
+            }
         }
 
         if (metadata.storageProvider === 'local') {

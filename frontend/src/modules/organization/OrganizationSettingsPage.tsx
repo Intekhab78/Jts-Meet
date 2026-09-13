@@ -9,6 +9,7 @@ import { listTeamChannels } from '../channel/channel.service'
 import { CreateTeamModal } from '../team/CreateTeamModal'
 import type { Team } from '../team/team.types'
 import type { Channel } from '../channel/channel.types'
+import { IntegrationsTab } from '../admin/components/IntegrationsTab'
 
 interface OrganizationSettingsPageProps {
     token: string
@@ -35,7 +36,7 @@ export function OrganizationSettingsPage({
     const [successMessage, setSuccessMessage] = useState('')
     const [teams, setTeams] = useState<Team[]>([])
     const [channels, setChannels] = useState<(Channel & { teamName?: string })[]>([])
-    const [activeSubTab, setActiveSubTab] = useState<'members' | 'departments' | 'channels' | 'roles' | 'settings' | 'danger'>('members')
+    const [activeSubTab, setActiveSubTab] = useState<'members' | 'departments' | 'channels' | 'roles' | 'settings' | 'integrations' | 'danger'>('members')
     const [copiedOwner, setCopiedOwner] = useState(false)
     const [copiedSlug, setCopiedSlug] = useState(false)
     const [copiedInviteLink, setCopiedInviteLink] = useState(false)
@@ -665,6 +666,7 @@ export function OrganizationSettingsPage({
                             { id: 'channels', label: `Channels (${channels.length})`, icon: '💬' },
                             { id: 'roles', label: 'Roles & Access', icon: '🛡️' },
                             { id: 'settings', label: 'Organization Profile', icon: '⚙️' },
+                            { id: 'integrations', label: 'Integrations & Webhooks', icon: '🔌' },
                             { id: 'danger', label: 'Danger Zone', icon: '⚠️' }
                         ].map(tab => (
                             <button
@@ -1112,6 +1114,13 @@ export function OrganizationSettingsPage({
                                     </button>
                                 </div>
                             </form>
+                        </div>
+                    )}
+
+                    {/* TAB: ENTERPRISE INTEGRATIONS & WEBHOOKS */}
+                    {activeSubTab === 'integrations' && (
+                        <div className="glass-card" style={{ padding: '20px', borderRadius: 14 }}>
+                            <IntegrationsTab token={token} currentOrgId={organization._id} />
                         </div>
                     )}
 

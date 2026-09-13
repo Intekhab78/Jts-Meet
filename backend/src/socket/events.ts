@@ -87,6 +87,18 @@ export const SocketEvents = {
     SCREEN_ANNOTATION_STROKE_POINT: 'screen:annotation:stroke-point',
     SCREEN_ANNOTATION_STROKE_END: 'screen:annotation:stroke-end',
     SCREEN_ANNOTATION_LASER: 'screen:annotation:laser',
-    SCREEN_ANNOTATION_CLEAR: 'screen:annotation:clear'
+    SCREEN_ANNOTATION_CLEAR: 'screen:annotation:clear',
+
+    // Remote Desktop Control events
+    REMOTE_CONTROL_REQUEST: 'remote-control:request',
+    REMOTE_CONTROL_RESPONSE: 'remote-control:response',
+    REMOTE_CONTROL_REVOKE: 'remote-control:revoke',
+    REMOTE_CONTROL_MOUSE: 'remote-control:mouse',
+    REMOTE_CONTROL_KEY: 'remote-control:key',
+
+    // RTMP Live Streaming events
+    LIVESTREAM_TOGGLE: 'meeting:livestream-toggle',
+    LIVESTREAM_STATUS: 'meeting:livestream-status',
+    LIVESTREAM_STATS: 'meeting:livestream-stats'
 } as const
 

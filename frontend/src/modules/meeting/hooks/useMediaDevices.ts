@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { noiseCancellationService } from '../services/noiseCancellation.service'
 
 interface UseMediaDevicesResult {
     localStream: MediaStream | null
@@ -26,6 +27,7 @@ export function useMediaDevices(): UseMediaDevicesResult {
 
     const stopMedia = useCallback(() => {
         isRequestActiveRef.current = false
+        noiseCancellationService.cleanup()
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach((track) => {
                 try {
@@ -60,7 +62,25 @@ export function useMediaDevices(): UseMediaDevicesResult {
         setMediaError(null)
 
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    // Chrome WebRTC native voice clarity flags
+                    googEchoCancellation: true,
+                    googAutoGainControl: true,
+                    googNoiseSuppression: true,
+                    googHighpassFilter: true,
+                    googTypingNoiseDetection: true
+                } as any,
+                video: {
+                    width: { ideal: 1920, min: 1280 },
+                    height: { ideal: 1080, min: 720 },
+                    frameRate: { ideal: 30, max: 60 },
+                    aspectRatio: { ideal: 1.7777777778 }
+                }
+            })
             if (!isRequestActiveRef.current) {
                 // If stopMedia was called while awaiting getUserMedia, shut down tracks immediately
                 stream.getTracks().forEach(track => {
@@ -68,6 +88,15 @@ export function useMediaDevices(): UseMediaDevicesResult {
                 })
                 return
             }
+
+            // Apply AI Voice Isolation DSP pipeline to raw microphone track
+            const rawAudioTrack = stream.getAudioTracks()[0]
+            if (rawAudioTrack) {
+                const cleanAudioTrack = noiseCancellationService.processAudioTrack(rawAudioTrack, 'high')
+                stream.removeTrack(rawAudioTrack)
+                stream.addTrack(cleanAudioTrack)
+            }
+
             localStreamRef.current = stream
             cameraStreamRef.current = stream
             setCameraStream(stream)
@@ -113,13 +142,83 @@ export function useMediaDevices(): UseMediaDevicesResult {
 
     const replaceLocalStream = useCallback((stream: MediaStream) => {
         localStreamRef.current = stream
-        setLocalStream(stream)
+        setLocalStream(new MediaStream(stream.getTracks()))
     }, [])
 
     const restoreCameraStream = useCallback(() => {
         if (cameraStreamRef.current) {
-            localStreamRef.current = cameraStreamRef.current
-            setLocalStream(cameraStreamRef.current)
+            const fresh = new MediaStream(cameraStreamRef.current.getTracks())
+            localStreamRef.current = fresh
+            setLocalStream(fresh)
+        }
+    }, [])
+
+    // Audio/Video Device Hot-Swapping (Bluetooth & USB plug/unplug handling)
+    useEffect(() => {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.addEventListener) {
+            return
+        }
+
+        let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+        const handleDeviceChange = async () => {
+            if (debounceTimer) clearTimeout(debounceTimer)
+            debounceTimer = setTimeout(async () => {
+                const currentStream = localStreamRef.current
+                if (!currentStream) return
+
+                console.log('[MediaDevices] Device change detected. Checking track health...')
+                const audioTracks = currentStream.getAudioTracks()
+                const videoTracks = currentStream.getVideoTracks()
+
+                const audioEnded = audioTracks.length > 0 && audioTracks.some(t => t.readyState === 'ended')
+                const videoEnded = videoTracks.length > 0 && videoTracks.some(t => t.readyState === 'ended' && !(t as any).isDummy)
+
+                if (audioEnded || videoEnded) {
+                    console.log('[MediaDevices] Active track disconnected. Hot-swapping to available default devices...')
+                    try {
+                        const freshMedia = await navigator.mediaDevices.getUserMedia({
+                            audio: audioTracks.length > 0 ? {
+                                echoCancellation: true,
+                                noiseSuppression: true,
+                                autoGainControl: true
+                            } : false,
+                            video: (videoTracks.length > 0 && !videoEnded) ? {
+                                width: { ideal: 1920, min: 1280 },
+                                height: { ideal: 1080, min: 720 },
+                                aspectRatio: 1.7777777778
+                            } : false
+                        })
+
+                        const newTracks: MediaStreamTrack[] = []
+                        if (freshMedia.getAudioTracks()[0]) {
+                            const cleanAudio = noiseCancellationService.processAudioTrack(freshMedia.getAudioTracks()[0], 'high')
+                            newTracks.push(cleanAudio)
+                        } else if (audioTracks.find(t => t.readyState === 'live')) {
+                            newTracks.push(audioTracks.find(t => t.readyState === 'live')!)
+                        }
+
+                        if (freshMedia.getVideoTracks()[0]) {
+                            newTracks.push(freshMedia.getVideoTracks()[0])
+                        } else if (videoTracks.find(t => t.readyState === 'live')) {
+                            newTracks.push(videoTracks.find(t => t.readyState === 'live')!)
+                        }
+
+                        const replacement = new MediaStream(newTracks)
+                        localStreamRef.current = replacement
+                        setLocalStream(replacement)
+                        window.dispatchEvent(new CustomEvent('jts:device-swapped', { detail: { stream: replacement } }))
+                    } catch (err) {
+                        console.warn('[MediaDevices] Automatic device hot-swap recovery failed:', err)
+                    }
+                }
+            }, 600)
+        }
+
+        navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange)
+        return () => {
+            if (debounceTimer) clearTimeout(debounceTimer)
+            navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange)
         }
     }, [])
 

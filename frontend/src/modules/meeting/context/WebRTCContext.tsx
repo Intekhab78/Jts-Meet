@@ -20,6 +20,8 @@ interface WebRTCContextValue {
     replaceTrackOnPeers: (newTrack: MediaStreamTrack | null) => void
     requestMedia: () => Promise<void>
     stopMedia: () => void
+    networkStatus: 'online' | 'offline' | 'reconnecting'
+    isReconnecting: boolean
 }
 
 const WebRTCContext = createContext<WebRTCContextValue | undefined>(undefined)
@@ -28,7 +30,7 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     const { socket } = useSocketContext()
     const { meetingId, setJoined, addParticipant, removeParticipant } = useMeetingContext()
     const { localStream, cameraStream, mediaError, mediaLoading, requestMedia, stopMedia, replaceLocalStream, restoreCameraStream } = useMediaDevices()
-    const { remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, clearScreenError, replaceTrackOnPeers } = useWebRTC(
+    const { remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, clearScreenError, replaceTrackOnPeers, networkStatus, isReconnecting } = useWebRTC(
         socket,
         localStream,
         cameraStream,
@@ -70,7 +72,9 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
             mediaLoading,
             replaceTrackOnPeers,
             requestMedia,
-            stopMedia
+            stopMedia,
+            networkStatus,
+            isReconnecting
         }}>
             {children}
         </WebRTCContext.Provider>

@@ -5,11 +5,13 @@ import { Team, ITeam, ITeamMember } from './team.model'
 import { sendError } from '../../utils/responseHelper'
 
 function getMemberFromOrganization(org: any, userId: string) {
-    return org?.members?.find((member: any) => member.userId.equals(new Types.ObjectId(userId)) && member.status === 'active')
+    if (!Types.ObjectId.isValid(userId)) return null
+    return org?.members?.find((member: any) => member.userId && member.userId.equals(new Types.ObjectId(userId)) && member.status === 'active')
 }
 
 function getMemberFromTeam(team: ITeam, userId: string) {
-    return team.members.find((member) => member.userId.equals(new Types.ObjectId(userId)))
+    if (!Types.ObjectId.isValid(userId)) return null
+    return team.members.find((member) => member.userId && member.userId.equals(new Types.ObjectId(userId)))
 }
 
 export async function requireOrganizationAdmin(req: Request, res: Response, next: NextFunction) {
@@ -73,7 +75,7 @@ export async function requireTeamOwnerOrAdmin(req: Request, res: Response, next:
         if (orgMember && ['owner', 'admin'].includes(orgMember.role)) {
             return next()
         }
-        if (organization && organization.ownerId && organization.ownerId.equals(new Types.ObjectId(userId))) {
+        if (organization && organization.ownerId && Types.ObjectId.isValid(userId) && organization.ownerId.equals(new Types.ObjectId(userId))) {
             return next()
         }
     } catch (_) {}

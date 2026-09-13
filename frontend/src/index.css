@@ -158,6 +158,16 @@
     color: var(--color-text-primary);
   }
 
+  /* Form Elements: Select & Options */
+  select {
+    color-scheme: dark;
+  }
+
+  option, optgroup {
+    background-color: #161b22 !important;
+    color: #f0f6fc !important;
+  }
+
   /* Typography Scale */
   h1, h2, h3, h4, h5, h6 {
     font-weight: 600;

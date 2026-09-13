@@ -10,6 +10,10 @@ interface DeviceSettingsModalProps {
     isNoiseSuppressionEnabled?: boolean
     onToggleNoiseSuppression?: (enabled: boolean) => void
     onOpenVirtualBg?: () => void
+    videoQuality?: '1080p' | '720p' | 'auto'
+    onQualityChange?: (quality: '1080p' | '720p' | 'auto') => void
+    isHdBoostEnabled?: boolean
+    onToggleHdBoost?: (enabled: boolean) => void
 }
 
 export function DeviceSettingsModal({
@@ -21,7 +25,11 @@ export function DeviceSettingsModal({
     onToggleBlur,
     isNoiseSuppressionEnabled = true,
     onToggleNoiseSuppression,
-    onOpenVirtualBg
+    onOpenVirtualBg,
+    videoQuality = '1080p',
+    onQualityChange,
+    isHdBoostEnabled = true,
+    onToggleHdBoost
 }: DeviceSettingsModalProps) {
     const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([])
     const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([])
@@ -150,30 +158,48 @@ export function DeviceSettingsModal({
                     </button>
                 </div>
 
-                {/* Video Camera Selection */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        📹 Camera
-                    </label>
-                    <select
-                        value={selectedVideoInput}
-                        onChange={(e) => {
-                            setSelectedVideoInput(e.target.value)
-                            onDeviceChange?.('video', e.target.value)
-                        }}
-                        className="input py-2 px-3 text-sm"
-                        style={{ background: 'var(--color-surface-2)', color: '#fff' }}
-                    >
-                        {videoInputs.length === 0 ? (
-                            <option value="">Default Camera</option>
-                        ) : (
-                            videoInputs.map((d, i) => (
-                                <option key={d.deviceId || i} value={d.deviceId}>
-                                    {d.label || `Camera ${i + 1}`}
-                                </option>
-                            ))
-                        )}
-                    </select>
+                {/* Video Camera & Resolution Selection */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            📹 Camera
+                        </label>
+                        <select
+                            value={selectedVideoInput}
+                            onChange={(e) => {
+                                setSelectedVideoInput(e.target.value)
+                                onDeviceChange?.('video', e.target.value)
+                            }}
+                            className="input py-2 px-3 text-sm"
+                            style={{ background: 'var(--color-surface-2)', color: '#fff' }}
+                        >
+                            {videoInputs.length === 0 ? (
+                                <option value="">Default Camera</option>
+                            ) : (
+                                videoInputs.map((d, i) => (
+                                    <option key={d.deviceId || i} value={d.deviceId}>
+                                        {d.label || `Camera ${i + 1}`}
+                                    </option>
+                                ))
+                            )}
+                        </select>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            ✨ Quality
+                        </label>
+                        <select
+                            value={videoQuality}
+                            onChange={(e) => onQualityChange?.(e.target.value as any)}
+                            className="input py-2 px-3 text-sm"
+                            style={{ background: 'var(--color-surface-2)', color: '#34d399', fontWeight: 700 }}
+                        >
+                            <option value="1080p">1080p Full HD</option>
+                            <option value="720p">720p HD</option>
+                            <option value="auto">Auto Adaptive</option>
+                        </select>
+                    </div>
                 </div>
 
                 {/* Microphone Selection & Meter */}
@@ -313,6 +339,24 @@ export function DeviceSettingsModal({
                             type="checkbox"
                             checked={isNoiseSuppressionEnabled}
                             onChange={(e) => onToggleNoiseSuppression?.(e.target.checked)}
+                            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--color-accent)' }}
+                        />
+                    </div>
+
+                    {/* AI HD Video Clarity & Low-Light Studio Boost */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-md)' }}>
+                        <div>
+                            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span>✨</span> AI HD Video Clarity &amp; Studio Lighting
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                Real-time sharpness enhancement, low-light balancing, and razor-sharp HD texture boost
+                            </div>
+                        </div>
+                        <input
+                            type="checkbox"
+                            checked={isHdBoostEnabled}
+                            onChange={(e) => onToggleHdBoost?.(e.target.checked)}
                             style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--color-accent)' }}
                         />
                     </div>

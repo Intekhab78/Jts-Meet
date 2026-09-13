@@ -10,7 +10,7 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
     const userId = authSocket.userId
 
-    socket.on(SocketEvents.WEBRTC_JOIN, async (payload: { meetingId: string; displayName?: string; isVideoOff?: boolean }) => {
+    socket.on(SocketEvents.WEBRTC_JOIN, async (payload: { meetingId: string; displayName?: string; isVideoOff?: boolean; isMuted?: boolean }) => {
         if (!userId || !payload?.meetingId) {
             socket.emit('error', { message: 'Unauthorized or invalid meetingId' })
             return
@@ -54,14 +54,15 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             authSocket.guestName = effectiveName
         }
 
-        addPeerSession(userId, payload.meetingId, socket.id, effectiveName, payload.isVideoOff)
+        addPeerSession(userId, payload.meetingId, socket.id, effectiveName, payload.isVideoOff, payload.isMuted)
 
         // Broadcast to other participants in the room across all nodes
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.WEBRTC_USER_JOINED, { 
             userId, 
             meetingId: payload.meetingId,
             displayName: effectiveName,
-            isVideoOff: payload.isVideoOff
+            isVideoOff: payload.isVideoOff,
+            isMuted: payload.isMuted
         })
 
         // Get total participants in the meeting room and existing peer roster
@@ -75,15 +76,18 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         })
     })
 
-    socket.on(SocketEvents.WEBRTC_OFFER, async (payload: { targetUserId: string; meetingId: string; offer: any; displayName?: string; isVideoOff?: boolean }) => {
+    socket.on(SocketEvents.WEBRTC_OFFER, async (payload: { targetUserId: string; meetingId: string; offer: any; displayName?: string; isVideoOff?: boolean; isMuted?: boolean }) => {
         if (!userId || !payload?.targetUserId || !payload?.meetingId || !payload?.offer) {
             socket.emit('error', { message: 'Invalid offer payload' })
             return
         }
 
         const offerSenderName = payload.displayName || authSocket.guestName
-        if (offerSenderName) {
-            updatePeerSession(userId, { displayName: offerSenderName })
+        if (offerSenderName || payload.isMuted !== undefined) {
+            updatePeerSession(userId, { 
+                displayName: offerSenderName,
+                isMuted: payload.isMuted
+            })
         }
 
         io.to(`user:${payload.targetUserId}`).emit(SocketEvents.WEBRTC_OFFER, {
@@ -91,19 +95,23 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             meetingId: payload.meetingId,
             offer: payload.offer,
             displayName: offerSenderName,
-            isVideoOff: payload.isVideoOff
+            isVideoOff: payload.isVideoOff,
+            isMuted: payload.isMuted
         })
     })
 
-    socket.on(SocketEvents.WEBRTC_ANSWER, async (payload: { targetUserId: string; meetingId: string; answer: any; displayName?: string; isVideoOff?: boolean }) => {
+    socket.on(SocketEvents.WEBRTC_ANSWER, async (payload: { targetUserId: string; meetingId: string; answer: any; displayName?: string; isVideoOff?: boolean; isMuted?: boolean }) => {
         if (!userId || !payload?.targetUserId || !payload?.meetingId || !payload?.answer) {
             socket.emit('error', { message: 'Invalid answer payload' })
             return
         }
 
         const answerSenderName = payload.displayName || authSocket.guestName
-        if (answerSenderName) {
-            updatePeerSession(userId, { displayName: answerSenderName })
+        if (answerSenderName || payload.isMuted !== undefined) {
+            updatePeerSession(userId, { 
+                displayName: answerSenderName,
+                isMuted: payload.isMuted
+            })
         }
 
         io.to(`user:${payload.targetUserId}`).emit(SocketEvents.WEBRTC_ANSWER, {
@@ -111,7 +119,26 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             meetingId: payload.meetingId,
             answer: payload.answer,
             displayName: answerSenderName,
-            isVideoOff: payload.isVideoOff
+            isVideoOff: payload.isVideoOff,
+            isMuted: payload.isMuted
+        })
+    })
+
+    socket.on('meeting:mic-toggle', (payload: { meetingId: string; isMuted: boolean }) => {
+        if (!userId || !payload?.meetingId) return
+        updatePeerSession(userId, { isMuted: payload.isMuted })
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:mic-toggle', {
+            userId,
+            isMuted: payload.isMuted
+        })
+    })
+
+    socket.on('meeting:audio-toggle', (payload: { meetingId: string; isMuted: boolean }) => {
+        if (!userId || !payload?.meetingId) return
+        updatePeerSession(userId, { isMuted: payload.isMuted })
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:mic-toggle', {
+            userId,
+            isMuted: payload.isMuted
         })
     })
 
@@ -148,16 +175,38 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_CHANGED, { userId, meetingId: payload.meetingId, active: false })
     })
 
-    socket.on(SocketEvents.DISCONNECT, () => {
+    const handleLeaveOrDisconnect = (payloadMeetingId?: string) => {
         const session = removePeerSessionBySocket(socket.id)
-        const meetingId = session?.meetingId || authSocket.meetingId
+        const targetMeetingId = payloadMeetingId || session?.meetingId || authSocket.meetingId
         const sUserId = session?.userId || userId
 
-        if (meetingId && sUserId) {
-            socket.to(`meeting:${meetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
-                userId: sUserId,
-                meetingId
-            })
+        if (targetMeetingId) {
+            try {
+                socket.leave(`meeting:${targetMeetingId}`)
+            } catch (e) {}
+
+            if (sUserId) {
+                socket.to(`meeting:${targetMeetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
+                    userId: sUserId,
+                    meetingId: targetMeetingId
+                })
+                socket.to(`meeting:${targetMeetingId}`).emit(SocketEvents.MEETING_LEAVE, {
+                    userId: sUserId,
+                    meetingId: targetMeetingId
+                })
+            }
         }
+    }
+
+    socket.on(SocketEvents.MEETING_LEAVE, (payload?: { meetingId?: string }) => {
+        handleLeaveOrDisconnect(payload?.meetingId)
+    })
+
+    socket.on('meeting:leave', (payload?: { meetingId?: string }) => {
+        handleLeaveOrDisconnect(payload?.meetingId)
+    })
+
+    socket.on(SocketEvents.DISCONNECT, () => {
+        handleLeaveOrDisconnect()
     })
 }

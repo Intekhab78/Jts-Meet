@@ -5,6 +5,8 @@ import { User } from '../../models/user.model'
 import { TeamVisibility, TeamRoles, TeamStatuses } from './team.constants'
 import { getOrganizationById } from '../organization/organization.service'
 import { createGeneralChannel } from '../channel/channel.service'
+import { Channel } from '../channel/channel.model'
+import { ChannelChat } from '../channel-chat/channelChat.model'
 import { NotificationService } from '../notification/notification.service'
 import { FRONTEND_URL } from '../../config'
 
@@ -147,7 +149,19 @@ export async function deleteTeam(teamId: string, userId: string): Promise<ITeam 
     }
 
     team.deletedAt = new Date()
-    return team.save()
+    await team.save()
+
+    // Cascade delete channels under this team
+    const channels = await Channel.find({ teamId: team._id })
+    const channelIds = channels.map(c => c._id.toString())
+    await Channel.updateMany({ teamId: team._id }, { $set: { deletedAt: new Date() } })
+
+    // Cascade delete messages in those channels
+    if (channelIds.length > 0) {
+        await ChannelChat.updateMany({ channelId: { $in: channelIds } }, { $set: { deleted: true } })
+    }
+
+    return team
 }
 
 export async function inviteTeamMember(teamId: string, inviterId: string, payload: { userId: string; role: 'admin' | 'member' | 'guest' }): Promise<ITeam | null> {

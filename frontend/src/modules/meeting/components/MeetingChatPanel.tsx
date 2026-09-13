@@ -5,7 +5,7 @@ import { RichChatContent } from './RichChatContent'
 interface MeetingChatPanelProps {
     messages: MeetingChatMessage[]
     typingUsers: string[]
-    onSendMessage: (message: string, recipientId?: string, recipientName?: string) => void
+    onSendMessage: (message: string, recipientId?: string, recipientName?: string, attachment?: any, messageType?: 'text' | 'file' | 'code') => void
     onTyping: () => void
     onStopTyping: () => void
     disabled?: boolean
@@ -171,20 +171,72 @@ export function MeetingChatPanel({
         }, 3000)
     }
 
+    const getResolvedUserName = (uid: string, fallbackName?: string): string => {
+        if (!uid) return fallbackName || 'Guest'
+        if (uid === 'me' || (Boolean(currentUserId) && currentUserId !== 'me' && uid === currentUserId)) return 'You'
+        if (renamedUsers?.[uid]) return renamedUsers[uid]
+        if (fallbackName && !fallbackName.toLowerCase().startsWith('guest_')) return fallbackName
+        if (uid.toLowerCase().startsWith('guest_')) return 'Guest'
+        return uid
+    }
+
+    const [pendingAttachment, setPendingAttachment] = useState<{ name: string; size: number; type: string; dataUrl: string } | null>(null)
+    const [isDraggingOver, setIsDraggingOver] = useState(false)
+    const fileInputRef = useRef<HTMLInputElement>(null)
+
+    const formatFileSize = (bytes: number) => {
+        if (!bytes) return '0 B'
+        if (bytes < 1024) return `${bytes} B`
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    }
+
+    const handleProcessFile = (file: File) => {
+        if (!file) return
+        if (file.size > 25 * 1024 * 1024) {
+            alert('File size exceeds 25 MB limit for in-meeting sharing.')
+            return
+        }
+        const reader = new FileReader()
+        reader.onload = (e) => {
+            const dataUrl = e.target?.result as string
+            if (dataUrl) {
+                const isCode = /\.(js|ts|tsx|jsx|py|html|css|json|java|c|cpp|go|rs|md|sql|sh|yml|yaml)$/i.test(file.name)
+                setPendingAttachment({
+                    name: file.name,
+                    size: file.size,
+                    type: isCode ? 'code' : (file.type || 'application/octet-stream'),
+                    dataUrl
+                })
+            }
+        }
+        reader.readAsDataURL(file)
+    }
+
     const handleSubmit = (e?: React.FormEvent) => {
         if (e) e.preventDefault()
         const trimmed = message.trim()
-        if (!trimmed) return
+        if (!trimmed && !pendingAttachment) return
 
         const recipientId = selectedRecipient !== 'everyone' ? selectedRecipient : undefined
-        const recipientName = recipientId ? (renamedUsers?.[recipientId] || recipientId) : undefined
+        const recipientName = recipientId ? getResolvedUserName(recipientId) : undefined
+        const msgType = pendingAttachment ? (pendingAttachment.type === 'code' ? 'code' : 'file') : 'text'
 
+        let effectiveText = trimmed
         if (activeThreadParentId) {
-            onSendMessage(`[thread:${activeThreadParentId}] ${trimmed}`, recipientId, recipientName)
-        } else {
-            onSendMessage(trimmed, recipientId, recipientName)
+            effectiveText = `[thread:${activeThreadParentId}] ${trimmed}`
         }
+
+        onSendMessage(
+            effectiveText,
+            recipientId,
+            recipientName,
+            pendingAttachment || undefined,
+            msgType
+        )
+
         setMessage('')
+        setPendingAttachment(null)
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
         onStopTyping()
     }
@@ -205,8 +257,8 @@ export function MeetingChatPanel({
         if (messages.length === 0) return
         const lines = messages.map(m => {
             const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString() : ''
-            const sender = m.senderId === 'me' ? 'You' : (renamedUsers?.[m.senderId] || m.senderName || m.senderId)
-            const privacy = m.recipientId ? ` [Private to ${m.recipientName || m.recipientId}]` : ''
+            const sender = getResolvedUserName(m.senderId, m.senderName)
+            const privacy = m.recipientId ? ` [Private to ${getResolvedUserName(m.recipientId, m.recipientName)}]` : ''
             return `[${time}] ${sender}${privacy}: ${m.message}`
         })
         const header = `JTS-Meet Chat Transcript\nExported on: ${new Date().toLocaleString()}\nTotal Messages: ${messages.length}\n----------------------------------------\n\n`
@@ -222,14 +274,14 @@ export function MeetingChatPanel({
     }
 
     const filteredParentMessages = parentMessages.filter(msg => {
-        const name = msg.senderId === 'me' ? 'You' : (renamedUsers?.[msg.senderId] || msg.senderName || msg.senderId)
+        const name = getResolvedUserName(msg.senderId, msg.senderName)
         return msg.displayMessage.toLowerCase().includes(searchQuery.toLowerCase()) ||
                name.toLowerCase().includes(searchQuery.toLowerCase())
     })
 
     const renderMessageItem = (msg: any, isParentInThreadView = false) => {
         const isMe = msg.senderId === 'me' || (Boolean(currentUserId) && currentUserId !== 'me' && msg.senderId === currentUserId)
-        const senderDisplayName = isMe ? 'You' : (renamedUsers?.[msg.senderId] || msg.senderName || msg.senderId)
+        const senderDisplayName = getResolvedUserName(msg.senderId, msg.senderName)
         const avatarBg = getAvatarGradient(senderDisplayName)
         const replyCount = getReplyCount(msg._id)
 
@@ -373,14 +425,84 @@ export function MeetingChatPanel({
                             </button>
                         )}
                     </div>
-                    <div style={{
-                        fontSize: 'var(--settings-chat-font-size, 0.875rem)',
-                        lineHeight: 1.5,
-                        color: 'var(--color-text-secondary)',
-                        wordBreak: 'break-word'
-                    }}>
-                        <RichChatContent content={msg.displayMessage} />
-                    </div>
+                    {msg.displayMessage && (
+                        <div style={{
+                            fontSize: 'var(--settings-chat-font-size, 0.875rem)',
+                            lineHeight: 1.5,
+                            color: 'var(--color-text-secondary)',
+                            wordBreak: 'break-word'
+                        }}>
+                            <RichChatContent content={msg.displayMessage} />
+                        </div>
+                    )}
+
+                    {/* Rich Attachment Card (PDF, Image, Code, Document) */}
+                    {msg.attachment && (
+                        <div style={{
+                            marginTop: 6,
+                            background: 'rgba(255,255,255,0.04)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: 'var(--radius-md)',
+                            padding: '8px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            maxWidth: 320
+                        }}>
+                            <div style={{
+                                width: 34,
+                                height: 34,
+                                borderRadius: 'var(--radius-sm)',
+                                background: msg.messageType === 'code' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                                color: msg.messageType === 'code' ? '#c084fc' : '#60a5fa',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '1.1rem',
+                                flexShrink: 0
+                            }}>
+                                {msg.messageType === 'code' ? '💻' : (msg.attachment.name?.endsWith('.pdf') ? '📄' : (msg.attachment.type?.startsWith('image/') ? '🖼️' : '📁'))}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    color: '#fff',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                }} title={msg.attachment.name}>
+                                    {msg.attachment.name}
+                                </div>
+                                <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
+                                    {formatFileSize(msg.attachment.size)}
+                                </div>
+                            </div>
+                            {msg.attachment.dataUrl && (
+                                <a
+                                    href={msg.attachment.dataUrl}
+                                    download={msg.attachment.name}
+                                    style={{
+                                        background: 'rgba(255,255,255,0.1)',
+                                        border: 'none',
+                                        borderRadius: 'var(--radius-sm)',
+                                        padding: '4px 8px',
+                                        color: '#fff',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        textDecoration: 'none',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4
+                                    }}
+                                    title="Download file"
+                                >
+                                    <span>⬇️</span> Download
+                                </a>
+                            )}
+                        </div>
+                    )}
 
                     {/* Reactions List */}
                     {Object.keys(grouped).length > 0 && (
@@ -473,12 +595,55 @@ export function MeetingChatPanel({
     }
 
     return (
-        <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            height: '100%',
-            background: 'var(--color-surface)',
-        }}>
+        <div 
+            style={{
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%',
+                background: 'var(--color-surface)',
+                position: 'relative',
+            }}
+            onDragOver={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                if (!disabled) setIsDraggingOver(true)
+            }}
+            onDragLeave={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setIsDraggingOver(false)
+            }}
+            onDrop={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setIsDraggingOver(false)
+                if (disabled) return
+                const file = e.dataTransfer.files?.[0]
+                if (file) {
+                    handleProcessFile(file)
+                }
+            }}
+        >
+            {isDraggingOver && (
+                <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: 999,
+                    background: 'rgba(99, 102, 241, 0.2)',
+                    backdropFilter: 'blur(4px)',
+                    border: '2px dashed var(--color-accent)',
+                    borderRadius: 'var(--radius-lg)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 12,
+                    pointerEvents: 'none'
+                }}>
+                    <span style={{ fontSize: '2.5rem' }}>📁</span>
+                    <span style={{ fontSize: '1rem', fontWeight: 600, color: '#fff' }}>Drop file to share in meeting</span>
+                </div>
+            )}
             <style>{`
                 .reaction-badge-container {
                     position: relative;
@@ -742,26 +907,29 @@ export function MeetingChatPanel({
                                 style={{
                                     appearance: 'none',
                                     WebkitAppearance: 'none',
-                                    background: selectedRecipient === 'everyone' ? 'rgba(255,255,255,0.06)' : 'rgba(59, 130, 246, 0.15)',
-                                    color: selectedRecipient === 'everyone' ? 'var(--color-text-primary)' : '#93c5fd',
-                                    border: selectedRecipient === 'everyone' ? '1px solid var(--color-border)' : '1px solid rgba(59, 130, 246, 0.45)',
+                                    colorScheme: 'dark',
+                                    background: selectedRecipient === 'everyone' ? 'rgba(255,255,255,0.08)' : 'rgba(59, 130, 246, 0.2)',
+                                    color: selectedRecipient === 'everyone' ? '#ffffff' : '#93c5fd',
+                                    border: selectedRecipient === 'everyone' ? '1px solid rgba(255,255,255,0.18)' : '1px solid rgba(59, 130, 246, 0.5)',
                                     borderRadius: '16px',
                                     fontSize: '0.75rem',
-                                    padding: '3px 24px 3px 10px',
+                                    padding: '4px 24px 4px 10px',
                                     fontWeight: 600,
                                     outline: 'none',
                                     cursor: 'pointer',
                                     transition: 'all 0.2s ease'
                                 }}
                             >
-                                <option value="everyone">Everyone</option>
+                                <option value="everyone" style={{ background: '#161b22', color: '#ffffff', padding: '6px 10px' }}>
+                                    Everyone
+                                </option>
                                 {participants?.filter(p => p !== (currentUserId || 'me')).map(p => (
-                                    <option key={p} value={p}>
-                                        {renamedUsers?.[p] || p} (Direct Message)
+                                    <option key={p} value={p} style={{ background: '#161b22', color: '#ffffff', padding: '6px 10px' }}>
+                                        {getResolvedUserName(p)}
                                     </option>
                                 ))}
                             </select>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ position: 'absolute', right: 8, pointerEvents: 'none', color: selectedRecipient === 'everyone' ? 'var(--color-text-muted)' : '#93c5fd' }}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ position: 'absolute', right: 8, pointerEvents: 'none', color: selectedRecipient === 'everyone' ? '#94a3b8' : '#93c5fd' }}>
                                 <polyline points="6 9 12 15 18 9" />
                             </svg>
                         </div>
@@ -772,7 +940,74 @@ export function MeetingChatPanel({
                         )}
                     </div>
 
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: 'var(--color-surface-2)', border: '1px solid var(--color-border-strong)', borderRadius: 'var(--radius-md)', padding: '6px 8px' }}>
+                    {/* Pending Attachment Preview Card */}
+                    {pendingAttachment && (
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'rgba(99, 102, 241, 0.14)',
+                            border: '1px solid rgba(99, 102, 241, 0.35)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '6px 10px',
+                            gap: 8,
+                            width: '100%',
+                            boxSizing: 'border-box'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflow: 'hidden' }}>
+                                <span style={{ fontSize: '1.1rem' }}>{pendingAttachment.type === 'code' ? '💻' : '📎'}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                    <span style={{
+                                        fontWeight: 600,
+                                        fontSize: '0.8125rem',
+                                        color: '#ffffff',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        maxWidth: 200
+                                    }}>
+                                        {pendingAttachment.name}
+                                    </span>
+                                    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.6875rem' }}>
+                                        {formatFileSize(pendingAttachment.size)} • Ready to send
+                                    </span>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPendingAttachment(null)}
+                                style={{
+                                    background: 'rgba(239, 68, 68, 0.15)',
+                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                    color: '#f87171',
+                                    borderRadius: '50%',
+                                    width: 22,
+                                    height: 22,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    fontSize: '0.75rem',
+                                    flexShrink: 0
+                                }}
+                                title="Remove file"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    )}
+
+                    <div style={{
+                        display: 'flex',
+                        gap: 8,
+                        alignItems: 'center',
+                        background: 'var(--color-surface-2)',
+                        border: '1px solid var(--color-border-strong)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '6px 8px',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                    }}>
                         
                         {/* Emoji Button */}
                         <button
@@ -793,74 +1028,71 @@ export function MeetingChatPanel({
                             <IconSmile />
                         </button>
 
-                        {/* File Attachment Button */}
+                        {/* Universal File / Code / Image Attachment Button */}
                         <label
                             style={{
                                 padding: 6,
                                 background: 'none',
                                 border: 'none',
-                                color: 'var(--color-text-muted)',
+                                color: pendingAttachment ? 'var(--color-accent)' : 'var(--color-text-muted)',
                                 cursor: disabled ? 'default' : 'pointer',
                                 display: 'flex',
                                 flexShrink: 0,
                                 alignItems: 'center'
                             }}
-                            title="Attach Image / Screenshot"
+                            title="Attach File, Code, or Document"
                         >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                             </svg>
                             <input
+                                ref={fileInputRef}
                                 type="file"
-                                accept="image/*"
+                                accept="*/*"
                                 disabled={disabled}
                                 style={{ display: 'none' }}
                                 onChange={(e) => {
                                     const file = e.target.files?.[0]
                                     if (file) {
-                                        const reader = new FileReader()
-                                        reader.onload = (ev) => {
-                                            const dataUrl = ev.target?.result as string
-                                            if (dataUrl) {
-                                                onSendMessage(dataUrl)
-                                            }
-                                        }
-                                        reader.readAsDataURL(file)
+                                        handleProcessFile(file)
                                     }
                                     e.target.value = ''
                                 }}
                             />
                         </label>
 
-
-                        <textarea
-                            value={message}
-                            onChange={(e) => handleChange(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            disabled={disabled}
-                            placeholder={disabled ? 'Join meeting to chat…' : (activeThreadParentId ? 'Reply to thread…' : 'Type message…')}
-                            rows={1}
-                            style={{
-                                flex: 1,
-                                background: 'none',
-                                border: 'none',
-                                padding: '6px 4px',
-                                fontFamily: 'var(--font-sans)',
-                                fontSize: '0.875rem',
-                                color: 'var(--color-text-primary)',
-                                outline: 'none',
-                                resize: 'none',
-                                lineHeight: 1.5,
-                                maxHeight: 90,
-                                overflowY: 'auto',
-                            }}
-                        />
+                        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                            <textarea
+                                value={message}
+                                onChange={(e) => handleChange(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                disabled={disabled}
+                                placeholder={disabled ? 'Join meeting to chat…' : (activeThreadParentId ? 'Reply to thread…' : 'Type message or drop files here…')}
+                                rows={1}
+                                style={{
+                                    width: '100%',
+                                    boxSizing: 'border-box',
+                                    minWidth: 0,
+                                    background: 'none',
+                                    border: 'none',
+                                    padding: '6px 4px',
+                                    fontFamily: 'var(--font-sans)',
+                                    fontSize: '0.875rem',
+                                    color: 'var(--color-text-primary)',
+                                    outline: 'none',
+                                    resize: 'none',
+                                    lineHeight: 1.5,
+                                    maxHeight: 90,
+                                    overflowY: 'auto',
+                                }}
+                            />
+                        </div>
 
                         {/* Send button */}
                         <button
                             type="button"
                             onClick={() => handleSubmit()}
-                            disabled={disabled || !message.trim()}
+                            disabled={disabled || (!message.trim() && !pendingAttachment)}
                             style={{
                                 padding: '6px 12px',
                                 borderRadius: 'var(--radius-sm)',

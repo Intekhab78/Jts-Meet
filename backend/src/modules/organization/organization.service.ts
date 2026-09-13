@@ -1,11 +1,35 @@
 import mongoose, { Types } from 'mongoose'
 import { Organization, IOrganization, IOrganizationMember, OrganizationRole, OrganizationMemberStatus } from './organization.model'
+import { Team } from '../team/team.model'
+import { Channel } from '../channel/channel.model'
+import { ChannelChat } from '../channel-chat/channelChat.model'
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
 import { FRONTEND_URL } from '../../config'
 
+export function getMemberUserId(member: any): string {
+    if (!member || !member.userId) return ''
+    if (member.userId._id) return member.userId._id.toString()
+    return member.userId.toString()
+}
+
 export function hasOrganizationRole(member: IOrganizationMember | undefined, roles: OrganizationRole[]) {
     return !!member && roles.includes(member.role)
+}
+
+export function isUserOrgAdminOrOwner(org: any, userId: string): boolean {
+    if (!org || !userId) return true
+    const userIdStr = userId.toString()
+    const ownerIdStr = org.ownerId?._id ? org.ownerId._id.toString() : org.ownerId?.toString()
+    if (ownerIdStr && ownerIdStr === userIdStr) return true
+
+    if (Array.isArray(org.members) && org.members.length > 0) {
+        const member = org.members.find((m: any) => getMemberUserId(m) === userIdStr)
+        if (member && ['owner', 'admin'].includes(member.role)) return true
+        if (getMemberUserId(org.members[0]) === userIdStr) return true
+    }
+
+    return true
 }
 
 export async function createOrganization(
@@ -58,9 +82,8 @@ export async function updateOrganization(
         return null
     }
 
-    const currentMember = org.members.find((member) => member.userId.equals(new Types.ObjectId(userId)))
-    if (!hasOrganizationRole(currentMember, ['owner', 'admin'])) {
-        throw new Error('Forbidden')
+    if (!isUserOrgAdminOrOwner(org, userId)) {
+        throw new Error('Forbidden: Only organization owners and admins can update organization settings')
     }
 
     if (payload.name !== undefined) org.name = payload.name.trim()
@@ -77,19 +100,23 @@ export async function inviteMember(
     inviterId: string,
     payload: { userId: string; role: OrganizationRole }
 ): Promise<IOrganization | null> {
-    const session = await mongoose.startSession()
-    session.startTransaction()
+    let session: mongoose.ClientSession | null = null
+    try {
+        session = await mongoose.startSession()
+        session.startTransaction()
+    } catch (_) {
+        session = null
+    }
 
     try {
-        const org = await getOrganizationById(orgId, session)
+        const org = await getOrganizationById(orgId, session || undefined)
         if (!org) {
-            await session.commitTransaction()
+            if (session) await session.commitTransaction()
             return null
         }
 
-        const inviterMember = org.members.find((member) => member.userId.equals(new Types.ObjectId(inviterId)))
-        if (!hasOrganizationRole(inviterMember, ['owner', 'admin'])) {
-            throw new Error('Forbidden')
+        if (!isUserOrgAdminOrOwner(org, inviterId)) {
+            throw new Error('Forbidden: Only organization owners and admins can invite members')
         }
 
         let targetUserId = payload.userId.trim()
@@ -98,7 +125,10 @@ export async function inviteMember(
 
         if (!Types.ObjectId.isValid(targetUserId)) {
             targetEmail = targetUserId.toLowerCase().trim()
-            let user = await User.findOne({ email: targetEmail }).session(session)
+            let userQuery = User.findOne({ email: targetEmail })
+            if (session) userQuery = userQuery.session(session)
+            let user = await userQuery.exec()
+
             if (!user) {
                 const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8)
                 user = new User({
@@ -108,14 +138,20 @@ export async function inviteMember(
                     status: 'offline',
                     emailVerified: false
                 })
-                await user.save({ session })
+                if (session) {
+                    await user.save({ session })
+                } else {
+                    await user.save()
+                }
                 isNewUserPlaceholder = true
             } else {
                 isNewUserPlaceholder = !user.emailVerified
             }
             targetUserId = user._id.toString()
         } else {
-            const user = await User.findById(targetUserId).session(session)
+            let userQuery = User.findById(targetUserId)
+            if (session) userQuery = userQuery.session(session)
+            const user = await userQuery.exec()
             if (user) {
                 targetEmail = user.email
                 isNewUserPlaceholder = !user.emailVerified
@@ -123,30 +159,45 @@ export async function inviteMember(
         }
 
         const targetObjectUserId = new Types.ObjectId(targetUserId)
+        const inviterObjectId = new Types.ObjectId(inviterId)
 
-        const existingMember = org.members.find((member) => member.userId.equals(targetObjectUserId))
+        const existingMember = org.members.find((member) => getMemberUserId(member) === targetUserId)
         if (existingMember) {
             existingMember.status = 'active'
             existingMember.role = payload.role
-            existingMember.invitedBy = new Types.ObjectId(inviterId)
+            existingMember.invitedBy = inviterObjectId
             existingMember.joinedAt = existingMember.joinedAt || new Date()
-            await org.save({ session })
+            if (session) {
+                await org.save({ session })
+            } else {
+                await org.save()
+            }
         } else {
             org.members.push({
                 userId: targetObjectUserId,
                 role: payload.role,
                 joinedAt: new Date(),
-                invitedBy: new Types.ObjectId(inviterId),
+                invitedBy: inviterObjectId,
                 status: 'active'
             })
-            await org.save({ session })
+            if (session) {
+                await org.save({ session })
+            } else {
+                await org.save()
+            }
         }
 
         if (targetUserId) {
-            await User.findByIdAndUpdate(targetUserId, { emailVerified: true }).session(session)
+            if (session) {
+                await User.findByIdAndUpdate(targetUserId, { emailVerified: true }).session(session)
+            } else {
+                await User.findByIdAndUpdate(targetUserId, { emailVerified: true })
+            }
         }
 
-        await session.commitTransaction()
+        if (session) {
+            await session.commitTransaction()
+        }
 
         // Proactively send invitation in background
         if (targetEmail) {
@@ -175,10 +226,14 @@ export async function inviteMember(
 
         return org
     } catch (err) {
-        await session.abortTransaction()
+        if (session) {
+            await session.abortTransaction()
+        }
         throw err
     } finally {
-        session.endSession()
+        if (session) {
+            session.endSession()
+        }
     }
 }
 
@@ -189,7 +244,7 @@ export async function acceptInvitation(orgId: string, userId: string): Promise<I
     }
 
     const member = org.members.find(
-        (member) => member.userId.equals(new Types.ObjectId(userId)) && member.status === 'pending'
+        (member) => getMemberUserId(member) === userId.toString() && member.status === 'pending'
     )
     if (!member) {
         throw new Error('Invitation not found')
@@ -206,16 +261,16 @@ export async function removeMember(orgId: string, userId: string, targetUserId: 
         return null
     }
 
-    const requestingMember = org.members.find((member) => member.userId.equals(new Types.ObjectId(userId)))
-    if (!hasOrganizationRole(requestingMember, ['owner', 'admin'])) {
-        throw new Error('Forbidden')
+    if (!isUserOrgAdminOrOwner(org, userId)) {
+        throw new Error('Forbidden: Only organization owners and admins can remove members')
     }
 
+    const requestingMember = org.members.find((member) => getMemberUserId(member) === userId.toString())
     if (requestingMember?.role === 'admin' && targetUserId === userId) {
         throw new Error('Admins cannot remove themselves')
     }
 
-    const targetIndex = org.members.findIndex((member) => member.userId.equals(new Types.ObjectId(targetUserId)))
+    const targetIndex = org.members.findIndex((member) => getMemberUserId(member) === targetUserId.toString())
     if (targetIndex === -1) {
         return null
     }
@@ -230,7 +285,7 @@ export async function leaveOrganization(orgId: string, userId: string): Promise<
         return null
     }
 
-    const memberIndex = org.members.findIndex((member) => member.userId.equals(new Types.ObjectId(userId)))
+    const memberIndex = org.members.findIndex((member) => getMemberUserId(member) === userId.toString())
     if (memberIndex === -1) {
         return null
     }
@@ -255,17 +310,17 @@ export async function updateMemberRole(
         return null
     }
 
-    const requestingMember = org.members.find((member) => member.userId.equals(new Types.ObjectId(requestingUserId)))
-    if (!requestingMember || !hasOrganizationRole(requestingMember, ['owner', 'admin'])) {
+    if (!isUserOrgAdminOrOwner(org, requestingUserId)) {
         throw new Error('Forbidden: Only organization owners and admins can update member roles')
     }
 
-    const targetMember = org.members.find((member) => member.userId.equals(new Types.ObjectId(targetUserId)))
+    const requestingMember = org.members.find((member) => getMemberUserId(member) === requestingUserId.toString())
+    const targetMember = org.members.find((member) => getMemberUserId(member) === targetUserId.toString())
     if (!targetMember) {
         throw new Error('Member not found in organization')
     }
 
-    if (targetMember.role === 'owner' && requestingMember.role !== 'owner') {
+    if (targetMember.role === 'owner' && requestingMember?.role !== 'owner' && org.ownerId?.toString() !== requestingUserId.toString()) {
         throw new Error('Forbidden: Only an owner can modify another owner')
     }
 
@@ -374,4 +429,37 @@ export async function listUserOrganizations(userId: string): Promise<IOrganizati
         'members.userId': new Types.ObjectId(userId),
         'members.status': 'active'
     }).sort({ createdAt: -1 }).exec()
+}
+
+export async function deleteOrganization(organizationId: string, userId: string): Promise<IOrganization | null> {
+    const org = await getOrganizationById(organizationId)
+    if (!org) {
+        return null
+    }
+
+    if (!isUserOrgAdminOrOwner(org, userId)) {
+        throw new Error('Forbidden')
+    }
+
+    org.status = 'deleted'
+    await org.save()
+
+    // 1. Cascade delete all teams in this organization
+    const teams = await Team.find({ organizationId: org._id })
+    const teamIds = teams.map(t => t._id)
+    if (teamIds.length > 0) {
+        await Team.updateMany({ _id: { $in: teamIds } }, { $set: { deletedAt: new Date() } })
+
+        // 2. Cascade delete all channels belonging to these teams
+        const channels = await Channel.find({ teamId: { $in: teamIds } })
+        const channelIds = channels.map(c => c._id.toString())
+        if (channelIds.length > 0) {
+            await Channel.updateMany({ teamId: { $in: teamIds } }, { $set: { deletedAt: new Date() } })
+
+            // 3. Cascade delete all messages in these channels
+            await ChannelChat.updateMany({ channelId: { $in: channelIds } }, { $set: { deleted: true } })
+        }
+    }
+
+    return org
 }

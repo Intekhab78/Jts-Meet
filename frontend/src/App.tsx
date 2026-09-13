@@ -8,6 +8,7 @@ import { AuthPages } from './modules/auth/components/AuthPages'
 import { GuestJoinPage } from './modules/meeting/components/GuestJoinPage'
 import { WaitingRoom } from './modules/meeting/components/WaitingRoom'
 import { MeetingRoom } from './modules/meeting/components/MeetingRoom'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { API_BASE } from './config'
 
 type ViewType = 'landing' | 'login' | 'register' | 'forgot-password' | 'reset-password' | 'email-verification' | 'otp-verification' | 'app' | 'guest-preview' | 'guest-waiting' | 'microsoft-callback' | 'google-callback'
@@ -355,14 +356,16 @@ function App() {
             <SocketProvider>
                 <MeetingProvider>
                     <WebRTCProvider>
-                        <div style={{ width: '100%', height: '100dvh', background: 'var(--color-bg-base)' }}>
-                            <MeetingRoom
-                                initialToken={guestToken}
-                                initialMeetingId={currentMeetId || undefined}
-                                autoJoin={true}
-                                isAdminOrOwner={false}
-                            />
-                        </div>
+                        <ErrorBoundary fallbackTitle="Meeting Room Error">
+                            <div style={{ width: '100%', height: '100dvh', background: 'var(--color-bg-base)' }}>
+                                <MeetingRoom
+                                    initialToken={guestToken}
+                                    initialMeetingId={currentMeetId || undefined}
+                                    autoJoin={true}
+                                    isAdminOrOwner={false}
+                                />
+                            </div>
+                        </ErrorBoundary>
                     </WebRTCProvider>
                 </MeetingProvider>
             </SocketProvider>
@@ -378,7 +381,9 @@ function App() {
         <SocketProvider>
             <MeetingProvider>
                 <WebRTCProvider>
-                    <AppWorkspace token={token} onLogout={handleLogout} />
+                    <ErrorBoundary fallbackTitle="Workspace Error">
+                        <AppWorkspace token={token} onLogout={handleLogout} />
+                    </ErrorBoundary>
                 </WebRTCProvider>
             </MeetingProvider>
         </SocketProvider>

@@ -20,10 +20,13 @@ import adminRoutes from './modules/admin/admin.routes'
 import guestRoutes from './routes/guest.routes'
 import notificationRoutes from './modules/notification/notification.routes'
 import aiRoutes from './routes/ai.routes'
+import integrationRoutes from './modules/integration/integration.routes'
 import { connectDB } from './config/db'
 import { rateLimiter } from './middleware/rateLimiter'
 
 const app = express()
+
+app.set('trust proxy', 1)
 
 app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" }
@@ -52,10 +55,8 @@ app.get('/api/health', (req, res) => {
     res.status(200).send('OK')
 })
 
-// Register auth routes with strict limits
-app.use('/api/auth', rateLimiter(15 * 60 * 1000, 100), authRoutes)
-app.use('/api', rateLimiter(15 * 60 * 1000, 200))
-
+// Unrestricted access for all meeting, chat, auth, and workspace routes (No limits / Unlimited 24/7)
+app.use('/api/auth', authRoutes)
 app.use('/api/chat', chatRoutes)
 app.use('/api/meeting', meetingRoutes)
 app.use('/api/meeting/chat', meetingChatRoutes)
@@ -67,6 +68,7 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/guest', guestRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/ai', aiRoutes)
+app.use('/api/integrations', integrationRoutes)
 
 // Global error handler
 app.use(errorHandler)

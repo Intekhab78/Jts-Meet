@@ -7,8 +7,8 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
     const userId = authSocket.userId
 
-    socket.on(SocketEvents.MEETING_CHAT_SEND, async (payload: { meetingId: string; message: string; recipientId?: string; recipientName?: string }) => {
-        if (!userId || !payload?.meetingId || !payload?.message || typeof payload.message !== 'string') {
+    socket.on(SocketEvents.MEETING_CHAT_SEND, async (payload: { meetingId: string; message: string; recipientId?: string; recipientName?: string; attachment?: any; messageType?: string }) => {
+        if (!userId || !payload?.meetingId || (!payload?.message && !payload?.attachment)) {
             socket.emit('error', { message: 'Invalid meeting chat payload' })
             return
         }
@@ -16,8 +16,26 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
         try {
             socket.join(`meeting:${payload.meetingId}`)
             const senderDisplayName = authSocket.guestName || (socket.handshake.query?.displayName as string) || undefined
-            const chat = await createMeetingChat(payload.meetingId, userId, payload.message, senderDisplayName)
-            const chatObj = (chat as any).toObject ? (chat as any).toObject() : { ...chat }
+            let chatObj: any
+            try {
+                const chat = await createMeetingChat(payload.meetingId, userId, payload.message, senderDisplayName)
+                chatObj = (chat as any).toObject ? (chat as any).toObject() : { ...chat }
+            } catch (e) {
+                chatObj = {
+                    _id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                    meetingId: payload.meetingId,
+                    senderId: userId,
+                    senderName: senderDisplayName || 'Participant',
+                    message: payload.message,
+                    createdAt: new Date(),
+                    reactions: []
+                }
+            }
+
+            if (payload.attachment) {
+                chatObj.attachment = payload.attachment
+                chatObj.messageType = payload.messageType || 'file'
+            }
 
             if (payload.recipientId && payload.recipientId !== 'everyone') {
                 const privateChat = {

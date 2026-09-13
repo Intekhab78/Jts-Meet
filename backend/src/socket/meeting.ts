@@ -11,6 +11,7 @@ import {
 import { Meeting } from '../modules/meeting/meeting.model'
 import { SocketEvents } from './events'
 import { adHocRoomSettings } from '../routes/guest.routes'
+import { dispatchWebhookEvent } from '../modules/integration/integration.service'
 
 export function registerMeetingHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
@@ -61,17 +62,28 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         }
 
         try {
-            const meeting = await leaveMeetingService(payload.meetingId, userId)
             socket.leave(`meeting:${payload.meetingId}`)
+            let participants: any[] = []
+            try {
+                if (!authSocket.isGuest) {
+                    const meeting = await leaveMeetingService(payload.meetingId, userId)
+                    if (meeting?.participants) {
+                        participants = meeting.participants
+                    }
+                }
+            } catch (e) {}
 
-            if (!meeting) {
-                socket.emit('error', { message: 'Meeting not found' })
-                return
-            }
-
-            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_LEAVE, { meetingId: payload.meetingId, participants: meeting.participants })
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_LEAVE, { 
+                userId,
+                meetingId: payload.meetingId, 
+                participants 
+            })
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
+                userId,
+                meetingId: payload.meetingId
+            })
         } catch (error: any) {
-            socket.emit('error', { message: error.message || 'Failed to leave meeting' })
+            console.warn('[MeetingSocket] Error in MEETING_LEAVE handler:', error)
         }
     })
 
@@ -115,6 +127,25 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     socket.on('meeting:record-toggle', (payload: { meetingId: string; isRecording: boolean }) => {
         if (!userId || !payload?.meetingId) return
         socket.to(`meeting:${payload.meetingId}`).emit('meeting:record-toggle', { userId, isRecording: payload.isRecording })
+        if (!payload.isRecording) {
+            dispatchWebhookEvent(undefined, 'recording.ready', {
+                meetingId: payload.meetingId,
+                stoppedBy: userId,
+                timestamp: new Date().toISOString()
+            })
+        }
+    })
+
+    socket.on(SocketEvents.LIVESTREAM_TOGGLE, (payload: { meetingId: string; isStreaming: boolean; platform: string; broadcastTitle?: string; streamUrl?: string }) => {
+        if (!userId || !payload?.meetingId) return
+        io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.LIVESTREAM_STATUS, {
+            userId,
+            meetingId: payload.meetingId,
+            isStreaming: payload.isStreaming,
+            platform: payload.platform || 'youtube',
+            broadcastTitle: payload.broadcastTitle || 'Live Conference Broadcast',
+            startedAt: payload.isStreaming ? new Date().toISOString() : null
+        })
     })
 
     socket.on(SocketEvents.MEETING_REACTION, (payload: { meetingId: string; emoji: string; senderName?: string }) => {
@@ -305,6 +336,14 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         })
     })
 
+    socket.on('meeting:mic-toggle', (payload: { meetingId: string; isMuted: boolean }) => {
+        if (!userId || !payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:mic-toggle', {
+            userId,
+            isMuted: payload.isMuted
+        })
+    })
+
     socket.on(SocketEvents.MEETING_LOCK_TOGGLE, async (payload: { meetingId: string; isLocked: boolean }) => {
         if (!userId || !payload?.meetingId) return
         try {
@@ -404,5 +443,34 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     socket.on('screen:annotation:clear', (payload: { meetingId: string }) => {
         if (!payload?.meetingId) return
         socket.to(`meeting:${payload.meetingId}`).emit('screen:annotation:clear', payload)
+    })
+
+    // Remote Desktop Control Events Relay
+    socket.on('remote-control:request', (payload: { meetingId: string; requesterId: string; requesterName: string; targetUserId: string }) => {
+        if (!payload?.meetingId || !payload?.targetUserId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('remote-control:request', {
+            ...payload,
+            requesterName: payload.requesterName || authSocket.guestName || 'Participant'
+        })
+    })
+
+    socket.on('remote-control:response', (payload: { meetingId: string; requesterId: string; granted: boolean; presenterId: string; presenterName?: string }) => {
+        if (!payload?.meetingId || !payload?.requesterId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('remote-control:response', payload)
+    })
+
+    socket.on('remote-control:revoke', (payload: { meetingId: string; controllerId?: string; presenterId: string }) => {
+        if (!payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('remote-control:revoke', payload)
+    })
+
+    socket.on('remote-control:mouse', (payload: { meetingId: string; controllerId: string; type: string; x: number; y: number; button?: number; deltaY?: number }) => {
+        if (!payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('remote-control:mouse', payload)
+    })
+
+    socket.on('remote-control:key', (payload: { meetingId: string; controllerId: string; type: string; key: string; code: string; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }) => {
+        if (!payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('remote-control:key', payload)
     })
 }
