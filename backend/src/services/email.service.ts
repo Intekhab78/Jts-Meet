@@ -70,6 +70,7 @@ export interface MeetingEmailDetails {
     scheduledDate?: string
     scheduledTime?: string
     teamName?: string
+    isLiveNow?: boolean
 }
 
 export async function sendMeetingInvitationEmail(
@@ -80,19 +81,28 @@ export async function sendMeetingInvitationEmail(
     inviteLink: string,
     details?: MeetingEmailDetails
 ): Promise<void> {
-    const timeDisplay = details?.scheduledDate && details?.scheduledTime
-        ? `${details.scheduledDate} at ${details.scheduledTime}`
-        : (details?.scheduledTime ? `Today at ${details.scheduledTime}` : 'Happening Now / Instant Conference')
+    const isLive = !!details?.isLiveNow
+    const timeDisplay = isLive
+        ? '🔴 Started Just Now (Active Live)'
+        : (details?.scheduledDate && details?.scheduledTime
+            ? `${details.scheduledDate} at ${details.scheduledTime}`
+            : (details?.scheduledTime ? `Today at ${details.scheduledTime}` : 'Happening Now / Instant Conference'))
+
+    const subject = isLive 
+        ? `🔴 LIVE NOW: ${hostName} has started "${meetingTitle}"` 
+        : `📅 Invitation: ${meetingTitle} - JTS Meet`
 
     const html = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 28px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
             <div style="text-align: center; margin-bottom: 24px;">
-                <div style="display: inline-block; padding: 8px 14px; background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%); border-radius: 8px; color: #ffffff; font-weight: 800; font-size: 16px; margin-bottom: 12px;">
-                    JTS Meet
+                <div style="display: inline-block; padding: 8px 14px; background: ${isLive ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)'}; border-radius: 8px; color: #ffffff; font-weight: 800; font-size: 16px; margin-bottom: 12px;">
+                    ${isLive ? '🔴 LIVE NOW — JTS Meet' : 'JTS Meet'}
                 </div>
-                <h2 style="color: #0f172a; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em;">Conference Invitation</h2>
-                <p style="color: #64748b; font-size: 14px; margin: 4px 0 0;">
-                    ${hostName} has invited you to a video meeting
+                <h2 style="color: #0f172a; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em;">
+                    ${isLive ? 'Meeting Has Started!' : 'Conference Invitation'}
+                </h2>
+                <p style="color: ${isLive ? '#ef4444' : '#64748b'}; font-size: 14px; margin: 4px 0 0; font-weight: ${isLive ? '700' : '400'};">
+                    ${isLive ? `⚡ ${hostName} is waiting in the meeting room right now` : `${hostName} has invited you to a video meeting`}
                 </p>
             </div>
             
@@ -113,8 +123,8 @@ export async function sendMeetingInvitationEmail(
                         <td style="padding: 6px 0; color: #0f172a;">${hostName}</td>
                     </tr>
                     <tr>
-                        <td style="padding: 6px 0; color: #64748b; font-weight: 600;">When:</td>
-                        <td style="padding: 6px 0; color: #059669; font-weight: 700;">📅 ${timeDisplay}</td>
+                        <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Status / When:</td>
+                        <td style="padding: 6px 0; color: ${isLive ? '#ef4444' : '#059669'}; font-weight: 700;">${timeDisplay}</td>
                     </tr>
                     <tr>
                         <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Meeting ID:</td>
@@ -124,8 +134,8 @@ export async function sendMeetingInvitationEmail(
             </div>
 
             <div style="text-align: center; margin: 28px 0;">
-                <a href="${inviteLink}" style="background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%); color: #ffffff; padding: 14px 34px; font-size: 15px; font-weight: 700; text-decoration: none; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);">
-                    🎥 Join Meeting Now
+                <a href="${inviteLink}" style="background: ${isLive ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)'}; color: #ffffff; padding: 14px 34px; font-size: 15px; font-weight: 700; text-decoration: none; border-radius: 8px; display: inline-block; box-shadow: ${isLive ? '0 4px 16px rgba(239, 68, 68, 0.4)' : '0 4px 12px rgba(99, 102, 241, 0.35)'};">
+                    ${isLive ? '🚀 Join Live Meeting Now' : '🎥 Join Meeting Now'}
                 </a>
             </div>
 
@@ -141,12 +151,16 @@ export async function sendMeetingInvitationEmail(
         </div>
     `
 
-    await transporter.sendMail({
-        from: EMAIL_FROM,
-        to,
-        subject: `🎥 Meeting Invitation: ${meetingTitle}`,
-        html
-    })
+    try {
+        await transporter.sendMail({
+            from: EMAIL_FROM,
+            to,
+            subject,
+            html
+        })
+    } catch (err: any) {
+        console.warn(`[EMAIL_SERVICE] Failed to send meeting email to ${to}:`, err?.message || err)
+    }
 }
 
 export async function sendTeamInvitationEmail(

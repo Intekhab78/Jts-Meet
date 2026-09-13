@@ -250,6 +250,20 @@ export function ScheduledMeetingsPage({
         }
     }
 
+    // Start room and send live email notification to team
+    const handleStartRoom = (item: ScheduledMeeting) => {
+        if (token && item.id) {
+            fetch(`${API_BASE}/api/meeting/${item.id}/start-notify`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            }).catch(() => {})
+        }
+        showToast(`🚀 Starting "${item.title}" — Live link sent to team!`)
+        onStartMeeting(item.id)
+    }
+
     // Copy formatted invitation
     const handleCopyInvite = (item: ScheduledMeeting) => {
         const link = `${window.location.origin}/meet/${item.id}`
@@ -673,7 +687,7 @@ export function ScheduledMeetingsPage({
                                     {/* Right: Actions Toolbar */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                         <button
-                                            onClick={() => onStartMeeting(item.id)}
+                                            onClick={() => handleStartRoom(item)}
                                             className="btn btn-primary"
                                             style={{ padding: '7px 14px', fontSize: '0.775rem', fontWeight: 700, borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 5 }}
                                             title="Launch meeting room now"

@@ -400,5 +400,91 @@ export const meetingController = {
         } catch (error: any) {
             return sendError(res, 400, error.message || 'Failed to update meeting')
         }
+    },
+
+    startAndNotifyTeam: async (req: AuthRequest, res: Response) => {
+        const meetingId = Array.isArray(req.params.meetingId) ? req.params.meetingId[0] : req.params.meetingId
+        const userId = req.userId
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+
+        try {
+            const meeting = await getMeetingByMeetingId(meetingId)
+            if (!meeting) {
+                return sendError(res, 404, 'Meeting not found')
+            }
+
+            // Mark meeting as active if not already
+            if (meeting.status !== 'active') {
+                meeting.status = 'active'
+                meeting.startedAt = new Date()
+                await meeting.save()
+            }
+
+            const hostUser = await User.findById(userId).select('fullName email').exec()
+            const hostName = hostUser?.fullName || 'Organizer'
+            const origin = req.headers.origin || FRONTEND_URL || 'http://localhost:3000'
+            const inviteUrl = `${origin}/meet/${meetingId}`
+
+            let teamName: string | undefined
+            const participantsToNotify = new Set<string>()
+
+            // 1. If linked to a team, notify all team members
+            if (meeting.teamId) {
+                const team = await Team.findById(meeting.teamId).select('name members').exec()
+                if (team) {
+                    teamName = team.name
+                    team.members?.forEach(m => {
+                        if (m.userId && m.userId.toString() !== userId) {
+                            participantsToNotify.add(m.userId.toString())
+                        }
+                    })
+                }
+            }
+
+            // 2. Also include any participants explicitly listed in meeting.participants
+            if (meeting.participants && meeting.participants.length > 0) {
+                meeting.participants.forEach(pId => {
+                    const pStr = pId.toString()
+                    if (pStr !== userId && Types.ObjectId.isValid(pStr)) {
+                        participantsToNotify.add(pStr)
+                    }
+                })
+            }
+
+            const userIdsList = Array.from(participantsToNotify).filter(id => Types.ObjectId.isValid(id)).map(id => new Types.ObjectId(id))
+            let notifiedCount = 0
+
+            if (userIdsList.length > 0) {
+                const users = await User.find({ _id: { $in: userIdsList } }).select('email fullName').exec()
+
+                for (const u of users) {
+                    // Send In-App Real-time Notification
+                    NotificationService.send({
+                        recipientId: u._id.toString(),
+                        title: `🔴 Meeting LIVE Now: ${meeting.title}`,
+                        body: `${hostName} has started the conference. Click here to join immediately.`,
+                        type: 'meeting_invite',
+                        metadata: { meetingId, hostName, title: meeting.title, teamName, isLiveNow: true }
+                    }).catch(() => {})
+
+                    // Send Instant Live Email
+                    if (meeting.notifyByEmail !== false && u.email) {
+                        sendMeetingInvitationEmail(u.email, meetingId, meeting.title, hostName, inviteUrl, {
+                            scheduledDate: meeting.scheduledDate,
+                            scheduledTime: meeting.scheduledTime,
+                            teamName,
+                            isLiveNow: true
+                        }).catch(err => console.error(`Error sending live start email to ${u.email}:`, err))
+                        notifiedCount++
+                    }
+                }
+            }
+
+            return sendSuccess(res, { meetingId, notifiedCount }, `Live conference started! ${notifiedCount} team members notified with 1-click join link.`)
+        } catch (error: any) {
+            return sendError(res, 500, error.message || 'Failed to dispatch live start notifications')
+        }
     }
 }
