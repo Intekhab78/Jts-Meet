@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import type { ChannelMember, ChannelRole } from './channel.types'
+import { IconUsers, IconUser, IconCrown, IconShield, IconSearch, IconPlus, IconCopy, IconCheck, IconMail, IconTrash } from '../../components/common/Icons'
 
 interface ChannelMembersPageProps {
     members: ChannelMember[]
@@ -97,10 +98,9 @@ export function ChannelMembersPage({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        boxShadow: '0 4px 12px rgba(91, 95, 199, 0.35)',
-                        fontSize: '1.1rem'
+                        boxShadow: '0 4px 12px rgba(91, 95, 199, 0.35)'
                     }}>
-                        💬
+                        <IconUsers size={20} color="#fff" />
                     </div>
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -144,7 +144,7 @@ export function ChannelMembersPage({
                             boxShadow: '0 4px 12px rgba(91, 95, 199, 0.35)'
                         }}
                     >
-                        <span>+</span>
+                        <IconPlus size={14} color="#fff" />
                         <span>Add Member</span>
                     </button>
                 )}
@@ -199,8 +199,8 @@ export function ChannelMembersPage({
                 {/* Search & Role Filter */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <div style={{ position: 'relative', width: 200 }}>
-                        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: '0.8rem', color: '#7a7e9d', pointerEvents: 'none' }}>
-                            🔍
+                        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', color: '#7a7e9d', pointerEvents: 'none' }}>
+                            <IconSearch size={14} color="#7a7e9d" />
                         </span>
                         <input
                             type="text"
@@ -258,7 +258,9 @@ export function ChannelMembersPage({
                         {filteredMembers.length === 0 ? (
                             <tr>
                                 <td colSpan={4} style={{ padding: '36px', textAlign: 'center', color: '#7a7e9d' }}>
-                                    <div style={{ fontSize: '1.6rem', marginBottom: 6 }}>👥</div>
+                                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+                                        <IconUsers size={32} color="#818cf8" strokeWidth={1.5} />
+                                    </div>
                                     <div style={{ fontWeight: 600, color: '#c5c7d8' }}>No channel members found</div>
                                     <div style={{ fontSize: '0.75rem', color: '#6e728e', marginTop: 2 }}>Try changing your search query or role filter.</div>
                                 </td>
@@ -406,7 +408,7 @@ export function ChannelMembersPage({
                                                         alignItems: 'center',
                                                         gap: 4
                                                     }}>
-                                                        👑 Channel Owner
+                                                        <IconCrown size={12} color="#fbbf24" /> Channel Owner
                                                     </span>
                                                 )}
 
@@ -483,7 +485,7 @@ export function ChannelMembersPage({
                                                                     onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
                                                                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                                 >
-                                                                    <span>📧</span>
+                                                                    <IconMail size={13} color="#94a3b8" />
                                                                     <span>{copiedUserId === `email-${userIdStr}` ? '✓ Copied Email' : 'Copy Email'}</span>
                                                                 </button>
                                                             )}
@@ -513,8 +515,8 @@ export function ChannelMembersPage({
                                                                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
                                                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                             >
-                                                                <span>📋</span>
-                                                                <span>{copiedUserId === `id-${userIdStr}` ? '✓ Copied ID' : 'Copy User ID'}</span>
+                                                                {copiedUserId === `id-${userIdStr}` ? <IconCheck size={13} color="#4ade80" /> : <IconCopy size={13} color="#94a3b8" />}
+                                                                <span>{copiedUserId === `id-${userIdStr}` ? 'Copied ID' : 'Copy User ID'}</span>
                                                             </button>
 
                                                             {onRoleChange && member.role !== 'owner' && (
@@ -544,7 +546,7 @@ export function ChannelMembersPage({
                                                                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(192, 132, 252, 0.1)'}
                                                                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                                         >
-                                                                            <span>🛡️</span>
+                                                                            <IconShield size={13} color="#c084fc" />
                                                                             <span>Set as Moderator</span>
                                                                         </button>
                                                                     )}
@@ -572,7 +574,7 @@ export function ChannelMembersPage({
                                                                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(96, 165, 250, 0.1)'}
                                                                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                                         >
-                                                                            <span>👤</span>
+                                                                            <IconUser size={13} color="#60a5fa" />
                                                                             <span>Set as Member</span>
                                                                         </button>
                                                                     )}
@@ -607,7 +609,7 @@ export function ChannelMembersPage({
                                                                         onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)'}
                                                                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                                     >
-                                                                        <span>🗑️</span>
+                                                                        <IconTrash size={13} color="#f87171" />
                                                                         <span>Remove Member</span>
                                                                     </button>
                                                                 </>

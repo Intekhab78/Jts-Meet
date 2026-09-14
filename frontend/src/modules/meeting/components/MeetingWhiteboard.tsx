@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { Socket } from 'socket.io-client'
 import { SocketEvents } from '../services/socket.service'
+import { IconEdit, IconMinus, IconSquare, IconCircle, IconTrash, IconDownload, IconUndo } from '../../../components/common/Icons'
 
 interface MeetingWhiteboardProps {
     isOpen: boolean
@@ -276,19 +277,19 @@ export function MeetingWhiteboard({ isOpen, onClose, meetingId, socket }: Meetin
                 overflowX: 'auto', scrollbarWidth: 'none', gap: 12
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                    <span style={{ fontSize: '1.25rem' }}>🎨</span>
+                    <IconEdit size={18} color="#818cf8" />
                     <h3 style={{ fontSize: '0.9375rem', fontWeight: 800, color: '#fff', margin: 0, whiteSpace: 'nowrap' }}>Whiteboard</h3>
                 </div>
 
                 {/* Center tools */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--color-surface-2)', padding: '4px 8px', borderRadius: 'var(--radius-lg)' }}>
                     {[
-                        { id: 'pen', label: '✏️ Pen' },
-                        { id: 'highlighter', label: '🖍️ Highlighter' },
-                        { id: 'line', label: '📏 Line' },
-                        { id: 'rect', label: '⬜ Rect' },
-                        { id: 'circle', label: '⭕ Circle' },
-                        { id: 'eraser', label: '🧹 Eraser' }
+                        { id: 'pen', label: 'Pen', icon: <IconEdit size={13} /> },
+                        { id: 'highlighter', label: 'Highlighter', icon: <IconEdit size={13} /> },
+                        { id: 'line', label: 'Line', icon: <IconMinus size={13} /> },
+                        { id: 'rect', label: 'Rect', icon: <IconSquare size={13} /> },
+                        { id: 'circle', label: 'Circle', icon: <IconCircle size={13} /> },
+                        { id: 'eraser', label: 'Eraser', icon: <IconTrash size={13} /> }
                     ].map((t) => (
                         <button
                             key={t.id}
@@ -297,24 +298,26 @@ export function MeetingWhiteboard({ isOpen, onClose, meetingId, socket }: Meetin
                                 border: 'none', background: tool === t.id ? 'var(--color-accent)' : 'transparent',
                                 color: tool === t.id ? '#fff' : 'var(--color-text-secondary)',
                                 padding: '6px 12px', borderRadius: 'var(--radius-md)', fontSize: '0.8125rem',
-                                fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s ease'
+                                fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s ease',
+                                display: 'inline-flex', alignItems: 'center', gap: 6
                             }}
                         >
-                            {t.label}
+                            {t.icon}
+                            <span>{t.label}</span>
                         </button>
                     ))}
                 </div>
 
                 {/* Actions & Close */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <button onClick={handleUndo} className="btn btn-secondary text-xs" style={{ padding: '6px 12px' }}>
-                        ↩️ Undo
+                    <button onClick={handleUndo} className="btn btn-secondary text-xs" style={{ padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <IconUndo size={13} /> Undo
                     </button>
-                    <button onClick={handleClear} className="btn btn-secondary text-xs" style={{ padding: '6px 12px' }}>
-                        🗑️ Clear
+                    <button onClick={handleClear} className="btn btn-secondary text-xs" style={{ padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <IconTrash size={13} /> Clear
                     </button>
-                    <button onClick={handleExport} className="btn btn-secondary text-xs" style={{ padding: '6px 12px' }}>
-                        💾 Export PNG
+                    <button onClick={handleExport} className="btn btn-secondary text-xs" style={{ padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <IconDownload size={13} /> Export PNG
                     </button>
                     <button onClick={onClose} className="btn btn-primary text-xs" style={{ padding: '6px 16px' }}>
                         Close

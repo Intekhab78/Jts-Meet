@@ -21,6 +21,7 @@ import {
 import { Organization } from '../modules/organization/organization.model'
 import { validateRegister, validateLogin } from '../validators/auth.validator'
 import { AuthRequest } from '../middleware/authMiddleware'
+import { updateUserStatus } from '../socket/presence'
 
 export const authController = {
     register: async (req: Request, res: Response) => {
@@ -174,6 +175,25 @@ export const authController = {
             return sendSuccess(res, user, 'Profile updated successfully')
         } catch (err: any) {
             return sendError(res, err.status || 500, err.message || 'Failed to update profile')
+        }
+    },
+
+    updateStatus: async (req: AuthRequest, res: Response) => {
+        if (!req.userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+
+        const { status, customStatus } = req.body as { status?: string; customStatus?: string }
+        const validStatuses = ['online', 'busy', 'away', 'dnd', 'in_meeting', 'offline']
+        if (status && !validStatuses.includes(status)) {
+            return sendError(res, 400, 'Invalid presence status')
+        }
+
+        try {
+            const user = await updateUserStatus(req.userId, (status || 'online') as any, customStatus)
+            return sendSuccess(res, user, 'Presence status updated successfully')
+        } catch (err: any) {
+            return sendError(res, err.status || 500, err.message || 'Failed to update presence status')
         }
     },
 

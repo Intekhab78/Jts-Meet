@@ -512,12 +512,19 @@ class VirtualBackgroundService {
     public cleanup() {
         this.stopProcessingLoop()
         if (this.offscreenVideo) {
+            if (this.offscreenVideo.srcObject instanceof MediaStream) {
+                this.offscreenVideo.srcObject.getVideoTracks().forEach(t => {
+                    try { t.stop() } catch {}
+                })
+            }
             this.offscreenVideo.srcObject = null
             this.offscreenVideo.remove()
             this.offscreenVideo = null
         }
         if (this.outputStream) {
-            this.outputStream.getTracks().forEach(t => t.stop())
+            this.outputStream.getTracks().forEach(t => {
+                try { t.stop() } catch {}
+            })
             this.outputStream = null
         }
         this.offscreenCanvas = null

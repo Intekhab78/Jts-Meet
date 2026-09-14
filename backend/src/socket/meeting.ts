@@ -13,6 +13,10 @@ import { Meeting } from '../modules/meeting/meeting.model'
 import { SocketEvents } from './events'
 import { adHocRoomSettings } from '../routes/guest.routes'
 import { dispatchWebhookEvent } from '../modules/integration/integration.service'
+import { setUserPresenceState } from './presence'
+
+// Track backstage participants per meeting room for Virtual Green Room
+const meetingBackstageMap = new Map<string, Set<string>>()
 
 export function registerMeetingHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
@@ -46,12 +50,25 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
             io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_JOIN, { meetingId: payload.meetingId, participants: meeting.participants })
 
+            // Auto-switch user presence status to in_meeting
+            if (!authSocket.isGuest && userId) {
+                setUserPresenceState(userId, 'in_meeting')
+                io.emit(SocketEvents.PRESENCE_UPDATE, { userId, status: 'in_meeting' })
+            }
+
             // Notify waiting room / lobby guests that the host has arrived
             const isHostOrCoHost = String(meeting.host) === String(userId) || (meeting.coHosts && meeting.coHosts.some(id => String(id) === String(userId)))
             if (isHostOrCoHost) {
                 const hostName = authSocket.guestName || 'Organizer'
                 io.to(`lobby:${payload.meetingId}`).emit('meeting:host-joined', { hostName, meetingId: payload.meetingId })
             }
+
+            // Sync virtual green room / backstage state to the joining user
+            const currentBackstage = meetingBackstageMap.get(payload.meetingId)
+            socket.emit(SocketEvents.STAGE_STATE_SYNC, {
+                meetingId: payload.meetingId,
+                backstageUsers: Array.from(currentBackstage || [])
+            })
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Failed to join meeting' })
         }
@@ -71,6 +88,9 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                     if (meeting?.participants) {
                         participants = meeting.participants
                     }
+                    // Restore user presence status to online
+                    setUserPresenceState(userId, 'online')
+                    io.emit(SocketEvents.PRESENCE_UPDATE, { userId, status: 'online' })
                 }
             } catch (e) {}
 
@@ -485,5 +505,28 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     socket.on('remote-control:key', (payload: { meetingId: string; controllerId: string; type: string; key: string; code: string; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }) => {
         if (!payload?.meetingId) return
         socket.to(`meeting:${payload.meetingId}`).emit('remote-control:key', payload)
+    })
+
+    // Presenter Backstage / Virtual Green Room (Enterprise Tier)
+    socket.on(SocketEvents.STAGE_STATUS_CHANGE, (payload: { meetingId: string; targetUserId: string; isBackstage: boolean }) => {
+        if (!payload?.meetingId || !payload?.targetUserId) return
+        let backstageSet = meetingBackstageMap.get(payload.meetingId)
+        if (!backstageSet) {
+            backstageSet = new Set<string>()
+            meetingBackstageMap.set(payload.meetingId, backstageSet)
+        }
+
+        if (payload.isBackstage) {
+            backstageSet.add(payload.targetUserId)
+        } else {
+            backstageSet.delete(payload.targetUserId)
+        }
+
+        io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.STAGE_STATUS_CHANGE, {
+            meetingId: payload.meetingId,
+            targetUserId: payload.targetUserId,
+            isBackstage: payload.isBackstage,
+            backstageUsers: Array.from(backstageSet)
+        })
     })
 }

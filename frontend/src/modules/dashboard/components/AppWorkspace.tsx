@@ -3,10 +3,15 @@ import { useMeetingContext } from '../../meeting/context/MeetingContext'
 import { useSocketContext } from '../../meeting/context/SocketContext'
 import { useWebRTCContext } from '../../meeting/context/WebRTCContext'
 import { IncomingCallModal, type IncomingCallData } from '../../meeting/components/IncomingCallModal'
+import { OutgoingCallModal, type OutgoingCallData } from '../../meeting/components/OutgoingCallModal'
+import { ActiveAudioCallModal, type ActiveCallData } from '../../meeting/components/ActiveAudioCallModal'
 import { SocketEvents } from '../../meeting/services/socket.service'
 import { API_BASE } from '../../../config'
+import { IconPhone, IconX } from '../../../components/common/Icons'
+import { UserStatusSelectorPopover } from '../../../components/common/UserStatusSelectorPopover'
 
 const MeetingRoom = React.lazy(() => import('../../meeting/components/MeetingRoom').then(m => ({ default: m.MeetingRoom })))
+const DirectMessagesHub = React.lazy(() => import('../../chat/components/DirectMessagesHub').then(m => ({ default: m.DirectMessagesHub })))
 const OrganizationSettingsPage = React.lazy(() => import('../../organization/OrganizationSettingsPage').then(m => ({ default: m.OrganizationSettingsPage })))
 const TeamSettingsPage = React.lazy(() => import('../../team/TeamSettingsPage').then(m => ({ default: m.TeamSettingsPage })))
 const ChannelSettingsPage = React.lazy(() => import('../../channel/ChannelSettingsPage').then(m => ({ default: m.ChannelSettingsPage })))
@@ -20,6 +25,7 @@ const SuperAdminMasterHub = React.lazy(() => import('../../admin/SuperAdminMaste
 
 interface AppWorkspaceProps {
     token: string
+    initialMeetingId?: string
     onLogout: () => void
 }
 
@@ -40,10 +46,18 @@ function WorkspaceTabSkeleton() {
     )
 }
 
-export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'meeting' | 'history' | 'scheduled' | 'organization' | 'team' | 'channel' | 'admin' | 'super-admin' | 'profile'>(() => {
+export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspaceProps) {
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'meeting' | 'chat' | 'history' | 'scheduled' | 'organization' | 'team' | 'channel' | 'admin' | 'super-admin' | 'profile'>(() => {
+        // If there is an active meeting from URL or props, navigate directly to meeting tab!
+        const pathnameMatch = window.location.pathname.match(/^\/(?:meet|join)\/([a-zA-Z0-9\-_]+)/)
         const hash = window.location.hash.replace(/^#\/?/, '').split('?')[0].trim()
-        const validTabs = ['dashboard', 'meeting', 'history', 'scheduled', 'organization', 'team', 'channel', 'admin', 'super-admin', 'profile']
+        const searchParams = new URLSearchParams(window.location.search)
+        const hasMeetingInUrl = !!initialMeetingId || !!pathnameMatch || hash === 'meeting' || searchParams.has('id') || searchParams.has('meetingId')
+        if (hasMeetingInUrl) {
+            return 'meeting'
+        }
+
+        const validTabs = ['dashboard', 'meeting', 'chat', 'history', 'scheduled', 'organization', 'team', 'channel', 'admin', 'super-admin', 'profile']
         if (validTabs.includes(hash)) {
             return hash as any
         }
@@ -74,7 +88,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     useEffect(() => {
         const handleHashChange = () => {
             const hash = window.location.hash.replace(/^#\/?/, '').split('?')[0].trim()
-            const validTabs = ['dashboard', 'meeting', 'history', 'scheduled', 'organization', 'team', 'channel', 'admin', 'super-admin', 'profile']
+            const validTabs = ['dashboard', 'meeting', 'chat', 'history', 'scheduled', 'organization', 'team', 'channel', 'admin', 'super-admin', 'profile']
             if (validTabs.includes(hash)) {
                 setActiveTab(hash as any)
             }
@@ -86,15 +100,60 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     const [searchQuery, setSearchQuery] = useState('')
     const [historyFilter, setHistoryFilter] = useState<'all' | 'recorded' | 'regular'>('all')
 
+    // Profile States
+    const [profileName, setProfileName] = useState('Team Member')
+    const [profileEmail, setProfileEmail] = useState('member@jtsmeet.com')
+    const [profileImage, setProfileImage] = useState('')
+    const [userId, setUserId] = useState('')
+    const [isSavingProfile, setIsSavingProfile] = useState(false)
+    const [profileSaveSuccess, setProfileSaveSuccess] = useState(false)
+    const [profileError, setProfileError] = useState('')
+
     const { joined, setMeetingId, meetingId } = useMeetingContext()
     const { socket, connectSocket, connected } = useSocketContext()
-    const { stopMedia } = useWebRTCContext()
+    const { connectToMeeting, leaveMeeting, requestMedia, stopMedia, startScreenShare } = useWebRTCContext()
     const [incomingCall, setIncomingCall] = useState<IncomingCallData | null>(null)
+    const [outgoingCall, setOutgoingCall] = useState<OutgoingCallData | null>(null)
+    const [activeAudioCall, setActiveAudioCall] = useState<ActiveCallData | null>(() => {
+        try {
+            const saved = sessionStorage.getItem('jts_active_direct_call')
+            if (saved) {
+                return JSON.parse(saved)
+            }
+        } catch (_) {}
+        return null
+    })
+    const outgoingCallRef = React.useRef<OutgoingCallData | null>(null)
+    outgoingCallRef.current = outgoingCall
+    const activeAudioCallRef = React.useRef<ActiveCallData | null>(null)
+    activeAudioCallRef.current = activeAudioCall
+
+    // Sync activeAudioCall with sessionStorage for refresh restoration
+    useEffect(() => {
+        if (activeAudioCall) {
+            try {
+                sessionStorage.setItem('jts_active_direct_call', JSON.stringify(activeAudioCall))
+            } catch (_) {}
+        } else {
+            try {
+                sessionStorage.removeItem('jts_active_direct_call')
+            } catch (_) {}
+        }
+    }, [activeAudioCall])
+    const pendingScreenStreamRef = React.useRef<MediaStream | null>(null)
     const [showDirectDialModal, setShowDirectDialModal] = useState(false)
     const [directDialTarget, setDirectDialTarget] = useState('')
 
     const [activeMeetingRoomId, setActiveMeetingRoomId] = useState<string>(() => {
+        if (initialMeetingId) return initialMeetingId
         try {
+            const pathnameMatch = window.location.pathname.match(/^\/(?:meet|join)\/([a-zA-Z0-9\-_]+)/)
+            if (pathnameMatch) return pathnameMatch[1]
+
+            const searchParams = new URLSearchParams(window.location.search)
+            const queryId = searchParams.get('id') || searchParams.get('meetingId')
+            if (queryId) return queryId
+
             const hashParts = window.location.hash.split('?')
             if (hashParts.length > 1) {
                 const params = new URLSearchParams(hashParts[1])
@@ -106,6 +165,17 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
             return ''
         }
     })
+
+    // If initialMeetingId was provided or changes, activate meeting tab
+    useEffect(() => {
+        const targetId = initialMeetingId || window.location.pathname.match(/^\/(?:meet|join)\/([a-zA-Z0-9\-_]+)/)?.[1]
+        if (targetId) {
+            setActiveMeetingRoomId(targetId)
+            setMeetingId(targetId)
+            setActiveTab('meeting')
+            sessionStorage.setItem('jts_active_meeting_id', targetId)
+        }
+    }, [initialMeetingId, setMeetingId])
 
     const handleLaunchMeeting = useCallback((targetMeetingId?: string) => {
         const cleanId = (targetMeetingId || `room-${Math.random().toString(36).substring(2, 8)}`).trim()
@@ -143,11 +213,12 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
     }, [joined, activeMeetingRoomId])
 
     // Automatically release and turn off camera & microphone hardware when switching away from meeting room
+    // BUT: do NOT stop media if a direct call is active (it uses the same streams!)
     useEffect(() => {
-        if (activeTab !== 'meeting' && !joined) {
+        if (activeTab !== 'meeting' && !joined && !activeAudioCall) {
             stopMedia()
         }
-    }, [activeTab, joined, stopMedia])
+    }, [activeTab, joined, stopMedia, activeAudioCall])
 
     // Ensure socket connected for direct ringing
     useEffect(() => {
@@ -155,6 +226,26 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
             connectSocket(token)
         }
     }, [token, connected, connectSocket])
+
+    // Auto-reconnect restored direct call after page refresh
+    useEffect(() => {
+        if (activeAudioCall && connected && socket && !joined) {
+            console.log('[AppWorkspace] Restoring active direct call after refresh:', activeAudioCall)
+            const restoreCall = async () => {
+                try {
+                    if (activeAudioCall.callType === 'audio') {
+                        await requestMedia(true)
+                    } else {
+                        await requestMedia(false)
+                    }
+                    connectToMeeting(activeAudioCall.meetingId, profileName || 'Colleague', true)
+                } catch (err) {
+                    console.error('[AppWorkspace] Failed to restore active direct call media:', err)
+                }
+            }
+            restoreCall()
+        }
+    }, [activeAudioCall, connected, socket, joined, requestMedia, connectToMeeting, profileName])
 
     // Listen to direct call socket events
     useEffect(() => {
@@ -172,18 +263,94 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
 
         const handleCallCancelled = () => {
             setIncomingCall(null)
+            if (activeAudioCallRef.current) {
+                leaveMeeting()
+                stopMedia()
+                setActiveAudioCall(null)
+            }
+        }
+
+        const handleCallAccepted = async (data: any) => {
+            console.log('[AppWorkspace] Outgoing call was accepted by peer:', data)
+            const target = outgoingCallRef.current
+            setOutgoingCall(null)
+            const activeMeetingId = data?.meetingId || target?.meetingId
+            if (!activeMeetingId) return
+
+            const callType = target?.callType || 'audio'
+
+            // ⚠️ CRITICAL: Switch away from 'meeting' tab and clear meeting room ID
+            // so that connectToMeeting (which sets meetingId context) does NOT cause
+            // MeetingRoom to auto-join and open in the background.
+            setActiveMeetingRoomId('')
+            setActiveTab('chat')
+            // Clear URL and sessionStorage so hash-based tab detection doesn't re-open meeting room
+            window.history.replaceState(null, '', '/#chat')
+            try { sessionStorage.removeItem('jts_active_meeting_id') } catch {}
+
+            setActiveAudioCall({
+                meetingId: activeMeetingId,
+                peerId: target?.targetUserId || '',
+                peerName: target?.targetName || 'Colleague',
+                peerAvatar: target?.targetAvatar,
+                callType
+            })
+            try {
+                if (callType === 'audio') {
+                    await requestMedia(true)
+                } else {
+                    await requestMedia(false)
+                }
+                connectToMeeting(activeMeetingId, profileName || 'Colleague', true)
+                if (callType === 'screenshare' && pendingScreenStreamRef.current) {
+                    const screenStream = pendingScreenStreamRef.current
+                    setTimeout(() => {
+                        startScreenShare(screenStream).catch(err => {
+                            console.warn('[AppWorkspace] Error starting screen share:', err)
+                        })
+                    }, 500)
+                }
+            } catch (err) {
+                console.error('[AppWorkspace] Failed to connect call media:', err)
+            }
+        }
+
+        const handleCallRejected = (data: any) => {
+            console.log('[AppWorkspace] Outgoing call was declined by peer:', data)
+            if (pendingScreenStreamRef.current) {
+                pendingScreenStreamRef.current.getTracks().forEach(t => {
+                    try { t.stop() } catch {}
+                })
+                pendingScreenStreamRef.current = null
+            }
+            setOutgoingCall(prev => prev ? { ...prev, status: 'declined' } : null)
+            setTimeout(() => {
+                setOutgoingCall(null)
+            }, 2500)
+        }
+
+        const handleCallInitiated = (data: any) => {
+            if (data?.meetingId) {
+                setOutgoingCall(prev => prev ? { ...prev, meetingId: data.meetingId } : null)
+            }
         }
 
         socket.on(SocketEvents.CALL_INCOMING, handleIncomingCall)
         socket.on(SocketEvents.CALL_CANCELLED, handleCallCancelled)
+        socket.on(SocketEvents.CALL_ACCEPTED, handleCallAccepted)
+        socket.on(SocketEvents.CALL_REJECTED, handleCallRejected)
+        socket.on('call:initiated', handleCallInitiated)
 
         return () => {
             socket.off(SocketEvents.CALL_INCOMING, handleIncomingCall)
             socket.off(SocketEvents.CALL_CANCELLED, handleCallCancelled)
+            socket.off(SocketEvents.CALL_ACCEPTED, handleCallAccepted)
+            socket.off(SocketEvents.CALL_REJECTED, handleCallRejected)
+            socket.off('call:initiated', handleCallInitiated)
         }
-    }, [socket])
+    }, [socket, profileName, connectToMeeting, leaveMeeting, requestMedia, stopMedia, startScreenShare])
 
-    const handleAcceptCall = (call: IncomingCallData) => {
+    const handleAcceptCall = async (call: IncomingCallData) => {
         if (socket) {
             socket.emit(SocketEvents.CALL_ACCEPTED, {
                 callerId: call.callerId,
@@ -191,7 +358,34 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
             })
         }
         setIncomingCall(null)
-        handleLaunchMeeting(call.meetingId)
+
+        // ⚠️ CRITICAL: Switch away from 'meeting' tab and clear meeting room ID
+        // so that connectToMeeting (which sets meetingId context) does NOT cause
+        // MeetingRoom to auto-join and open in the background.
+        setActiveMeetingRoomId('')
+        setActiveTab('chat')
+        // Clear URL and sessionStorage so hash-based tab detection doesn't re-open meeting room
+        window.history.replaceState(null, '', '/#chat')
+        try { sessionStorage.removeItem('jts_active_meeting_id') } catch {}
+
+        const callType = call.callType || 'audio'
+        setActiveAudioCall({
+            meetingId: call.meetingId,
+            peerId: call.callerId,
+            peerName: call.callerName || 'Colleague',
+            peerAvatar: call.callerAvatar,
+            callType
+        })
+        try {
+            if (callType === 'audio') {
+                await requestMedia(true)
+            } else {
+                await requestMedia(false)
+            }
+            connectToMeeting(call.meetingId, profileName || 'Colleague', true)
+        } catch (err) {
+            console.error('[AppWorkspace] Failed to connect call media:', err)
+        }
     }
 
     const handleDeclineCall = (call: IncomingCallData) => {
@@ -204,17 +398,64 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
         setIncomingCall(null)
     }
 
-    const handleStartDirectCall = (targetId: string) => {
+    const handleCancelOutgoingCall = () => {
+        if (pendingScreenStreamRef.current) {
+            pendingScreenStreamRef.current.getTracks().forEach(t => {
+                try { t.stop() } catch {}
+            })
+            pendingScreenStreamRef.current = null
+        }
+        if (outgoingCall && socket) {
+            socket.emit(SocketEvents.CALL_CANCELLED, {
+                targetUserId: outgoingCall.targetUserId,
+                meetingId: outgoingCall.meetingId
+            })
+        }
+        setOutgoingCall(null)
+    }
+
+    const handleEndActiveAudioCall = () => {
+        if (activeAudioCall && socket) {
+            socket.emit(SocketEvents.CALL_CANCELLED, {
+                targetUserId: activeAudioCall.peerId,
+                meetingId: activeAudioCall.meetingId
+            })
+        }
+        leaveMeeting()
+        stopMedia()
+        setActiveAudioCall(null)
+    }
+
+    const handleStartDirectCall = (
+        targetId: string,
+        callType: 'video' | 'audio' | 'screenshare' = 'audio',
+        targetName?: string,
+        targetAvatar?: string,
+        screenStream?: MediaStream
+    ) => {
         if (!socket || !targetId.trim()) return
+        if (screenStream) {
+            pendingScreenStreamRef.current = screenStream
+        }
         const newMeetingId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`
         socket.emit(SocketEvents.CALL_INITIATE, {
+            targetUserId: targetId.trim(),
             calleeId: targetId.trim(),
             callerName: profileName || 'Colleague',
+            callerAvatar: profileImage,
+            callType,
             meetingId: newMeetingId
+        })
+        setOutgoingCall({
+            meetingId: newMeetingId,
+            targetUserId: targetId.trim(),
+            targetName: targetName || 'Colleague',
+            targetAvatar,
+            callType,
+            status: 'ringing'
         })
         setShowDirectDialModal(false)
         setDirectDialTarget('')
-        handleLaunchMeeting(newMeetingId)
     }
 
     const [sidebarExpanded, setSidebarExpanded] = useState(false)
@@ -228,15 +469,6 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
         window.addEventListener('resize', handleResize)
         return () => window.removeEventListener('resize', handleResize)
     }, [])
-
-    // Profile States
-    const [profileName, setProfileName] = useState('Team Member')
-    const [profileEmail, setProfileEmail] = useState('member@jtsmeet.com')
-    const [profileImage, setProfileImage] = useState('')
-    const [userId, setUserId] = useState('')
-    const [isSavingProfile, setIsSavingProfile] = useState(false)
-    const [profileSaveSuccess, setProfileSaveSuccess] = useState(false)
-    const [profileError, setProfileError] = useState('')
 
     // Connected hardware & preferences
     const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
@@ -717,7 +949,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                         >
                             {teams.map((t: any) => (
                                 <option key={t._id} value={t._id} style={{ background: 'var(--color-surface-1)', color: '#fff' }}>
-                                    👥 {t.name}
+                                    {t.name}
                                 </option>
                             ))}
                         </select>
@@ -727,47 +959,206 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                 {/* Nav list */}
                 <nav style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, overflowY: 'auto', width: '100%', alignItems: (mobileMenuOpen || showFullSidebar) ? 'stretch' : 'center' }}>
                     {[
-                        { id: 'dashboard', label: 'Dashboard', icon: '📊', adminOnly: false, superAdminOnly: false },
-                        { id: 'meeting', label: 'Meeting Room', icon: '📹', adminOnly: false, superAdminOnly: false },
-                        { id: 'history', label: 'History log', icon: '📜', adminOnly: false, superAdminOnly: false },
-                        { id: 'scheduled', label: 'Scheduled', icon: '📅', adminOnly: false, superAdminOnly: false },
-                        { id: 'organization', label: 'Organizations', icon: '🏢', adminOnly: false, superAdminOnly: false },
-                        { id: 'team', label: 'Teams Settings', icon: '👥', adminOnly: true, superAdminOnly: false },
-                        { id: 'channel', label: 'Channels Settings', icon: '💬', adminOnly: true, superAdminOnly: false },
-                        { id: 'admin', label: 'Admin Console', icon: '🛡️', adminOnly: true, superAdminOnly: false },
-                        { id: 'super-admin', label: 'Platform Center', icon: '🌐', adminOnly: false, superAdminOnly: true },
-                        { id: 'profile', label: 'User Profile', icon: '👤', adminOnly: false, superAdminOnly: false }
+                        {
+                            id: 'dashboard',
+                            label: 'Dashboard',
+                            adminOnly: false,
+                            superAdminOnly: false,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="3" width="7" height="9" rx="1.5" />
+                                    <rect x="14" y="3" width="7" height="5" rx="1.5" />
+                                    <rect x="14" y="12" width="7" height="9" rx="1.5" />
+                                    <rect x="3" y="16" width="7" height="5" rx="1.5" />
+                                </svg>
+                            )
+                        },
+                        {
+                            id: 'meeting',
+                            label: 'Meeting Room',
+                            adminOnly: false,
+                            superAdminOnly: false,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <polygon points="23 7 16 12 23 17 23 7" />
+                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                                </svg>
+                            )
+                        },
+                        {
+                            id: 'chat',
+                            label: 'Direct Messages',
+                            adminOnly: false,
+                            superAdminOnly: false,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                                </svg>
+                            )
+                        },
+                        {
+                            id: 'history',
+                            label: 'History log',
+                            adminOnly: false,
+                            superAdminOnly: false,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="9" />
+                                    <polyline points="12 7 12 12 15 15" />
+                                </svg>
+                            )
+                        },
+                        {
+                            id: 'scheduled',
+                            label: 'Scheduled',
+                            adminOnly: false,
+                            superAdminOnly: false,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                                    <line x1="16" y1="2" x2="16" y2="6" />
+                                    <line x1="8" y1="2" x2="8" y2="6" />
+                                    <line x1="3" y1="10" x2="21" y2="10" />
+                                </svg>
+                            )
+                        },
+                        {
+                            id: 'organization',
+                            label: 'Organizations',
+                            adminOnly: false,
+                            superAdminOnly: false,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
+                                    <path d="M6 12H4a2 2 0 0 0-2 2v8h4" />
+                                    <path d="M18 9h2a2 2 0 0 1 2 2v11h-4" />
+                                    <line x1="10" y1="6" x2="14" y2="6" />
+                                    <line x1="10" y1="10" x2="14" y2="10" />
+                                    <line x1="10" y1="14" x2="14" y2="14" />
+                                </svg>
+                            )
+                        },
+                        {
+                            id: 'team',
+                            label: 'Teams Settings',
+                            adminOnly: true,
+                            superAdminOnly: false,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                    <circle cx="9" cy="7" r="4" />
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                                </svg>
+                            )
+                        },
+                        {
+                            id: 'channel',
+                            label: 'Channels Settings',
+                            adminOnly: true,
+                            superAdminOnly: false,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                                </svg>
+                            )
+                        },
+                        {
+                            id: 'admin',
+                            label: 'Admin Console',
+                            adminOnly: true,
+                            superAdminOnly: false,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                                </svg>
+                            )
+                        },
+                        {
+                            id: 'super-admin',
+                            label: 'Platform Center',
+                            adminOnly: false,
+                            superAdminOnly: true,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <line x1="2" y1="12" x2="22" y2="12" />
+                                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                                </svg>
+                            )
+                        },
+                        {
+                            id: 'profile',
+                            label: 'User Profile',
+                            adminOnly: false,
+                            superAdminOnly: false,
+                            icon: (active: boolean) => (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                                    <circle cx="12" cy="7" r="4" />
+                                </svg>
+                            )
+                        }
                     ].filter(item => {
                         if (item.superAdminOnly) return isSuperAdmin
                         if (item.adminOnly) return isOrgAdminOrOwner
                         return true
-                    }).map(item => (
-                        <button
-                            key={item.id}
-                            onClick={() => {
-                                setActiveTab(item.id as any)
-                                window.location.hash = `#${item.id}`
-                                try {
-                                    sessionStorage.setItem('jts_active_tab', item.id)
-                                    localStorage.setItem('jts_active_tab', item.id)
-                                } catch (_) {}
-                                setMobileMenuOpen(false)
-                            }}
-                            title={!(mobileMenuOpen || showFullSidebar) ? item.label : undefined}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: (mobileMenuOpen || showFullSidebar) ? '10px 14px' : '10px 0',
-                                justifyContent: (mobileMenuOpen || showFullSidebar) ? 'flex-start' : 'center',
-                                width: '100%',
-                                border: 'none', background: activeTab === item.id ? 'var(--color-accent-light)' : 'transparent',
-                                color: activeTab === item.id ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                                borderRadius: 'var(--radius-md)', fontSize: '0.875rem', fontWeight: 600,
-                                cursor: 'pointer', transition: 'all 0.15s ease'
-                            }}
-                        >
-                            <span style={{ fontSize: '1.1rem' }}>{item.icon}</span>
-                            {(mobileMenuOpen || showFullSidebar) && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
-                        </button>
-                    ))}
+                    }).map(item => {
+                        const isActive = activeTab === item.id
+                        return (
+                            <button
+                                key={item.id}
+                                onClick={() => {
+                                    setActiveTab(item.id as any)
+                                    window.location.hash = `#${item.id}`
+                                    try {
+                                        sessionStorage.setItem('jts_active_tab', item.id)
+                                        localStorage.setItem('jts_active_tab', item.id)
+                                    } catch (_) {}
+                                    setMobileMenuOpen(false)
+                                }}
+                                title={!(mobileMenuOpen || showFullSidebar) ? item.label : undefined}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: (mobileMenuOpen || showFullSidebar) ? '9px 12px' : '9px 0',
+                                    justifyContent: (mobileMenuOpen || showFullSidebar) ? 'flex-start' : 'center',
+                                    width: '100%',
+                                    border: 'none',
+                                    background: isActive ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                                    color: isActive ? '#818cf8' : 'var(--color-text-secondary)',
+                                    borderRadius: 'var(--radius-md)', fontSize: '0.875rem', fontWeight: 600,
+                                    cursor: 'pointer', transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    if (!isActive) {
+                                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                                        e.currentTarget.style.color = '#fff'
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    if (!isActive) {
+                                        e.currentTarget.style.background = 'transparent'
+                                        e.currentTarget.style.color = 'var(--color-text-secondary)'
+                                    }
+                                }}
+                            >
+                                <span style={{
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: 7,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0,
+                                    background: isActive ? 'rgba(99, 102, 241, 0.22)' : 'rgba(255, 255, 255, 0.04)',
+                                    color: isActive ? '#a5b4fc' : '#94a3b8',
+                                    transition: 'all 0.15s ease'
+                                }}>
+                                    {item.icon(isActive)}
+                                </span>
+                                {(mobileMenuOpen || showFullSidebar) && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
+                            </button>
+                        )
+                    })}
                 </nav>
 
                 {/* Pin/Collapse lock button inside meeting */}
@@ -776,15 +1167,36 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                         onClick={() => setSidebarExpanded(!sidebarExpanded)}
                         className="btn btn-ghost"
                         style={{
-                            display: 'flex', alignItems: 'center', gap: 10, padding: (mobileMenuOpen || showFullSidebar) ? '10px 14px' : '10px 0',
+                            display: 'flex', alignItems: 'center', gap: 10, padding: (mobileMenuOpen || showFullSidebar) ? '9px 12px' : '9px 0',
                             justifyContent: (mobileMenuOpen || showFullSidebar) ? 'flex-start' : 'center',
                             border: 'none', color: 'var(--color-text-muted)',
                             borderRadius: 'var(--radius-md)', fontSize: '0.8125rem', fontWeight: 600,
-                            cursor: 'pointer', margin: '8px 0', width: '100%'
+                            cursor: 'pointer', margin: '8px 0', width: '100%',
+                            transition: 'all 0.15s ease'
                         }}
                         title={sidebarExpanded ? "Collapse Sidebar" : "Pin Sidebar Open"}
                     >
-                        <span>{(mobileMenuOpen || showFullSidebar) ? (sidebarExpanded ? '◀ Collapse' : '📌 Pin Sidebar') : '▶'}</span>
+                        <span style={{
+                            width: 26,
+                            height: 26,
+                            borderRadius: 6,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: 'rgba(255, 255, 255, 0.04)',
+                            color: '#94a3b8',
+                            flexShrink: 0
+                        }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: sidebarExpanded ? 'rotate(-45deg)' : 'none', transition: 'transform 0.2s ease' }}>
+                                <line x1="12" y1="17" x2="12" y2="22"/>
+                                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.89A2 2 0 0 1 15 10.77V5a3 3 0 0 0-6 0v5.77a2 2 0 0 1-1.11 1.79l-1.78.89A2 2 0 0 0 5 15.24Z"/>
+                            </svg>
+                        </span>
+                        {(mobileMenuOpen || showFullSidebar) && (
+                            <span style={{ whiteSpace: 'nowrap' }}>
+                                {sidebarExpanded ? 'Collapse Sidebar' : 'Pin Sidebar'}
+                            </span>
+                        )}
                     </button>
                 )}
 
@@ -824,7 +1236,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
             </aside>
 
             {/* Main Content Pane */}
-            <main id="main-content" tabIndex={-1} style={{ flex: 1, overflowY: (activeTab === 'meeting' || activeTab === 'channel') ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', position: 'relative', outline: 'none' }}>
+            <main id="main-content" tabIndex={-1} style={{ flex: 1, overflowY: (activeTab === 'meeting' || activeTab === 'channel' || activeTab === 'chat') ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', position: 'relative', outline: 'none' }}>
                 {activeTab !== 'meeting' && (
                     <header style={{
                         position: 'sticky',
@@ -847,16 +1259,21 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                 onClick={() => setMobileMenuOpen(true)}
                                 className="btn-ghost"
                                 style={{
-                                    border: 'none', background: 'transparent', color: '#fff', fontSize: '1.25rem',
-                                    cursor: 'pointer', padding: '4px 8px', display: windowWidth < 768 ? 'flex' : 'none', 
+                                    border: 'none', background: 'transparent', color: '#fff',
+                                    cursor: 'pointer', padding: '6px 8px', display: windowWidth < 768 ? 'flex' : 'none', 
                                     alignItems: 'center', marginRight: 2
                                 }}
                                 aria-label="Open navigation menu"
                             >
-                                ☰
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                                    <line x1="3" y1="6" x2="21" y2="6" />
+                                    <line x1="3" y1="12" x2="21" y2="12" />
+                                    <line x1="3" y1="18" x2="21" y2="18" />
+                                </svg>
                             </button>
                             <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                                 {activeTab === 'dashboard' ? 'Dashboard' : 
+                                 activeTab === 'chat' ? 'Direct Messages' :
                                  activeTab === 'history' ? 'History Log' :
                                  activeTab === 'scheduled' ? 'Scheduled' :
                                  activeTab === 'organization' ? 'Organizations' :
@@ -868,8 +1285,14 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                             </span>
                         </div>
 
-                        {/* Right Side: Organization Switcher & User Profile Pill */}
+                        {/* Right Side: Status Indicator, Organization Switcher & User Profile Pill */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            {/* Live Presence & Custom Status Popover */}
+                            <UserStatusSelectorPopover
+                                token={token}
+                                currentUserId={userId}
+                                userName={profileName}
+                            />
                             {organizations.length > 0 && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <span className="hidden sm:inline" style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
@@ -895,7 +1318,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                     >
                                         {organizations.map((org: any) => (
                                             <option key={org._id} value={org._id} style={{ background: 'var(--color-surface-1)', color: '#fff' }}>
-                                                🏢 {org.name}
+                                                {org.name}
                                             </option>
                                         ))}
                                     </select>
@@ -955,6 +1378,8 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                 initialMeetingId={activeMeetingRoomId || meetingId || undefined}
                                 autoJoin={Boolean(activeMeetingRoomId || meetingId)}
                                 isAdminOrOwner={isOrgAdminOrOwner}
+                                planTier={currentOrg?.planTier || 'free'}
+                                onUpgradePlanRequest={() => setActiveTab('organization')}
                                 onLeave={handleLeaveMeetingRoom}
                             />
                         </div>
@@ -984,6 +1409,20 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                                         setShowDirectDialModal(true)
                                     }
                                 }}
+                            />
+                        </div>
+                    )}
+
+                    {/* DIRECT MESSAGES HUB (TEAMS / SLACK STYLE 1-ON-1 & GROUP DMS) */}
+                    {activeTab === 'chat' && (
+                        <div className="anim-fade-in" style={{ flex: 1, height: 'calc(100vh - 56px)', minHeight: 0, overflow: 'hidden' }}>
+                            <DirectMessagesHub
+                                token={token}
+                                currentUserId={userId}
+                                currentUserName={profileName}
+                                userPlan={organizations.find(o => o._id === currentOrgId)?.planTier || 'free'}
+                                onStartCall={(targetUserId, targetName, callType, targetAvatar, screenStream) => handleStartDirectCall(targetUserId, callType || 'audio', targetName, targetAvatar, screenStream)}
+                                onStartMeeting={(roomId: string) => handleLaunchMeeting(roomId)}
                             />
                         </div>
                     )}
@@ -1116,9 +1555,11 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                     <div className="modal-container anim-scale-in" style={{ maxWidth: 440 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span>📞</span> Direct Ring Colleague
+                                <IconPhone size={18} color="#6366f1" /> Direct Ring Colleague
                             </h3>
-                            <button onClick={() => setShowDirectDialModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', fontSize: '1.25rem', cursor: 'pointer' }}>×</button>
+                            <button onClick={() => setShowDirectDialModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <IconX size={16} />
+                            </button>
                         </div>
                         <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.4 }}>
                             Enter your colleague's User ID to ring their workspace with real-time audio chime signaling.
@@ -1136,7 +1577,7 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
                                 <button type="button" onClick={() => setShowDirectDialModal(false)} className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: '0.8125rem' }}>Cancel</button>
                                 <button type="submit" disabled={!directDialTarget.trim()} className="btn btn-primary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem' }}>
-                                    <span>📞</span> Call Now
+                                    <IconPhone size={15} color="#ffffff" /> Call Now
                                 </button>
                             </div>
                         </form>
@@ -1144,11 +1585,30 @@ export function AppWorkspace({ token, onLogout }: AppWorkspaceProps) {
                 </div>
             )}
 
-            {/* Global Incoming Call Ringing Modal */}
+            {/* Global Outgoing Call Ringing Modal (Caller Side) */}
+            <OutgoingCallModal
+                call={outgoingCall}
+                onCancel={handleCancelOutgoingCall}
+            />
+
+            {/* Global Incoming Call Ringing Modal (Callee Side) */}
             <IncomingCallModal
                 call={incomingCall}
                 onAccept={handleAcceptCall}
                 onDecline={handleDeclineCall}
+            />
+
+            {/* Live 1-on-1 Teams Audio Call Modal */}
+            <ActiveAudioCallModal
+                call={activeAudioCall}
+                onEndCall={handleEndActiveAudioCall}
+                onUpgradeToVideo={() => {
+                    if (activeAudioCall) {
+                        const mId = activeAudioCall.meetingId
+                        handleEndActiveAudioCall()
+                        handleLaunchMeeting(mId)
+                    }
+                }}
             />
         </div>
     )

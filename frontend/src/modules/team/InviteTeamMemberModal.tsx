@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { TeamRole } from './team.types'
+import { IconX, IconAlertTriangle, IconMessage, IconBuilding, IconCheck } from '../../components/common/Icons'
 
 export interface OrganizationMemberOption {
     userId: string
@@ -87,18 +89,30 @@ export function InviteTeamMemberModal({
 
     if (!open) return null
 
-    return (
-        <div style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.72)',
-            backdropFilter: 'blur(8px)',
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16
-        }}>
+    return createPortal(
+        <div
+            onClick={(e) => {
+                if (e.target === e.currentTarget && !submitting) {
+                    onClose()
+                }
+            }}
+            style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100vw',
+                height: '100vh',
+                backgroundColor: 'rgba(0, 0, 0, 0.72)',
+                backdropFilter: 'blur(8px)',
+                zIndex: 9999999,
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                padding: '24px 16px',
+                overflowY: 'auto',
+                boxSizing: 'border-box'
+            }}
+        >
             <div
                 className="glass-card anim-scale-in"
                 style={{
@@ -112,7 +126,8 @@ export function InviteTeamMemberModal({
                     overflow: 'hidden',
                     display: 'flex',
                     flexDirection: 'column',
-                    maxHeight: '90vh'
+                    maxHeight: 'calc(100vh - 48px)',
+                    marginBottom: 24
                 }}
             >
                 {/* Header */}
@@ -147,7 +162,7 @@ export function InviteTeamMemberModal({
                             justifyContent: 'center'
                         }}
                     >
-                        ✕
+                        <IconX size={16} />
                     </button>
                 </div>
 
@@ -176,10 +191,14 @@ export function InviteTeamMemberModal({
                                         cursor: 'pointer',
                                         background: mode === 'org' ? 'var(--color-primary)' : 'transparent',
                                         color: mode === 'org' ? '#fff' : 'var(--color-text-muted)',
-                                        transition: 'all 150ms ease'
+                                        transition: 'all 150ms ease',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: 6
                                     }}
                                 >
-                                    🏢 From Organization ({eligibleMembers.length})
+                                    <IconBuilding size={14} /> <span>From Organization ({eligibleMembers.length})</span>
                                 </button>
                                 <button
                                     type="button"
@@ -194,10 +213,14 @@ export function InviteTeamMemberModal({
                                         cursor: 'pointer',
                                         background: mode === 'manual' ? 'var(--color-primary)' : 'transparent',
                                         color: mode === 'manual' ? '#fff' : 'var(--color-text-muted)',
-                                        transition: 'all 150ms ease'
+                                        transition: 'all 150ms ease',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: 5
                                     }}
                                 >
-                                    ✉️ By Email / ID
+                                    <IconMessage size={13} /> By Email / ID
                                 </button>
                             </div>
                         )}
@@ -314,7 +337,7 @@ export function InviteTeamMemberModal({
                                                             </span>
                                                         )}
                                                         {isSelected && (
-                                                            <span style={{ color: '#818cf8', fontSize: '0.9rem', fontWeight: 700 }}>✓</span>
+                                                            <IconCheck size={14} color="#818cf8" strokeWidth={2.5} />
                                                         )}
                                                     </div>
                                                 </div>
@@ -382,9 +405,12 @@ export function InviteTeamMemberModal({
                                 border: '1px solid rgba(239, 68, 68, 0.25)',
                                 color: '#f87171',
                                 fontSize: '0.75rem',
-                                borderRadius: 8
+                                borderRadius: 8,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}>
-                                ⚠️ {error}
+                                <IconAlertTriangle size={14} color="#f87171" /> {error}
                             </div>
                         )}
                     </div>
@@ -412,6 +438,7 @@ export function InviteTeamMemberModal({
                     </div>
                 </form>
             </div>
-        </div>
+        </div>,
+        document.body
     )
 }

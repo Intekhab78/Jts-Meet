@@ -1,4 +1,5 @@
 import React from 'react'
+import { IconMonitor, IconX } from '../../../components/common/Icons'
 
 interface KeyboardShortcutsModalProps {
     isOpen: boolean
@@ -29,11 +30,11 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
             <div className="modal-container anim-scale-in" style={{ maxWidth: 480 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border)', paddingBottom: 14 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: '1.25rem' }}>⌨️</span>
+                        <IconMonitor size={18} color="#818cf8" />
                         <h3 style={{ fontSize: '1.125rem', fontWeight: 800, margin: 0, color: '#fff' }}>Keyboard Shortcuts</h3>
                     </div>
-                    <button onClick={onClose} className="btn-ghost" style={{ border: 'none', background: 'transparent', color: 'var(--color-text-muted)', fontSize: '1.25rem', cursor: 'pointer' }}>
-                        ✕
+                    <button onClick={onClose} className="btn-ghost" style={{ border: 'none', background: 'transparent', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4 }}>
+                        <IconX size={16} />
                     </button>
                 </div>
 

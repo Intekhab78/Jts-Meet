@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { OrganizationRole } from './organization.types'
+import { IconUser, IconX, IconInfo } from '../../components/common/Icons'
 
 interface InviteMemberModalProps {
     open: boolean
@@ -90,10 +91,11 @@ export function InviteMemberModal({ open, onClose, onInvite }: InviteMemberModal
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 justifyContent: 'center',
                 padding: '24px 16px',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                overflowY: 'auto'
             }}
             onClick={(e) => {
                 if (e.target === e.currentTarget && !submitting) {
@@ -115,7 +117,8 @@ export function InviteMemberModal({ open, onClose, onInvite }: InviteMemberModal
                     flexDirection: 'column',
                     maxHeight: 'min(88vh, 650px)',
                     overflow: 'hidden',
-                    position: 'relative'
+                    position: 'relative',
+                    marginBottom: 24
                 }}
             >
                 {/* MS Teams Style Header */}
@@ -141,7 +144,7 @@ export function InviteMemberModal({ open, onClose, onInvite }: InviteMemberModal
                             color: '#fff',
                             flexShrink: 0
                         }}>
-                            👤
+                            <IconUser size={18} color="#fff" />
                         </div>
                         <div>
                             <h2 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#fff', lineHeight: 1.2 }}>
@@ -171,7 +174,7 @@ export function InviteMemberModal({ open, onClose, onInvite }: InviteMemberModal
                             fontSize: '0.9rem'
                         }}
                     >
-                        ✕
+                        <IconX size={15} />
                     </button>
                 </div>
 
@@ -263,9 +266,13 @@ export function InviteMemberModal({ open, onClose, onInvite }: InviteMemberModal
                                 border: '1px solid rgba(239, 68, 68, 0.35)',
                                 color: '#fca5a5',
                                 fontSize: '0.8rem',
-                                borderRadius: 8
+                                borderRadius: 8,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}>
-                                ⚠️ {error}
+                                <IconInfo size={14} color="#f87171" />
+                                <span>{error}</span>
                             </div>
                         )}
                     </div>
@@ -314,7 +321,7 @@ export function InviteMemberModal({ open, onClose, onInvite }: InviteMemberModal
                                 boxShadow: '0 4px 14px rgba(91, 95, 199, 0.4)'
                             }}
                         >
-                            {submitting ? 'Inviting...' : 'Send Invitation ➔'}
+                            {submitting ? 'Inviting...' : 'Send Invitation \u2192'}
                         </button>
                     </div>
                 </form>

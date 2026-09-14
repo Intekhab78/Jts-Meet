@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en" class="dark">
+
+<head>
+  <meta charset="utf-8" />
+  <script>
+    (function() {
+      window.addEventListener('unhandledrejection', function(event) {
+        var msg = (event && event.reason && (event.reason.message || (typeof event.reason === 'string' ? event.reason : ''))) || '';
+        if (
+          msg.includes('message channel closed') ||
+          msg.includes('asynchronous response') ||
+          msg.includes('Extension context invalidated')
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+      }, true);
+
+      window.addEventListener('error', function(event) {
+        var msg = (event && (event.message || (event.error && event.error.message))) || '';
+        if (
+          msg.includes('message channel closed') ||
+          msg.includes('asynchronous response') ||
+          msg.includes('Extension context invalidated')
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return true;
+        }
+      }, true);
+
+      var origError = console.error;
+      console.error = function() {
+        var argStr = '';
+        try {
+          argStr = Array.prototype.slice.call(arguments).map(function(a) {
+            return typeof a === 'object' ? (a?.message || JSON.stringify(a) || '') : String(a);
+          }).join(' ');
+        } catch (_) {}
+
+        if (
+          argStr.includes('message channel closed') ||
+          argStr.includes('asynchronous response') ||
+          argStr.includes('Extension context invalidated')
+        ) {
+          return;
+        }
+        return origError.apply(console, arguments);
+      };
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="JTS Meet — Professional video conferencing built for teams. Crystal-clear video, seamless collaboration, enterprise-grade security." />
+  <meta name="theme-color" content="#0a0b0f" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="JTS Meet — Professional Video Conferencing" />
+  <meta property="og:description" content="Crystal-clear video, seamless collaboration, enterprise-grade security." />
+  <meta property="og:type" content="website" />
+
+  <title>JTS Meet — Professional Video Conferencing</title>
+
+  <!-- PWA & Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    rel="stylesheet"
+  />
+  <script type="module" crossorigin src="/assets/index-CUI5ZZkV.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/jsx-runtime-Crrc2OWt.js">
+  <link rel="stylesheet" crossorigin href="/assets/index-D9EcsyuT.css">
+</head>
+
+<body>
+  <div id="root"></div>
+  <!-- Google MediaPipe for AI Person Segmentation & Virtual Backgrounds -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+</body>
+
+</html>

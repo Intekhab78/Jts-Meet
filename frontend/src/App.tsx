@@ -14,8 +14,8 @@ import { API_BASE } from './config'
 type ViewType = 'landing' | 'login' | 'register' | 'forgot-password' | 'reset-password' | 'email-verification' | 'otp-verification' | 'app' | 'guest-preview' | 'guest-waiting' | 'microsoft-callback' | 'google-callback'
 
 const getMeetingIdFromUrl = (): string | null => {
-    // 1. Pathname /meet/:id
-    const match = window.location.pathname.match(/^\/meet\/([a-zA-Z0-9\-_]+)/)
+    // 1. Pathname /meet/:id or /join/:id
+    const match = window.location.pathname.match(/^\/(?:meet|join)\/([a-zA-Z0-9\-_]+)/)
     if (match) return match[1]
 
     // 2. Hash /#meeting?id=xxx or #meeting?id=xxx
@@ -40,7 +40,7 @@ const getMeetingIdFromUrl = (): string | null => {
 
     // 4. Stored active meeting ID ONLY if currently on a meeting route
     try {
-        if (window.location.pathname.startsWith('/meet') || window.location.hash.startsWith('#meeting')) {
+        if (window.location.pathname.startsWith('/meet') || window.location.pathname.startsWith('/join') || window.location.hash.startsWith('#meeting')) {
             const active = sessionStorage.getItem('jts_active_meeting_id')
             if (active) return active
         }
@@ -196,7 +196,7 @@ function App() {
 
     // Cleanup stale meeting data if at root landing page
     React.useEffect(() => {
-        const isMeetingRoute = window.location.pathname.startsWith('/meet') || window.location.hash.startsWith('#meeting') || window.location.search.includes('id=')
+        const isMeetingRoute = window.location.pathname.startsWith('/meet') || window.location.pathname.startsWith('/join') || window.location.hash.startsWith('#meeting') || window.location.search.includes('id=')
         if (!isMeetingRoute) {
             try {
                 localStorage.removeItem('jts_guest_token')
@@ -228,7 +228,7 @@ function App() {
                 return
             }
 
-            if (currentMeetId || window.location.pathname.startsWith('/meet') || (window.location.hash.startsWith('#meeting') && currentMeetId)) {
+            if (currentMeetId || window.location.pathname.startsWith('/meet') || window.location.pathname.startsWith('/join') || (window.location.hash.startsWith('#meeting') && currentMeetId)) {
                 const isRefreshed = sessionStorage.getItem('jts_meeting_joined') === 'true'
                 const activeMeetingInSession = sessionStorage.getItem('jts_active_meeting_id')
                 if (savedGuest && isRefreshed && (!activeMeetingInSession || activeMeetingInSession === currentMeetId)) {
@@ -348,7 +348,7 @@ function App() {
     }
 
     const currentMeetId = meetingIdFromUrl || getMeetingIdFromUrl()
-    const isMeetingRoute = !!currentMeetId || window.location.pathname.startsWith('/meet') || (window.location.hash.startsWith('#meeting') && !!currentMeetId)
+    const isMeetingRoute = !!currentMeetId || window.location.pathname.startsWith('/meet') || window.location.pathname.startsWith('/join') || (window.location.hash.startsWith('#meeting') && !!currentMeetId)
 
     // Only render guest MeetingRoom if user is on a valid meeting route WITH a meetingId
     if (!token && isMeetingRoute && (guestToken || currentMeetId)) {
@@ -382,7 +382,7 @@ function App() {
             <MeetingProvider>
                 <WebRTCProvider>
                     <ErrorBoundary fallbackTitle="Workspace Error">
-                        <AppWorkspace token={token} onLogout={handleLogout} />
+                        <AppWorkspace token={token} initialMeetingId={currentMeetId || undefined} onLogout={handleLogout} />
                     </ErrorBoundary>
                 </WebRTCProvider>
             </MeetingProvider>

@@ -1,0 +1,106 @@
+[
+  {
+    "planId": "free",
+    "name": "Starter Free",
+    "badge": "Free Forever",
+    "description": "Perfect for small teams, agile squads, and quick ad-hoc conferences.",
+    "priceMonthly": 0,
+    "priceYearly": 0,
+    "currency": "USD",
+    "limits": {
+      "maxSeats": 15,
+      "maxStorageGb": 5,
+      "maxMeetingDurationMins": 45,
+      "maxParticipantsPerCall": 25
+    },
+    "features": {
+      "aiSummary": false,
+      "cloudRecording": false,
+      "whiteboard": true,
+      "customBranding": false,
+      "ssoLogin": false,
+      "prioritySupport": false
+    },
+    "featureBullets": [
+      "Up to 15 Member Seats",
+      "5 GB Cloud Storage Vault",
+      "45-Minute Meeting Duration",
+      "Collaborative Interactive Whiteboard",
+      "HD WebRTC Peer Video & Audio"
+    ],
+    "isPublic": true,
+    "isDefault": true,
+    "status": "active",
+    "sortOrder": 1
+  },
+  {
+    "planId": "starter",
+    "name": "Growth Pro",
+    "badge": "Most Popular",
+    "description": "Ideal for fast-scaling companies needing AI summaries and cloud recording.",
+    "priceMonthly": 49,
+    "priceYearly": 470,
+    "currency": "USD",
+    "limits": {
+      "maxSeats": 50,
+      "maxStorageGb": 50,
+      "maxMeetingDurationMins": 0,
+      "maxParticipantsPerCall": 100
+    },
+    "features": {
+      "aiSummary": true,
+      "cloudRecording": true,
+      "whiteboard": true,
+      "customBranding": true,
+      "ssoLogin": false,
+      "prioritySupport": true
+    },
+    "featureBullets": [
+      "Up to 50 Member Seats",
+      "50 GB High-Speed Cloud Recording Vault",
+      "Unlimited Meeting Duration (24/7)",
+      "Automatic AI Meeting Summaries & Action Items",
+      "Cloud Recording & MP4 Downloads",
+      "Custom Workspace Branding & Channels"
+    ],
+    "isPublic": true,
+    "isDefault": false,
+    "status": "active",
+    "sortOrder": 2
+  },
+  {
+    "planId": "enterprise",
+    "name": "Enterprise Master",
+    "badge": "Custom & Scalable",
+    "description": "Dedicated enterprise infrastructure with SSO, compliance, and limitless scale.",
+    "priceMonthly": 199,
+    "priceYearly": 1990,
+    "currency": "USD",
+    "limits": {
+      "maxSeats": 500,
+      "maxStorageGb": 500,
+      "maxMeetingDurationMins": 0,
+      "maxParticipantsPerCall": 500
+    },
+    "features": {
+      "aiSummary": true,
+      "cloudRecording": true,
+      "whiteboard": true,
+      "customBranding": true,
+      "ssoLogin": true,
+      "prioritySupport": true
+    },
+    "featureBullets": [
+      "Up to 500+ Member Seats",
+      "500 GB Dedicated Enterprise Cloud Storage",
+      "Unlimited Multi-Room HD Video & Breakouts",
+      "Enterprise AI Note-taker & Real-Time Transcripts",
+      "SAML / Google Workspace SSO Integration",
+      "Dedicated 99.99% SLA & 24/7 Priority Support"
+    ],
+    "isPublic": true,
+    "isDefault": false,
+    "status": "active",
+    "sortOrder": 3
+  }
+]

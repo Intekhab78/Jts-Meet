@@ -1,4 +1,5 @@
 import React from 'react'
+import { IconMonitor, IconX } from '../../../components/common/Icons'
 
 export type MeetingLayoutMode = 'auto' | 'tiled' | 'spotlight' | 'sidebar'
 
@@ -101,7 +102,7 @@ export function LayoutSwitcherModal({
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 16, borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: '1.25rem' }}>📐</span>
+                        <IconMonitor size={20} color="#38bdf8" />
                         <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 700, color: '#fff' }}>
                             Change Layout
                         </h3>
@@ -109,9 +110,9 @@ export function LayoutSwitcherModal({
                     <button 
                         onClick={onClose} 
                         className="btn-ghost" 
-                        style={{ border: 'none', background: 'transparent', color: 'rgba(255, 255, 255, 0.6)', fontSize: '1.25rem', cursor: 'pointer', padding: 4 }}
+                        style={{ border: 'none', background: 'transparent', color: 'rgba(255, 255, 255, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4 }}
                     >
-                        ✕
+                        <IconX size={16} />
                     </button>
                 </div>
 

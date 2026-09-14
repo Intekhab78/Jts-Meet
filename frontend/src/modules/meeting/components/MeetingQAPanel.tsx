@@ -1,5 +1,19 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Socket } from 'socket.io-client'
+import {
+    IconHelp,
+    IconCheck,
+    IconSearch,
+    IconDownload,
+    IconTrash,
+    IconX,
+    IconZap,
+    IconClock,
+    IconPin,
+    IconMic,
+    IconUser,
+    IconMessage
+} from '../../../components/common/Icons'
 
 export interface QAQuestion {
     id: string
@@ -279,10 +293,9 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '0.9rem',
                         boxShadow: '0 2px 8px rgba(99, 102, 241, 0.35)'
                     }}>
-                        ❓
+                        <IconHelp size={16} color="#ffffff" />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#ffffff', letterSpacing: '-0.01em' }}>
@@ -307,9 +320,13 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                 background: 'rgba(16, 185, 129, 0.15)',
                                 color: '#34d399',
                                 fontWeight: 700,
-                                border: '1px solid rgba(16, 185, 129, 0.25)'
+                                border: '1px solid rgba(16, 185, 129, 0.25)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3
                             }}>
-                                ✓ {answeredCount}
+                                <IconCheck size={10} color="#34d399" />
+                                <span>{answeredCount}</span>
                             </span>
                         )}
                     </div>
@@ -331,11 +348,10 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            fontSize: '0.8125rem',
                             transition: 'all 0.15s ease'
                         }}
                     >
-                        🔍
+                        <IconSearch size={13} />
                     </button>
 
                     {questions.length > 0 && (
@@ -354,11 +370,10 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: '0.8125rem',
                                 transition: 'all 0.15s ease'
                             }}
                         >
-                            📥
+                            <IconDownload size={13} />
                         </button>
                     )}
 
@@ -378,11 +393,10 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: '0.8125rem',
                                 transition: 'all 0.15s ease'
                             }}
                         >
-                            🧹
+                            <IconTrash size={13} />
                         </button>
                     )}
 
@@ -394,7 +408,6 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                             background: 'transparent',
                             border: 'none',
                             color: '#94a3b8',
-                            fontSize: '1.1rem',
                             cursor: 'pointer',
                             padding: '4px 6px',
                             borderRadius: 6,
@@ -406,7 +419,7 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                         onMouseEnter={e => e.currentTarget.style.color = '#fff'}
                         onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
                     >
-                        ✕
+                        <IconX size={16} />
                     </button>
                 </div>
             </div>
@@ -427,7 +440,9 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                         border: '1px solid rgba(255, 255, 255, 0.15)',
                         gap: 8
                     }}>
-                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>🔍</span>
+                        <span style={{ display: 'flex', alignItems: 'center' }}>
+                            <IconSearch size={13} color="#64748b" />
+                        </span>
                         <input
                             type="text"
                             value={searchQuery}
@@ -448,9 +463,9 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setSearchQuery('')}
-                                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.75rem' }}
+                                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}
                             >
-                                ✕
+                                <IconX size={12} />
                             </button>
                         )}
                     </div>
@@ -519,10 +534,14 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                             cursor: 'pointer',
                             background: sortBy === 'top' ? '#6366f1' : 'transparent',
                             color: sortBy === 'top' ? '#ffffff' : '#94a3b8',
-                            transition: 'all 0.15s ease'
+                            transition: 'all 0.15s ease',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
                         }}
                     >
-                        🔥 Top
+                        <IconZap size={11} />
+                        <span>Top</span>
                     </button>
                     <button
                         type="button"
@@ -537,10 +556,14 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                             cursor: 'pointer',
                             background: sortBy === 'recent' ? '#6366f1' : 'transparent',
                             color: sortBy === 'recent' ? '#ffffff' : '#94a3b8',
-                            transition: 'all 0.15s ease'
+                            transition: 'all 0.15s ease',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
                         }}
                     >
-                        ⏱️ Recent
+                        <IconClock size={11} />
+                        <span>Recent</span>
                     </button>
                 </div>
             </div>
@@ -589,10 +612,14 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                 fontSize: '0.6875rem',
                                 fontWeight: 700,
                                 cursor: 'pointer',
-                                flexShrink: 0
+                                flexShrink: 0,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
                             }}
                         >
-                            Done ✓
+                            <IconCheck size={11} />
+                            <span>Done</span>
                         </button>
                     )}
                 </div>
@@ -630,7 +657,7 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                             fontSize: '1.5rem',
                             marginBottom: 12
                         }}>
-                            💬
+                            <IconMessage size={24} color="#818cf8" />
                         </div>
                         <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#f1f5f9', margin: '0 0 4px 0' }}>
                             {searchQuery ? 'No matching questions' : filter !== 'all' ? `No ${filter} questions` : 'No questions yet'}
@@ -685,7 +712,8 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                                 alignItems: 'center',
                                                 gap: 3
                                             }}>
-                                                📌 Pinned
+                                                <IconPin size={10} color="#a5b4fc" />
+                                                <span>Pinned</span>
                                             </span>
                                         )}
                                         {q.isLiveAnswering && (
@@ -700,7 +728,8 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                                 alignItems: 'center',
                                                 gap: 3
                                             }}>
-                                                🎙️ Answering Live
+                                                <IconMic size={10} color="#f87171" />
+                                                <span>Answering Live</span>
                                             </span>
                                         )}
                                         {q.isAnswered && (
@@ -715,7 +744,8 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                                 alignItems: 'center',
                                                 gap: 3
                                             }}>
-                                                ✓ Answered
+                                                <IconCheck size={10} color="#34d399" />
+                                                <span>Answered</span>
                                             </span>
                                         )}
                                     </div>
@@ -739,7 +769,7 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                                 justifyContent: 'center',
                                                 flexShrink: 0
                                             }}>
-                                                {q.isAnonymous ? '🎭' : (q.authorName ? q.authorName[0].toUpperCase() : 'U')}
+                                                {q.isAnonymous ? <IconUser size={11} color="#cbd5e1" /> : (q.authorName ? q.authorName[0].toUpperCase() : 'U')}
                                             </div>
                                             <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                 {q.isAnonymous ? 'Anonymous' : q.authorName}
@@ -802,7 +832,10 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                         lineHeight: 1.4
                                     }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, fontSize: '0.6875rem', color: '#34d399', fontWeight: 700 }}>
-                                            <span>💬 Answered by {q.answeredBy || 'Host'}</span>
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                <IconMessage size={11} color="#34d399" />
+                                                <span>Answered by {q.answeredBy || 'Host'}</span>
+                                            </span>
                                             {q.answeredAt && <span style={{ color: '#64748b' }}>• {formatTimeAgo(q.answeredAt)}</span>}
                                         </div>
                                         <div style={{ color: '#ffffff' }}>{q.answerText}</div>
@@ -827,10 +860,14 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                                         fontWeight: 600,
                                                         padding: '3px 6px',
                                                         borderRadius: 4,
-                                                        cursor: 'pointer'
+                                                        cursor: 'pointer',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 4
                                                     }}
                                                 >
-                                                    📌 {q.isPinned ? 'Unpin' : 'Pin'}
+                                                    <IconPin size={11} />
+                                                    <span>{q.isPinned ? 'Unpin' : 'Pin'}</span>
                                                 </button>
 
                                                 {/* Answer Live Toggle */}
@@ -846,10 +883,14 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                                         fontWeight: 600,
                                                         padding: '3px 6px',
                                                         borderRadius: 4,
-                                                        cursor: 'pointer'
+                                                        cursor: 'pointer',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 4
                                                     }}
                                                 >
-                                                    🎙️ {q.isLiveAnswering ? 'Stop Live' : 'Live'}
+                                                    <IconMic size={11} />
+                                                    <span>{q.isLiveAnswering ? 'Stop Live' : 'Live'}</span>
                                                 </button>
 
                                                 {/* Reply in Text */}
@@ -873,10 +914,14 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                                         fontWeight: 600,
                                                         padding: '3px 6px',
                                                         borderRadius: 4,
-                                                        cursor: 'pointer'
+                                                        cursor: 'pointer',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 4
                                                     }}
                                                 >
-                                                    💬 Reply
+                                                    <IconMessage size={11} />
+                                                    <span>Reply</span>
                                                 </button>
 
                                                 {/* Mark Resolved Toggle */}
@@ -892,10 +937,20 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                                         fontWeight: 600,
                                                         padding: '3px 6px',
                                                         borderRadius: 4,
-                                                        cursor: 'pointer'
+                                                        cursor: 'pointer',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 4
                                                     }}
                                                 >
-                                                    {q.isAnswered ? '✓ Resolved' : 'Mark Done'}
+                                                    {q.isAnswered ? (
+                                                        <>
+                                                            <IconCheck size={11} color="#34d399" />
+                                                            <span>Resolved</span>
+                                                        </>
+                                                    ) : (
+                                                        <span>Mark Done</span>
+                                                    )}
                                                 </button>
                                             </>
                                         )}
@@ -911,15 +966,16 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                                 background: 'transparent',
                                                 border: 'none',
                                                 color: '#64748b',
-                                                fontSize: '0.75rem',
                                                 padding: '2px 4px',
                                                 borderRadius: 4,
-                                                cursor: 'pointer'
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center'
                                             }}
                                             onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
                                             onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
                                         >
-                                            🗑️
+                                            <IconTrash size={12} />
                                         </button>
                                     )}
                                 </div>
@@ -1065,7 +1121,7 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                 onChange={e => setIsAnonymous(e.target.checked)}
                                 style={{ accentColor: '#6366f1', cursor: 'pointer', width: 14, height: 14 }}
                             />
-                            <span>Ask anonymously 🎭</span>
+                            <span>Ask anonymously</span>
                         </label>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1095,7 +1151,7 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                                 }}
                             >
                                 <span>Ask</span>
-                                <span>➔</span>
+                                <span>&rarr;</span>
                             </button>
                         </div>
                     </div>
@@ -1121,7 +1177,8 @@ export const MeetingQAPanel: React.FC<MeetingQAPanelProps> = ({
                     gap: 6,
                     zIndex: 100
                 }}>
-                    <span>✓</span> Q&amp;A CSV Downloaded!
+                    <IconCheck size={13} color="#fff" />
+                    <span>Q&amp;A CSV Downloaded!</span>
                 </div>
             )}
         </div>

@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { API_BASE } from '../../../config'
+import {
+    IconInfo,
+    IconShield,
+    IconVideo,
+    IconVideoOff,
+    IconMic,
+    IconMicOff
+} from '../../../components/common/Icons'
 
 interface GuestJoinPageProps {
     meetingId: string
@@ -28,6 +36,7 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
 
     // Media states
     const videoRef = useRef<HTMLVideoElement>(null)
+    const streamRef = useRef<MediaStream | null>(null)
     const [stream, setStream] = useState<MediaStream | null>(null)
     const [cameraOn, setCameraOn] = useState(true)
     const [micOn, setMicOn] = useState(true)
@@ -71,25 +80,30 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
         fetchMeetingDetails()
     }, [meetingId])
 
-    // Load available hardware devices
     const getDevices = async () => {
         try {
-            const devices = await navigator.mediaDevices.enumerateDevices()
-            const video = devices.filter(d => d.kind === 'videoinput')
-            const audio = devices.filter(d => d.kind === 'audioinput')
-            setVideoDevices(video)
-            setAudioDevices(audio)
-            if (video.length > 0 && !selectedVideoId) setSelectedVideoId(video[0].deviceId)
-            if (audio.length > 0 && !selectedAudioId) setSelectedAudioId(audio[0].deviceId)
+            const devs = await navigator.mediaDevices.enumerateDevices()
+            setVideoDevices(devs.filter(d => d.kind === 'videoinput'))
+            setAudioDevices(devs.filter(d => d.kind === 'audioinput'))
         } catch (err) {
-            // Ignore
+            console.error('Failed to enumerate devices:', err)
         }
     }
 
     // Setup local media stream preview
     const startPreview = async (videoDeviceId = '', audioDeviceId = '') => {
-        if (stream) {
-            stream.getTracks().forEach(t => t.stop())
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(t => {
+                try { t.stop() } catch {}
+            })
+            streamRef.current = null
+        }
+        if (!cameraOn && !micOn) {
+            setStream(null)
+            if (videoRef.current) {
+                videoRef.current.srcObject = null
+            }
+            return
         }
         try {
             const constraints: MediaStreamConstraints = {
@@ -97,9 +111,10 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                 audio: micOn ? (audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true) : false
             }
             const media = await navigator.mediaDevices.getUserMedia(constraints)
+            streamRef.current = media
             setStream(media)
-            if (videoRef.current && cameraOn) {
-                videoRef.current.srcObject = media
+            if (videoRef.current) {
+                videoRef.current.srcObject = cameraOn ? media : null
             }
             // Update the device lists now that permission is active
             getDevices()
@@ -111,22 +126,38 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
     useEffect(() => {
         startPreview(selectedVideoId, selectedAudioId)
         return () => {
-            if (stream) {
-                stream.getTracks().forEach(t => t.stop())
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(t => {
+                    try { t.stop() } catch {}
+                })
+                streamRef.current = null
             }
         }
-    }, [cameraOn, micOn])
+    }, [cameraOn, micOn, selectedVideoId, selectedAudioId])
 
     useEffect(() => {
         const initDevices = async () => {
             try {
-                await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+                const tempMedia = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+                // Stop the temporary stream tracks immediately so hardware LED turns off
+                tempMedia.getTracks().forEach(t => {
+                    try { t.stop() } catch {}
+                })
                 await getDevices()
             } catch (err) {
                 await getDevices()
             }
         }
         initDevices()
+
+        return () => {
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(t => {
+                    try { t.stop() } catch {}
+                })
+                streamRef.current = null
+            }
+        }
     }, [])
 
     const handleJoinRequest = async (e: React.FormEvent) => {
@@ -187,7 +218,9 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
         return (
             <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-base)', color: '#fff', padding: 24 }}>
                 <div className="glass-card" style={{ maxWidth: 440, padding: 36, textAlign: 'center', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                    <span style={{ fontSize: '3rem', display: 'block', marginBottom: 16 }}>⚠️</span>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                        <IconInfo size={44} color="#f87171" />
+                    </div>
                     <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: 12, color: '#f87171' }}>Meeting Unavailable</h3>
                     <p style={{ color: 'var(--color-text-muted)', marginBottom: 24, fontSize: '0.9375rem', lineHeight: 1.5 }}>{errorInfo}</p>
                     <button
@@ -216,7 +249,9 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
         return (
             <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-base)', color: '#fff', padding: 24 }}>
                 <div className="glass-card" style={{ maxWidth: 440, padding: '40px 36px', textAlign: 'center', border: '1px solid rgba(239, 68, 68, 0.2)', background: 'rgba(15, 17, 23, 0.65)', backdropFilter: 'blur(20px)' }}>
-                    <span style={{ fontSize: '3.5rem', display: 'block', marginBottom: 20 }}>🚫</span>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+                        <IconShield size={48} color="#f87171" />
+                    </div>
                     <h3 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: 12, color: '#f87171' }}>Join Restricted</h3>
                     <p style={{ color: 'var(--color-text-muted)', marginBottom: 28, fontSize: '0.9375rem', lineHeight: 1.5 }}>
                         This meeting is restricted to organization members. External guests are not allowed to join this session.
@@ -341,14 +376,26 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                                 />
                             ) : (
                                 <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
-                                    <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>📷</div>
+                                    <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <IconVideoOff size={28} color="rgba(255,255,255,0.4)" />
+                                    </div>
                                     <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>Camera is turned off</span>
                                 </div>
                             )}
 
                             {/* Mic indicator */}
                             <div style={{ position: 'absolute', bottom: 12, left: 12, background: 'rgba(0,0,0,0.7)', padding: '6px 10px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', fontWeight: 600 }}>
-                                <span>{micOn ? '🎙️ Mic Active' : '🔇 Muted'}</span>
+                                {micOn ? (
+                                    <>
+                                        <IconMic size={13} color="#34d399" />
+                                        <span>Mic Active</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <IconMicOff size={13} color="#f87171" />
+                                        <span>Muted</span>
+                                    </>
+                                )}
                             </div>
                         </div>
 
@@ -364,8 +411,9 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                                     border: '1px solid ' + (cameraOn ? 'rgba(255,255,255,0.08)' : 'rgba(239,68,68,0.3)'),
                                     cursor: 'pointer', transition: 'all 0.2s'
                                 }}
+                                title={cameraOn ? 'Turn Camera Off' : 'Turn Camera On'}
                             >
-                                🎥
+                                {cameraOn ? <IconVideo size={18} /> : <IconVideoOff size={18} />}
                             </button>
                             <button
                                 onClick={() => setMicOn(!micOn)}
@@ -377,8 +425,9 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                                     border: '1px solid ' + (micOn ? 'rgba(255,255,255,0.08)' : 'rgba(239,68,68,0.3)'),
                                     cursor: 'pointer', transition: 'all 0.2s'
                                 }}
+                                title={micOn ? 'Mute Microphone' : 'Unmute Microphone'}
                             >
-                                🎙️
+                                {micOn ? <IconMic size={18} /> : <IconMicOff size={18} />}
                             </button>
                         </div>
                     </div>

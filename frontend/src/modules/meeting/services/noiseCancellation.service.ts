@@ -45,27 +45,53 @@ class NoiseCancellationService {
             this.audioCtx = ctx
             this.originalTrack = rawTrack
 
+            // Ensure AudioContext is active (handles browser autoplay policy)
+            if (ctx.state === 'suspended') {
+                ctx.resume().catch(() => {})
+                const resumeCtx = () => {
+                    if (this.audioCtx && this.audioCtx.state === 'suspended') {
+                        this.audioCtx.resume().catch(() => {})
+                    }
+                    window.removeEventListener('click', resumeCtx)
+                    window.removeEventListener('keydown', resumeCtx)
+                    window.removeEventListener('touchstart', resumeCtx)
+                }
+                window.addEventListener('click', resumeCtx, { once: true })
+                window.addEventListener('keydown', resumeCtx, { once: true })
+                window.addEventListener('touchstart', resumeCtx, { once: true })
+            }
+
             const sourceStream = new MediaStream([rawTrack])
             const source = ctx.createMediaStreamSource(sourceStream)
             this.sourceNode = source
 
-            // 1. Steep High-Pass Filter: Cuts out fans, AC compressor, desk vibrations (<140Hz)
-            const highpass = ctx.createBiquadFilter()
-            highpass.type = 'highpass'
-            highpass.frequency.setValueAtTime(mode === 'high' ? 140 : 100, ctx.currentTime)
-            highpass.Q.setValueAtTime(0.9, ctx.currentTime)
+            // 1. Steep High-Pass Filter: Cuts ceiling fan wind buffeting & table vibrations (<180Hz)
+            const highpass1 = ctx.createBiquadFilter()
+            highpass1.type = 'highpass'
+            highpass1.frequency.setValueAtTime(mode === 'high' ? 180 : 130, ctx.currentTime)
+            highpass1.Q.setValueAtTime(1.0, ctx.currentTime)
 
-            // 2. Second stage steep filter for max rumble removal in high mode
+            // 2. Second stage steep filter for complete elimination of fan blade turbulence
             const highpass2 = ctx.createBiquadFilter()
             highpass2.type = 'highpass'
-            highpass2.frequency.setValueAtTime(mode === 'high' ? 120 : 80, ctx.currentTime)
-            highpass2.Q.setValueAtTime(0.7, ctx.currentTime)
+            highpass2.frequency.setValueAtTime(mode === 'high' ? 160 : 110, ctx.currentTime)
+            highpass2.Q.setValueAtTime(0.8, ctx.currentTime)
 
-            // 3. Electrical 50/60Hz Hum Notch Filter
-            const humNotch = ctx.createBiquadFilter()
-            humNotch.type = 'notch'
-            humNotch.frequency.setValueAtTime(60, ctx.currentTime)
-            humNotch.Q.setValueAtTime(4.0, ctx.currentTime)
+            // 3. Indian & Global Electrical Fan Motor Hum Notch Filters (50Hz, 100Hz & 60Hz)
+            const hum50Hz = ctx.createBiquadFilter()
+            hum50Hz.type = 'notch'
+            hum50Hz.frequency.setValueAtTime(50, ctx.currentTime)
+            hum50Hz.Q.setValueAtTime(6.0, ctx.currentTime)
+
+            const hum100Hz = ctx.createBiquadFilter()
+            hum100Hz.type = 'notch'
+            hum100Hz.frequency.setValueAtTime(100, ctx.currentTime)
+            hum100Hz.Q.setValueAtTime(5.0, ctx.currentTime)
+
+            const hum60Hz = ctx.createBiquadFilter()
+            hum60Hz.type = 'notch'
+            hum60Hz.frequency.setValueAtTime(60, ctx.currentTime)
+            hum60Hz.Q.setValueAtTime(5.0, ctx.currentTime)
 
             // 4. Keyboard Clack & Sharp Click Dampener (3200Hz)
             const clickNotch = ctx.createBiquadFilter()
@@ -84,18 +110,18 @@ class NoiseCancellationService {
             const voiceBoost = ctx.createBiquadFilter()
             voiceBoost.type = 'peaking'
             voiceBoost.frequency.setValueAtTime(1800, ctx.currentTime)
-            voiceBoost.gain.setValueAtTime(3.5, ctx.currentTime)
+            voiceBoost.gain.setValueAtTime(3.0, ctx.currentTime)
             voiceBoost.Q.setValueAtTime(1.0, ctx.currentTime)
 
-            // 7. Dynamic Spectral Compressor: Suppresses room reverberation and boosts soft speech
+            // 7. Dynamic Spectral Compressor: Smooths vocal dynamics while pushing down low rumble
             const compressor = ctx.createDynamicsCompressor()
-            compressor.threshold.setValueAtTime(mode === 'high' ? -38 : -30, ctx.currentTime)
-            compressor.knee.setValueAtTime(14, ctx.currentTime)
-            compressor.ratio.setValueAtTime(mode === 'high' ? 14 : 8, ctx.currentTime)
-            compressor.attack.setValueAtTime(0.002, ctx.currentTime)
-            compressor.release.setValueAtTime(0.14, ctx.currentTime)
+            compressor.threshold.setValueAtTime(mode === 'high' ? -36 : -28, ctx.currentTime)
+            compressor.knee.setValueAtTime(12, ctx.currentTime)
+            compressor.ratio.setValueAtTime(mode === 'high' ? 12 : 6, ctx.currentTime)
+            compressor.attack.setValueAtTime(0.003, ctx.currentTime)
+            compressor.release.setValueAtTime(0.12, ctx.currentTime)
 
-            // 8. Voice Activity Detection (VAD) Gate Gain
+            // 8. Voice Activity Detection (VAD) Gate Gain (Silences fan when not talking)
             const gateGain = ctx.createGain()
             gateGain.gain.setValueAtTime(1.0, ctx.currentTime)
             this.gateGainNode = gateGain
@@ -103,15 +129,17 @@ class NoiseCancellationService {
             // 9. High-resolution Analyser for Vocal Energy Band Monitoring
             const analyser = ctx.createAnalyser()
             analyser.fftSize = 512
-            analyser.smoothingTimeConstant = 0.25
+            analyser.smoothingTimeConstant = 0.2
             this.analyserNode = analyser
 
             // Connect Audio Pipeline Graph:
-            // Source -> Highpass1 -> Highpass2 -> HumNotch -> ClickNotch -> Lowpass -> VoiceBoost -> Compressor -> GateGain -> Destination
-            source.connect(highpass)
-            highpass.connect(highpass2)
-            highpass2.connect(humNotch)
-            humNotch.connect(clickNotch)
+            // Source -> Highpass1 -> Highpass2 -> Hum50 -> Hum100 -> Hum60 -> ClickNotch -> Lowpass -> VoiceBoost -> Compressor -> GateGain -> Destination
+            source.connect(highpass1)
+            highpass1.connect(highpass2)
+            highpass2.connect(hum50Hz)
+            hum50Hz.connect(hum100Hz)
+            hum100Hz.connect(hum60Hz)
+            hum60Hz.connect(clickNotch)
             clickNotch.connect(lowpass)
             lowpass.connect(voiceBoost)
             voiceBoost.connect(compressor)
@@ -122,7 +150,7 @@ class NoiseCancellationService {
             gateGain.connect(destination)
             this.destNode = destination
 
-            // Launch AI VAD Gate Loop
+            // Launch Adaptive AI VAD Gate Loop
             this.startVADLoop(mode)
 
             const cleanTrack = destination.stream.getAudioTracks()[0]
@@ -142,10 +170,10 @@ class NoiseCancellationService {
     }
 
     /**
-     * Precision Vocal Band VAD (Voice Activity Detector) Loop
-     * Analyzes energy in the human vocal range (300Hz - 3400Hz).
-     * If speech is detected, gate opens instantly.
-     * When silent, ambient noise (fans, distant voices, room echo) is silenced.
+     * Precision Vocal Band VAD with Adaptive Background Noise Floor Tracking.
+     * Continuously tracks continuous steady ambient drone (fans, AC, room hiss).
+     * Automatically sets the vocal threshold above the fan noise floor so the mic
+     * stays completely silent when you aren't talking, and opens cleanly when you speak.
      */
     private startVADLoop(mode: NoiseCancellationMode) {
         if (!this.analyserNode || !this.gateGainNode || !this.audioCtx) return
@@ -155,20 +183,22 @@ class NoiseCancellationService {
         const dataArray = new Uint8Array(bufferLength)
         let silenceFrames = 0
 
-        // Sensitivity thresholds based on noise mode
-        const threshold = mode === 'high' ? 14 : mode === 'medium' ? 10 : 7
-        const holdFrames = mode === 'high' ? 10 : 15 // ~150-250ms hold time to preserve word endings
+        // Hold frames (~180ms) to ensure end of words are not cut off
+        const holdFrames = mode === 'high' ? 12 : 16
+
+        // Dynamic noise floor baseline
+        let ambientNoiseFloor = 14
 
         const checkVAD = () => {
             if (!this.isRunning || !this.analyserNode || !this.gateGainNode || !this.audioCtx) return
 
             this.analyserNode.getByteFrequencyData(dataArray)
 
-            // Focus energy check on human vocal bins (approx 300Hz to 3400Hz)
+            // Focus energy check on human vocal formant bins (350Hz to 3200Hz)
             const sampleRate = this.audioCtx.sampleRate || 48000
             const binSize = sampleRate / (bufferLength * 2)
-            const startBin = Math.max(1, Math.floor(300 / binSize))
-            const endBin = Math.min(bufferLength - 1, Math.floor(3400 / binSize))
+            const startBin = Math.max(1, Math.floor(350 / binSize))
+            const endBin = Math.min(bufferLength - 1, Math.floor(3200 / binSize))
 
             let voiceEnergySum = 0
             let count = 0
@@ -178,9 +208,24 @@ class NoiseCancellationService {
             }
             const vocalAverage = count > 0 ? voiceEnergySum / count : 0
 
+            // Adapt ambient noise floor:
+            // If sound is steady and quiet, slowly track it as the ambient noise (fan sound)
+            if (vocalAverage < ambientNoiseFloor) {
+                ambientNoiseFloor = ambientNoiseFloor * 0.96 + vocalAverage * 0.04
+            } else if (vocalAverage < ambientNoiseFloor + 12) {
+                // Slow drift upward for gradual room changes, not sudden voice spikes
+                ambientNoiseFloor = ambientNoiseFloor * 0.99 + vocalAverage * 0.01
+            }
+
+            // Keep noise floor within realistic bounds
+            ambientNoiseFloor = Math.max(8, Math.min(45, ambientNoiseFloor))
+
+            // Dynamic speech threshold is strictly above the ambient fan noise floor
+            const speechThreshold = Math.max(mode === 'high' ? 22 : 16, ambientNoiseFloor + (mode === 'high' ? 12 : 8))
+
             const now = this.audioCtx.currentTime
 
-            if (vocalAverage >= threshold) {
+            if (vocalAverage >= speechThreshold) {
                 // Active Voice detected: Fast 15ms ramp-up
                 silenceFrames = 0
                 this.gateGainNode.gain.cancelScheduledValues(now)
@@ -188,9 +233,9 @@ class NoiseCancellationService {
             } else {
                 silenceFrames++
                 if (silenceFrames > holdFrames) {
-                    // Silence / Background noise: Suppress down to near zero (0.005 = -46dB reduction)
+                    // Silence / Fan Noise: Suppress down to near zero (0.001 = -60dB attenuation)
                     this.gateGainNode.gain.cancelScheduledValues(now)
-                    this.gateGainNode.gain.linearRampToValueAtTime(0.005, now + 0.06)
+                    this.gateGainNode.gain.linearRampToValueAtTime(0.001, now + 0.05)
                 }
             }
 
@@ -239,3 +284,4 @@ class NoiseCancellationService {
 }
 
 export const noiseCancellationService = new NoiseCancellationService()
+

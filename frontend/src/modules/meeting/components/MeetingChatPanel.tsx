@@ -1,6 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react'
 import type { MeetingChatMessage } from '../hooks/useMeetingChat'
 import { RichChatContent } from './RichChatContent'
+import {
+    IconLock,
+    IconMessage,
+    IconMonitor,
+    IconFileText,
+    IconSparkles,
+    IconFolder,
+    IconDownload,
+    IconX
+} from '../../../components/common/Icons'
 
 interface MeetingChatPanelProps {
     messages: MeetingChatMessage[]
@@ -391,7 +401,8 @@ export function MeetingChatPanel({
                                 alignItems: 'center',
                                 gap: 3
                             }}>
-                                🔒 Direct Message {msg.recipientId && (isMe ? `to ${msg.recipientName || msg.recipientId}` : '(Private)')}
+                                <IconLock size={10} color="#60a5fa" />
+                                <span>Direct Message {msg.recipientId && (isMe ? `to ${msg.recipientName || msg.recipientId}` : '(Private)')}</span>
                             </span>
                         )}
                         {msg.createdAt && (
@@ -421,7 +432,8 @@ export function MeetingChatPanel({
                                 }}
                                 title="Reply to message thread"
                             >
-                                💬 Reply
+                                <IconMessage size={12} />
+                                <span>Reply</span>
                             </button>
                         )}
                     </div>
@@ -458,10 +470,17 @@ export function MeetingChatPanel({
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: '1.1rem',
                                 flexShrink: 0
                             }}>
-                                {msg.messageType === 'code' ? '💻' : (msg.attachment.name?.endsWith('.pdf') ? '📄' : (msg.attachment.type?.startsWith('image/') ? '🖼️' : '📁'))}
+                                {msg.messageType === 'code' ? (
+                                    <IconMonitor size={18} color="#c084fc" />
+                                ) : msg.attachment.name?.endsWith('.pdf') ? (
+                                    <IconFileText size={18} color="#60a5fa" />
+                                ) : msg.attachment.type?.startsWith('image/') ? (
+                                    <IconSparkles size={18} color="#60a5fa" />
+                                ) : (
+                                    <IconFolder size={18} color="#60a5fa" />
+                                )}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{
@@ -585,7 +604,8 @@ export function MeetingChatPanel({
                                     gap: 6
                                 }}
                             >
-                                <span>💬 {replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
+                                <IconMessage size={12} />
+                                <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
                             </button>
                         </div>
                     )}
@@ -640,7 +660,7 @@ export function MeetingChatPanel({
                     gap: 12,
                     pointerEvents: 'none'
                 }}>
-                    <span style={{ fontSize: '2.5rem' }}>📁</span>
+                    <IconFolder size={44} color="var(--color-accent)" />
                     <span style={{ fontSize: '1rem', fontWeight: 600, color: '#fff' }}>Drop file to share in meeting</span>
                 </div>
             )}
@@ -742,7 +762,8 @@ export function MeetingChatPanel({
                                 transition: 'all 0.15s'
                             }}
                         >
-                            <span>📥 Export</span>
+                            <IconDownload size={13} />
+                            <span>Export</span>
                         </button>
                     )}
                 </div>
@@ -935,7 +956,8 @@ export function MeetingChatPanel({
                         </div>
                         {selectedRecipient !== 'everyone' && (
                             <span style={{ fontSize: '0.6875rem', color: '#60a5fa', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                🔒 Only you and this person will see this
+                                <IconLock size={10} color="#60a5fa" />
+                                <span>Only you and this person will see this</span>
                             </span>
                         )}
                     </div>
@@ -955,7 +977,13 @@ export function MeetingChatPanel({
                             boxSizing: 'border-box'
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflow: 'hidden' }}>
-                                <span style={{ fontSize: '1.1rem' }}>{pendingAttachment.type === 'code' ? '💻' : '📎'}</span>
+                                <span style={{ display: 'flex', alignItems: 'center' }}>
+                                    {pendingAttachment.type === 'code' ? (
+                                        <IconMonitor size={16} color="#818cf8" />
+                                    ) : (
+                                        <IconFileText size={16} color="#818cf8" />
+                                    )}
+                                </span>
                                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                                     <span style={{
                                         fontWeight: 600,
@@ -987,12 +1015,11 @@ export function MeetingChatPanel({
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     cursor: 'pointer',
-                                    fontSize: '0.75rem',
                                     flexShrink: 0
                                 }}
                                 title="Remove file"
                             >
-                                ✕
+                                <IconX size={12} />
                             </button>
                         </div>
                     )}

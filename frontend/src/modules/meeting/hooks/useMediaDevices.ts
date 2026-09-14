@@ -6,10 +6,12 @@ interface UseMediaDevicesResult {
     cameraStream: MediaStream | null
     mediaLoading: boolean
     mediaError: string | null
-    requestMedia: () => Promise<void>
+    requestMedia: (audioOnly?: boolean) => Promise<void>
     stopMedia: () => void
     replaceLocalStream: (stream: MediaStream) => void
     restoreCameraStream: () => void
+    switchAudioDevice: (deviceId: string, onTrackSwapped?: (track: MediaStreamTrack) => void) => Promise<void>
+    switchVideoDevice: (deviceId: string, onTrackSwapped?: (track: MediaStreamTrack) => void) => Promise<void>
 }
 
 export function useMediaDevices(): UseMediaDevicesResult {
@@ -49,11 +51,15 @@ export function useMediaDevices(): UseMediaDevicesResult {
         setMediaLoading(false)
     }, [])
 
-    const requestMedia = useCallback(async () => {
-        // If already streaming and has live tracks, do not re-request
+    const requestMedia = useCallback(async (audioOnly: boolean = false) => {
+        // If already streaming and has live tracks, check if we need video but only have audio
         const currentTracks = localStreamRef.current?.getTracks() || []
-        const hasLiveTracks = currentTracks.length > 0 && currentTracks.some((t) => t.readyState === 'live')
-        if (hasLiveTracks && localStreamRef.current) {
+        const hasLiveAudio = currentTracks.some((t) => t.kind === 'audio' && t.readyState === 'live')
+        const hasLiveVideo = currentTracks.some((t) => t.kind === 'video' && t.readyState === 'live')
+        if (audioOnly && hasLiveAudio) {
+            return
+        }
+        if (!audioOnly && hasLiveAudio && hasLiveVideo) {
             return
         }
 
@@ -74,7 +80,7 @@ export function useMediaDevices(): UseMediaDevicesResult {
                     googHighpassFilter: true,
                     googTypingNoiseDetection: true
                 } as any,
-                video: {
+                video: audioOnly ? false : {
                     width: { ideal: 1920, min: 1280 },
                     height: { ideal: 1080, min: 720 },
                     frameRate: { ideal: 30, max: 60 },
@@ -150,6 +156,56 @@ export function useMediaDevices(): UseMediaDevicesResult {
             const fresh = new MediaStream(cameraStreamRef.current.getTracks())
             localStreamRef.current = fresh
             setLocalStream(fresh)
+        }
+    }, [])
+
+    const switchAudioDevice = useCallback(async (deviceId: string, onTrackSwapped?: (track: MediaStreamTrack) => void) => {
+        if (!deviceId) return
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: { deviceId: { exact: deviceId } },
+                video: false
+            })
+            const rawTrack = stream.getAudioTracks()[0]
+            if (rawTrack && localStreamRef.current) {
+                const cleanTrack = noiseCancellationService.processAudioTrack(rawTrack, 'high')
+                const oldTrack = localStreamRef.current.getAudioTracks()[0]
+                if (oldTrack) {
+                    localStreamRef.current.removeTrack(oldTrack)
+                    try { oldTrack.stop() } catch {}
+                }
+                localStreamRef.current.addTrack(cleanTrack)
+                setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
+                if (onTrackSwapped) onTrackSwapped(cleanTrack)
+                window.dispatchEvent(new CustomEvent('jts:device-swapped', { detail: { stream: localStreamRef.current } }))
+            }
+        } catch (err) {
+            console.error('[MediaDevices] Failed to switch audio device:', err)
+        }
+    }, [])
+
+    const switchVideoDevice = useCallback(async (deviceId: string, onTrackSwapped?: (track: MediaStreamTrack) => void) => {
+        if (!deviceId) return
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: deviceId }, width: { ideal: 1920, min: 1280 }, height: { ideal: 1080, min: 720 } },
+                audio: false
+            })
+            const newTrack = stream.getVideoTracks()[0]
+            if (newTrack && localStreamRef.current) {
+                const oldTrack = localStreamRef.current.getVideoTracks()[0]
+                if (oldTrack) {
+                    localStreamRef.current.removeTrack(oldTrack)
+                    try { oldTrack.stop() } catch {}
+                }
+                localStreamRef.current.addTrack(newTrack)
+                setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
+                setCameraStream(new MediaStream(localStreamRef.current.getTracks()))
+                if (onTrackSwapped) onTrackSwapped(newTrack)
+                window.dispatchEvent(new CustomEvent('jts:device-swapped', { detail: { stream: localStreamRef.current } }))
+            }
+        } catch (err) {
+            console.error('[MediaDevices] Failed to switch video device:', err)
         }
     }, [])
 
@@ -230,6 +286,8 @@ export function useMediaDevices(): UseMediaDevicesResult {
         requestMedia,
         stopMedia,
         replaceLocalStream,
-        restoreCameraStream
+        restoreCameraStream,
+        switchAudioDevice,
+        switchVideoDevice
     }
 }

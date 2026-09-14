@@ -11,7 +11,8 @@ import {
     getOrganizationMembers,
     getOrganizationMembersPaginated,
     listUserOrganizations,
-    updateMemberRole
+    updateMemberRole,
+    upgradeOrganizationPlan
 } from './organization.service'
 import {
     validateCreateOrganization,
@@ -250,6 +251,30 @@ export const organizationController = {
             return sendSuccess(res, org, 'Organization and nested teams/channels successfully deleted')
         } catch (error: any) {
             return sendError(res, 403, error.message || 'Forbidden')
+        }
+    },
+
+    upgradePlan: async (req: AuthRequest, res: Response) => {
+        const rawOrgId = req.params.organizationId
+        const organizationId = Array.isArray(rawOrgId) ? rawOrgId[0] : rawOrgId
+        if (!organizationId) {
+            return sendError(res, 400, 'organizationId is required')
+        }
+
+        if (!req.userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+
+        const { planId } = req.body
+        if (!planId) {
+            return sendError(res, 400, 'planId is required')
+        }
+
+        try {
+            const org = await upgradeOrganizationPlan(organizationId, req.userId, planId)
+            return sendSuccess(res, org, `Organization subscription tier upgraded to ${planId.toUpperCase()} successfully`)
+        } catch (error: any) {
+            return sendError(res, 400, error.message || 'Failed to upgrade plan')
         }
     }
 }

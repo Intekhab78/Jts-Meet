@@ -15,6 +15,9 @@ export interface IMeeting extends Document {
     screenShareBy?: Types.ObjectId | null
     isRecordingActive: boolean
     recordingUrl?: string
+    recorded?: boolean
+    recordingDuration?: number
+    recordingSize?: number
     status: 'scheduled' | 'active' | 'ended'
     isRecurring?: boolean
     recurrencePattern?: 'daily' | 'weekly' | 'weekdays' | 'monthly' | 'none'
@@ -46,6 +49,9 @@ const MeetingSchema = new Schema<IMeeting>(
         screenShareBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
         isRecordingActive: { type: Boolean, default: false },
         recordingUrl: { type: String, default: '' },
+        recorded: { type: Boolean, default: false },
+        recordingDuration: { type: Number, default: 0 },
+        recordingSize: { type: Number, default: 0 },
         status: { type: String, enum: ['scheduled', 'active', 'ended'], default: 'scheduled' },
         isRecurring: { type: Boolean, default: false },
         recurrencePattern: { type: String, enum: ['daily', 'weekly', 'weekdays', 'monthly', 'none'], default: 'none' },

@@ -21,7 +21,7 @@ export interface IOrganization extends Document {
     members: IOrganizationMember[]
     status: OrganizationStatus
     timezone?: string
-    planTier?: 'free' | 'starter' | 'enterprise'
+    planTier?: string
     maxSeats?: number
     maxStorageGb?: number
     createdAt: Date
@@ -49,9 +49,9 @@ const OrganizationSchema = new Schema<IOrganization>(
         members: { type: [OrganizationMemberSchema], default: [] },
         status: { type: String, enum: ['active', 'inactive', 'deleted'], default: 'active' },
         timezone: { type: String, default: 'UTC' },
-        planTier: { type: String, enum: ['free', 'starter', 'enterprise'], default: 'enterprise' },
-        maxSeats: { type: Number, default: 50 },
-        maxStorageGb: { type: Number, default: 25 }
+        planTier: { type: String, default: 'free' },
+        maxSeats: { type: Number, default: 15 },
+        maxStorageGb: { type: Number, default: 5 }
     },
     { timestamps: true }
 )

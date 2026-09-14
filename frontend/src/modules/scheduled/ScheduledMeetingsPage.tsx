@@ -1,5 +1,12 @@
 import React, { useState, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { API_BASE } from '../../config'
+import {
+    IconCalendar, IconZap, IconRefresh, IconSearch, IconVideo, IconCopy,
+    IconDownload, IconEdit, IconTrash, IconLock, IconMessage, IconAlertTriangle, IconBuilding, IconFileText,
+    IconSparkles, IconX
+} from '../../components/common/Icons'
+import { AiAgendaGeneratorModal } from './AiAgendaGeneratorModal'
 
 export interface ScheduledMeeting {
     id: string
@@ -52,6 +59,9 @@ export function ScheduledMeetingsPage({
     const [editingMeeting, setEditingMeeting] = useState<ScheduledMeeting | null>(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [modalError, setModalError] = useState('')
+
+    // AI Agenda Generator modal state
+    const [showAgendaModal, setShowAgendaModal] = useState(false)
 
     // Form fields
     const [formTitle, setFormTitle] = useState('')
@@ -331,7 +341,7 @@ export function ScheduledMeetingsPage({
                     gap: 10,
                     animation: 'fadeIn 0.2s ease-out'
                 }}>
-                    <span>✨</span> {toastMessage}
+                    <IconSparkles size={14} color="#a855f7" /> <span>{toastMessage}</span>
                 </div>
             )}
 
@@ -366,7 +376,8 @@ export function ScheduledMeetingsPage({
                         style={{ padding: '8px 14px', fontSize: '0.8125rem', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6 }}
                         title="Sync with database"
                     >
-                        <span>🔄</span> Refresh
+                        <IconRefresh size={14} />
+                        <span>Refresh</span>
                     </button>
 
                     <button
@@ -377,7 +388,8 @@ export function ScheduledMeetingsPage({
                         className="btn btn-secondary"
                         style={{ padding: '8px 14px', fontSize: '0.8125rem', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6 }}
                     >
-                        <span>⚡</span> Meet Now
+                        <IconZap size={14} color="#f59e0b" />
+                        <span>Meet Now</span>
                     </button>
 
                     <button
@@ -385,7 +397,8 @@ export function ScheduledMeetingsPage({
                         className="btn btn-primary"
                         style={{ padding: '8px 16px', fontSize: '0.8125rem', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
                     >
-                        <span>📅</span> + Schedule Conference
+                        <IconCalendar size={14} />
+                        <span>+ Schedule Conference</span>
                     </button>
                 </div>
             </div>
@@ -393,14 +406,14 @@ export function ScheduledMeetingsPage({
             {/* SUMMARY METRICS CARDS */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
                 {[
-                    { label: 'Planned Conferences', value: metrics.total, icon: '📅', color: '#6366f1', subtitle: 'Upcoming on schedule' },
-                    { label: "Today's Agenda", value: metrics.todayCount, icon: '⚡', color: '#22c55e', subtitle: 'Active or scheduled today' },
-                    { label: 'Recurring Series', value: metrics.recurringCount, icon: '🔁', color: '#a855f7', subtitle: 'Daily & weekly series' },
-                    { label: 'Auto-Email Active', value: metrics.autoEmailCount, icon: '📧', color: '#06b6d4', subtitle: 'Automatic team invites' }
+                    { label: 'Planned Conferences', value: metrics.total, renderIcon: (c: string) => <IconCalendar size={20} color={c} />, color: '#6366f1', subtitle: 'Upcoming on schedule' },
+                    { label: "Today's Agenda", value: metrics.todayCount, renderIcon: (c: string) => <IconZap size={20} color={c} />, color: '#22c55e', subtitle: 'Active or scheduled today' },
+                    { label: 'Recurring Series', value: metrics.recurringCount, renderIcon: (c: string) => <IconRefresh size={20} color={c} />, color: '#a855f7', subtitle: 'Daily & weekly series' },
+                    { label: 'Auto-Email Active', value: metrics.autoEmailCount, renderIcon: (c: string) => <IconMessage size={20} color={c} />, color: '#06b6d4', subtitle: 'Automatic team invites' }
                 ].map((stat, idx) => (
                     <div key={idx} className="glass-card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, background: 'rgba(18, 20, 29, 0.7)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14 }}>
-                        <div style={{ width: 44, height: 44, borderRadius: 12, background: `${stat.color}18`, border: `1px solid ${stat.color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem', flexShrink: 0 }}>
-                            {stat.icon}
+                        <div style={{ width: 44, height: 44, borderRadius: 12, background: `${stat.color}18`, border: `1px solid ${stat.color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            {stat.renderIcon(stat.color)}
                         </div>
                         <div>
                             <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', lineHeight: 1.1 }}>{stat.value}</div>
@@ -508,7 +521,7 @@ export function ScheduledMeetingsPage({
                                 }}
                                 title="Clear search"
                             >
-                                ✕
+                                <IconX size={12} />
                             </button>
                         )}
                     </div>
@@ -524,11 +537,15 @@ export function ScheduledMeetingsPage({
                                 borderRadius: 6,
                                 fontSize: '0.75rem',
                                 cursor: 'pointer',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5
                             }}
                             title="List View"
                         >
-                            📋 List
+                            <IconFileText size={13} />
+                            <span>List</span>
                         </button>
                         <button
                             onClick={() => setViewMode('agenda')}
@@ -540,11 +557,15 @@ export function ScheduledMeetingsPage({
                                 borderRadius: 6,
                                 fontSize: '0.75rem',
                                 cursor: 'pointer',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5
                             }}
                             title="Agenda View"
                         >
-                            🗓️ Agenda
+                            <IconCalendar size={13} />
+                            <span>Agenda</span>
                         </button>
                     </div>
                 </div>
@@ -557,9 +578,9 @@ export function ScheduledMeetingsPage({
                         width: 68, height: 68, borderRadius: '22px',
                         background: 'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(168,85,247,0.2) 100%)',
                         border: '1px solid rgba(99,102,241,0.3)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.2rem'
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
                     }}>
-                        📅
+                        <IconCalendar size={32} color="#818cf8" />
                     </div>
                     <div style={{ maxWidth: 480 }}>
                         <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>No Planned Conferences</h3>
@@ -573,21 +594,23 @@ export function ScheduledMeetingsPage({
                             className="btn btn-primary"
                             style={{ padding: '10px 20px', fontSize: '0.875rem', fontWeight: 700, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 8 }}
                         >
-                            <span>📅</span> Schedule a Meeting
+                            <IconCalendar size={16} />
+                            <span>Schedule a Meeting</span>
                         </button>
                         <button
                             onClick={() => onStartMeeting(`instant_${Date.now()}`)}
                             className="btn btn-secondary"
                             style={{ padding: '10px 20px', fontSize: '0.875rem', fontWeight: 600, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 8 }}
                         >
-                            <span>⚡</span> Start Instant Meeting
+                            <IconZap size={16} color="#f59e0b" />
+                            <span>Start Instant Meeting</span>
                         </button>
                     </div>
                 </div>
             ) : filteredMeetings.length === 0 ? (
                 <div className="glass-card" style={{ padding: 48, textAlign: 'center', borderRadius: 16 }}>
-                    <span style={{ fontSize: '2.5rem' }}>🔍</span>
-                    <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: 12 }}>No matching planned conferences</h4>
+                    <IconSearch size={36} color="var(--color-text-muted)" style={{ margin: '0 auto 12px', display: 'block' }} />
+                    <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: 0 }}>No matching planned conferences</h4>
                     <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', maxWidth: 360, margin: '6px auto 16px' }}>
                         No upcoming sessions match your search filter "{searchQuery}".
                     </p>
@@ -633,7 +656,7 @@ export function ScheduledMeetingsPage({
                                             flexShrink: 0
                                         }}>
                                             <span style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', opacity: 0.8 }}>CAL</span>
-                                            <span style={{ fontSize: '1rem', fontWeight: 800, lineHeight: 1 }}>{item.date ? item.date.slice(-2) : '📅'}</span>
+                                            <span style={{ fontSize: '1rem', fontWeight: 800, lineHeight: 1 }}>{item.date ? item.date.slice(-2) : '30'}</span>
                                         </div>
 
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -643,26 +666,30 @@ export function ScheduledMeetingsPage({
                                                 </h3>
 
                                                 {isToday && (
-                                                    <span style={{ fontSize: '0.7rem', fontWeight: 800, background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80', border: '1px solid rgba(34, 197, 94, 0.3)', padding: '2px 8px', borderRadius: 6 }}>
-                                                        ⚡ Today
+                                                    <span style={{ fontSize: '0.7rem', fontWeight: 800, background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80', border: '1px solid rgba(34, 197, 94, 0.3)', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                        <IconZap size={11} color="#4ade80" />
+                                                        <span>Today</span>
                                                     </span>
                                                 )}
 
                                                 {item.isRecurring && (
-                                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '2px 8px', borderRadius: 6 }}>
-                                                        🔁 Repeats {item.recurrencePattern || 'Daily'} at {item.time}
+                                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                        <IconRefresh size={11} color="#c084fc" />
+                                                        <span>Repeats {item.recurrencePattern || 'Daily'} at {item.time}</span>
                                                     </span>
                                                 )}
 
                                                 {item.notifyByEmail && (
-                                                    <span style={{ fontSize: '0.7rem', fontWeight: 600, background: 'rgba(6, 182, 212, 0.12)', color: '#22d3ee', border: '1px solid rgba(6, 182, 212, 0.25)', padding: '2px 8px', borderRadius: 6 }}>
-                                                        📧 Auto-Email
+                                                    <span style={{ fontSize: '0.7rem', fontWeight: 600, background: 'rgba(6, 182, 212, 0.12)', color: '#22d3ee', border: '1px solid rgba(6, 182, 212, 0.25)', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                        <IconMessage size={11} color="#22d3ee" />
+                                                        <span>Auto-Email</span>
                                                     </span>
                                                 )}
 
                                                 {item.isWaitingRoomEnabled && (
-                                                    <span style={{ fontSize: '0.7rem', fontWeight: 600, background: 'rgba(245, 158, 11, 0.12)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '2px 8px', borderRadius: 6 }}>
-                                                        🔒 Waiting Room
+                                                    <span style={{ fontSize: '0.7rem', fontWeight: 600, background: 'rgba(245, 158, 11, 0.12)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                        <IconLock size={11} color="#fbbf24" />
+                                                        <span>Waiting Room</span>
                                                     </span>
                                                 )}
                                             </div>
@@ -673,8 +700,9 @@ export function ScheduledMeetingsPage({
                                                     Session ID: <strong style={{ fontFamily: 'monospace', color: '#818cf8' }}>{item.id}</strong>
                                                 </span>
                                                 <span>•</span>
-                                                <span>
-                                                    📅 <strong>{item.date}</strong> at <strong>{item.time}</strong> ({item.duration || '30m'})
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                    <IconCalendar size={13} color="var(--color-text-secondary)" />
+                                                    <strong>{item.date}</strong> at <strong>{item.time}</strong> ({item.duration || '30m'})
                                                 </span>
                                                 <span>•</span>
                                                 <span>
@@ -689,37 +717,41 @@ export function ScheduledMeetingsPage({
                                         <button
                                             onClick={() => handleStartRoom(item)}
                                             className="btn btn-primary"
-                                            style={{ padding: '7px 14px', fontSize: '0.775rem', fontWeight: 700, borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                                            style={{ padding: '7px 14px', fontSize: '0.775rem', fontWeight: 700, borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                                             title="Launch meeting room now"
                                         >
-                                            <span>📹</span> Start Room
+                                            <IconVideo size={13} />
+                                            <span>Start Room</span>
                                         </button>
 
                                         <button
                                             onClick={() => handleCopyInvite(item)}
                                             className="btn btn-secondary"
-                                            style={{ padding: '7px 10px', fontSize: '0.775rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                                            style={{ padding: '7px 10px', fontSize: '0.775rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                                             title="Copy formatted Teams invitation"
                                         >
-                                            <span>📋</span> Copy Invite
+                                            <IconCopy size={13} />
+                                            <span>Copy Invite</span>
                                         </button>
 
                                         <button
                                             onClick={() => handleDownloadICS(item)}
                                             className="btn btn-secondary"
-                                            style={{ padding: '7px 10px', fontSize: '0.775rem', borderRadius: 8 }}
+                                            style={{ padding: '7px 10px', fontSize: '0.775rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                                             title="Add to Outlook / Google Calendar (.ics)"
                                         >
-                                            <span>🗓️</span> .ICS
+                                            <IconDownload size={13} />
+                                            <span>.ICS</span>
                                         </button>
 
                                         <button
                                             onClick={() => handleOpenEditModal(item)}
                                             className="btn btn-secondary"
-                                            style={{ padding: '7px 10px', fontSize: '0.775rem', borderRadius: 8 }}
+                                            style={{ padding: '7px 10px', fontSize: '0.775rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                                             title="Edit conference parameters"
                                         >
-                                            ✏️ Edit
+                                            <IconEdit size={13} />
+                                            <span>Edit</span>
                                         </button>
 
                                         <button
@@ -732,11 +764,15 @@ export function ScheduledMeetingsPage({
                                                 padding: '7px 10px',
                                                 borderRadius: 8,
                                                 fontSize: '0.775rem',
-                                                cursor: 'pointer'
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 6
                                             }}
                                             title="Cancel planned conference"
                                         >
-                                            {deletingId === item.id ? '...' : '🗑️ Cancel'}
+                                            <IconTrash size={13} color="#ef4444" />
+                                            <span>{deletingId === item.id ? '...' : 'Cancel'}</span>
                                         </button>
                                     </div>
                                 </div>
@@ -747,21 +783,34 @@ export function ScheduledMeetingsPage({
             )}
 
             {/* SCHEDULE / EDIT CONFERENCE MODAL */}
-            {isModalOpen && (
-                <div style={{
-                    position: 'fixed',
-                    inset: 0,
-                    background: 'rgba(0,0,0,0.75)',
-                    backdropFilter: 'blur(6px)',
-                    zIndex: 9999,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 16
-                }}>
+            {isModalOpen && createPortal(
+                <div
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget && !isSubmitting) {
+                            setIsModalOpen(false)
+                        }
+                    }}
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        width: '100vw',
+                        height: '100vh',
+                        background: 'rgba(0,0,0,0.75)',
+                        backdropFilter: 'blur(6px)',
+                        zIndex: 9999999,
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'center',
+                        padding: '24px 16px',
+                        overflowY: 'auto',
+                        boxSizing: 'border-box'
+                    }}
+                >
                     <div className="glass-card anim-scale-in" style={{
                         width: '100%',
                         maxWidth: 540,
+                        maxHeight: 'calc(100vh - 48px)',
                         background: '#0f111a',
                         border: '1px solid rgba(99, 102, 241, 0.3)',
                         borderRadius: 20,
@@ -769,35 +818,57 @@ export function ScheduledMeetingsPage({
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 18,
-                        boxShadow: '0 25px 60px rgba(0,0,0,0.8)'
+                        boxShadow: '0 25px 60px rgba(0,0,0,0.8)',
+                        marginBottom: 24
                     }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ fontSize: '1.4rem' }}>{editingMeeting ? '✏️' : '📅'}</span>
+                                <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(99,102,241,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#818cf8' }}>
+                                    {editingMeeting ? <IconEdit size={18} /> : <IconCalendar size={18} />}
+                                </span>
                                 <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', margin: 0 }}>
                                     {editingMeeting ? 'Edit Planned Conference' : 'Schedule Enterprise Conference'}
                                 </h3>
                             </div>
                             <button
                                 onClick={() => setIsModalOpen(false)}
-                                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer', padding: 4 }}
+                                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1rem', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             >
-                                ✕
+                                <IconX size={16} />
                             </button>
                         </div>
 
                         {modalError && (
-                            <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '10px 14px', borderRadius: 10, fontSize: '0.8125rem' }}>
-                                ⚠️ {modalError}
+                            <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '10px 14px', borderRadius: 10, fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <IconAlertTriangle size={15} color="#f87171" />
+                                <span>{modalError}</span>
                             </div>
                         )}
 
                         <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                             {/* Title */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>
-                                    Meeting Topic / Agenda
-                                </label>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>
+                                        Meeting Topic / Agenda
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAgendaModal(true)}
+                                        title="Generate meeting agenda with AI"
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: 5,
+                                            background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.12))',
+                                            border: '1px solid rgba(99,102,241,0.4)',
+                                            borderRadius: 7, padding: '3px 10px',
+                                            color: '#a5b4fc', fontSize: '0.7rem', fontWeight: 700,
+                                            cursor: 'pointer', letterSpacing: '0.02em'
+                                        }}
+                                    >
+                                        <IconSparkles />
+                                        ✨ Generate with AI
+                                    </button>
+                                </div>
                                 <input
                                     type="text"
                                     value={formTitle}
@@ -874,7 +945,7 @@ export function ScheduledMeetingsPage({
                                     >
                                         <option value="">(All Organization Members)</option>
                                         {teams.map(t => (
-                                            <option key={t._id} value={t._id}>🏢 {t.name}</option>
+                                            <option key={t._id} value={t._id}>{t.name}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -889,7 +960,10 @@ export function ScheduledMeetingsPage({
                                         onChange={(e) => setFormRecurring(e.target.checked)}
                                         style={{ width: 16, height: 16, accentColor: '#6366f1', cursor: 'pointer' }}
                                     />
-                                    <span>🔁 <strong>Recurring Conference Series</strong></span>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                        <IconRefresh size={14} color="#a855f7" />
+                                        <strong>Recurring Conference Series</strong>
+                                    </span>
                                 </label>
 
                                 {formRecurring && (
@@ -919,7 +993,10 @@ export function ScheduledMeetingsPage({
                                         onChange={(e) => setFormNotifyEmail(e.target.checked)}
                                         style={{ width: 16, height: 16, accentColor: '#6366f1', cursor: 'pointer' }}
                                     />
-                                    <span>📧 <strong>Auto-Email & Notify Team</strong> (Sends 1-Click Join Link with Email Alert)</span>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                        <IconMessage size={14} color="#06b6d4" />
+                                        <span><strong>Auto-Email & Notify Team</strong> (Sends 1-Click Join Link with Email Alert)</span>
+                                    </span>
                                 </label>
 
                                 <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: '0.8125rem', color: '#e2e8f0' }}>
@@ -929,7 +1006,10 @@ export function ScheduledMeetingsPage({
                                         onChange={(e) => setFormWaitingRoom(e.target.checked)}
                                         style={{ width: 16, height: 16, accentColor: '#6366f1', cursor: 'pointer' }}
                                     />
-                                    <span>🔒 <strong>Enable Waiting Room</strong> (Host must admit participants before entering)</span>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                        <IconLock size={14} color="#fbbf24" />
+                                        <span><strong>Enable Waiting Room</strong> (Host must admit participants before entering)</span>
+                                    </span>
                                 </label>
                             </div>
 
@@ -954,8 +1034,24 @@ export function ScheduledMeetingsPage({
                             </div>
                         </form>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
+
+            {/* AI Agenda Generator Modal */}
+            <AiAgendaGeneratorModal
+                isOpen={showAgendaModal}
+                onClose={() => setShowAgendaModal(false)}
+                token={token}
+                userPlan="pro"
+                initialTitle={formTitle}
+                initialDuration={formDuration === '30m' ? 30 : formDuration === '1h' ? 60 : formDuration === '2h' ? 120 : 60}
+                onAgendaApply={(agenda) => {
+                    if (agenda.meetingGoal) {
+                        setFormTitle(agenda.meetingGoal.slice(0, 120))
+                    }
+                }}
+            />
         </div>
     )
 }

@@ -1,4 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react'
+import {
+    IconVideo,
+    IconMic,
+    IconSparkles,
+    IconPhone,
+    IconShield,
+    IconZap,
+    IconX,
+    IconMonitor
+} from '../../../components/common/Icons'
 
 interface DeviceSettingsModalProps {
     isOpen: boolean
@@ -150,11 +160,11 @@ export function DeviceSettingsModal({
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border)', paddingBottom: 14 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: '1.25rem' }}>⚙️</span>
+                        <IconMonitor size={18} color="#818cf8" />
                         <h3 style={{ fontSize: '1.125rem', fontWeight: 800, margin: 0, color: '#fff' }}>Audio & Video Settings</h3>
                     </div>
-                    <button onClick={onClose} className="btn-ghost" style={{ border: 'none', background: 'transparent', color: 'var(--color-text-muted)', fontSize: '1.25rem', cursor: 'pointer' }}>
-                        ✕
+                    <button onClick={onClose} className="btn-ghost" style={{ border: 'none', background: 'transparent', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4 }}>
+                        <IconX size={16} />
                     </button>
                 </div>
 
@@ -162,7 +172,8 @@ export function DeviceSettingsModal({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            📹 Camera
+                            <IconVideo size={14} color="#818cf8" />
+                            <span>Camera</span>
                         </label>
                         <select
                             value={selectedVideoInput}
@@ -187,7 +198,8 @@ export function DeviceSettingsModal({
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            ✨ Quality
+                            <IconSparkles size={14} color="#34d399" />
+                            <span>Quality</span>
                         </label>
                         <select
                             value={videoQuality}
@@ -205,7 +217,8 @@ export function DeviceSettingsModal({
                 {/* Microphone Selection & Meter */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        🎙️ Microphone
+                        <IconMic size={14} color="#818cf8" />
+                        <span>Microphone</span>
                     </label>
                     <select
                         value={selectedAudioInput}
@@ -246,7 +259,8 @@ export function DeviceSettingsModal({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                🔊 Speaker / Output
+                                <IconPhone size={14} color="#818cf8" />
+                                <span>Speaker / Output</span>
                             </label>
                             <button 
                                 onClick={handleTestSpeaker} 
@@ -264,10 +278,13 @@ export function DeviceSettingsModal({
                                 {isPlayingTest ? (
                                     <>
                                         <span className="spinner-sm" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
-                                        Playing Chime...
+                                        <span>Playing Chime...</span>
                                     </>
                                 ) : (
-                                    <>🔊 Test Output</>
+                                    <>
+                                        <IconPhone size={12} />
+                                        <span>Test Output</span>
+                                    </>
                                 )}
                             </button>
                         </div>
@@ -296,7 +313,8 @@ export function DeviceSettingsModal({
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-md)' }}>
                         <div>
                             <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>🖼️</span> AI Background & Wallpapers
+                                <IconSparkles size={15} color="#a5b4fc" />
+                                <span>AI Background & Wallpapers</span>
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                                 {isBlurEnabled ? 'AI Segmentation Active (Face crystal-clear)' : 'Blur, Office, Library, Cafe presets'}
@@ -329,7 +347,8 @@ export function DeviceSettingsModal({
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-md)' }}>
                         <div>
                             <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>🔕</span> AI Ultra-Deep Noise Cancellation
+                                <IconShield size={15} color="#34d399" />
+                                <span>AI Ultra-Deep Noise Cancellation</span>
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                                 Real-time 120Hz highpass rumble filter, keyboard clack notch &amp; VAD gate
@@ -347,7 +366,8 @@ export function DeviceSettingsModal({
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--color-surface-2)', borderRadius: 'var(--radius-md)' }}>
                         <div>
                             <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>✨</span> AI HD Video Clarity &amp; Studio Lighting
+                                <IconZap size={15} color="#38bdf8" />
+                                <span>AI HD Video Clarity &amp; Studio Lighting</span>
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                                 Real-time sharpness enhancement, low-light balancing, and razor-sharp HD texture boost

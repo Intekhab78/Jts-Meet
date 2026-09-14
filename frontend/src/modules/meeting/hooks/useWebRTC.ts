@@ -16,11 +16,13 @@ function enhanceSdpForHdVideo(sdp?: string): string {
 
 interface UseWebRTCResult {
     remoteStreams: Record<string, MediaStream>
-    connectToMeeting: (meetingId: string, displayName?: string) => void
+    connectToMeeting: (meetingId: string, displayName?: string, isDirectCall?: boolean) => void
     leaveMeeting: () => void
-    startScreenShare: () => Promise<void>
+    startScreenShare: (existingStream?: MediaStream) => Promise<void>
     stopScreenShare: () => void
     screenSharingUserId: string | null
+    screenSharingUserIds: string[]
+    switchActivePresenter: (targetUserId: string) => void
     screenError: string | null
     clearScreenError: () => void
     replaceTrackOnPeers: (newTrack: MediaStreamTrack | null) => void
@@ -45,6 +47,7 @@ export function useWebRTC(
     const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({})
     const [meetingId, setMeetingId] = useState<string>('')
     const [screenSharingUserId, setScreenSharingUserId] = useState<string | null>(null)
+    const [screenSharingUserIds, setScreenSharingUserIds] = useState<string[]>([])
     const [screenError, setScreenError] = useState<string | null>(null)
     const [networkStatus, setNetworkStatus] = useState<'online' | 'offline' | 'reconnecting'>(navigator.onLine ? 'online' : 'offline')
     const [isReconnecting, setIsReconnecting] = useState<boolean>(false)
@@ -85,6 +88,8 @@ export function useWebRTC(
         const activeMeetingId = meetingId || sessionStorage.getItem('jts_active_meeting_id') || ''
         setMeetingId('')
         setJoined(false)
+        setScreenSharingUserId(null)
+        setScreenSharingUserIds([])
         sessionStorage.removeItem('jts_active_meeting_id')
         if (window.location.hash.startsWith('#meeting')) {
             window.history.replaceState(null, '', '/#meeting')
@@ -97,15 +102,17 @@ export function useWebRTC(
     }, [cleanupPeer, meetingId, setJoined, socket])
 
     const connectToMeeting = useCallback(
-        (targetMeetingId: string, displayName?: string) => {
+        (targetMeetingId: string, displayName?: string, isDirectCall?: boolean) => {
             if (!socket) {
                 return
             }
 
             setMeetingId(targetMeetingId)
-            sessionStorage.setItem('jts_active_meeting_id', targetMeetingId)
-            localStorage.setItem('jts_last_meeting_id', targetMeetingId)
-            window.history.replaceState(null, '', `/#meeting?id=${encodeURIComponent(targetMeetingId)}`)
+            if (!isDirectCall) {
+                sessionStorage.setItem('jts_active_meeting_id', targetMeetingId)
+                localStorage.setItem('jts_last_meeting_id', targetMeetingId)
+                window.history.replaceState(null, '', `/#meeting?id=${encodeURIComponent(targetMeetingId)}`)
+            }
 
             let effectiveName = displayName || localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || ''
             try {
@@ -211,18 +218,22 @@ export function useWebRTC(
         } catch (err) {
             console.warn('[ScreenShare] Error during screen cleanup:', err)
         } finally {
-            setScreenSharingUserId(null)
+            setScreenSharingUserIds(prev => {
+                const remaining = prev.filter(id => id !== 'me')
+                setScreenSharingUserId(remaining.length > 0 ? remaining[remaining.length - 1] : null)
+                return remaining
+            })
         }
     }, [cameraStream, replaceLocalStream, replaceTrackOnPeers, socket, meetingId])
 
-    const startScreenShare = useCallback(async () => {
+    const startScreenShare = useCallback(async (existingStream?: MediaStream) => {
         if (!socket) {
             return
         }
 
         setScreenError(null)
         try {
-            const screenStream = await getScreenShareStream()
+            const screenStream = existingStream || await getScreenShareStream()
             const screenTrack = screenStream.getVideoTracks()[0]
             if (!screenTrack) {
                 throw new Error('No screen track captured')
@@ -230,12 +241,15 @@ export function useWebRTC(
             screenTrackRef.current = screenTrack
 
             // Preserve active microphone audio tracks so the user is never muted or disconnected
-            const audioTracks = (cameraStream || localStreamRef.current)?.getAudioTracks() || []
+            const micAudioTracks = (cameraStream || localStreamRef.current)?.getAudioTracks() || []
+            const screenAudioTracks = screenStream.getAudioTracks() || []
+            const audioTracks = [...micAudioTracks, ...screenAudioTracks]
             const combinedStream = new MediaStream([screenTrack, ...audioTracks])
 
             replaceLocalStream(combinedStream)
             replaceTrackOnPeers(screenTrack)
             setScreenSharingUserId('me')
+            setScreenSharingUserIds(prev => prev.includes('me') ? prev : [...prev, 'me'])
             socket.emit(SocketEvents.SCREEN_START, { meetingId })
 
             screenTrack.onended = () => {
@@ -581,18 +595,37 @@ export function useWebRTC(
         const handleUserLeft = (payload: { userId: string; meetingId: string }) => {
             removeParticipant(payload.userId)
             cleanupPeer(payload.userId)
+            setScreenSharingUserIds(prev => {
+                const remaining = prev.filter(id => id !== payload.userId)
+                setScreenSharingUserId(curr => (curr === payload.userId ? (remaining.length > 0 ? remaining[remaining.length - 1] : null) : curr))
+                return remaining
+            })
         }
 
         const handleScreenStart = (payload: { userId: string; meetingId: string; }) => {
+            setScreenSharingUserIds(prev => prev.includes(payload.userId) ? prev : [...prev, payload.userId])
             setScreenSharingUserId(payload.userId)
         }
 
         const handleScreenStop = (payload: { userId: string; meetingId: string; }) => {
-            setScreenSharingUserId((prev) => (prev === payload.userId ? null : prev))
+            setScreenSharingUserIds(prev => {
+                const remaining = prev.filter(id => id !== payload.userId)
+                setScreenSharingUserId(curr => (curr === payload.userId ? (remaining.length > 0 ? remaining[remaining.length - 1] : null) : curr))
+                return remaining
+            })
         }
 
         const handleScreenChanged = (payload: { userId: string; meetingId: string; active: boolean }) => {
-            setScreenSharingUserId(payload.active ? payload.userId : null)
+            if (payload.active) {
+                setScreenSharingUserIds(prev => prev.includes(payload.userId) ? prev : [...prev, payload.userId])
+                setScreenSharingUserId(payload.userId)
+            } else {
+                setScreenSharingUserIds(prev => {
+                    const remaining = prev.filter(id => id !== payload.userId)
+                    setScreenSharingUserId(curr => (curr === payload.userId ? (remaining.length > 0 ? remaining[remaining.length - 1] : null) : curr))
+                    return remaining
+                })
+            }
         }
 
         socket.on(SocketEvents.WEBRTC_USER_JOINED, handleUserJoined)
@@ -616,8 +649,40 @@ export function useWebRTC(
         }
     }, [socket, addParticipant, removeParticipant, cleanupPeer, triggerIceRestart, rebalanceMeshBitrate])
 
+    const switchActivePresenter = useCallback((targetUserId: string) => {
+        setScreenSharingUserId(targetUserId)
+    }, [])
+
     return useMemo(
-        () => ({ remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, clearScreenError, replaceTrackOnPeers, networkStatus, isReconnecting }),
-        [remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenError, clearScreenError, replaceTrackOnPeers, networkStatus, isReconnecting]
+        () => ({
+            remoteStreams,
+            connectToMeeting,
+            leaveMeeting,
+            startScreenShare,
+            stopScreenShare,
+            screenSharingUserId,
+            screenSharingUserIds,
+            switchActivePresenter,
+            screenError,
+            clearScreenError,
+            replaceTrackOnPeers,
+            networkStatus,
+            isReconnecting
+        }),
+        [
+            remoteStreams,
+            connectToMeeting,
+            leaveMeeting,
+            startScreenShare,
+            stopScreenShare,
+            screenSharingUserId,
+            screenSharingUserIds,
+            switchActivePresenter,
+            screenError,
+            clearScreenError,
+            replaceTrackOnPeers,
+            networkStatus,
+            isReconnecting
+        ]
     )
 }

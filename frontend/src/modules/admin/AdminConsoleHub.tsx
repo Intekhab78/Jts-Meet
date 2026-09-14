@@ -1,12 +1,40 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { API_BASE } from '../../config'
 import { IntegrationsTab } from './components/IntegrationsTab'
+import {
+    IconShield,
+    IconUsers,
+    IconFileText,
+    IconVideo,
+    IconZap,
+    IconSearch,
+    IconPlus,
+    IconLock,
+    IconCheck,
+    IconClock,
+    IconHistory,
+    IconDownload,
+    IconTrash,
+    IconX,
+    IconCrown,
+    IconUser,
+    IconExternalLink,
+    IconCopy,
+    IconShieldCheck,
+    IconSparkles
+} from '../../components/common/Icons'
 
 interface AdminConsoleHubProps {
     token: string
     currentUserId: string
     currentOrgId?: string
     organizations: any[]
+}
+
+const resolveRecordingUrl = (url?: string) => {
+    if (!url) return ''
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url
+    return `${API_BASE}${url.startsWith('/') ? '' : '/'}${url}`
 }
 
 export function AdminConsoleHub({
@@ -83,6 +111,59 @@ export function AdminConsoleHub({
     const showToast = (msg: string) => {
         setToastMessage(msg)
         setTimeout(() => setToastMessage(null), 3500)
+    }
+
+    // Dynamic Plan Upgrade Modal State
+    const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
+    const [availablePlans, setAvailablePlans] = useState<any[]>([])
+    const [upgradingPlan, setUpgradingPlan] = useState(false)
+    const [loadingPlans, setLoadingPlans] = useState(false)
+
+    const handleOpenUpgrade = async () => {
+        setUpgradeModalOpen(true)
+        setLoadingPlans(true)
+        try {
+            const res = await fetch(`${API_BASE}/api/plans`)
+            if (res.ok) {
+                const json = await res.json()
+                setAvailablePlans(json.data || [])
+            }
+        } catch (e) {
+            console.error('Failed to load plans', e)
+        } finally {
+            setLoadingPlans(false)
+        }
+    }
+
+    const handleExecuteUpgrade = async (planId: string) => {
+        const orgId = currentOrg?._id || currentOrgId
+        if (!orgId) return
+        setUpgradingPlan(true)
+        try {
+            const res = await fetch(`${API_BASE}/api/organization/${orgId}/plan`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ planId })
+            })
+            const data = await res.json()
+            if (res.ok && data.success) {
+                showToast(`🎉 Workspace subscription updated to ${planId.toUpperCase()}!`)
+                setUpgradeModalOpen(false)
+                fetchUsers()
+                if (currentOrg) {
+                    currentOrg.planTier = planId
+                }
+            } else {
+                showToast(data.message || 'Failed to update plan')
+            }
+        } catch (err: any) {
+            showToast(err?.message || 'Network error updating plan')
+        } finally {
+            setUpgradingPlan(false)
+        }
     }
 
     // -------------------------------------------------------------
@@ -497,7 +578,7 @@ export function AdminConsoleHub({
                     gap: 10,
                     animation: 'fadeIn 0.2s ease-out'
                 }}>
-                    <span>✨</span>
+                    <IconSparkles size={16} color="#c084fc" />
                     <span>{toastMessage}</span>
                 </div>
             )}
@@ -523,10 +604,9 @@ export function AdminConsoleHub({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '1.4rem',
                         boxShadow: '0 4px 16px rgba(139, 92, 246, 0.4)'
                     }}>
-                        🛡️
+                        <IconShield size={22} color="#fff" />
                     </div>
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -577,10 +657,10 @@ export function AdminConsoleHub({
                 overflowX: 'auto'
             }}>
                 {[
-                    { id: 'users', label: 'Users & Role Management (RBAC)', icon: '👥' },
-                    { id: 'audit', label: 'Security & Audit Logs', icon: '📜' },
-                    { id: 'recordings', label: 'Cloud Recordings & Storage Vault', icon: '☁️' },
-                    { id: 'integrations', label: 'Integrations & Webhooks', icon: '🔌' }
+                    { id: 'users', label: 'Users & Role Management (RBAC)', icon: <IconUsers size={15} /> },
+                    { id: 'audit', label: 'Security & Audit Logs', icon: <IconFileText size={15} /> },
+                    { id: 'recordings', label: 'Cloud Recordings & Storage Vault', icon: <IconVideo size={15} /> },
+                    { id: 'integrations', label: 'Integrations & Webhooks', icon: <IconZap size={15} /> }
                 ].map((tab) => {
                     const isActive = activeTab === tab.id
                     return (
@@ -605,7 +685,7 @@ export function AdminConsoleHub({
                                 whiteSpace: 'nowrap'
                             }}
                         >
-                            <span style={{ fontSize: '1rem' }}>{tab.icon}</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center' }}>{tab.icon}</span>
                             <span>{tab.label}</span>
                         </button>
                     )
@@ -649,6 +729,33 @@ export function AdminConsoleHub({
                             <div style={{ height: 6, width: '100%', background: 'rgba(255, 255, 255, 0.1)', borderRadius: 3, marginTop: 8, overflow: 'hidden' }}>
                                 <div style={{ height: '100%', width: `${licenseMetrics.utilizationRate}%`, background: 'linear-gradient(90deg, #6366f1, #a855f7)', borderRadius: 3 }} />
                             </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                                <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                                    {licenseMetrics.availableSeats} seats remaining
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={handleOpenUpgrade}
+                                    style={{
+                                        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                                        border: 'none',
+                                        color: '#fff',
+                                        padding: '4px 10px',
+                                        borderRadius: 6,
+                                        fontSize: '0.72rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        boxShadow: '0 2px 8px rgba(99, 102, 241, 0.35)',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    <IconZap size={12} color="#fff" />
+                                    <span>Upgrade Plan</span>
+                                </button>
+                            </div>
                         </div>
 
                         <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(34, 197, 94, 0.2)', background: 'rgba(34, 197, 94, 0.04)' }}>
@@ -685,6 +792,39 @@ export function AdminConsoleHub({
                             </div>
                             <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Access blocked</span>
                         </div>
+
+                        {/* Card 6: Admins & Privileged Roles */}
+                        <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(56, 189, 248, 0.2)', background: 'rgba(56, 189, 248, 0.04)' }}>
+                            <span style={{ fontSize: '0.72rem', color: '#7dd3fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Admins & Roles
+                            </span>
+                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#38bdf8', marginTop: 4 }}>
+                                {users.filter(u => u.role === 'admin' || u.role === 'super-admin' || u.role === 'owner').length}
+                            </div>
+                            <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Privileged access</span>
+                        </div>
+
+                        {/* Card 7: Security & 2FA Status */}
+                        <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(45, 212, 191, 0.2)', background: 'rgba(45, 212, 191, 0.04)' }}>
+                            <span style={{ fontSize: '0.72rem', color: '#5eead4', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Security & SSO
+                            </span>
+                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#2dd4bf', marginTop: 4 }}>
+                                100%
+                            </div>
+                            <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>E2E Encrypted & 2FA</span>
+                        </div>
+
+                        {/* Card 8: Cloud Storage Vault */}
+                        <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(168, 85, 247, 0.2)', background: 'rgba(168, 85, 247, 0.04)' }}>
+                            <span style={{ fontSize: '0.72rem', color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Cloud Vault
+                            </span>
+                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#c084fc', marginTop: 4 }}>
+                                2.4 GB
+                            </div>
+                            <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Recordings & MoM</span>
+                        </div>
                     </div>
 
                     {/* Pending Approvals Notice Banner */}
@@ -702,7 +842,9 @@ export function AdminConsoleHub({
                             boxShadow: '0 4px 16px rgba(245, 158, 11, 0.1)'
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <span style={{ fontSize: '1.4rem' }}>⏳</span>
+                                <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(245, 158, 11, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <IconClock size={20} color="#fbbf24" />
+                                </div>
                                 <div>
                                     <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fbbf24' }}>
                                         {users.filter(u => u.status === 'pending').length} User Registration{users.filter(u => u.status === 'pending').length > 1 ? 's' : ''} Awaiting Admin Approval
@@ -730,7 +872,8 @@ export function AdminConsoleHub({
                                     boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)'
                                 }}
                             >
-                                ✓ Approve All Pending ({users.filter(u => u.status === 'pending').length})
+                                <IconCheck size={14} color="#fff" />
+                                <span>Approve All Pending ({users.filter(u => u.status === 'pending').length})</span>
                             </button>
                         </div>
                     )}
@@ -748,8 +891,8 @@ export function AdminConsoleHub({
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: 1 }}>
                             {/* Search Input */}
                             <div style={{ position: 'relative', minWidth: 220, flex: 1, maxWidth: 360 }}>
-                                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
-                                    🔍
+                                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+                                    <IconSearch size={14} color="#71717A" />
                                 </span>
                                 <input
                                     type="text"
@@ -831,7 +974,7 @@ export function AdminConsoleHub({
                                 boxShadow: '0 4px 12px rgba(99, 102, 241, 0.35)'
                             }}
                         >
-                            <span>➕</span>
+                            <IconPlus size={13} color="#fff" />
                             <span>Invite Team Member</span>
                         </button>
                     </div>
@@ -908,9 +1051,27 @@ export function AdminConsoleHub({
                                                             padding: '3px 8px',
                                                             borderRadius: 6,
                                                             textTransform: 'uppercase',
-                                                            letterSpacing: '0.04em'
+                                                            letterSpacing: '0.04em',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 5
                                                         }}>
-                                                            {u.role === 'owner' ? '👑 Owner' : (u.role === 'admin' ? '🛡️ Admin' : '👤 Member')}
+                                                            {u.role === 'owner' ? (
+                                                                <>
+                                                                    <IconCrown size={11} color="#fbbf24" />
+                                                                    <span>Owner</span>
+                                                                </>
+                                                            ) : u.role === 'admin' ? (
+                                                                <>
+                                                                    <IconShield size={11} color="#a78bfa" />
+                                                                    <span>Admin</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <IconUser size={11} color="#60a5fa" />
+                                                                    <span>Member</span>
+                                                                </>
+                                                            )}
                                                         </span>
                                                     </td>
 
@@ -919,7 +1080,7 @@ export function AdminConsoleHub({
                                                         <span style={{
                                                             display: 'inline-flex',
                                                             alignItems: 'center',
-                                                            gap: 5,
+                                                            gap: 6,
                                                             fontSize: '0.72rem',
                                                             fontWeight: 600,
                                                             color: isSuspended ? '#f87171' : (u.status === 'pending' ? '#fbbf24' : '#4ade80'),
@@ -927,7 +1088,13 @@ export function AdminConsoleHub({
                                                             padding: '2px 8px',
                                                             borderRadius: 12
                                                         }}>
-                                                            <span>{isSuspended ? '🔴' : (u.status === 'pending' ? '🟡' : '🟢')}</span>
+                                                            <span style={{
+                                                                width: 6,
+                                                                height: 6,
+                                                                borderRadius: '50%',
+                                                                background: isSuspended ? '#ef4444' : (u.status === 'pending' ? '#f59e0b' : '#22c55e'),
+                                                                boxShadow: isSuspended ? '0 0 6px #ef4444' : (u.status === 'pending' ? '0 0 6px #f59e0b' : '0 0 6px #22c55e')
+                                                            }} />
                                                             <span style={{ textTransform: 'capitalize' }}>{u.status}</span>
                                                         </span>
                                                     </td>
@@ -973,10 +1140,14 @@ export function AdminConsoleHub({
                                                                     color: '#e2e8f0',
                                                                     padding: '4px 8px',
                                                                     fontSize: '0.72rem',
-                                                                    cursor: 'pointer'
+                                                                    cursor: 'pointer',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 4
                                                                 }}
                                                             >
-                                                                🔑 Reset
+                                                                <IconLock size={11} color="#cbd5e1" />
+                                                                <span>Reset</span>
                                                             </button>
 
                                                             {/* If Pending: Show Approve and Reject buttons */}
@@ -1001,7 +1172,8 @@ export function AdminConsoleHub({
                                                                             gap: 4
                                                                         }}
                                                                     >
-                                                                        ✓ Approve
+                                                                        <IconCheck size={11} color="#fff" />
+                                                                        <span>Approve</span>
                                                                     </button>
 
                                                                     <button
@@ -1074,10 +1246,14 @@ export function AdminConsoleHub({
                                     borderRadius: 6,
                                     fontSize: '0.78rem',
                                     fontWeight: 600,
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6
                                 }}
                             >
-                                📜 Activity Audit Trail
+                                <IconHistory size={13} color="#fff" />
+                                <span>Activity Audit Trail</span>
                             </button>
                             <button
                                 type="button"
@@ -1090,10 +1266,14 @@ export function AdminConsoleHub({
                                     borderRadius: 6,
                                     fontSize: '0.78rem',
                                     fontWeight: 600,
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6
                                 }}
                             >
-                                👥 Meeting Attendance Records
+                                <IconUsers size={13} color="#fff" />
+                                <span>Meeting Attendance Records</span>
                             </button>
                         </div>
 
@@ -1115,7 +1295,7 @@ export function AdminConsoleHub({
                                     gap: 6
                                 }}
                             >
-                                <span>📥</span>
+                                <IconDownload size={13} color="#4ade80" />
                                 <span>Export Compliance CSV</span>
                             </button>
                         )}
@@ -1282,13 +1462,34 @@ export function AdminConsoleHub({
                                                         {rec.duration}
                                                     </td>
                                                     <td style={{ padding: '10px 14px' }}>
-                                                        <span style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
-                                                            👥 {rec.totalAttendees} participants
+                                                        <span style={{
+                                                            background: 'rgba(99, 102, 241, 0.15)',
+                                                            color: '#a5b4fc',
+                                                            padding: '2px 8px',
+                                                            borderRadius: 4,
+                                                            fontWeight: 700,
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 5
+                                                        }}>
+                                                            <IconUsers size={12} color="#a5b4fc" />
+                                                            <span>{rec.totalAttendees} participants</span>
                                                         </span>
                                                     </td>
                                                     <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                                                        <span style={{ color: '#4ade80', fontSize: '0.72rem', background: 'rgba(34, 197, 94, 0.12)', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>
-                                                            ✓ Verified
+                                                        <span style={{
+                                                            color: '#4ade80',
+                                                            fontSize: '0.72rem',
+                                                            background: 'rgba(34, 197, 94, 0.12)',
+                                                            padding: '2px 8px',
+                                                            borderRadius: 10,
+                                                            fontWeight: 600,
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 4
+                                                        }}>
+                                                            <IconCheck size={11} color="#4ade80" />
+                                                            <span>Verified</span>
                                                         </span>
                                                     </td>
                                                 </tr>
@@ -1456,10 +1657,9 @@ export function AdminConsoleHub({
                                                             color: '#f87171',
                                                             display: 'flex',
                                                             alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            fontSize: '0.8rem'
+                                                            justifyContent: 'center'
                                                         }}>
-                                                            🎥
+                                                            <IconVideo size={14} color="#f87171" />
                                                         </div>
                                                         <div>
                                                             <div style={{ fontWeight: 700, color: '#fff' }}>{rec.title}</div>
@@ -1473,13 +1673,13 @@ export function AdminConsoleHub({
                                                     {(rec.host as any)?.fullName || 'Host'}
                                                 </td>
                                                 <td style={{ padding: '12px 16px', color: 'var(--color-text-muted)' }}>
-                                                    {new Date(rec.createdAt).toLocaleDateString()}
+                                                    {(rec as any).createdAtFormatted || new Date(rec.createdAt).toLocaleDateString()}
                                                 </td>
                                                 <td style={{ padding: '12px 16px', color: '#c4b5fd' }}>
                                                     {rec.duration}
                                                 </td>
                                                 <td style={{ padding: '12px 16px', color: '#86efac' }}>
-                                                    {formatBytes(rec.sizeBytes)}
+                                                    {(rec as any).fileSizeDisplay || formatBytes(rec.sizeBytes)}
                                                 </td>
                                                 <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
@@ -1494,13 +1694,19 @@ export function AdminConsoleHub({
                                                                 borderRadius: 6,
                                                                 fontSize: '0.72rem',
                                                                 fontWeight: 600,
-                                                                cursor: 'pointer'
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 4
                                                             }}
                                                         >
-                                                            ▶ Play
+                                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                                                <polygon points="5 3 19 12 5 21 5 3"/>
+                                                            </svg>
+                                                            <span>Play</span>
                                                         </button>
                                                         <a
-                                                            href={rec.recordingUrl}
+                                                            href={resolveRecordingUrl(rec.recordingUrl)}
                                                             download={`${rec.title}.mp4`}
                                                             target="_blank"
                                                             rel="noreferrer"
@@ -1513,10 +1719,12 @@ export function AdminConsoleHub({
                                                                 fontSize: '0.72rem',
                                                                 textDecoration: 'none',
                                                                 display: 'inline-flex',
-                                                                alignItems: 'center'
+                                                                alignItems: 'center',
+                                                                gap: 4
                                                             }}
                                                         >
-                                                            ⬇ MP4
+                                                            <IconDownload size={11} color="#e2e8f0" />
+                                                            <span>MP4</span>
                                                         </a>
                                                         <button
                                                             type="button"
@@ -1529,10 +1737,13 @@ export function AdminConsoleHub({
                                                                 padding: '4px 8px',
                                                                 borderRadius: 6,
                                                                 fontSize: '0.72rem',
-                                                                cursor: 'pointer'
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center'
                                                             }}
                                                         >
-                                                            🗑
+                                                            <IconTrash size={13} color="#f87171" />
                                                         </button>
                                                     </div>
                                                 </td>
@@ -1572,14 +1783,15 @@ export function AdminConsoleHub({
                         boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)'
                     }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
-                                ➕ Invite Team Member
+                            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                <IconPlus size={16} color="#818cf8" />
+                                <span>Invite Team Member</span>
                             </h3>
                             <button
                                 onClick={() => setInviteModalOpen(false)}
-                                style={{ background: 'transparent', border: 'none', color: '#9ca3af', fontSize: '1.1rem', cursor: 'pointer' }}
+                                style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 4 }}
                             >
-                                ✕
+                                <IconX size={14} color="#9ca3af" />
                             </button>
                         </div>
 
@@ -1714,8 +1926,9 @@ export function AdminConsoleHub({
                         padding: '22px',
                         border: '1px solid rgba(139, 92, 246, 0.3)'
                     }}>
-                        <h3 style={{ margin: '0 0 8px', fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
-                            👑 Change Access Role
+                        <h3 style={{ margin: '0 0 8px', fontSize: '1rem', fontWeight: 800, color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                            <IconCrown size={16} color="#fbbf24" />
+                            <span>Change Access Role</span>
                         </h3>
                         <p style={{ margin: '0 0 14px', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                             Modify administrative permissions for <strong>{roleModalUser.fullName}</strong>.
@@ -1723,9 +1936,9 @@ export function AdminConsoleHub({
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                             {[
-                                { id: 'admin', title: '🛡️ Administrator', desc: 'Can manage organization, channels, and team accounts.' },
-                                { id: 'member', title: '👤 Member', desc: 'Can host conferences, create channels, and invite guests.' },
-                                { id: 'guest', title: '🔗 Guest', desc: 'Limited participant access to invited rooms only.' }
+                                { id: 'admin', title: 'Administrator', icon: <IconShield size={14} color="#a78bfa" />, desc: 'Can manage organization, channels, and team accounts.' },
+                                { id: 'member', title: 'Member', icon: <IconUser size={14} color="#60a5fa" />, desc: 'Can host conferences, create channels, and invite guests.' },
+                                { id: 'guest', title: 'Guest', icon: <IconExternalLink size={14} color="#94a3b8" />, desc: 'Limited participant access to invited rooms only.' }
                             ].map(r => (
                                 <label
                                     key={r.id}
@@ -1748,8 +1961,11 @@ export function AdminConsoleHub({
                                         style={{ marginTop: 2, accentColor: '#6366f1' }}
                                     />
                                     <div>
-                                        <div style={{ fontWeight: 700, fontSize: '0.8rem', color: '#fff' }}>{r.title}</div>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{r.desc}</div>
+                                        <div style={{ fontWeight: 700, fontSize: '0.8rem', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            {r.icon}
+                                            <span>{r.title}</span>
+                                        </div>
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: 2 }}>{r.desc}</div>
                                     </div>
                                 </label>
                             ))}
@@ -1814,7 +2030,11 @@ export function AdminConsoleHub({
                         border: '1px solid rgba(34, 197, 94, 0.4)',
                         textAlign: 'center'
                     }}>
-                        <div style={{ fontSize: '2.5rem', marginBottom: 8 }}>🔑</div>
+                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+                            <div style={{ width: 52, height: 52, borderRadius: 14, background: 'rgba(34, 197, 94, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <IconLock size={26} color="#4ade80" />
+                            </div>
+                        </div>
                         <h3 style={{ margin: '0 0 6px', fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
                             Temporary Password Generated
                         </h3>
@@ -1857,10 +2077,23 @@ export function AdminConsoleHub({
                                     borderRadius: 8,
                                     fontSize: '0.78rem',
                                     fontWeight: 700,
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6
                                 }}
                             >
-                                {copiedPass ? '✓ Copied to Clipboard' : '📋 Copy Password'}
+                                {copiedPass ? (
+                                    <>
+                                        <IconCheck size={13} color="#4ade80" />
+                                        <span>Copied to Clipboard</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <IconCopy size={13} color="#fff" />
+                                        <span>Copy Password</span>
+                                    </>
+                                )}
                             </button>
 
                             <button
@@ -1934,12 +2167,13 @@ export function AdminConsoleHub({
                                     background: 'transparent',
                                     border: 'none',
                                     color: '#9ca3af',
-                                    fontSize: '1.2rem',
                                     cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
                                     padding: 4
                                 }}
                             >
-                                ✕
+                                <IconX size={14} color="#9ca3af" />
                             </button>
                         </div>
 
@@ -1959,8 +2193,9 @@ export function AdminConsoleHub({
                             alignItems: 'center',
                             background: 'rgba(10, 11, 15, 0.95)'
                         }}>
-                            <span style={{ fontSize: '0.75rem', color: '#86efac' }}>
-                                🔒 Enterprise 256-bit DTLS Encrypted Stream
+                            <span style={{ fontSize: '0.75rem', color: '#86efac', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <IconShieldCheck size={14} color="#86efac" />
+                                <span>Enterprise 256-bit DTLS Encrypted Stream</span>
                             </span>
                             <a
                                 href={activeVideoModal.recordingUrl}
@@ -1972,10 +2207,330 @@ export function AdminConsoleHub({
                                     borderRadius: 6,
                                     fontSize: '0.75rem',
                                     fontWeight: 700,
-                                    textDecoration: 'none'
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6
                                 }}
                             >
-                                ⬇ Download Video (.mp4)
+                                <IconDownload size={13} color="#fff" />
+                                <span>Download Video (.mp4)</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Plan Upgrade Modal */}
+            {upgradeModalOpen && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0, 0, 0, 0.8)',
+                    backdropFilter: 'blur(8px)',
+                    zIndex: 99999,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 20
+                }}>
+                    <div style={{
+                        maxWidth: 960,
+                        width: '100%',
+                        background: '#0d111d',
+                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                        borderRadius: 18,
+                        boxShadow: '0 25px 60px rgba(0,0,0,0.8)',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        maxHeight: '90vh'
+                    }}>
+                        {/* Modal Header */}
+                        <div style={{
+                            padding: '20px 24px',
+                            background: 'linear-gradient(180deg, rgba(99, 102, 241, 0.12) 0%, transparent 100%)',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <IconZap size={18} color="#818cf8" />
+                                    <span>Upgrade Workspace Subscription</span>
+                                    <span style={{ fontSize: '0.72rem', background: 'rgba(99, 102, 241, 0.25)', color: '#c4b5fd', padding: '2px 8px', borderRadius: 9999 }}>
+                                        Current: {currentOrg?.planTier?.toUpperCase() || 'FREE'}
+                                    </span>
+                                </h3>
+                                <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
+                                    Select an enterprise plan tier to expand user seats, cloud recordings storage, and AI meeting quotas.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setUpgradeModalOpen(false)}
+                                style={{
+                                    background: 'rgba(255,255,255,0.06)',
+                                    border: 'none',
+                                    color: '#94a3b8',
+                                    borderRadius: '50%',
+                                    width: 32,
+                                    height: 32,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                            >
+                                <IconX size={14} color="#94a3b8" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+                            {loadingPlans ? (
+                                <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
+                                        <IconClock size={28} color="#818cf8" />
+                                    </div>
+                                    Fetching available subscription tiers...
+                                </div>
+                            ) : (
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                                    gap: 16
+                                }}>
+                                    {availablePlans.map((plan: any) => {
+                                        const planIdKey = plan.planId || plan.id || ''
+                                        const isCurrent = (currentOrg?.planTier || 'free').toLowerCase() === planIdKey.toLowerCase()
+                                        const displayPrice = plan.priceMonthly ?? plan.price ?? 0
+                                        const maxSeats = plan.limits?.maxSeats ?? plan.maxSeats ?? 15
+                                        const maxStorage = plan.limits?.maxStorageGb ?? plan.maxStorageGb ?? 5
+                                        const bullets = plan.featureBullets || (Array.isArray(plan.features) ? plan.features : [])
+                                        return (
+                                            <div
+                                                key={planIdKey}
+                                                style={{
+                                                    background: isCurrent ? 'rgba(99, 102, 241, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                                                    border: isCurrent ? '2px solid #6366f1' : plan.popular ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
+                                                    borderRadius: 14,
+                                                    padding: 20,
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    justifyContent: 'space-between',
+                                                    position: 'relative'
+                                                }}
+                                            >
+                                                {(plan.popular || plan.badge) && !isCurrent && (
+                                                    <span style={{
+                                                        position: 'absolute',
+                                                        top: -10,
+                                                        right: 16,
+                                                        background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+                                                        color: '#fff',
+                                                        fontSize: '0.65rem',
+                                                        fontWeight: 800,
+                                                        padding: '2px 8px',
+                                                        borderRadius: 9999,
+                                                        textTransform: 'uppercase'
+                                                    }}>
+                                                        {plan.badge || 'Popular'}
+                                                    </span>
+                                                )}
+                                                {isCurrent && (
+                                                    <span style={{
+                                                        position: 'absolute',
+                                                        top: -10,
+                                                        right: 16,
+                                                        background: '#6366f1',
+                                                        color: '#fff',
+                                                        fontSize: '0.65rem',
+                                                        fontWeight: 800,
+                                                        padding: '2px 8px',
+                                                        borderRadius: 9999,
+                                                        textTransform: 'uppercase'
+                                                    }}>
+                                                        Active Plan
+                                                    </span>
+                                                )}
+
+                                                <div>
+                                                    <h4 style={{ margin: '0 0 6px 0', fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>
+                                                        {plan.name}
+                                                    </h4>
+                                                    <p style={{ margin: '0 0 16px 0', fontSize: '0.78rem', color: '#94a3b8', minHeight: 34 }}>
+                                                        {plan.description}
+                                                    </p>
+                                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 16 }}>
+                                                        <span style={{ fontSize: '1.7rem', fontWeight: 900, color: '#fff' }}>
+                                                            {plan.currency || '$'} {displayPrice}
+                                                        </span>
+                                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>/{plan.billingPeriod || 'month'}</span>
+                                                    </div>
+
+                                                    <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: 14, marginBottom: 16 }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#e2e8f0', marginBottom: 8 }}>
+                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                                                <IconUsers size={13} color="#a5b4fc" />
+                                                                <span>Max Team Seats:</span>
+                                                            </span>
+                                                            <strong style={{ color: '#a5b4fc' }}>{maxSeats >= 99999 ? 'Unlimited' : maxSeats}</strong>
+                                                        </div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#e2e8f0', marginBottom: 8 }}>
+                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                                                <IconVideo size={13} color="#a5b4fc" />
+                                                                <span>Cloud Storage:</span>
+                                                            </span>
+                                                            <strong style={{ color: '#a5b4fc' }}>{maxStorage} GB</strong>
+                                                        </div>
+                                                    </div>
+
+                                                    <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: '0.74rem', color: '#cbd5e1', lineHeight: 1.7, marginBottom: 20 }}>
+                                                        {bullets.slice(0, 5).map((f: string, idx: number) => (
+                                                            <li key={idx}>{f}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    disabled={isCurrent || upgradingPlan}
+                                                    onClick={() => handleExecuteUpgrade(planIdKey)}
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '10px 0',
+                                                        borderRadius: 8,
+                                                        border: isCurrent ? '1px solid rgba(255, 255, 255, 0.15)' : 'none',
+                                                        background: isCurrent ? 'rgba(255, 255, 255, 0.05)' : 'linear-gradient(135deg, #6366f1, #a855f7)',
+                                                        color: isCurrent ? '#94a3b8' : '#fff',
+                                                        fontSize: '0.82rem',
+                                                        fontWeight: 700,
+                                                        cursor: isCurrent || upgradingPlan ? 'not-allowed' : 'pointer',
+                                                        boxShadow: isCurrent ? 'none' : '0 4px 14px rgba(99, 102, 241, 0.4)',
+                                                        transition: 'all 0.2s ease'
+                                                    }}
+                                                >
+                                                    {isCurrent ? 'Current Plan' : upgradingPlan ? 'Processing Upgrade...' : `Upgrade to ${plan.name}`}
+                                                </button>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div style={{
+                            padding: '14px 24px',
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <IconLock size={12} color="#64748b" />
+                                <span>Secure enterprise upgrade • Quotas apply instantaneously to your workspace.</span>
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setUpgradeModalOpen(false)}
+                                style={{
+                                    background: 'transparent',
+                                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                                    color: '#cbd5e1',
+                                    padding: '6px 16px',
+                                    borderRadius: 6,
+                                    fontSize: '0.8rem',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Active Cloud Video Streaming Modal */}
+            {activeVideoModal && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 99999,
+                    background: 'rgba(0, 0, 0, 0.85)',
+                    backdropFilter: 'blur(16px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 20
+                }}>
+                    <div style={{
+                        width: '100%',
+                        maxWidth: 860,
+                        background: '#121420',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: 20,
+                        overflow: 'hidden',
+                        boxShadow: '0 25px 60px rgba(0,0,0,0.9)',
+                        display: 'flex',
+                        flexDirection: 'column'
+                    }}>
+                        <div style={{
+                            padding: '16px 22px',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between'
+                        }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
+                                    {activeVideoModal.title}
+                                </h3>
+                                <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                                    ID: {activeVideoModal.meetingId} &bull; {activeVideoModal.duration}
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setActiveVideoModal(null)}
+                                style={{ background: 'none', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer', fontWeight: 700 }}
+                            >
+                                &times;
+                            </button>
+                        </div>
+                        <div style={{ background: '#000', width: '100%', minHeight: 380, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <video
+                                src={resolveRecordingUrl(activeVideoModal.recordingUrl)}
+                                controls
+                                autoPlay
+                                style={{ width: '100%', maxHeight: '65vh', outline: 'none' }}
+                            />
+                        </div>
+                        <div style={{ padding: '14px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0d0e17' }}>
+                            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                                Recorded on {new Date(activeVideoModal.createdAt).toLocaleDateString()} &bull; Encrypted Vault Storage
+                            </span>
+                            <a
+                                href={resolveRecordingUrl(activeVideoModal.recordingUrl)}
+                                download={`${activeVideoModal.title}.mp4`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                    color: '#fff',
+                                    padding: '6px 16px',
+                                    borderRadius: 8,
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 700,
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6
+                                }}
+                            >
+                                <IconDownload size={14} color="#fff" /> Download MP4 File
                             </a>
                         </div>
                     </div>

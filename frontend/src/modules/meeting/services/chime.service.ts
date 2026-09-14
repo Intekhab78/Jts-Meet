@@ -105,6 +105,53 @@ export function stopRingtone() {
     }
 }
 
+let outgoingInterval: any = null
+
+export function startOutgoingRingback() {
+    stopOutgoingRingback()
+
+    const playRing = () => {
+        try {
+            const ctx = getAudioContext()
+            const now = ctx.currentTime
+
+            const osc1 = ctx.createOscillator()
+            const osc2 = ctx.createOscillator()
+            const gain = ctx.createGain()
+
+            osc1.type = 'sine'
+            osc1.frequency.setValueAtTime(440, now)
+
+            osc2.type = 'sine'
+            osc2.frequency.setValueAtTime(480, now)
+
+            gain.gain.setValueAtTime(0.001, now)
+            gain.gain.linearRampToValueAtTime(0.07, now + 0.05)
+            gain.gain.setValueAtTime(0.07, now + 1.4)
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.6)
+
+            osc1.connect(gain)
+            osc2.connect(gain)
+            gain.connect(ctx.destination)
+
+            osc1.start(now)
+            osc2.start(now)
+            osc1.stop(now + 1.65)
+            osc2.stop(now + 1.65)
+        } catch (e) {}
+    }
+
+    playRing()
+    outgoingInterval = setInterval(playRing, 3500)
+}
+
+export function stopOutgoingRingback() {
+    if (outgoingInterval) {
+        clearInterval(outgoingInterval)
+        outgoingInterval = null
+    }
+}
+
 export function playKnockChime() {
     try {
         const ctx = getAudioContext()

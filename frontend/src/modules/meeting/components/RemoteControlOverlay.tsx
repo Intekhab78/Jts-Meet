@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
+import { IconMonitor, IconX } from '../../../components/common/Icons'
 
 export interface RemoteControlOverlayProps {
     meetingId: string
@@ -420,7 +421,7 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
                         onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                         title="Instantly revoke remote control (Press Esc)"
                     >
-                        <span>✕</span>
+                        <IconX size={12} color="#ffffff" />
                         <span>Revoke (Esc)</span>
                     </button>
                 </div>
@@ -454,7 +455,7 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
                     }}
                 >
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                        <span style={{ fontSize: '0.95rem' }}>🎮</span>
+                        <IconMonitor size={15} color="#60a5fa" />
                         <span style={{ color: '#ffffff', fontWeight: 600 }}>You are controlling this screen</span>
                     </div>
 
@@ -537,7 +538,7 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
                             gap: 4
                         }}
                     >
-                        <span>🎮</span>
+                        <IconMonitor size={12} color="#ffffff" />
                         <span>{activeControllerName || 'Remote Control'}</span>
                     </div>
                 </div>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { IconSparkles, IconCheck, IconCopy, IconX, IconInfo } from '../../../components/common/Icons'
 
 interface AiResponseRendererProps {
     content: string
@@ -125,7 +126,7 @@ export const AiResponseRenderer: React.FC<AiResponseRendererProps> = ({ content,
                         color: '#fff',
                         boxShadow: '0 0 10px rgba(139, 92, 246, 0.4)'
                     }}>
-                        ✨
+                        <IconSparkles size={13} color="#fff" />
                     </div>
                     <div>
                         <span style={{ fontWeight: 700, fontSize: '0.82rem', color: '#fff', letterSpacing: '0.02em' }}>
@@ -163,7 +164,7 @@ export const AiResponseRenderer: React.FC<AiResponseRendererProps> = ({ content,
                             transition: 'all 0.15s ease'
                         }}
                     >
-                        <span>{copied ? '✓' : '📋'}</span>
+                        {copied ? <IconCheck size={12} color="#4ade80" /> : <IconCopy size={12} />}
                         <span>{copied ? 'Copied' : 'Copy'}</span>
                     </button>
 
@@ -186,7 +187,7 @@ export const AiResponseRenderer: React.FC<AiResponseRendererProps> = ({ content,
                                 justifyContent: 'center'
                             }}
                         >
-                            ✕
+                            <IconX size={13} />
                         </button>
                     )}
                 </div>
@@ -251,7 +252,7 @@ export const AiResponseRenderer: React.FC<AiResponseRendererProps> = ({ content,
                                     gap: 8
                                 }}
                             >
-                                <span style={{ fontSize: '0.9rem' }}>💡</span>
+                                <IconInfo size={15} color="#c084fc" style={{ flexShrink: 0, marginTop: 2 }} />
                                 <div>
                                     <strong style={{ color: '#fff', marginRight: 4 }}>Pro Tip:</strong>
                                     {renderInline(tipText)}

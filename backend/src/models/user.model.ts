@@ -6,7 +6,8 @@ export interface IUser extends Document {
     email: string
     password: string
     profileImage?: string
-    status: 'online' | 'offline'
+    status: 'online' | 'busy' | 'away' | 'dnd' | 'in_meeting' | 'offline'
+    customStatus?: string
     emailVerified: boolean
     googleId?: string | null
     microsoftId?: string | null
@@ -25,7 +26,12 @@ const UserSchema = new Schema<IUser>(
         email: { type: String, required: true, unique: true, lowercase: true, trim: true },
         password: { type: String, required: true, select: false },
         profileImage: { type: String, default: '' },
-        status: { type: String, enum: ['online', 'offline'], default: 'offline' },
+        status: { 
+            type: String, 
+            enum: ['online', 'busy', 'away', 'dnd', 'in_meeting', 'offline'], 
+            default: 'offline' 
+        },
+        customStatus: { type: String, default: '', maxlength: 100 },
         emailVerified: { type: Boolean, default: false },
         googleId: { type: String, default: null, index: true },
         microsoftId: { type: String, default: null, index: true },

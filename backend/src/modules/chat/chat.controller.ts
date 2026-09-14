@@ -10,7 +10,8 @@ import {
     markConversationSeen,
     RecentChatItem,
     addReactionToMessage,
-    removeReactionFromMessage
+    removeReactionFromMessage,
+    searchContacts
 } from './chat.service'
 import { validateSendMessage, validateConversationQuery, validateRecentChatsQuery } from './chat.validator'
 import { AuthRequest } from '../../middleware/authMiddleware'
@@ -346,6 +347,21 @@ export const chatController = {
             return sendSuccess(res, result, 'Reaction removed successfully')
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to remove reaction')
+        }
+    },
+
+    getContacts: async (req: AuthRequest, res: Response) => {
+        const userId = req.userId
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        const search = typeof req.query.search === 'string' ? req.query.search : ''
+        const limit = Math.min(50, Number(req.query.limit) || 30)
+        try {
+            const contacts = await searchContacts(userId, search, limit)
+            return sendSuccess(res, contacts, 'Contacts retrieved')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to search contacts')
         }
     }
 }

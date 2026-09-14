@@ -23,8 +23,9 @@ import {
 import { validateCreateMeeting, validateMeetingAction } from './meeting.validator'
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { User } from '../../models/user.model'
+import { Organization } from '../organization/organization.model'
 import { NotificationService } from '../notification/notification.service'
-import { sendMeetingInvitationEmail } from '../../services/email.service'
+import { sendMeetingInvitationEmail, sendPostMeetingSummaryEmail } from '../../services/email.service'
 import { Team } from '../team/team.model'
 import { FRONTEND_URL } from '../../config'
 import { parseCursorQuery, executeCursorQuery } from '../../utils/paginationHelper'
@@ -485,6 +486,134 @@ export const meetingController = {
             return sendSuccess(res, { meetingId, notifiedCount }, `Live conference started! ${notifiedCount} team members notified with 1-click join link.`)
         } catch (error: any) {
             return sendError(res, 500, error.message || 'Failed to dispatch live start notifications')
+        }
+    },
+
+    uploadRecording: async (req: AuthRequest & { file?: Express.Multer.File }, res: Response) => {
+        const meetingId = String(req.params.meetingId || '')
+        if (!meetingId) {
+            return sendError(res, 400, 'Meeting ID is required')
+        }
+
+        const file = req.file
+        if (!file) {
+            return sendError(res, 400, 'No recording file provided')
+        }
+
+        try {
+            const recordingUrl = `/uploads/recordings/${file.filename}`
+            const duration = Number(req.body.duration) || 0
+            const size = file.size || 0
+            const titleParam = req.body.title || `Conference ${meetingId}`
+
+            const filter = Types.ObjectId.isValid(meetingId)
+                ? { $or: [{ meetingId }, { _id: meetingId }] }
+                : { meetingId }
+
+            let userOrgId: Types.ObjectId | undefined
+            if (req.userId && Types.ObjectId.isValid(req.userId)) {
+                const userObjId = new Types.ObjectId(req.userId)
+                const orgDoc = await Organization.findOne({
+                    $or: [{ ownerId: userObjId }, { 'members.userId': userObjId }]
+                }).select('_id').exec()
+                if (orgDoc) {
+                    userOrgId = orgDoc._id as any
+                }
+            }
+
+            let meeting = await Meeting.findOne(filter)
+            if (!meeting) {
+                const hostId = req.userId && Types.ObjectId.isValid(req.userId) ? new Types.ObjectId(req.userId) : undefined
+                meeting = await Meeting.create({
+                    meetingId,
+                    title: titleParam,
+                    host: hostId,
+                    participants: hostId ? [hostId] : [],
+                    organizationId: userOrgId,
+                    status: 'ended',
+                    recordingUrl,
+                    recorded: true,
+                    recordingDuration: duration,
+                    recordingSize: size,
+                    startedAt: new Date(Date.now() - (duration || 30) * 1000),
+                    endedAt: new Date()
+                })
+            } else {
+                meeting.recordingUrl = recordingUrl
+                meeting.recorded = true
+                meeting.recordingDuration = duration
+                meeting.recordingSize = size
+                if (userOrgId && !meeting.organizationId) {
+                    meeting.organizationId = userOrgId
+                }
+                if (!meeting.endedAt) meeting.endedAt = new Date()
+                await meeting.save()
+            }
+
+            return sendSuccess(
+                res,
+                {
+                    meetingId: meeting.meetingId,
+                    recordingUrl,
+                    recorded: true,
+                    recordingDuration: duration,
+                    recordingSize: size
+                },
+                'Meeting recording uploaded and stored in Cloud Storage successfully'
+            )
+        } catch (error: any) {
+            console.error('[uploadRecording] Error:', error)
+            return sendError(res, 500, error.message || 'Failed to upload meeting recording')
+        }
+    },
+
+    dispatchSummaryEmail: async (req: AuthRequest, res: Response) => {
+        const meetingId = req.params.meetingId as string
+        const { emails, summaryBullets, actionItems, duration, attendees } = req.body
+
+        try {
+            const filter = Types.ObjectId.isValid(meetingId)
+                ? { $or: [{ meetingId }, { _id: meetingId }] }
+                : { meetingId }
+
+            const meeting = await Meeting.findOne(filter)
+            if (!meeting) {
+                return sendError(res, 404, 'Meeting not found')
+            }
+
+            let targetEmails: string[] = Array.isArray(emails) ? emails.filter(Boolean) : []
+            if (targetEmails.length === 0 && meeting.host) {
+                const hostUser = await User.findById(meeting.host).select('email')
+                if (hostUser?.email) {
+                    targetEmails.push(hostUser.email)
+                }
+            }
+
+            if (targetEmails.length === 0) {
+                return sendError(res, 400, 'No recipient email addresses available')
+            }
+
+            const baseUrl = FRONTEND_URL || 'http://localhost:5173'
+            const fullRecordingUrl = meeting.recordingUrl ? `${baseUrl}${meeting.recordingUrl}` : undefined
+
+            await sendPostMeetingSummaryEmail({
+                to: targetEmails,
+                meetingTitle: meeting.title || `Meeting ${meeting.meetingId}`,
+                meetingId: meeting.meetingId,
+                duration: duration || ((meeting as any).duration ? `${Math.round((meeting as any).duration / 60)} mins` : 'Completed'),
+                date: new Date(meeting.createdAt || Date.now()).toLocaleDateString('en-US', {
+                    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
+                }),
+                summaryBullets: summaryBullets || [],
+                actionItems: actionItems || [],
+                attendees: attendees || [],
+                recordingUrl: fullRecordingUrl
+            })
+
+            return sendSuccess(res, { dispatchedTo: targetEmails }, 'Post-meeting executive summary dispatched successfully')
+        } catch (error: any) {
+            console.error('[dispatchSummaryEmail] Error:', error)
+            return sendError(res, 500, error.message || 'Failed to dispatch post-meeting email')
         }
     }
 }

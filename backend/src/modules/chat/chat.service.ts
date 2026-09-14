@@ -6,6 +6,15 @@ import { NotificationService } from '../notification/notification.service'
 export interface RecentChatItem {
     conversationWith: Types.ObjectId
     latestMessage: IMessage
+    user?: {
+        _id: Types.ObjectId
+        fullName: string
+        email: string
+        profileImage?: string
+        status?: string
+        customStatus?: string
+        lastSeen?: Date
+    }
 }
 
 export async function createMessage(
@@ -133,9 +142,27 @@ export async function getRecentChats(userId: string, page = 1, limit = 20): Prom
             }
         },
         {
+            $lookup: {
+                from: 'users',
+                localField: '_id',
+                foreignField: '_id',
+                as: 'userInfo'
+            }
+        },
+        { $unwind: { path: '$userInfo', preserveNullAndEmptyArrays: true } },
+        {
             $project: {
                 conversationWith: '$_id',
                 latestMessage: 1,
+                user: {
+                    _id: '$userInfo._id',
+                    fullName: '$userInfo.fullName',
+                    email: '$userInfo.email',
+                    profileImage: '$userInfo.profileImage',
+                    status: '$userInfo.status',
+                    customStatus: '$userInfo.customStatus',
+                    lastSeen: '$userInfo.lastSeen'
+                },
                 _id: 0
             }
         },
@@ -166,4 +193,18 @@ export async function removeReactionFromMessage(messageId: string, userId: strin
 
     msg.reactions = msg.reactions.filter(r => !(r.userId.equals(userObjectId) && r.emoji === emoji))
     return msg.save()
+}
+
+export async function searchContacts(currentUserId: string, search?: string, limit = 30) {
+    const query: any = { _id: { $ne: new Types.ObjectId(currentUserId) } }
+    if (search && search.trim()) {
+        const regex = new RegExp(search.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i')
+        query.$or = [{ fullName: regex }, { email: regex }]
+    }
+    return User.find(query)
+        .select('fullName email profileImage status customStatus lastSeen')
+        .limit(limit)
+        .sort({ fullName: 1 })
+        .lean()
+        .exec()
 }

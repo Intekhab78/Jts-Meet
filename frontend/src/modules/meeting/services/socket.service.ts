@@ -62,6 +62,10 @@ export const SocketEvents = {
     REMOTE_CONTROL_RESPONSE: 'remote-control:response',
     REMOTE_CONTROL_REVOKE: 'remote-control:revoke',
     REMOTE_CONTROL_MOUSE: 'remote-control:mouse',
-    REMOTE_CONTROL_KEY: 'remote-control:key'
+    REMOTE_CONTROL_KEY: 'remote-control:key',
+
+    // Presenter Backstage / Virtual Green Room (Enterprise Tier)
+    STAGE_STATUS_CHANGE: 'stage:status:change',
+    STAGE_STATE_SYNC: 'stage:state:sync'
 } as const
 

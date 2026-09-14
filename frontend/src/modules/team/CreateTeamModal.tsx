@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { CreateTeamPayload } from './team.types'
+import { IconUsers, IconAlertTriangle, IconX } from '../../components/common/Icons'
 
 interface CreateTeamModalProps {
     open: boolean
@@ -79,10 +80,11 @@ export function CreateTeamModal({ open, onClose, onCreate }: CreateTeamModalProp
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 justifyContent: 'center',
                 padding: '24px 16px',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                overflowY: 'auto'
             }}
             onClick={(e) => {
                 if (e.target === e.currentTarget && !submitting) {
@@ -104,7 +106,8 @@ export function CreateTeamModal({ open, onClose, onCreate }: CreateTeamModalProp
                     flexDirection: 'column',
                     maxHeight: 'min(88vh, 650px)',
                     overflow: 'hidden',
-                    position: 'relative'
+                    position: 'relative',
+                    marginBottom: 24
                 }}
             >
                 {/* MS Teams Style Header */}
@@ -130,7 +133,7 @@ export function CreateTeamModal({ open, onClose, onCreate }: CreateTeamModalProp
                             color: '#fff',
                             flexShrink: 0
                         }}>
-                            👥
+                            <IconUsers size={20} />
                         </div>
                         <div>
                             <h2 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#fff', lineHeight: 1.2 }}>
@@ -156,11 +159,10 @@ export function CreateTeamModal({ open, onClose, onCreate }: CreateTeamModalProp
                             borderRadius: 8,
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.9rem'
+                            justifyContent: 'center'
                         }}
                     >
-                        ✕
+                        <IconX size={16} />
                     </button>
                 </div>
 
@@ -280,9 +282,12 @@ export function CreateTeamModal({ open, onClose, onCreate }: CreateTeamModalProp
                                 border: '1px solid rgba(239, 68, 68, 0.35)',
                                 color: '#fca5a5',
                                 fontSize: '0.8rem',
-                                borderRadius: 8
+                                borderRadius: 8,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}>
-                                ⚠️ {error}
+                                <IconAlertTriangle size={15} color="#fca5a5" /> {error}
                             </div>
                         )}
                     </div>
@@ -331,7 +336,7 @@ export function CreateTeamModal({ open, onClose, onCreate }: CreateTeamModalProp
                                 boxShadow: '0 4px 14px rgba(91, 95, 199, 0.4)'
                             }}
                         >
-                            {submitting ? 'Creating...' : 'Create Team ➔'}
+                            {submitting ? 'Creating...' : <span>Create Team &rarr;</span>}
                         </button>
                     </div>
                 </form>

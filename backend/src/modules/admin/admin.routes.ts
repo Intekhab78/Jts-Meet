@@ -3,6 +3,7 @@ import { adminController } from './admin.controller'
 import { asyncWrapper } from '../../utils/asyncWrapper'
 import { authenticate } from '../../middleware/authMiddleware'
 import { requireAdmin } from '../../middleware/adminMiddleware'
+import { planController } from '../plan/plan.controller'
 
 const router = Router()
 
@@ -33,5 +34,12 @@ router.patch('/tenants/:orgId/quota', authenticate, requireAdmin, asyncWrapper(a
 router.get('/telemetry', authenticate, requireAdmin, asyncWrapper(adminController.getTelemetryAction))
 router.post('/broadcast', authenticate, requireAdmin, asyncWrapper(adminController.broadcastNoticeAction))
 
+// DYNAMIC SAAS PLAN TIER MANAGEMENT (SUPER ADMIN)
+router.get('/plans', authenticate, requireAdmin, asyncWrapper(planController.getAllPlans))
+router.post('/plans', authenticate, requireAdmin, asyncWrapper(planController.createPlan))
+router.patch('/plans/:planId', authenticate, requireAdmin, asyncWrapper(planController.updatePlan))
+router.delete('/plans/:planId', authenticate, requireAdmin, asyncWrapper(planController.deletePlan))
+
 export default router
+
 

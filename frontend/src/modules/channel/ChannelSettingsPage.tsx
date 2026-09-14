@@ -21,11 +21,17 @@ import { CreateChannelDialog } from './CreateChannelDialog'
 import { EditChannelDialog } from './EditChannelDialog'
 import { InviteChannelMemberDialog } from './InviteChannelMemberDialog'
 import { ChannelMembersPage } from './ChannelMembersPage'
+import {
+    IconMessage, IconFileText, IconUsers, IconEye, IconShield,
+    IconAlertTriangle, IconHash, IconCheck, IconTrash, IconPlus, IconX,
+    IconPin, IconFolder, IconSparkles, IconMonitor, IconDownload, IconHand
+} from '../../components/common/Icons'
 import { FileCard } from './components/FileCard'
 import { CodeSnippetModal } from './components/CodeSnippetModal'
 import { CodeSnippetCard } from './components/CodeSnippetCard'
 import type { ChannelAttachment, CodeSnippet } from './channel.types'
 import { soundEffects } from '../../utils/soundEffects'
+import { AsyncClipRecorderModal } from '../chat/components/AsyncClipRecorderModal'
 import io from 'socket.io-client'
 import { SOCKET_URL, API_BASE } from '../../config'
 
@@ -78,7 +84,10 @@ export function ChannelSettingsPage({
     const [activeThreadParent, setActiveThreadParent] = useState<any | null>(null)
     const [threadMessages, setThreadMessages] = useState<any[]>([])
     const [threadInput, setThreadInput] = useState('')
+    const [pinnedMessages, setPinnedMessages] = useState<any[]>([])
+    const [showPinnedDrawer, setShowPinnedDrawer] = useState(false)
     const [socketInstance, setSocketInstance] = useState<any | null>(null)
+    const [showClipModal, setShowClipModal] = useState(false)
 
     // Resolved current user ID with JWT token decoding fallback
     const resolvedUserId = useMemo(() => {
@@ -193,7 +202,22 @@ export function ChannelSettingsPage({
             }
         }
 
+        const fetchPinnedMessages = async () => {
+            try {
+                const res = await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat/pinned/all`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+                const data = await res.json()
+                if (data.success && Array.isArray(data.data)) {
+                    setPinnedMessages(data.data)
+                }
+            } catch (err) {
+                console.error('Failed to load pinned messages:', err)
+            }
+        }
+
         fetchMessages()
+        fetchPinnedMessages()
         loadFiles(selectedChannel._id)
 
         const socket = io(SOCKET_URL, {
@@ -288,11 +312,26 @@ export function ChannelSettingsPage({
         socket.on('channel:message:delete', ({ messageId }: { messageId: string }) => {
             setMessages(prev => prev.filter(m => m._id !== messageId))
             setThreadMessages(prev => prev.filter(m => m._id !== messageId))
+            setPinnedMessages(prev => prev.filter(m => m._id !== messageId))
         })
 
         socket.on('channel:message:reaction', ({ messageId, reactions }: any) => {
             setMessages(prev => prev.map(m => m._id === messageId ? { ...m, reactions } : m))
             setThreadMessages(prev => prev.map(m => m._id === messageId ? { ...m, reactions } : m))
+        })
+
+        socket.on('channel:message:pin', ({ messageId, pinned, pinnedBy, pinnedAt, message }: any) => {
+            setMessages(prev => prev.map(m => m._id === messageId ? { ...m, pinned, pinnedBy, pinnedAt } : m))
+            setPinnedMessages(prev => {
+                if (pinned) {
+                    if (prev.some(m => m._id === messageId)) {
+                        return prev.map(m => m._id === messageId ? (message || { ...m, pinned, pinnedBy, pinnedAt }) : m)
+                    }
+                    return [message || { _id: messageId, pinned, pinnedBy, pinnedAt }, ...prev]
+                } else {
+                    return prev.filter(m => m._id !== messageId)
+                }
+            })
         })
 
         setSocketInstance(socket)
@@ -302,6 +341,30 @@ export function ChannelSettingsPage({
             socket.disconnect()
         }
     }, [selectedChannel?._id, token, activeThreadParent?._id])
+
+    const handleTogglePin = async (messageId: string) => {
+        if (!selectedChannel) return
+        try {
+            const res = await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat/${messageId}/pin`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            const data = await res.json()
+            if (data.success && data.data) {
+                const updated = data.data
+                setMessages(prev => prev.map(m => m._id === messageId ? { ...m, pinned: updated.pinned, pinnedBy: updated.pinnedBy, pinnedAt: updated.pinnedAt } : m))
+                setPinnedMessages(prev => {
+                    if (updated.pinned) {
+                        return [updated, ...prev.filter(m => m._id !== messageId)]
+                    } else {
+                        return prev.filter(m => m._id !== messageId)
+                    }
+                })
+            }
+        } catch (err) {
+            console.error('[handleTogglePin] error:', err)
+        }
+    }
 
     // Load thread messages
     useEffect(() => {
@@ -393,6 +456,24 @@ export function ChannelSettingsPage({
             }
         } catch (err) {
             console.error('Failed to send thread reply:', err)
+        }
+    }
+
+    const handleClipUploaded = async (clip: { _id: string; title: string; videoUrl: string; duration: number }) => {
+        if (!selectedChannel) return
+        const clipUrl = `${API_BASE}${clip.videoUrl}`
+        const clipContent = `[Video Clip] ${clip.title} (${Math.round(clip.duration)}s)\n${clipUrl}`
+        try {
+            await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ content: clipContent, messageType: 'text' })
+            })
+        } catch (e) {
+            console.error('Failed to post clip in channel:', e)
         }
     }
 
@@ -788,8 +869,8 @@ export function ChannelSettingsPage({
 
             
             {error && (
-                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', color: '#f87171', padding: '6px 12px', borderRadius: 8, fontSize: '0.75rem', marginBottom: 8 }}>
-                    ⚠️ {error}
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', color: '#f87171', padding: '6px 12px', borderRadius: 8, fontSize: '0.75rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <IconAlertTriangle size={14} color="#f87171" /> {error}
                 </div>
             )}
 
@@ -799,8 +880,8 @@ export function ChannelSettingsPage({
                     Loading channels workspace...
                 </div>
             ) : !teamId ? (
-                <div className="glass-card" style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                    💬 No department/team selected. Choose a team in the workspace sidebar.
+                <div className="glass-card" style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <IconUsers size={16} /> No department/team selected. Choose a team in the workspace sidebar.
                 </div>
             ) : (
                 /* UNIFIED FULL-HEIGHT WORKSPACE CONTAINER */
@@ -1150,12 +1231,12 @@ export function ChannelSettingsPage({
                                     {/* Sub-Tabs */}
                                     <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
                                         {[
-                                            { id: 'chat', label: 'Posts & Chat', icon: '💬' },
-                                            { id: 'files', label: `Files (${files.length})`, icon: '📁' },
-                                            { id: 'members', label: `Members (${members.length})`, icon: '👥' },
-                                            { id: 'info', label: 'Info', icon: 'ℹ️' },
-                                            { id: 'permissions', label: 'Roles', icon: '🛡️' },
-                                            { id: 'danger', label: 'Danger', icon: '⚠️' }
+                                            { id: 'chat', label: 'Posts & Chat', icon: <IconMessage size={13} /> },
+                                            { id: 'files', label: `Files (${files.length})`, icon: <IconFileText size={13} /> },
+                                            { id: 'members', label: `Members (${members.length})`, icon: <IconUsers size={13} /> },
+                                            { id: 'info', label: 'Info', icon: <IconEye size={13} /> },
+                                            { id: 'permissions', label: 'Roles', icon: <IconShield size={13} /> },
+                                            { id: 'danger', label: 'Danger', icon: <IconAlertTriangle size={13} /> }
                                         ].map((tab) => (
                                             <button
                                                 key={tab.id}
@@ -1171,11 +1252,11 @@ export function ChannelSettingsPage({
                                                     cursor: 'pointer',
                                                     display: 'inline-flex',
                                                     alignItems: 'center',
-                                                    gap: 4,
+                                                    gap: 5,
                                                     whiteSpace: 'nowrap'
                                                 }}
                                             >
-                                                <span>{tab.icon}</span>
+                                                {tab.icon}
                                                 <span>{tab.label}</span>
                                             </button>
                                         ))}
@@ -1183,11 +1264,11 @@ export function ChannelSettingsPage({
 
                                     {/* REAL METRICS INFO (Zero hardcoded formulas!) */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: '0.7rem', color: 'var(--color-text-muted)', padding: '4px 0' }}>
-                                        <span>👥 {members.length} members</span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconUsers size={11} /> {members.length} members</span>
                                         <span>•</span>
-                                        <span>🟢 {realOnlineCount} online</span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} /> {realOnlineCount} online</span>
                                         <span>•</span>
-                                        <span>📁 {files.length} files</span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconFileText size={11} /> {files.length} files</span>
                                     </div>
                                 </div>
 
@@ -1221,7 +1302,7 @@ export function ChannelSettingsPage({
                                                     boxShadow: '0 0 30px rgba(99, 102, 241, 0.3)'
                                                 }}
                                             >
-                                                <div style={{ fontSize: '3.2rem', animation: 'bounce 1s infinite' }}>📥</div>
+                                                <IconDownload size={44} color="#818cf8" style={{ animation: 'bounce 1s infinite' }} />
                                                 <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', textAlign: 'center' }}>
                                                     Drop files to share in #{selectedChannel.name}
                                                 </div>
@@ -1234,11 +1315,116 @@ export function ChannelSettingsPage({
                                             </div>
                                         )}
 
+                                        {/* PINNED ANNOUNCEMENT DRAWER (Slack / Teams style) */}
+                                        {pinnedMessages.length > 0 && (
+                                            <>
+                                                <div
+                                                    onClick={() => setShowPinnedDrawer(prev => !prev)}
+                                                    style={{
+                                                        padding: '7px 14px',
+                                                        background: 'linear-gradient(90deg, rgba(245, 158, 11, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%)',
+                                                        borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        cursor: 'pointer',
+                                                        flexShrink: 0
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                                                        <div style={{
+                                                            width: 20, height: 20, borderRadius: 5,
+                                                            background: 'rgba(245, 158, 11, 0.25)',
+                                                            color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                                        }}>
+                                                            <IconPin size={12} />
+                                                        </div>
+                                                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fef3c7', flexShrink: 0 }}>
+                                                            {pinnedMessages.length} Pinned {pinnedMessages.length === 1 ? 'Message' : 'Messages'}
+                                                        </span>
+                                                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>•</span>
+                                                        <span style={{ fontSize: '0.72rem', color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {pinnedMessages[0]?.content || 'Pinned item'}
+                                                        </span>
+                                                    </div>
+                                                    <span style={{
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: 700,
+                                                        color: '#f59e0b',
+                                                        padding: '2px 8px',
+                                                        borderRadius: 4,
+                                                        background: 'rgba(245, 158, 11, 0.15)',
+                                                        flexShrink: 0
+                                                    }}>
+                                                        {showPinnedDrawer ? 'Hide' : 'View'}
+                                                    </span>
+                                                </div>
+
+                                                {/* Expanded Pinned Items Drawer */}
+                                                {showPinnedDrawer && (
+                                                    <div style={{
+                                                        maxHeight: 180,
+                                                        overflowY: 'auto',
+                                                        background: 'rgba(15, 17, 26, 0.96)',
+                                                        borderBottom: '1px solid rgba(245, 158, 11, 0.2)',
+                                                        padding: '8px 14px',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        gap: 6,
+                                                        flexShrink: 0
+                                                    }}>
+                                                        {pinnedMessages.map((pm: any) => (
+                                                            <div key={pm._id} style={{
+                                                                display: 'flex',
+                                                                alignItems: 'flex-start',
+                                                                justifyContent: 'space-between',
+                                                                background: 'rgba(255, 255, 255, 0.03)',
+                                                                borderRadius: 6,
+                                                                padding: '6px 10px',
+                                                                border: '1px solid rgba(255, 255, 255, 0.06)'
+                                                            }}>
+                                                                <div style={{ overflow: 'hidden', paddingRight: 8 }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                                                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#f8fafc' }}>
+                                                                            {pm.senderId?.fullName || 'Member'}
+                                                                        </span>
+                                                                        <span style={{ fontSize: '0.625rem', color: '#94a3b8' }}>
+                                                                            {new Date(pm.createdAt).toLocaleDateString()}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.75rem', color: '#cbd5e1', lineHeight: 1.35 }}>
+                                                                        {pm.content}
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => { e.stopPropagation(); handleTogglePin(pm._id); }}
+                                                                    style={{
+                                                                        background: 'transparent',
+                                                                        border: 'none',
+                                                                        color: '#ef4444',
+                                                                        cursor: 'pointer',
+                                                                        padding: '2px 6px',
+                                                                        fontSize: '0.6875rem',
+                                                                        fontWeight: 600,
+                                                                        flexShrink: 0
+                                                                    }}
+                                                                    title="Unpin from channel"
+                                                                >
+                                                                    Unpin
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+
                                         {/* Messages Feed */}
                                         <div ref={chatFeedRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
                                             {messages.length === 0 ? (
-                                                <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem', maxWidth: 420 }}>
-                                                    <div style={{ fontSize: '1.8rem', marginBottom: 6 }}>👋</div>
+                                                <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem', maxWidth: 420, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                    <IconHand size={28} color="#f59e0b" style={{ marginBottom: 6 }} />
                                                     <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.9375rem', marginBottom: 4 }}>
                                                         Welcome to #{selectedChannel.name}!
                                                     </div>
@@ -1297,11 +1483,62 @@ export function ChannelSettingsPage({
                                                                     )}
                                                                 </div>
 
-                                                                {/* Accompanying note or text */}
-                                                                {msg.content && (!msg.attachments?.length || msg.messageType !== 'file') && (!msg.codeSnippet || msg.messageType !== 'code') && (
-                                                                    <div style={{ fontSize: '0.8125rem', color: '#e5e7eb', lineHeight: 1.45, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-                                                                        {msg.content}
+                                                                {/* Pinned Announcement Tag */}
+                                                                {msg.pinned && (
+                                                                    <div style={{
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: 4,
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: 4,
+                                                                        background: 'rgba(245, 158, 11, 0.15)',
+                                                                        color: '#fbbf24',
+                                                                        fontSize: '0.65rem',
+                                                                        fontWeight: 700,
+                                                                        width: 'fit-content',
+                                                                        marginBottom: 2
+                                                                    }}>
+                                                                        <IconPin size={10} />
+                                                                        <span>Pinned Announcement</span>
                                                                     </div>
+                                                                )}
+
+                                                                {/* Accompanying note, text or Zoom Clip */}
+                                                                {msg.content && (!msg.attachments?.length || msg.messageType !== 'file') && (!msg.codeSnippet || msg.messageType !== 'code') && (
+                                                                    msg.content.includes('/uploads/clips/') ? (
+                                                                        <div style={{ marginTop: 4, borderRadius: 8, overflow: 'hidden', maxWidth: 380, background: '#000' }}>
+                                                                            <div style={{
+                                                                                fontSize: '0.6875rem', fontWeight: 700, color: '#c084fc',
+                                                                                padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 6,
+                                                                                background: 'rgba(168, 85, 247, 0.15)', borderBottom: '1px solid rgba(168, 85, 247, 0.2)'
+                                                                            }}>
+                                                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                                                                    <polygon points="23 7 16 12 23 17 23 7" />
+                                                                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                                                                                </svg>
+                                                                                <span>Zoom Clip &bull; Video Message</span>
+                                                                            </div>
+                                                                            <video
+                                                                                src={(() => {
+                                                                                    const match = msg.content.match(/(\/uploads\/clips\/[^\s\)]+)/)
+                                                                                    if (match) return `${API_BASE}${match[1]}`
+                                                                                    return msg.content
+                                                                                })()}
+                                                                                controls
+                                                                                playsInline
+                                                                                style={{ width: '100%', maxHeight: 220, objectFit: 'contain', display: 'block' }}
+                                                                            />
+                                                                            {msg.content.split('\n')[0] && !msg.content.split('\n')[0].startsWith('/uploads') && (
+                                                                                <div style={{ padding: '6px 8px', fontSize: '0.75rem', color: '#e2e8f0' }}>
+                                                                                    {msg.content.split('\n')[0].replace('[Video Clip] ', '')}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div style={{ fontSize: '0.8125rem', color: '#e5e7eb', lineHeight: 1.45, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                                                                            {msg.content}
+                                                                        </div>
+                                                                    )
                                                                 )}
 
                                                                 {/* If code snippet has caption */}
@@ -1365,10 +1602,10 @@ export function ChannelSettingsPage({
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => setActiveThreadParent(msg)}
-                                                                        style={{ background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.6875rem', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+                                                                        style={{ background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.6875rem', cursor: 'pointer', padding: 0, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}
                                                                         className="hover:underline"
                                                                     >
-                                                                        💬 Reply in thread
+                                                                        <IconMessage size={12} /> Reply in thread
                                                                     </button>
                                                                     {msg.replyCount > 0 && (
                                                                         <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
@@ -1405,6 +1642,24 @@ export function ChannelSettingsPage({
                                                                             {em}
                                                                         </button>
                                                                     ))}
+                                                                    <div style={{ width: 1, height: 16, background: 'rgba(255, 255, 255, 0.15)', margin: '0 2px' }} />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleTogglePin(msg._id)}
+                                                                        style={{
+                                                                            background: msg.pinned ? 'rgba(245, 158, 11, 0.25)' : 'transparent',
+                                                                            border: 'none',
+                                                                            color: msg.pinned ? '#f59e0b' : '#94a3b8',
+                                                                            cursor: 'pointer',
+                                                                            padding: '2px 4px',
+                                                                            borderRadius: 4,
+                                                                            display: 'flex',
+                                                                            alignItems: 'center'
+                                                                        }}
+                                                                        title={msg.pinned ? 'Unpin message' : 'Pin message to channel'}
+                                                                    >
+                                                                        <IconPin size={13} />
+                                                                    </button>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -1454,7 +1709,7 @@ export function ChannelSettingsPage({
                                                             gap: 4
                                                         }}
                                                     >
-                                                        <span>📎</span>
+                                                        <IconPin size={13} />
                                                         <span>{uploadingFile ? 'Uploading...' : 'Attach'}</span>
                                                     </button>
 
@@ -1478,8 +1733,35 @@ export function ChannelSettingsPage({
                                                             gap: 4
                                                         }}
                                                     >
-                                                        <span>{'</>'}</span>
+                                                        <IconMonitor size={13} />
                                                         <span>Code Snippet</span>
+                                                    </button>
+
+                                                    {/* Zoom Clips Async Video Recorder Button */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowClipModal(true)}
+                                                        disabled={selectedChannel.archived}
+                                                        title="Record Video Clip (Zoom Clips / Loom)"
+                                                        style={{
+                                                            background: 'rgba(168, 85, 247, 0.12)',
+                                                            border: '1px solid rgba(168, 85, 247, 0.25)',
+                                                            borderRadius: 6,
+                                                            padding: '4px 8px',
+                                                            fontSize: '0.75rem',
+                                                            fontWeight: 600,
+                                                            color: '#c084fc',
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 4
+                                                        }}
+                                                    >
+                                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                                            <polygon points="23 7 16 12 23 17 23 7" />
+                                                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                                                        </svg>
+                                                        <span>Record Clip</span>
                                                     </button>
 
                                                     {/* Emoji toggle */}
@@ -1497,7 +1779,7 @@ export function ChannelSettingsPage({
                                                             cursor: 'pointer'
                                                         }}
                                                     >
-                                                        😀
+                                                        <IconSparkles size={14} color="#facc15" />
                                                     </button>
 
                                                     {/* Quick Format Pills */}
@@ -1594,8 +1876,8 @@ export function ChannelSettingsPage({
                                             <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 320, borderLeft: '1px solid rgba(255,255,255,0.08)', background: '#111218', display: 'flex', flexDirection: 'column', zIndex: 20, boxShadow: '-4px 0 16px rgba(0,0,0,0.5)' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                                                     <span style={{ fontWeight: 800, fontSize: '0.8125rem', color: '#fff' }}>Thread Conversation</span>
-                                                    <button onClick={() => setActiveThreadParent(null)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 2, fontSize: '1rem' }}>
-                                                        ✕
+                                                    <button onClick={() => setActiveThreadParent(null)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}>
+                                                        <IconX size={14} />
                                                     </button>
                                                 </div>
 
@@ -1611,8 +1893,8 @@ export function ChannelSettingsPage({
 
                                                 <div ref={threadFeedRef} style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
                                                     {threadMessages.length === 0 ? (
-                                                        <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
-                                                            💬 No replies in this thread yet. Be the first to respond!
+                                                        <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                                            <IconMessage size={14} /> No replies in this thread yet. Be the first to respond!
                                                         </div>
                                                     ) : (
                                                         threadMessages.map((reply) => (
@@ -1679,7 +1961,7 @@ export function ChannelSettingsPage({
                                                 {files.length > 0 && (
                                                     <input
                                                         type="text"
-                                                        placeholder="🔍 Filter files..."
+                                                        placeholder="Filter files..."
                                                         value={fileSearchQuery}
                                                         onChange={(e) => setFileSearchQuery(e.target.value)}
                                                         className="input"
@@ -1713,15 +1995,15 @@ export function ChannelSettingsPage({
                                                         cursor: 'pointer'
                                                     }}
                                                 >
-                                                    <span>+</span>
+                                                    <IconPlus size={13} />
                                                     <span>{uploadingFile ? 'Uploading...' : 'Upload File'}</span>
                                                 </button>
                                             </div>
                                         </div>
 
                                         {files.length === 0 ? (
-                                            <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                <div style={{ fontSize: '2rem', marginBottom: 8 }}>📁</div>
+                                            <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                <IconFolder size={36} color="#818cf8" style={{ marginBottom: 8 }} />
                                                 <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.9375rem', marginBottom: 4 }}>
                                                     No files uploaded yet
                                                 </div>
@@ -1761,9 +2043,7 @@ export function ChannelSettingsPage({
                                                                 <tr key={file._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }} className="hover:bg-white/2">
                                                                     <td style={{ padding: '10px 14px' }}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <span style={{ fontSize: '1.1rem' }}>
-                                                                                {file.mimeType?.startsWith('image/') ? '🖼️' : file.originalName?.endsWith('.pdf') ? '📕' : '📄'}
-                                                                            </span>
+                                                                            {file.mimeType?.startsWith('image/') ? <IconSparkles size={16} color="#38bdf8" /> : file.originalName?.endsWith('.pdf') ? <IconFileText size={16} color="#f87171" /> : <IconFileText size={16} color="#94a3b8" />}
                                                                             <span style={{ fontWeight: 600, color: '#fff' }}>{file.originalName || file.fileName}</span>
                                                                         </div>
                                                                     </td>
@@ -1942,8 +2222,8 @@ export function ChannelSettingsPage({
                                 )}
                             </>
                         ) : (
-                            <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
-                                💬 Select a channel from the left sidebar to start collaborating.
+                            <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                <IconHash size={16} color="#818cf8" /> Select a channel from the left sidebar to start collaborating.
                             </div>
                         )}
                     </div>
@@ -2001,10 +2281,9 @@ export function ChannelSettingsPage({
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: '0.7rem',
                                 color: '#FFFFFF'
                             }}>
-                                💬
+                                <IconMessage size={12} />
                             </div>
                             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#A5B4FC', letterSpacing: '0.02em' }}>
                                 #{incomingNotificationToast.channelName}
@@ -2031,7 +2310,7 @@ export function ChannelSettingsPage({
                                 }}
                                 title="Dismiss notification"
                             >
-                                ✕
+                                <IconX size={12} />
                             </button>
                         </div>
                     </div>
@@ -2098,6 +2377,14 @@ export function ChannelSettingsPage({
                     </div>
                 </div>
             )}
+            {/* Zoom Clips Async Video Recorder Modal (Feature 1) */}
+            <AsyncClipRecorderModal
+                isOpen={showClipModal}
+                onClose={() => setShowClipModal(false)}
+                token={token}
+                channelId={selectedChannel?._id}
+                onClipUploaded={handleClipUploaded}
+            />
         </div>
     )
 }

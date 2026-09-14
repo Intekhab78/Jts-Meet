@@ -17,24 +17,38 @@ async function processMeetingReminders(triggerSource: string) {
         // 1. Are recurring (e.g. daily at current time) OR
         // 2. Are specifically scheduled for today and this minute OR
         // 3. Triggered by the 11:00 AM daily cron
-        const scheduledMeetings = await Meeting.find({ status: 'scheduled' })
+        // Find scheduled meetings (excluding 1-on-1 direct calls)
+        const scheduledMeetings = await Meeting.find({
+            status: 'scheduled',
+            title: { $not: /^Direct Call:/i }
+        })
             .populate('host', 'fullName email')
             .exec()
 
         for (const meeting of scheduledMeetings) {
-            const is11AmDaily = triggerSource === 'daily-11am' || meeting.scheduledTime === '11:00'
-            const isTimeMatch = meeting.scheduledTime === currentTimeStr || (meeting.isRecurring && is11AmDaily)
-            const isDateMatch = !meeting.scheduledDate || meeting.scheduledDate === currentDateStr || meeting.isRecurring
+            // 1. Time check: Must have a valid scheduledTime
+            if (!meeting.scheduledTime) continue
 
-            // Prevent notifying more than once per 30 minutes for the same meeting
+            let isTimeMatch = false
+            if (triggerSource === 'daily-11am') {
+                isTimeMatch = meeting.scheduledTime === '11:00'
+            } else {
+                isTimeMatch = meeting.scheduledTime === currentTimeStr
+            }
+
+            // 2. Date check:
+            // Recurring meetings match any day; non-recurring meetings must match scheduledDate for today
+            const isDateMatch = meeting.isRecurring ? true : (!meeting.scheduledDate || meeting.scheduledDate === currentDateStr)
+
+            // 3. Prevent duplicate notifications: A meeting reminder must NEVER be sent more than once per day!
             if (meeting.lastNotifiedAt) {
-                const diffMinutes = (now.getTime() - new Date(meeting.lastNotifiedAt).getTime()) / 60000
-                if (diffMinutes < 30) {
+                const lastDateStr = new Date(meeting.lastNotifiedAt).toISOString().slice(0, 10)
+                if (lastDateStr === currentDateStr) {
                     continue
                 }
             }
 
-            if ((isTimeMatch && isDateMatch) || (triggerSource === 'daily-11am' && meeting.isRecurring)) {
+            if (isTimeMatch && isDateMatch) {
                 console.log(`[CRON] Dispatching 11:00 AM / Scheduled Meeting reminders for "${meeting.title}" (ID: ${meeting.meetingId})`)
 
                 const hostName = (meeting.host as any)?.fullName || 'Organizer'

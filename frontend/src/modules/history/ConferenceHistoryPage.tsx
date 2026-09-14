@@ -1,5 +1,11 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { API_BASE } from '../../config'
+import {
+    IconSparkles, IconRefresh, IconDownload, IconZap, IconCalendar,
+    IconVideo, IconUsers, IconClock, IconSearch, IconCopy, IconCheck,
+    IconTrash, IconCrown, IconFileText, IconEye, IconX, IconPlay, IconMail
+} from '../../components/common/Icons'
+import { RecordedVideoPlayerModal } from './components/RecordedVideoPlayerModal'
 
 export interface HistoryMeeting {
     id: string
@@ -53,6 +59,37 @@ export function ConferenceHistoryPage({
     const [inspectingMeeting, setInspectingMeeting] = useState<HistoryMeeting | null>(null)
     const [toastMessage, setToastMessage] = useState<string | null>(null)
     const [deletingId, setDeletingId] = useState<string | null>(null)
+    const [isDispatchingEmail, setIsDispatchingEmail] = useState(false)
+    const [playingRecording, setPlayingRecording] = useState<{
+        meetingTitle: string
+        meetingId: string
+        recordingUrl: string
+        recordingDate?: string
+        recordingDuration?: number
+    } | null>(null)
+
+    // Check URL hash for shared recording link (e.g. #history?recording=meetingId)
+    useEffect(() => {
+        try {
+            const hash = window.location.hash
+            if (hash.includes('recording=')) {
+                const parts = hash.split('recording=')
+                if (parts[1]) {
+                    const targetMeetingId = decodeURIComponent(parts[1].split('&')[0])
+                    const found = historyItems.find(i => i.id === targetMeetingId || (i as any).meetingId === targetMeetingId)
+                    if (found && found.recordingUrl) {
+                        setPlayingRecording({
+                            meetingTitle: found.title,
+                            meetingId: found.id,
+                            recordingUrl: found.recordingUrl,
+                            recordingDate: found.date,
+                            recordingDuration: found.durationMinutes ? found.durationMinutes * 60 : 0
+                        })
+                    }
+                }
+            }
+        } catch (_) {}
+    }, [historyItems])
 
     const showToast = (msg: string) => {
         setToastMessage(msg)
@@ -162,14 +199,14 @@ export function ConferenceHistoryPage({
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
-        showToast('📁 Conference History CSV exported successfully!')
+        showToast('Conference History CSV exported successfully!')
     }
 
     // Copy link helper
     const handleCopyLink = (meetingId: string) => {
         const link = `${window.location.origin}/meet/${meetingId}`
         navigator.clipboard.writeText(link).then(() => {
-            showToast(`📋 Copied meeting link: ${meetingId}`)
+            showToast(`Copied meeting link: ${meetingId}`)
         }).catch(() => {
             showToast(`Room ID: ${meetingId}`)
         })
@@ -231,7 +268,7 @@ export function ConferenceHistoryPage({
                     gap: 10,
                     animation: 'fadeIn 0.2s ease-out'
                 }}>
-                    <span>✨</span> {toastMessage}
+                    <IconSparkles size={16} color="#fbbf24" /> {toastMessage}
                 </div>
             )}
 
@@ -266,7 +303,7 @@ export function ConferenceHistoryPage({
                         style={{ padding: '8px 14px', fontSize: '0.8125rem', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6 }}
                         title="Sync with database"
                     >
-                        <span>🔄</span> Refresh
+                        <IconRefresh size={14} /> Refresh
                     </button>
 
                     <button
@@ -275,7 +312,7 @@ export function ConferenceHistoryPage({
                         style={{ padding: '8px 14px', fontSize: '0.8125rem', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6 }}
                         title="Download Attendance CSV"
                     >
-                        <span>📥</span> Export CSV
+                        <IconDownload size={14} /> Export CSV
                     </button>
 
                     <button
@@ -286,7 +323,7 @@ export function ConferenceHistoryPage({
                         className="btn btn-primary"
                         style={{ padding: '8px 16px', fontSize: '0.8125rem', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
                     >
-                        <span>⚡</span> Instant Room
+                        <IconZap size={14} /> Instant Room
                     </button>
                 </div>
             </div>
@@ -294,14 +331,14 @@ export function ConferenceHistoryPage({
             {/* DYNAMIC SUMMARY METRICS CARDS */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
                 {[
-                    { label: 'Total Sessions', value: metrics.totalSessions, icon: '📅', color: '#6366f1', subtitle: 'Concluded meetings' },
-                    { label: 'Recorded Sessions', value: metrics.recordedCount, icon: '📹', color: '#ec4899', subtitle: 'Cloud backups ready' },
-                    { label: 'Total Attendees', value: metrics.totalAttendees, icon: '👥', color: '#22c55e', subtitle: 'Participants engaged' },
-                    { label: 'Est. Total Time', value: metrics.totalTimeDisplay, icon: '⏱️', color: '#f59e0b', subtitle: 'Minutes elapsed' },
-                    { label: 'Avg. Duration', value: `${metrics.avgMinutes} mins`, icon: '⚡', color: '#06b6d4', subtitle: 'Per conference' }
+                    { label: 'Total Sessions', value: metrics.totalSessions, icon: <IconCalendar size={20} color="#6366f1" />, color: '#6366f1', subtitle: 'Concluded meetings' },
+                    { label: 'Recorded Sessions', value: metrics.recordedCount, icon: <IconVideo size={20} color="#ec4899" />, color: '#ec4899', subtitle: 'Cloud backups ready' },
+                    { label: 'Total Attendees', value: metrics.totalAttendees, icon: <IconUsers size={20} color="#22c55e" />, color: '#22c55e', subtitle: 'Participants engaged' },
+                    { label: 'Est. Total Time', value: metrics.totalTimeDisplay, icon: <IconClock size={20} color="#f59e0b" />, color: '#f59e0b', subtitle: 'Minutes elapsed' },
+                    { label: 'Avg. Duration', value: `${metrics.avgMinutes} mins`, icon: <IconZap size={20} color="#06b6d4" />, color: '#06b6d4', subtitle: 'Per conference' }
                 ].map((stat, idx) => (
                     <div key={idx} className="glass-card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, background: 'rgba(18, 20, 29, 0.7)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14 }}>
-                        <div style={{ width: 44, height: 44, borderRadius: 12, background: `${stat.color}18`, border: `1px solid ${stat.color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem', flexShrink: 0 }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 12, background: `${stat.color}18`, border: `1px solid ${stat.color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             {stat.icon}
                         </div>
                         <div>
@@ -410,7 +447,7 @@ export function ConferenceHistoryPage({
                                 }}
                                 title="Clear search"
                             >
-                                ✕
+                                <IconX size={12} />
                             </button>
                         )}
                     </div>
@@ -421,10 +458,10 @@ export function ConferenceHistoryPage({
                         className="input py-2 px-3"
                         style={{ fontSize: '0.8125rem', borderRadius: 8, background: 'rgba(0,0,0,0.25)', cursor: 'pointer', color: '#e2e8f0', width: 'auto' }}
                     >
-                        <option value="newest">🕒 Newest First</option>
-                        <option value="oldest">🕰️ Oldest First</option>
-                        <option value="duration">⏱️ Longest Duration</option>
-                        <option value="attendees">👥 Most Attendees</option>
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="longest">Longest Duration</option>
+                        <option value="attendees">Most Attendees</option>
                     </select>
                 </div>
             </div>
@@ -432,8 +469,8 @@ export function ConferenceHistoryPage({
             {/* SESSIONS TABLE */}
             {historyItems.length === 0 ? (
                 <div className="glass-card" style={{ padding: 'clamp(40px, 6vw, 64px)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 18, position: 'relative', overflow: 'hidden', borderRadius: 16 }}>
-                    <div style={{ width: 68, height: 68, borderRadius: '22px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(168,85,247,0.2) 100%)', border: '1px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.2rem' }}>
-                        📜
+                    <div style={{ width: 68, height: 68, borderRadius: '22px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(168,85,247,0.2) 100%)', border: '1px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <IconFileText size={32} color="#818cf8" />
                     </div>
                     <div style={{ maxWidth: 480 }}>
                         <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>No Past Sessions Logged</h3>
@@ -446,14 +483,16 @@ export function ConferenceHistoryPage({
                         className="btn btn-primary"
                         style={{ padding: '10px 22px', fontSize: '0.875rem', fontWeight: 700, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 8 }}
                     >
-                        <span>⚡</span> Start Instant Conference
+                        <IconZap size={16} /> Start Instant Conference
                     </button>
                 </div>
             ) : filteredMeetings.length === 0 ? (
-                <div className="glass-card" style={{ padding: 48, textAlign: 'center', borderRadius: 16 }}>
-                    <span style={{ fontSize: '2.5rem' }}>🔍</span>
-                    <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: 12 }}>No matching sessions found</h4>
-                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', maxWidth: 360, margin: '6px auto 16px' }}>
+                <div className="glass-card" style={{ padding: 48, textAlign: 'center', borderRadius: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <IconSearch size={28} color="#818cf8" />
+                    </div>
+                    <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: 6 }}>No matching sessions found</h4>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', maxWidth: 360, margin: '2px auto 12px' }}>
                         No conference records match your search filter "{searchQuery}".
                     </p>
                     <button onClick={() => { setSearchQuery(''); setFilterTab('all') }} className="btn btn-secondary text-xs" style={{ padding: '6px 16px', borderRadius: 8 }}>
@@ -484,7 +523,7 @@ export function ConferenceHistoryPage({
                                     <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', transition: 'background 0.15s ease' }}>
                                         {/* TOPIC & ID */}
                                         <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                                                 <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.875rem', lineHeight: 1.3 }}>
                                                     {item.title}
                                                 </span>
@@ -495,9 +534,9 @@ export function ConferenceHistoryPage({
                                                     <button
                                                         onClick={() => handleCopyLink(item.id)}
                                                         title="Copy invite link"
-                                                        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.75rem', padding: 0 }}
+                                                        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.75rem', padding: 2, display: 'inline-flex', alignItems: 'center' }}
                                                     >
-                                                        📋
+                                                        <IconCopy size={13} />
                                                     </button>
                                                 </div>
                                             </div>
@@ -536,9 +575,9 @@ export function ConferenceHistoryPage({
                                                 borderRadius: 6,
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
-                                                gap: 4
+                                                gap: 5
                                             }}>
-                                                ⏱️ {item.duration}
+                                                <IconClock size={12} color="#f59e0b" /> {item.duration}
                                             </span>
                                         </td>
 
@@ -557,44 +596,73 @@ export function ConferenceHistoryPage({
                                                     cursor: 'pointer',
                                                     display: 'inline-flex',
                                                     alignItems: 'center',
-                                                    gap: 5,
+                                                    gap: 6,
                                                     transition: 'all 0.15s ease'
                                                 }}
                                                 title="Inspect attendee list"
                                             >
-                                                <span>👥</span> {userCount} {userCount === 1 ? 'user' : 'users'}
-                                                <span style={{ fontSize: '0.65rem', opacity: 0.8 }}>🔍</span>
+                                                <IconUsers size={13} color="#4ade80" /> {userCount} {userCount === 1 ? 'user' : 'users'}
+                                                <IconEye size={12} color="#4ade80" />
                                             </button>
                                         </td>
 
                                         {/* RECORDING / STATUS */}
                                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                                                <span className="badge badge-success" style={{ fontSize: '0.68rem', padding: '2px 7px' }}>
-                                                    ✓ {item.status || 'Completed'}
+                                                <span className="badge badge-success" style={{ fontSize: '0.68rem', padding: '2px 7px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                    <IconCheck size={11} /> {item.status || 'Completed'}
                                                 </span>
 
                                                 {item.recordingUrl ? (
-                                                    <a
-                                                        href={item.recordingUrl}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        style={{
-                                                            fontSize: '0.7rem',
-                                                            fontWeight: 700,
-                                                            color: '#f43f5e',
-                                                            background: 'rgba(244, 63, 94, 0.12)',
-                                                            border: '1px solid rgba(244, 63, 94, 0.25)',
-                                                            padding: '2px 7px',
-                                                            borderRadius: 6,
-                                                            textDecoration: 'none',
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: 4
-                                                        }}
-                                                    >
-                                                        📹 Download MP4
-                                                    </a>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                        <button
+                                                            onClick={() => setPlayingRecording({
+                                                                meetingTitle: item.title,
+                                                                meetingId: item.id,
+                                                                recordingUrl: item.recordingUrl!,
+                                                                recordingDate: item.date,
+                                                                recordingDuration: item.durationMinutes ? item.durationMinutes * 60 : 0
+                                                            })}
+                                                            style={{
+                                                                fontSize: '0.7rem',
+                                                                fontWeight: 700,
+                                                                color: '#fff',
+                                                                background: 'linear-gradient(135deg, #e11d48 0%, #be123c 100%)',
+                                                                border: 'none',
+                                                                padding: '3px 8px',
+                                                                borderRadius: 6,
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 4,
+                                                                boxShadow: '0 2px 8px rgba(225, 29, 72, 0.3)'
+                                                            }}
+                                                            title="Watch recording with speed controls"
+                                                        >
+                                                            <IconPlay size={10} color="#ffffff" /> Watch
+                                                        </button>
+                                                        <a
+                                                            href={item.recordingUrl}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            style={{
+                                                                fontSize: '0.68rem',
+                                                                fontWeight: 600,
+                                                                color: 'var(--color-text-muted)',
+                                                                background: 'rgba(255, 255, 255, 0.05)',
+                                                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                                padding: '3px 6px',
+                                                                borderRadius: 6,
+                                                                textDecoration: 'none',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 3
+                                                            }}
+                                                            title="Download recording"
+                                                        >
+                                                            <IconDownload size={11} />
+                                                        </a>
+                                                    </div>
                                                 ) : (
                                                     <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)' }}>
                                                         No Recording
@@ -609,19 +677,19 @@ export function ConferenceHistoryPage({
                                                 <button
                                                     onClick={() => onStartMeeting(item.id)}
                                                     className="btn btn-primary"
-                                                    style={{ padding: '5px 12px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                                    style={{ padding: '5px 12px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}
                                                     title="Re-launch room"
                                                 >
-                                                    <span>⚡</span> Rejoin
+                                                    <IconZap size={13} /> Rejoin
                                                 </button>
 
                                                 <button
                                                     onClick={() => setInspectingMeeting(item)}
                                                     className="btn btn-secondary"
-                                                    style={{ padding: '5px 8px', borderRadius: 8, fontSize: '0.75rem' }}
+                                                    style={{ padding: '5px 8px', borderRadius: 8, fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center' }}
                                                     title="Inspect Attendees"
                                                 >
-                                                    👥
+                                                    <IconUsers size={13} />
                                                 </button>
 
                                                 <button
@@ -634,11 +702,13 @@ export function ConferenceHistoryPage({
                                                         padding: '5px 8px',
                                                         borderRadius: 8,
                                                         fontSize: '0.75rem',
-                                                        cursor: 'pointer'
+                                                        cursor: 'pointer',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center'
                                                     }}
                                                     title="Delete history log"
                                                 >
-                                                    {deletingId === item.id ? '...' : '🗑️'}
+                                                    {deletingId === item.id ? '...' : <IconTrash size={13} />}
                                                 </button>
                                             </div>
                                         </td>
@@ -686,17 +756,23 @@ export function ConferenceHistoryPage({
                             </div>
                             <button
                                 onClick={() => setInspectingMeeting(null)}
-                                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer', padding: 4 }}
+                                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
                             >
-                                ✕
+                                <IconX size={18} />
                             </button>
                         </div>
 
                         {/* Summary Badges */}
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 12 }}>
-                            <span style={{ fontSize: '0.75rem', color: '#e2e8f0' }}>📅 {inspectingMeeting.date} at {inspectingMeeting.time}</span>
-                            <span style={{ fontSize: '0.75rem', color: '#f59e0b' }}>⏱️ Duration: {inspectingMeeting.duration}</span>
-                            <span style={{ fontSize: '0.75rem', color: '#22c55e' }}>👥 Total: {inspectingMeeting.participants} {inspectingMeeting.participants === 1 ? 'attendee' : 'attendees'}</span>
+                            <span style={{ fontSize: '0.75rem', color: '#e2e8f0', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                <IconCalendar size={13} color="#818cf8" /> {inspectingMeeting.date} at {inspectingMeeting.time}
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                <IconClock size={13} color="#f59e0b" /> Duration: {inspectingMeeting.duration}
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: '#22c55e', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                <IconUsers size={13} color="#22c55e" /> Total: {inspectingMeeting.participants} {inspectingMeeting.participants === 1 ? 'attendee' : 'attendees'}
+                            </span>
                         </div>
 
                         {/* Attendees List */}
@@ -744,12 +820,12 @@ export function ConferenceHistoryPage({
 
                                             <div>
                                                 {isHost ? (
-                                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99, 102, 241, 0.15)', padding: '3px 8px', borderRadius: 8, border: '1px solid rgba(99, 102, 241, 0.3)' }}>
-                                                        👑 Organizer
+                                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99, 102, 241, 0.15)', padding: '3px 8px', borderRadius: 8, border: '1px solid rgba(99, 102, 241, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                        <IconCrown size={12} /> Organizer
                                                     </span>
                                                 ) : (
-                                                    <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#22c55e', background: 'rgba(34, 197, 94, 0.12)', padding: '3px 8px', borderRadius: 8 }}>
-                                                        ✓ Attended
+                                                    <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#22c55e', background: 'rgba(34, 197, 94, 0.12)', padding: '3px 8px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                        <IconCheck size={11} /> Attended
                                                     </span>
                                                 )}
                                             </div>
@@ -757,29 +833,80 @@ export function ConferenceHistoryPage({
                                     )
                                 })
                             ) : (
-                                <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
-                                    <span>👥 {inspectingMeeting.participants} attendees logged during this conference session.</span>
+                                <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--color-text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                    <IconUsers size={15} /> <span>{inspectingMeeting.participants} attendees logged during this conference session.</span>
                                 </div>
                             )}
                         </div>
 
                         {/* Modal Footer Actions */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                            <button
-                                onClick={() => {
-                                    if (inspectingMeeting.participantsList?.length) {
-                                        const emails = inspectingMeeting.participantsList.map(p => p.email).filter(Boolean).join(', ')
-                                        navigator.clipboard.writeText(emails)
-                                        showToast('📋 Copied attendee emails to clipboard!')
-                                    } else {
-                                        showToast('No emails recorded')
-                                    }
-                                }}
-                                className="btn btn-secondary text-xs"
-                                style={{ padding: '8px 14px', borderRadius: 8 }}
-                            >
-                                📋 Copy Attendee Emails
-                            </button>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, flexWrap: 'wrap', gap: 8 }}>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <button
+                                    onClick={() => {
+                                        if (inspectingMeeting.participantsList?.length) {
+                                            const emails = inspectingMeeting.participantsList.map(p => p.email).filter(Boolean).join(', ')
+                                            navigator.clipboard.writeText(emails)
+                                            showToast('Copied attendee emails to clipboard!')
+                                        } else {
+                                            showToast('No emails recorded')
+                                        }
+                                    }}
+                                    className="btn btn-secondary text-xs"
+                                    style={{ padding: '8px 14px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                >
+                                    <IconCopy size={13} /> Copy Attendee Emails
+                                </button>
+
+                                <button
+                                    disabled={isDispatchingEmail}
+                                    onClick={async () => {
+                                        setIsDispatchingEmail(true)
+                                        try {
+                                            const emails = inspectingMeeting.participantsList?.map(p => p.email).filter(Boolean) || []
+                                            const res = await fetch(`${API_BASE}/api/meeting/${inspectingMeeting.id}/dispatch-summary-email`, {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Content-Type': 'application/json',
+                                                    Authorization: `Bearer ${token}`
+                                                },
+                                                body: JSON.stringify({
+                                                    emails,
+                                                    duration: inspectingMeeting.duration,
+                                                    attendees: inspectingMeeting.participantsList?.map(p => ({
+                                                        name: p.fullName || 'Attendee',
+                                                        email: p.email
+                                                    }))
+                                                })
+                                            })
+                                            const data = await res.json()
+                                            if (data.success) {
+                                                showToast('Executive summary email sent successfully!')
+                                            } else {
+                                                showToast(data.message || 'Failed to dispatch email')
+                                            }
+                                        } catch (e: any) {
+                                            showToast('Network error while dispatching email')
+                                        } finally {
+                                            setIsDispatchingEmail(false)
+                                        }
+                                    }}
+                                    className="btn btn-secondary text-xs"
+                                    style={{
+                                        padding: '8px 14px',
+                                        borderRadius: 8,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        background: 'rgba(99, 102, 241, 0.12)',
+                                        color: '#a5b4fc',
+                                        border: '1px solid rgba(99, 102, 241, 0.3)'
+                                    }}
+                                >
+                                    <IconMail size={13} />
+                                    <span>{isDispatchingEmail ? 'Sending...' : 'Send Summary Email'}</span>
+                                </button>
+                            </div>
 
                             <button
                                 onClick={() => setInspectingMeeting(null)}
@@ -791,6 +918,18 @@ export function ConferenceHistoryPage({
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* IN-APP CLOUD RECORDING VIDEO PLAYER MODAL (ZOOM / TEAMS STYLE) */}
+            {playingRecording && (
+                <RecordedVideoPlayerModal
+                    meetingTitle={playingRecording.meetingTitle}
+                    meetingId={playingRecording.meetingId}
+                    recordingUrl={playingRecording.recordingUrl}
+                    recordingDate={playingRecording.recordingDate}
+                    recordingDuration={playingRecording.recordingDuration}
+                    onClose={() => setPlayingRecording(null)}
+                />
             )}
         </div>
     )

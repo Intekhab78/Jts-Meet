@@ -1,7 +1,33 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { MeetingTrendsChart } from './MeetingTrendsChart'
 import { AiResponseRenderer } from './AiResponseRenderer'
 import { API_BASE } from '../../../config'
+import {
+    IconShieldCheck,
+    IconShield,
+    IconZap,
+    IconClock,
+    IconUsers,
+    IconCheck,
+    IconExternalLink,
+    IconVideo,
+    IconSparkles,
+    IconPlus,
+    IconBuilding,
+    IconCopy,
+    IconDownload,
+    IconFileText,
+    IconCalendar,
+    IconHash,
+    IconCrown,
+    IconGlobe,
+    IconX,
+    IconEdit,
+    IconPhone,
+    IconPlay,
+    IconRefresh,
+    IconTrash
+} from '../../../components/common/Icons'
 
 interface EnterpriseDashboardHubProps {
     profileName: string
@@ -248,38 +274,73 @@ export function EnterpriseDashboardHub({
         return `${window.location.origin}/#meeting?room=${pmiId}`
     }, [pmiId])
 
-    // ==========================================
-    // SECTION 3: CLOUD RECORDINGS VAULT
-    // ==========================================
     const [selectedRecordingModal, setSelectedRecordingModal] = useState<any | null>(null)
+    const [recordingsList, setRecordingsList] = useState<any[]>([])
+    const [recordingsLoading, setRecordingsLoading] = useState(true)
+    const [recordingsError, setRecordingsError] = useState<string | null>(null)
+    const [storageMetrics, setStorageMetrics] = useState<any>(null)
 
-    const recordingsList = useMemo(() => {
-        const list = historyItems.filter(m => m.recorded || m.recordingUrl)
-        if (list.length > 0) return list
-        // High fidelity demo recordings if none yet recorded
-        return [
-            {
-                id: 'rec_dubai_sync',
-                title: 'JTS Middle East Client Walkthrough & QA',
-                date: 'Sep 10, 2026',
-                time: '04:30 PM',
-                duration: '42m',
-                fileSize: '48.2 MB',
-                resolution: '1080p Full HD',
-                url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
-            },
-            {
-                id: 'rec_arch_sprint',
-                title: 'Sprint Planning & WebRTC SFU Review',
-                date: 'Sep 09, 2026',
-                time: '11:00 AM',
-                duration: '28m',
-                fileSize: '31.5 MB',
-                resolution: '720p HD',
-                url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4'
+    const resolveRecordingUrl = (url?: string) => {
+        if (!url) return ''
+        if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url
+        return `${API_BASE}${url.startsWith('/') ? '' : '/'}${url}`
+    }
+
+    const fetchRecordingsVault = useCallback(async () => {
+        setRecordingsLoading(true)
+        setRecordingsError(null)
+        try {
+            const res = await fetch(`${API_BASE}/api/admin/recordings`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                if (data.success && data.data) {
+                    setRecordingsList(data.data.recordings || [])
+                    if (data.data.storageMetrics) setStorageMetrics(data.data.storageMetrics)
+                } else {
+                    setRecordingsList([])
+                }
+            } else if (res.status === 403) {
+                // Non-admin users: fall back to historyItems recordings
+                const list = historyItems.filter((m: any) => m.recorded || m.recordingUrl)
+                setRecordingsList(list.map((m: any) => ({
+                    _id: m.id || m._id,
+                    title: m.title,
+                    meetingId: m.id || m._id,
+                    host: { fullName: typeof m.host === 'object' ? m.host?.fullName || 'Organizer' : m.host || 'Organizer', email: '' },
+                    duration: m.duration || '30 mins',
+                    recordingUrl: m.recordingUrl || '',
+                    fileSizeDisplay: m.fileSize || 'N/A',
+                    resolution: '1080p Full HD',
+                    createdAtFormatted: m.date || 'Unknown Date'
+                })))
+            } else {
+                setRecordingsError('Failed to load recordings')
             }
-        ]
-    }, [historyItems])
+        } catch (err) {
+            console.error('Failed to fetch recordings vault:', err)
+            // Graceful fallback to historyItems
+            const list = historyItems.filter((m: any) => m.recorded || m.recordingUrl)
+            setRecordingsList(list.map((m: any) => ({
+                _id: m.id || m._id,
+                title: m.title,
+                meetingId: m.id || m._id,
+                host: { fullName: typeof m.host === 'object' ? m.host?.fullName || 'Organizer' : m.host || 'Organizer', email: '' },
+                duration: m.duration || '30 mins',
+                recordingUrl: m.recordingUrl || '',
+                fileSizeDisplay: m.fileSize || 'N/A',
+                resolution: '1080p Full HD',
+                createdAtFormatted: m.date || 'Unknown Date'
+            })))
+        } finally {
+            setRecordingsLoading(false)
+        }
+    }, [token, historyItems])
+
+    useEffect(() => {
+        fetchRecordingsVault()
+    }, [fetchRecordingsVault])
 
     return (
         <div className="anim-fade-in" style={{
@@ -380,7 +441,9 @@ export function EnterpriseDashboardHub({
                             color: 'var(--color-text-secondary)',
                             fontWeight: 500
                         }}>
-                            <span>🛡️ 256-bit DTLS-SRTP</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                <IconShieldCheck size={13} color="var(--color-text-secondary)" /> 256-bit DTLS-SRTP
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -409,11 +472,10 @@ export function EnterpriseDashboardHub({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            fontSize: '1.4rem',
                             boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
                             flexShrink: 0
                         }}>
-                            ⚡
+                            <IconZap size={22} color="#fff" />
                         </div>
                         <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
@@ -429,8 +491,8 @@ export function EnterpriseDashboardHub({
                                 }}>
                                     Up Next in Agenda
                                 </span>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                    ⏰ {upNextMeeting.time} • {upNextMeeting.date}
+                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    <IconClock size={12} /> {upNextMeeting.time} • {upNextMeeting.date}
                                 </span>
                             </div>
                             <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: '#fff' }}>
@@ -441,7 +503,9 @@ export function EnterpriseDashboardHub({
                                 {upNextMeeting.teamName && (
                                     <>
                                         <span>•</span>
-                                        <span style={{ color: '#818cf8' }}>👥 {upNextMeeting.teamName}</span>
+                                        <span style={{ color: '#818cf8', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                            <IconUsers size={12} /> {upNextMeeting.teamName}
+                                        </span>
                                     </>
                                 )}
                                 <span>•</span>
@@ -461,7 +525,7 @@ export function EnterpriseDashboardHub({
                             className="btn btn-secondary"
                             style={{ padding: '8px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}
                         >
-                            <span>{copiedMeetingLink ? '✓' : '🔗'}</span>
+                            {copiedMeetingLink ? <IconCheck size={13} color="#4ade80" /> : <IconExternalLink size={13} />}
                             <span>{copiedMeetingLink ? 'Link Copied!' : 'Copy Link'}</span>
                         </button>
 
@@ -481,7 +545,7 @@ export function EnterpriseDashboardHub({
                                 flexShrink: 0
                             }}
                         >
-                            <span>🟢</span>
+                            <IconVideo size={14} color="#fff" />
                             <span>Join Conference Now</span>
                         </button>
                     </div>
@@ -499,7 +563,7 @@ export function EnterpriseDashboardHub({
                     color: 'var(--color-text-secondary)'
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: '1.1rem' }}>✨</span>
+                        <IconSparkles size={16} color="#818cf8" />
                         <span><strong>You are all caught up!</strong> No imminent conferences scheduled for the next 2 hours.</span>
                     </div>
                     <button
@@ -511,10 +575,14 @@ export function EnterpriseDashboardHub({
                             fontWeight: 600,
                             cursor: 'pointer',
                             padding: '4px 8px',
-                            fontSize: '0.8125rem'
+                            fontSize: '0.8125rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
                         }}
                     >
-                        + Plan a Meeting
+                        <IconPlus size={13} />
+                        <span>Plan a Meeting</span>
                     </button>
                 </div>
             )}
@@ -806,12 +874,11 @@ export function EnterpriseDashboardHub({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '1.3rem',
                         color: '#fff',
                         boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
                         flexShrink: 0
                     }}>
-                        🏢
+                        <IconBuilding size={22} color="#fff" />
                     </div>
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -850,7 +917,7 @@ export function EnterpriseDashboardHub({
                         className="btn btn-secondary"
                         style={{ padding: '7px 14px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 6 }}
                     >
-                        <span>{copiedPmiLink ? '✓' : '📋'}</span>
+                        {copiedPmiLink ? <IconCheck size={13} color="#4ade80" /> : <IconCopy size={13} />}
                         <span>{copiedPmiLink ? 'PMI Copied!' : 'Copy Permanent Link'}</span>
                     </button>
 
@@ -985,9 +1052,9 @@ export function EnterpriseDashboardHub({
                                 <div style={{
                                     width: 36, height: 36, borderRadius: 'var(--radius-md)',
                                     background: 'linear-gradient(135deg, #a855f7, #6366f1)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '1.1rem'
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
                                 }}>
-                                    ✨
+                                    <IconSparkles size={18} color="#fff" />
                                 </div>
                                 <div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1010,7 +1077,7 @@ export function EnterpriseDashboardHub({
                                 className="btn btn-secondary text-xs"
                                 style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 6 }}
                             >
-                                <span>{isGeneratingAi ? '⏳' : '⚡'}</span>
+                                {isGeneratingAi ? <IconClock size={13} /> : <IconZap size={13} />}
                                 <span>{isGeneratingAi ? 'Analyzing Meeting...' : 'Regenerate Recap'}</span>
                             </button>
                         </div>
@@ -1037,8 +1104,8 @@ export function EnterpriseDashboardHub({
 
                         {/* Key Decisions Highlights */}
                         <div>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 8 }}>
-                                🎯 Key Decisions & Highlights
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                                <IconZap size={13} color="#818cf8" /> Key Decisions & Highlights
                             </span>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 {aiSummary.highlights.map((h, i) => (
@@ -1052,8 +1119,8 @@ export function EnterpriseDashboardHub({
 
                         {/* Action Items Checklist */}
                         <div>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 8 }}>
-                                📝 Follow-Up Action Items
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                                <IconFileText size={13} color="#818cf8" /> Follow-Up Action Items
                             </span>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 {aiSummary.actionItems.map((item, i) => {
@@ -1090,15 +1157,15 @@ export function EnterpriseDashboardHub({
                         {/* Quick Prompt Suggestions */}
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
                             {[
-                                '📅 How can I create a meeting?',
-                                '⚡ What is my Personal Meeting Room (PMI)?',
-                                '📝 Summarize pending action items',
-                                '🎧 How to test audio and mic?'
-                            ].map((promptText, pIdx) => (
+                                { text: 'How can I create a meeting?', icon: <IconCalendar size={12} color="#a5b4fc" /> },
+                                { text: 'What is my Personal Meeting Room (PMI)?', icon: <IconZap size={12} color="#a5b4fc" /> },
+                                { text: 'Summarize pending action items', icon: <IconEdit size={12} color="#a5b4fc" /> },
+                                { text: 'How to test audio and mic?', icon: <IconPhone size={12} color="#a5b4fc" /> }
+                            ].map((item, pIdx) => (
                                 <button
                                     key={pIdx}
                                     type="button"
-                                    onClick={() => handleAskAiCompanion(undefined, promptText)}
+                                    onClick={() => handleAskAiCompanion(undefined, item.text)}
                                     disabled={isAskingAi}
                                     style={{
                                         background: 'rgba(255, 255, 255, 0.04)',
@@ -1108,12 +1175,16 @@ export function EnterpriseDashboardHub({
                                         padding: '4px 10px',
                                         borderRadius: 20,
                                         cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 5,
                                         transition: 'all 0.15s ease'
                                     }}
                                     onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(139, 92, 246, 0.15)')}
                                     onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)')}
                                 >
-                                    {promptText}
+                                    {item.icon}
+                                    <span>{item.text}</span>
                                 </button>
                             ))}
                         </div>
@@ -1169,7 +1240,7 @@ export function EnterpriseDashboardHub({
                                     </>
                                 ) : (
                                     <>
-                                        <span>✨</span>
+                                        <IconSparkles size={14} color="#fff" />
                                         <span>Ask AI</span>
                                     </>
                                 )}
@@ -1207,110 +1278,271 @@ export function EnterpriseDashboardHub({
 
                     {/* SECTION 3: CLOUD RECORDINGS & MEDIA VAULT */}
                     <div className="glass-card" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* Header */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
                             <div>
                                 <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span>🎥</span> Cloud Recordings Vault
+                                    <IconVideo size={18} color="#818cf8" /> Cloud Recordings Vault
+                                    {!recordingsLoading && (
+                                        <span style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
+                                            ({recordingsList.length})
+                                        </span>
+                                    )}
                                 </h3>
                                 <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
                                     Stream and download high-definition conference recordings
                                 </p>
                             </div>
-                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#c084fc', background: 'rgba(168, 85, 247, 0.15)', padding: '3px 8px', borderRadius: 9999 }}>
-                                1080p MP4 Ready
-                            </span>
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
-                            {recordingsList.map((rec: any, idx: number) => (
-                                <div
-                                    key={rec.id || idx}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {storageMetrics && (
+                                    <span style={{ fontSize: '0.7rem', color: '#94a3b8', background: 'rgba(99, 102, 241, 0.1)', padding: '3px 8px', borderRadius: 9999, border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                                        {storageMetrics.usedGb} GB / {storageMetrics.totalQuotaGb} GB used
+                                    </span>
+                                )}
+                                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#c084fc', background: 'rgba(168, 85, 247, 0.15)', padding: '3px 8px', borderRadius: 9999 }}>
+                                    1080p MP4 Ready
+                                </span>
+                                <button
+                                    onClick={fetchRecordingsVault}
+                                    disabled={recordingsLoading}
+                                    title="Refresh recordings"
                                     style={{
-                                        background: 'rgba(255, 255, 255, 0.03)',
-                                        border: '1px solid rgba(255, 255, 255, 0.08)',
-                                        borderRadius: 'var(--radius-md)',
-                                        padding: '14px',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: 10,
-                                        transition: 'all 0.2s ease'
-                                    }}
-                                >
-                                    <div style={{
-                                        height: 110,
-                                        borderRadius: 'var(--radius-sm)',
-                                        background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                        borderRadius: 6,
+                                        color: '#94a3b8',
+                                        padding: '5px 7px',
+                                        cursor: 'pointer',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        position: 'relative',
-                                        overflow: 'hidden'
-                                    }}>
-                                        <button
-                                            onClick={() => setSelectedRecordingModal(rec)}
-                                            style={{
-                                                width: 44,
-                                                height: 44,
-                                                borderRadius: '50%',
-                                                background: 'rgba(255, 255, 255, 0.2)',
-                                                backdropFilter: 'blur(8px)',
-                                                border: '1px solid rgba(255, 255, 255, 0.4)',
-                                                color: '#fff',
-                                                fontSize: '1.2rem',
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                transition: 'transform 0.15s ease'
-                                            }}
-                                        >
-                                            ▶
-                                        </button>
-                                        <span style={{
-                                            position: 'absolute',
-                                            bottom: 6,
-                                            right: 8,
-                                            background: 'rgba(0, 0, 0, 0.7)',
-                                            color: '#fff',
-                                            padding: '1px 6px',
-                                            borderRadius: 4,
-                                            fontSize: '0.6875rem',
-                                            fontWeight: 600
-                                        }}>
-                                            ⏱️ {rec.duration || '30m'}
-                                        </span>
-                                    </div>
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    <IconRefresh size={14} style={{ animation: recordingsLoading ? 'spin 1s linear infinite' : 'none' }} />
+                                </button>
+                            </div>
+                        </div>
 
-                                    <div>
-                                        <h4 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '0 0 4px', color: '#fff' }}>
-                                            {rec.title}
-                                        </h4>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
-                                            {rec.date} • {rec.resolution || '1080p'} • {rec.fileSize || '35 MB'}
+                        {/* Storage Usage Bar */}
+                        {storageMetrics && (
+                            <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--color-text-muted)', marginBottom: 4 }}>
+                                    <span>Storage Utilization</span>
+                                    <span style={{ color: '#818cf8', fontWeight: 600 }}>{storageMetrics.percentage}%</span>
+                                </div>
+                                <div style={{ width: '100%', height: 5, background: 'rgba(255, 255, 255, 0.06)', borderRadius: 3, overflow: 'hidden' }}>
+                                    <div
+                                        style={{
+                                            width: `${Math.min(100, storageMetrics.percentage)}%`,
+                                            height: '100%',
+                                            background: storageMetrics.percentage > 80
+                                                ? 'linear-gradient(90deg, #ef4444 0%, #f97316 100%)'
+                                                : 'linear-gradient(90deg, #6366f1 0%, #818cf8 100%)',
+                                            borderRadius: 3,
+                                            transition: 'width 0.6s ease'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Loading State */}
+                        {recordingsLoading && (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+                                {[1, 2, 3].map(i => (
+                                    <div key={i} style={{
+                                        background: 'rgba(255, 255, 255, 0.03)',
+                                        border: '1px solid rgba(255, 255, 255, 0.06)',
+                                        borderRadius: 'var(--radius-md)',
+                                        padding: 14,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: 10
+                                    }}>
+                                        <div style={{ height: 110, borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.05)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                                        <div style={{ height: 14, borderRadius: 4, background: 'rgba(255,255,255,0.05)', animation: 'pulse 1.5s ease-in-out infinite', width: '80%' }} />
+                                        <div style={{ height: 10, borderRadius: 4, background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease-in-out infinite', width: '60%' }} />
+                                        <div style={{ height: 30, borderRadius: 6, background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Error State */}
+                        {!recordingsLoading && recordingsError && (
+                            <div style={{ padding: '24px 16px', textAlign: 'center', color: '#f87171', fontSize: '0.85rem' }}>
+                                ⚠️ {recordingsError} —{' '}
+                                <button onClick={fetchRecordingsVault} style={{ background: 'none', border: 'none', color: '#818cf8', cursor: 'pointer', fontSize: '0.85rem', textDecoration: 'underline' }}>
+                                    retry
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Empty State */}
+                        {!recordingsLoading && !recordingsError && recordingsList.length === 0 && (
+                            <div style={{ padding: '36px 16px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                                <div style={{
+                                    width: 52,
+                                    height: 52,
+                                    borderRadius: '50%',
+                                    background: 'rgba(129, 140, 248, 0.1)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    <IconVideo size={24} color="#818cf8" />
+                                </div>
+                                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0' }}>No cloud recordings yet</div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', maxWidth: 300 }}>
+                                    Start and end a meeting — recordings are automatically archived here for streaming and download.
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Recording Cards */}
+                        {!recordingsLoading && !recordingsError && recordingsList.length > 0 && (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+                                {recordingsList.map((rec: any, idx: number) => (
+                                    <div
+                                        key={rec._id || rec.id || idx}
+                                        style={{
+                                            background: 'rgba(255, 255, 255, 0.03)',
+                                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                                            borderRadius: 'var(--radius-md)',
+                                            padding: '14px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 10,
+                                            transition: 'all 0.2s ease'
+                                        }}
+                                    >
+                                        {/* Thumbnail / Preview */}
+                                        <div style={{
+                                            height: 110,
+                                            borderRadius: 'var(--radius-sm)',
+                                            background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            position: 'relative',
+                                            overflow: 'hidden',
+                                            cursor: 'pointer'
+                                        }} onClick={() => rec.recordingUrl && setSelectedRecordingModal(rec)}>
+                                            {rec.recordingUrl ? (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setSelectedRecordingModal(rec) }}
+                                                    style={{
+                                                        width: 44,
+                                                        height: 44,
+                                                        borderRadius: '50%',
+                                                        background: 'rgba(255, 255, 255, 0.2)',
+                                                        backdropFilter: 'blur(8px)',
+                                                        border: '1px solid rgba(255, 255, 255, 0.4)',
+                                                        color: '#fff',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        transition: 'transform 0.15s ease'
+                                                    }}
+                                                >
+                                                    <IconPlay size={18} />
+                                                </button>
+                                            ) : (
+                                                <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '0.7rem' }}>
+                                                    <IconVideo size={22} />
+                                                    <div style={{ marginTop: 4 }}>Processing...</div>
+                                                </div>
+                                            )}
+                                            <span style={{
+                                                position: 'absolute',
+                                                bottom: 6,
+                                                right: 8,
+                                                background: 'rgba(0, 0, 0, 0.7)',
+                                                color: '#fff',
+                                                padding: '2px 6px',
+                                                borderRadius: 4,
+                                                fontSize: '0.6875rem',
+                                                fontWeight: 600,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 4
+                                            }}>
+                                                <IconClock size={11} /> {rec.duration || '—'}
+                                            </span>
+                                            <span style={{
+                                                position: 'absolute',
+                                                top: 6,
+                                                left: 8,
+                                                background: 'rgba(239, 68, 68, 0.85)',
+                                                color: '#fff',
+                                                padding: '2px 6px',
+                                                borderRadius: 4,
+                                                fontSize: '0.6rem',
+                                                fontWeight: 700,
+                                                letterSpacing: '0.06em'
+                                            }}>
+                                                ● REC
+                                            </span>
+                                        </div>
+
+                                        {/* Info */}
+                                        <div>
+                                            <h4 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '0 0 3px', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {rec.title || 'Conference Recording'}
+                                            </h4>
+                                            <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', marginBottom: 2 }}>
+                                                Host: {rec.host?.fullName || 'Organizer'}
+                                            </div>
+                                            <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                <span>{rec.createdAtFormatted || rec.date || '—'}</span>
+                                                <span>•</span>
+                                                <span>{rec.resolution || '1080p'}</span>
+                                                <span>•</span>
+                                                <span>{rec.fileSizeDisplay || rec.fileSize || '—'}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Action buttons */}
+                                        <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
+                                            <button
+                                                onClick={() => rec.recordingUrl ? setSelectedRecordingModal(rec) : undefined}
+                                                disabled={!rec.recordingUrl}
+                                                className="btn btn-primary text-xs"
+                                                style={{ flex: 1, padding: '5px 8px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, opacity: rec.recordingUrl ? 1 : 0.4 }}
+                                            >
+                                                <IconPlay size={12} />
+                                                <span>Watch</span>
+                                            </button>
+                                            {rec.recordingUrl ? (
+                                                <a
+                                                    href={resolveRecordingUrl(rec.recordingUrl)}
+                                                    download={`${rec.title || 'recording'}.mp4`}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="btn btn-secondary text-xs"
+                                                    style={{ padding: '5px 10px', fontSize: '0.72rem', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                    title="Download MP4"
+                                                >
+                                                    <IconDownload size={13} />
+                                                </a>
+                                            ) : (
+                                                <button
+                                                    disabled
+                                                    className="btn btn-secondary text-xs"
+                                                    style={{ padding: '5px 10px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}
+                                                >
+                                                    <IconDownload size={13} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-
-                                    <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
-                                        <button
-                                            onClick={() => setSelectedRecordingModal(rec)}
-                                            className="btn btn-primary text-xs"
-                                            style={{ flex: 1, padding: '5px 8px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
-                                        >
-                                            <span>▶ Watch</span>
-                                        </button>
-                                        <a
-                                            href={rec.url || rec.recordingUrl || '#'}
-                                            download={`${rec.title}.mp4`}
-                                            className="btn btn-secondary text-xs"
-                                            style={{ padding: '5px 10px', fontSize: '0.72rem', textDecoration: 'none' }}
-                                        >
-                                            ⬇
-                                        </a>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
+
 
                     {/* Recent Meeting Activity Logs (Table) */}
                     <div className="glass-card" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1380,7 +1612,7 @@ export function EnterpriseDashboardHub({
                                                     <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{m.time}</div>
                                                 </td>
                                                 <td style={{ padding: '12px 10px', color: '#e4e4e7', whiteSpace: 'nowrap' }}>
-                                                    ⏱️ {m.duration}
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconClock size={11} /> {m.duration}</span>
                                                 </td>
                                                 <td style={{ padding: '12px 10px', whiteSpace: 'nowrap' }}>
                                                     {m.recorded ? (
@@ -1395,7 +1627,7 @@ export function EnterpriseDashboardHub({
                                                             alignItems: 'center',
                                                             gap: 4
                                                         }}>
-                                                            🎥 Recorded
+                                                            <IconVideo size={12} color="#c084fc" /> Recorded
                                                         </span>
                                                     ) : (
                                                         <span style={{
@@ -1404,9 +1636,12 @@ export function EnterpriseDashboardHub({
                                                             color: '#4ade80',
                                                             background: 'rgba(34, 197, 94, 0.1)',
                                                             padding: '2px 8px',
-                                                            borderRadius: 4
+                                                            borderRadius: 4,
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 4
                                                         }}>
-                                                            ✓ Completed
+                                                            <IconCheck size={12} color="#4ade80" /> Completed
                                                         </span>
                                                     )}
                                                 </td>
@@ -1459,7 +1694,9 @@ export function EnterpriseDashboardHub({
                                 border: '1px dashed rgba(255, 255, 255, 0.08)',
                                 borderRadius: 'var(--radius-md)'
                             }}>
-                                <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: 6 }}>📅</span>
+                                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+                                    <IconCalendar size={32} color="#818cf8" strokeWidth={1.5} />
+                                </div>
                                 <h4 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#fff', margin: '0 0 4px' }}>No Upcoming Calls</h4>
                                 <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '0 0 12px' }}>
                                     Your schedule is completely clear today.
@@ -1536,7 +1773,7 @@ export function EnterpriseDashboardHub({
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                                 <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span>💬</span> Active Team Huddles
+                                    <IconHash size={18} color="#818cf8" /> Active Team Huddles
                                 </h3>
                                 <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
                                     Fast-jump to channel chats & ongoing voice rooms
@@ -1594,7 +1831,7 @@ export function EnterpriseDashboardHub({
                                             gap: 4
                                         }}>
                                             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
-                                            <span>🎧 {ch.usersInHuddle} Live</span>
+                                            <span>{ch.usersInHuddle} Live</span>
                                         </span>
                                     ) : (
                                         <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>Open ➔</span>
@@ -1615,8 +1852,9 @@ export function EnterpriseDashboardHub({
                                     Speed-dial colleagues for instant 1-on-1 calls
                                 </p>
                             </div>
-                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#4ade80', background: 'rgba(34, 197, 94, 0.12)', padding: '2px 8px', borderRadius: 9999 }}>
-                                🟢 Active Now
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#4ade80', background: 'rgba(34, 197, 94, 0.12)', padding: '2px 8px', borderRadius: 9999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80' }} />
+                                Active Now
                             </span>
                         </div>
 
@@ -1671,8 +1909,14 @@ export function EnterpriseDashboardHub({
                                                 <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#fff' }}>
                                                     {member.name}
                                                 </div>
-                                                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
-                                                    {member.role === 'owner' ? '👑 Workspace Owner' : member.role === 'admin' ? '🛡️ Admin' : 'Member'}
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    {member.role === 'owner' ? (
+                                                        <><IconCrown size={11} color="#fbbf24" /> <span>Workspace Owner</span></>
+                                                    ) : member.role === 'admin' ? (
+                                                        <><IconShield size={11} color="#c084fc" /> <span>Admin</span></>
+                                                    ) : (
+                                                        <span>Member</span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -1686,7 +1930,8 @@ export function EnterpriseDashboardHub({
                                                 gap: 4, color: '#4ade80', background: 'rgba(34, 197, 94, 0.08)', border: '1px solid rgba(34, 197, 94, 0.25)'
                                             }}
                                         >
-                                            <span>📞</span> Call
+                                            <IconVideo size={12} color="#4ade80" />
+                                            <span>Call</span>
                                         </button>
                                     </div>
                                 ))}
@@ -1698,7 +1943,7 @@ export function EnterpriseDashboardHub({
                     <div className="glass-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <h4 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>🌐</span> Global Edge Media Nodes
+                                <IconGlobe size={15} color="#818cf8" /> Global Edge Media Nodes
                             </h4>
                             <span style={{ fontSize: '0.7rem', color: '#4ade80', fontWeight: 600 }}>All Operational</span>
                         </div>
@@ -1746,7 +1991,7 @@ export function EnterpriseDashboardHub({
                     <div className="glass-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <h4 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>🏆</span> Meeting Wellbeing Index
+                                <IconZap size={15} color="#fbbf24" /> Meeting Wellbeing Index
                             </h4>
                             <span style={{ fontSize: '0.7rem', color: '#22c55e', background: 'rgba(34, 197, 94, 0.12)', padding: '2px 8px', borderRadius: 9999, fontWeight: 700 }}>
                                 94/100 Score
@@ -1765,7 +2010,7 @@ export function EnterpriseDashboardHub({
                         </div>
 
                         <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
-                            💡 <strong>Recommendation:</strong> Your average meeting time is 24 mins. Retaining Thursday mornings for focused deep work keeps balance optimal.
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconSparkles size={12} color="#fbbf24" /> <strong>Recommendation:</strong></span> Your average meeting time is 24 mins. Retaining Thursday mornings for focused deep work keeps balance optimal.
                         </div>
                     </div>
                 </div>
@@ -1774,52 +2019,94 @@ export function EnterpriseDashboardHub({
             {/* LIGHTBOX VIDEO PLAYER MODAL FOR CLOUD RECORDINGS */}
             {selectedRecordingModal && (
                 <div className="modal-overlay" style={{ zIndex: 100 }}>
-                    <div className="modal-container anim-scale-in" style={{ maxWidth: 760, width: '90%', padding: 20 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div className="modal-container anim-scale-in" style={{ maxWidth: 780, width: '92%', padding: 22 }}>
+                        {/* Modal Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                             <div>
-                                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', margin: 0 }}>
-                                    {selectedRecordingModal.title}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                    <span style={{
+                                        background: 'rgba(239, 68, 68, 0.85)',
+                                        color: '#fff',
+                                        padding: '2px 7px',
+                                        borderRadius: 4,
+                                        fontSize: '0.65rem',
+                                        fontWeight: 700,
+                                        letterSpacing: '0.06em'
+                                    }}>● REC</span>
+                                    <span style={{ fontSize: '0.7rem', color: '#c084fc', fontWeight: 600 }}>
+                                        {selectedRecordingModal.resolution || '1080p Full HD'}
+                                    </span>
+                                </div>
+                                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', margin: '0 0 3px' }}>
+                                    {selectedRecordingModal.title || 'Conference Recording'}
                                 </h3>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
-                                    {selectedRecordingModal.date} • {selectedRecordingModal.duration} • Cloud Recorded
+                                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <span>Host: {selectedRecordingModal.host?.fullName || 'Organizer'}</span>
+                                    <span>•</span>
+                                    <span>{selectedRecordingModal.createdAtFormatted || selectedRecordingModal.date || '—'}</span>
+                                    <span>•</span>
+                                    <span>{selectedRecordingModal.duration || '—'}</span>
+                                    {(selectedRecordingModal.fileSizeDisplay || selectedRecordingModal.fileSize) && (
+                                        <>
+                                            <span>•</span>
+                                            <span>{selectedRecordingModal.fileSizeDisplay || selectedRecordingModal.fileSize}</span>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                             <button
                                 onClick={() => setSelectedRecordingModal(null)}
-                                style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.4rem', cursor: 'pointer' }}
+                                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 7 }}
                             >
-                                ×
+                                <IconX size={16} />
                             </button>
                         </div>
 
-                        <div style={{ width: '100%', height: 380, background: '#000', borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <video
-                                src={selectedRecordingModal.url || selectedRecordingModal.recordingUrl}
-                                controls
-                                autoPlay
-                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                            >
-                                Your browser does not support HTML5 video playback.
-                            </video>
+                        {/* Video Player */}
+                        <div style={{ width: '100%', height: 390, background: '#000', borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                            {(selectedRecordingModal.recordingUrl || selectedRecordingModal.url) ? (
+                                <video
+                                    src={resolveRecordingUrl(selectedRecordingModal.recordingUrl || selectedRecordingModal.url)}
+                                    controls
+                                    autoPlay
+                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                >
+                                    Your browser does not support HTML5 video playback.
+                                </video>
+                            ) : (
+                                <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>
+                                    <IconVideo size={40} />
+                                    <div style={{ marginTop: 12, fontSize: '0.85rem' }}>Recording URL not available yet</div>
+                                    <div style={{ fontSize: '0.72rem', marginTop: 4, color: 'rgba(255,255,255,0.25)' }}>
+                                        The recording may still be processing. Please try again shortly.
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
+                        {/* Footer Actions */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                Encrypted Storage: 30-Day Audit Retention Active
+                            <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                                🔒 Encrypted Storage · {storageMetrics?.retentionPolicyDays ? `${storageMetrics.retentionPolicyDays}-Day Retention` : '30-Day Audit Retention'} Active
                             </span>
                             <div style={{ display: 'flex', gap: 8 }}>
-                                <a
-                                    href={selectedRecordingModal.url || selectedRecordingModal.recordingUrl}
-                                    download={`${selectedRecordingModal.title}.mp4`}
-                                    className="btn btn-secondary text-xs"
-                                    style={{ padding: '6px 14px', textDecoration: 'none' }}
-                                >
-                                    ⬇ Download MP4
-                                </a>
+                                {(selectedRecordingModal.recordingUrl || selectedRecordingModal.url) && (
+                                    <a
+                                        href={resolveRecordingUrl(selectedRecordingModal.recordingUrl || selectedRecordingModal.url)}
+                                        download={`${selectedRecordingModal.title || 'recording'}.mp4`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="btn btn-secondary text-xs"
+                                        style={{ padding: '6px 14px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                    >
+                                        <IconDownload size={13} />
+                                        <span>Download MP4</span>
+                                    </a>
+                                )}
                                 <button
                                     onClick={() => setSelectedRecordingModal(null)}
                                     className="btn btn-primary text-xs"
-                                    style={{ padding: '6px 14px' }}
+                                    style={{ padding: '6px 16px' }}
                                 >
                                     Close Player
                                 </button>

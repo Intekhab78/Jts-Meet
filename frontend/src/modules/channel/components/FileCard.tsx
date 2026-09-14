@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { IconFileText, IconPackage, IconMonitor, IconSparkles, IconSearch, IconDownload, IconX } from '../../../components/common/Icons'
 import type { ChannelAttachment } from '../channel.types'
 
 interface FileCardProps {
@@ -14,7 +15,7 @@ export function formatFileSize(bytes?: number): string {
 }
 
 export function getFileCategory(name: string, type?: string): {
-    icon: string
+    icon: React.ReactNode
     color: string
     bg: string
     borderColor: string
@@ -25,7 +26,7 @@ export function getFileCategory(name: string, type?: string): {
     
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext) || type === 'image') {
         return {
-            icon: '🖼️',
+            icon: <IconSparkles size={20} color="#38bdf8" />,
             color: '#38bdf8',
             bg: 'rgba(56, 189, 248, 0.1)',
             borderColor: 'rgba(56, 189, 248, 0.25)',
@@ -35,7 +36,7 @@ export function getFileCategory(name: string, type?: string): {
     }
     if (['pdf'].includes(ext) || type === 'pdf') {
         return {
-            icon: '📕',
+            icon: <IconFileText size={20} color="#f87171" />,
             color: '#f87171',
             bg: 'rgba(239, 68, 68, 0.1)',
             borderColor: 'rgba(239, 68, 68, 0.25)',
@@ -45,7 +46,7 @@ export function getFileCategory(name: string, type?: string): {
     }
     if (['xls', 'xlsx', 'csv'].includes(ext) || type === 'sheet') {
         return {
-            icon: '📗',
+            icon: <IconFileText size={20} color="#4ade80" />,
             color: '#4ade80',
             bg: 'rgba(34, 197, 94, 0.1)',
             borderColor: 'rgba(34, 197, 94, 0.25)',
@@ -55,7 +56,7 @@ export function getFileCategory(name: string, type?: string): {
     }
     if (['doc', 'docx', 'txt', 'rtf', 'odt'].includes(ext) || type === 'doc') {
         return {
-            icon: '📘',
+            icon: <IconFileText size={20} color="#60a5fa" />,
             color: '#60a5fa',
             bg: 'rgba(96, 165, 250, 0.1)',
             borderColor: 'rgba(96, 165, 250, 0.25)',
@@ -65,7 +66,7 @@ export function getFileCategory(name: string, type?: string): {
     }
     if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext) || type === 'archive') {
         return {
-            icon: '📦',
+            icon: <IconPackage size={20} color="#fbbf24" />,
             color: '#fbbf24',
             bg: 'rgba(251, 191, 36, 0.1)',
             borderColor: 'rgba(251, 191, 36, 0.25)',
@@ -75,7 +76,7 @@ export function getFileCategory(name: string, type?: string): {
     }
     if (['js', 'ts', 'jsx', 'tsx', 'py', 'html', 'css', 'json', 'sql', 'sh'].includes(ext) || type === 'code') {
         return {
-            icon: '💻',
+            icon: <IconMonitor size={20} color="#c084fc" />,
             color: '#c084fc',
             bg: 'rgba(192, 132, 252, 0.1)',
             borderColor: 'rgba(192, 132, 252, 0.25)',
@@ -84,7 +85,7 @@ export function getFileCategory(name: string, type?: string): {
         }
     }
     return {
-        icon: '📄',
+        icon: <IconFileText size={20} color="#94a3b8" />,
         color: '#94a3b8',
         bg: 'rgba(148, 163, 184, 0.1)',
         borderColor: 'rgba(148, 163, 184, 0.25)',
@@ -163,7 +164,7 @@ export function FileCard({ attachment }: FileCardProps) {
                                 gap: 4
                             }}
                         >
-                            <span>🔍</span> Click to zoom
+                            <IconSearch size={12} color="#fff" /> Click to zoom
                         </div>
                     </div>
                 )}
@@ -263,7 +264,7 @@ export function FileCard({ attachment }: FileCardProps) {
                             e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'
                         }}
                     >
-                        <span>⬇️</span> Download
+                        <IconDownload size={13} /> Download
                     </a>
                 </div>
             </div>
@@ -317,7 +318,7 @@ export function FileCard({ attachment }: FileCardProps) {
                                 justifyContent: 'center'
                             }}
                         >
-                            ✕
+                            <IconX size={15} />
                         </button>
                         <img
                             src={attachment.url}

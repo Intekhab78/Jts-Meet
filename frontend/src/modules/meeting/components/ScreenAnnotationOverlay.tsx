@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
+import { IconEdit, IconTrash, IconX } from '../../../components/common/Icons'
 
 export type AnnotationTool = 'laser' | 'pen' | 'highlighter' | 'eraser'
 
@@ -433,7 +434,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                         }}
                         title="Laser Pointer (Temporary Glowing Trail)"
                     >
-                        <span>🔴</span>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 8px #ef4444' }} />
                         <span>Laser</span>
                     </button>
 
@@ -458,7 +459,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                         }}
                         title="Freehand Pen"
                     >
-                        <span>🖊️</span>
+                        <IconEdit size={13} color="#60a5fa" />
                         <span>Pen</span>
                     </button>
 
@@ -483,7 +484,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                         }}
                         title="Highlighter"
                     >
-                        <span>🖍️</span>
+                        <IconEdit size={13} color="#facc15" />
                         <span>Highlight</span>
                     </button>
 
@@ -507,7 +508,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                         }}
                         title="Eraser"
                     >
-                        <span>🧹</span>
+                        <IconTrash size={13} color="#ffffff" />
                         <span>Eraser</span>
                     </button>
 
@@ -559,7 +560,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                         onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.background = 'transparent' }}
                         title="Clear All Annotations"
                     >
-                        🗑️
+                        <IconTrash size={14} />
                     </button>
 
                     {/* Close Annotation Mode */}
@@ -584,7 +585,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                             onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.background = 'transparent' }}
                             title="Close Annotations"
                         >
-                            ✕
+                            <IconX size={14} />
                         </button>
                     )}
                 </div>

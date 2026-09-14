@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { API_BASE } from '../../../config'
+import { IconSparkles, IconX, IconRefresh, IconCheck, IconDownload, IconFileText } from '../../../components/common/Icons'
 
 interface CaptionEntry {
     speaker: string
@@ -222,9 +223,9 @@ ${summaryData.actionItems.map(a => `- [${a.completed ? 'x' : ' '}] ${a.text}`).j
                             width: 36, height: 36, borderRadius: 10,
                             background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '1.2rem', boxShadow: '0 4px 14px rgba(168, 85, 247, 0.4)'
+                            boxShadow: '0 4px 14px rgba(168, 85, 247, 0.4)'
                         }}>
-                            ✨
+                            <IconSparkles size={20} color="#ffffff" />
                         </div>
                         <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -249,11 +250,11 @@ ${summaryData.actionItems.map(a => `- [${a.completed ? 'x' : ' '}] ${a.text}`).j
                         onClick={onClose}
                         style={{
                             background: 'none', border: 'none', color: 'var(--color-text-muted, #94a3b8)',
-                            fontSize: '1.25rem', cursor: 'pointer', padding: 6, borderRadius: 8,
+                            cursor: 'pointer', padding: 6, borderRadius: 8,
                             display: 'flex', alignItems: 'center', justifyContent: 'center'
                         }}
                     >
-                        ✕
+                        <IconX size={16} />
                     </button>
                 </div>
 
@@ -510,10 +511,10 @@ ${summaryData.actionItems.map(a => `- [${a.completed ? 'x' : ' '}] ${a.text}`).j
                         style={{
                             background: 'none', border: 'none', color: '#818cf8',
                             fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
-                            display: 'inline-flex', alignItems: 'center', gap: 4
+                            display: 'inline-flex', alignItems: 'center', gap: 6
                         }}
                     >
-                        <span>🔄</span> {isGenerating ? 'Analyzing…' : 'Regenerate'}
+                        <IconRefresh size={13} /> {isGenerating ? 'Analyzing…' : 'Regenerate'}
                     </button>
 
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -521,17 +522,25 @@ ${summaryData.actionItems.map(a => `- [${a.completed ? 'x' : ' '}] ${a.text}`).j
                             onClick={handleCopy}
                             disabled={!summaryData || isGenerating}
                             className="btn btn-secondary text-xs"
-                            style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: 8 }}
+                            style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 5 }}
                         >
-                            {copied ? '✓ Copied' : '📋 Copy Markdown'}
+                            {copied ? (
+                                <>
+                                    <IconCheck size={13} color="#4ade80" /> Copied
+                                </>
+                            ) : (
+                                <>
+                                    <IconFileText size={13} /> Copy Markdown
+                                </>
+                            )}
                         </button>
                         <button
                             onClick={handleDownload}
                             disabled={!summaryData || isGenerating}
                             className="btn btn-secondary text-xs"
-                            style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: 8 }}
+                            style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 5 }}
                         >
-                            💾 Export .md
+                            <IconDownload size={13} /> Export .md
                         </button>
                         <button
                             onClick={onClose}

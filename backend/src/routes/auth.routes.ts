@@ -35,6 +35,7 @@ router.post('/refresh-token', asyncWrapper(authController.refreshToken))
 router.post('/logout', asyncWrapper(authController.logout))
 
 router.put('/profile', authenticate, asyncWrapper(authController.updateProfile))
+router.put('/status', authenticate, asyncWrapper(authController.updateStatus))
 router.post('/change-password', authenticate, asyncWrapper(authController.changePassword))
 router.get('/sessions', authenticate, asyncWrapper(authController.getSessions))
 router.delete('/sessions/:sessionId', authenticate, asyncWrapper(authController.revokeSession))

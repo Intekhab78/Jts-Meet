@@ -99,6 +99,15 @@ export const SocketEvents = {
     // RTMP Live Streaming events
     LIVESTREAM_TOGGLE: 'meeting:livestream-toggle',
     LIVESTREAM_STATUS: 'meeting:livestream-status',
-    LIVESTREAM_STATS: 'meeting:livestream-stats'
+    LIVESTREAM_STATS: 'meeting:livestream-stats',
+
+    // User Live Presence events
+    PRESENCE_UPDATE: 'presence:update',
+    PRESENCE_SYNC: 'presence:sync',
+    PRESENCE_STATUS: 'presence:status',
+
+    // Presenter Backstage / Virtual Green Room (Enterprise Tier)
+    STAGE_STATUS_CHANGE: 'stage:status:change',
+    STAGE_STATE_SYNC: 'stage:state:sync'
 } as const
 

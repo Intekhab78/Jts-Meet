@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { ChannelRole } from './channel.types'
+import { IconUserPlus, IconAlertTriangle, IconX } from '../../components/common/Icons'
 
 interface InviteChannelMemberDialogProps {
     open: boolean
@@ -71,10 +72,11 @@ export function InviteChannelMemberDialog({ open, onClose, onInvite }: InviteCha
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 justifyContent: 'center',
                 padding: '24px 16px',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                overflowY: 'auto'
             }}
             onClick={(e) => {
                 if (e.target === e.currentTarget && !submitting) {
@@ -96,7 +98,8 @@ export function InviteChannelMemberDialog({ open, onClose, onInvite }: InviteCha
                     flexDirection: 'column',
                     maxHeight: 'min(88vh, 600px)',
                     overflow: 'hidden',
-                    position: 'relative'
+                    position: 'relative',
+                    marginBottom: 24
                 }}
             >
                 {/* MS Teams Style Header */}
@@ -122,7 +125,7 @@ export function InviteChannelMemberDialog({ open, onClose, onInvite }: InviteCha
                             color: '#fff',
                             flexShrink: 0
                         }}>
-                            💬
+                            <IconUserPlus size={18} />
                         </div>
                         <div>
                             <h2 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#fff', lineHeight: 1.2 }}>
@@ -148,11 +151,10 @@ export function InviteChannelMemberDialog({ open, onClose, onInvite }: InviteCha
                             borderRadius: 8,
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.9rem'
+                            justifyContent: 'center'
                         }}
                     >
-                        ✕
+                        <IconX size={16} />
                     </button>
                 </div>
 
@@ -224,9 +226,12 @@ export function InviteChannelMemberDialog({ open, onClose, onInvite }: InviteCha
                                 border: '1px solid rgba(239, 68, 68, 0.35)',
                                 color: '#fca5a5',
                                 fontSize: '0.8rem',
-                                borderRadius: 8
+                                borderRadius: 8,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}>
-                                ⚠️ {error}
+                                <IconAlertTriangle size={15} color="#fca5a5" /> {error}
                             </div>
                         )}
                     </div>

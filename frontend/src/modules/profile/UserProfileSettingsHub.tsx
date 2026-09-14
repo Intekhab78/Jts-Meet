@@ -1,6 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { API_BASE } from '../../config'
 import { soundEffects } from '../../utils/soundEffects'
+import {
+    IconSettings,
+    IconUser,
+    IconVideo,
+    IconBell,
+    IconShieldCheck,
+    IconGlobe,
+    IconCheck,
+    IconAlertTriangle,
+    IconUpload,
+    IconMic,
+    IconMail,
+    IconLock,
+    IconDashboard,
+    IconZap,
+    IconSparkles,
+    IconCopy
+} from '../../components/common/Icons'
 
 interface UserProfileSettingsHubProps {
     token: string
@@ -331,7 +349,7 @@ export function UserProfileSettingsHub({
             {/* Header Title */}
             <div>
                 <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: '0 0 4px', color: '#fff', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span>⚙️</span> Settings & Preferences
+                    <IconSettings size={22} color="#818cf8" /> Settings & Preferences
                 </h2>
                 <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>
                     Manage your account identity, audio/video devices, enterprise security, and workspace preferences.
@@ -350,11 +368,11 @@ export function UserProfileSettingsHub({
                 }}
             >
                 {[
-                    { id: 'general', label: 'General & Profile', icon: '👤' },
-                    { id: 'audio_video', label: 'Audio & Video', icon: '📹' },
-                    { id: 'notifications', label: 'Notifications', icon: '🔔' },
-                    { id: 'security', label: 'Security & Password', icon: '🔐' },
-                    { id: 'region', label: 'Region & Shortcuts', icon: '🌍' }
+                    { id: 'general', label: 'General & Profile', icon: <IconUser size={15} /> },
+                    { id: 'audio_video', label: 'Audio & Video', icon: <IconVideo size={15} /> },
+                    { id: 'notifications', label: 'Notifications', icon: <IconBell size={15} /> },
+                    { id: 'security', label: 'Security & Password', icon: <IconShieldCheck size={15} /> },
+                    { id: 'region', label: 'Region & Shortcuts', icon: <IconGlobe size={15} /> }
                 ].map(t => {
                     const isActive = activeTab === t.id
                     return (
@@ -388,12 +406,12 @@ export function UserProfileSettingsHub({
             {/* Feedback Banners */}
             {profileSuccessMsg && (
                 <div style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)', color: '#4ade80', padding: '12px 18px', borderRadius: '12px', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span>✓</span> {profileSuccessMsg}
+                    <IconCheck size={16} color="#4ade80" /> {profileSuccessMsg}
                 </div>
             )}
             {profileErrMsg && (
                 <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '12px 18px', borderRadius: '12px', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span>⚠</span> {profileErrMsg}
+                    <IconAlertTriangle size={16} color="#f87171" /> {profileErrMsg}
                 </div>
             )}
 
@@ -403,7 +421,7 @@ export function UserProfileSettingsHub({
                     {/* Identity & Avatar Card */}
                     <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>👤</span> Personal Identity
+                            <IconUser size={16} color="#818cf8" /> Personal Identity
                         </h3>
 
                         {/* Avatar Image + Upload button */}
@@ -443,7 +461,7 @@ export function UserProfileSettingsHub({
                                     className="btn btn-secondary"
                                     style={{ padding: '6px 14px', fontSize: '0.75rem', fontWeight: 600, borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                                 >
-                                    <span>📸</span>
+                                    <IconUpload size={14} />
                                     <span>{isUploadingAvatar ? 'Uploading...' : 'Change Photo'}</span>
                                 </button>
                                 {avatarUrl && (
@@ -475,8 +493,8 @@ export function UserProfileSettingsHub({
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Email Address</label>
-                                    <span style={{ fontSize: '0.6875rem', color: '#4ade80', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: 10, fontWeight: 700 }}>
-                                        🔒 Verified
+                                    <span style={{ fontSize: '0.6875rem', color: '#4ade80', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                        <IconShieldCheck size={12} color="#4ade80" /> Verified
                                     </span>
                                 </div>
                                 <input
@@ -518,9 +536,10 @@ export function UserProfileSettingsHub({
                                 type="submit"
                                 disabled={isSavingProfile}
                                 className="btn btn-primary"
-                                style={{ marginTop: 6, padding: '10px 16px', fontSize: '0.8125rem', fontWeight: 700, borderRadius: 8 }}
+                                style={{ marginTop: 6, padding: '10px 16px', fontSize: '0.8125rem', fontWeight: 700, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                             >
-                                {isSavingProfile ? 'Saving...' : '💾 Save Profile'}
+                                <IconCheck size={14} />
+                                <span>{isSavingProfile ? 'Saving...' : 'Save Profile'}</span>
                             </button>
                         </form>
                     </div>
@@ -528,7 +547,7 @@ export function UserProfileSettingsHub({
                     {/* Presence Status Card */}
                     <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>🟢</span> Availability & Status Note
+                            <IconZap size={16} color="#22c55e" /> Availability & Status Note
                         </h3>
 
                         <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: 0 }}>
@@ -569,7 +588,7 @@ export function UserProfileSettingsHub({
                                                 <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>{s.desc}</div>
                                             </div>
                                         </div>
-                                        {isSelected && <span style={{ color: s.color, fontWeight: 800 }}>✓</span>}
+                                        {isSelected && <IconCheck size={16} color={s.color} strokeWidth={2.5} />}
                                     </div>
                                 )
                             })}
@@ -599,7 +618,7 @@ export function UserProfileSettingsHub({
                     {/* Audio Hardware Card */}
                     <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>🎙️</span> Microphone & Speakers
+                            <IconMic size={16} color="#818cf8" /> Microphone & Speakers
                         </h3>
 
                         {/* Microphone device */}
@@ -654,9 +673,10 @@ export function UserProfileSettingsHub({
                                 type="button"
                                 onClick={handleTestSpeaker}
                                 className="btn btn-secondary"
-                                style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: 8 }}
+                                style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                             >
-                                {isPlayingChime ? '🔊 Playing...' : '🔊 Test Speaker'}
+                                <IconSparkles size={13} color="#818cf8" />
+                                <span>{isPlayingChime ? 'Playing...' : 'Test Speaker'}</span>
                             </button>
                         </div>
 
@@ -701,7 +721,7 @@ export function UserProfileSettingsHub({
                     {/* Camera & Video Card */}
                     <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>📹</span> Camera & Resolution
+                            <IconVideo size={16} color="#818cf8" /> Camera & Resolution
                         </h3>
 
                         {/* Camera device */}
@@ -801,7 +821,7 @@ export function UserProfileSettingsHub({
                     {/* Email Notifications */}
                     <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>📧</span> Gmail SMTP Email Alerts
+                            <IconMail size={16} color="#818cf8" /> Gmail SMTP Email Alerts
                         </h3>
                         <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: 0 }}>
                             Delivered directly to <strong>{profileEmail}</strong> via configured Gmail SMTP.
@@ -861,7 +881,7 @@ export function UserProfileSettingsHub({
                     {/* In-App Sounds & DND */}
                     <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>🔔</span> In-App Sounds & Ringing
+                            <IconBell size={16} color="#818cf8" /> In-App Sounds & Ringing
                         </h3>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -923,17 +943,17 @@ export function UserProfileSettingsHub({
                     {/* Change Password Card */}
                     <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>🔑</span> Change Account Password
+                            <IconLock size={16} color="#818cf8" /> Change Account Password
                         </h3>
 
                         {passwordSuccessMsg && (
-                            <div style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)', color: '#4ade80', padding: '10px 14px', borderRadius: '8px', fontSize: '0.8125rem' }}>
-                                ✓ {passwordSuccessMsg}
+                            <div style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)', color: '#4ade80', padding: '10px 14px', borderRadius: '8px', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <IconCheck size={14} color="#4ade80" /> {passwordSuccessMsg}
                             </div>
                         )}
                         {passwordErrMsg && (
-                            <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '10px 14px', borderRadius: '8px', fontSize: '0.8125rem' }}>
-                                ⚠ {passwordErrMsg}
+                            <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '10px 14px', borderRadius: '8px', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <IconAlertTriangle size={14} color="#f87171" /> {passwordErrMsg}
                             </div>
                         )}
 
@@ -991,9 +1011,10 @@ export function UserProfileSettingsHub({
                                 type="submit"
                                 disabled={isUpdatingPassword}
                                 className="btn btn-primary"
-                                style={{ marginTop: 6, padding: '9px 16px', fontSize: '0.8125rem', fontWeight: 700, borderRadius: 8 }}
+                                style={{ marginTop: 6, padding: '9px 16px', fontSize: '0.8125rem', fontWeight: 700, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                             >
-                                {isUpdatingPassword ? 'Updating...' : '🔒 Update Password'}
+                                <IconLock size={14} />
+                                <span>{isUpdatingPassword ? 'Updating...' : 'Update Password'}</span>
                             </button>
                         </form>
                     </div>
@@ -1001,7 +1022,7 @@ export function UserProfileSettingsHub({
                     {/* 2FA & Active Sessions Card */}
                     <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>🛡️</span> Security & Authentication
+                            <IconShieldCheck size={16} color="#818cf8" /> Security & Authentication
                         </h3>
 
                         {/* 2FA Toggle */}
@@ -1026,10 +1047,15 @@ export function UserProfileSettingsHub({
                             <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff', marginBottom: 6 }}>Active Login Session</div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <span style={{ fontSize: '1.2rem' }}>💻</span>
+                                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(34, 197, 94, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <IconDashboard size={18} color="#4ade80" />
+                                    </div>
                                     <div>
                                         <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>Current Browser Session</div>
-                                        <div style={{ fontSize: '0.6875rem', color: '#4ade80' }}>🟢 Active Now • Windows Chrome</div>
+                                        <div style={{ fontSize: '0.6875rem', color: '#4ade80', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#4ade80' }} />
+                                            Active Now • Windows Chrome
+                                        </div>
                                     </div>
                                 </div>
                                 <span style={{ fontSize: '0.6875rem', background: 'rgba(34,197,94,0.2)', color: '#4ade80', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
@@ -1047,7 +1073,7 @@ export function UserProfileSettingsHub({
                     {/* Timezone & Regional Defaults */}
                     <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>🌐</span> Timezone & Localization
+                            <IconGlobe size={16} color="#818cf8" /> Timezone & Localization
                         </h3>
 
                         {/* Primary Timezone */}
@@ -1127,7 +1153,7 @@ export function UserProfileSettingsHub({
                     {/* Keyboard Shortcuts Cheat Sheet */}
                     <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
                         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span>⌨️</span> Keyboard Shortcuts
+                            <IconSparkles size={16} color="#818cf8" /> Keyboard Shortcuts
                         </h3>
                         <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: 0 }}>
                             Power user hotkeys for rapid in-meeting multitasking.

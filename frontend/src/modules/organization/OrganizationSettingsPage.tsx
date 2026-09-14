@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { createOrganization, getOrganization, updateOrganization, inviteOrganizationMember, removeOrganizationMember, leaveOrganization } from './organization.service'
 import type { Organization, UpdateOrganizationPayload } from './organization.types'
 import { CreateOrganizationModal } from './CreateOrganizationModal'
@@ -10,6 +11,29 @@ import { CreateTeamModal } from '../team/CreateTeamModal'
 import type { Team } from '../team/team.types'
 import type { Channel } from '../channel/channel.types'
 import { IntegrationsTab } from '../admin/components/IntegrationsTab'
+import { API_BASE } from '../../config'
+import {
+    IconAlertTriangle,
+    IconRefresh,
+    IconCheck,
+    IconCopy,
+    IconExternalLink,
+    IconPlus,
+    IconGlobe,
+    IconCalendar,
+    IconLock,
+    IconUsers,
+    IconBuilding,
+    IconHash,
+    IconShield,
+    IconCreditCard,
+    IconSettings,
+    IconZap,
+    IconCrown,
+    IconDownload,
+    IconClock,
+    IconX
+} from '../../components/common/Icons'
 
 interface OrganizationSettingsPageProps {
     token: string
@@ -36,10 +60,54 @@ export function OrganizationSettingsPage({
     const [successMessage, setSuccessMessage] = useState('')
     const [teams, setTeams] = useState<Team[]>([])
     const [channels, setChannels] = useState<(Channel & { teamName?: string })[]>([])
-    const [activeSubTab, setActiveSubTab] = useState<'members' | 'departments' | 'channels' | 'roles' | 'settings' | 'integrations' | 'danger'>('members')
+    const [activeSubTab, setActiveSubTab] = useState<'members' | 'departments' | 'channels' | 'roles' | 'billing' | 'settings' | 'integrations' | 'danger'>('members')
     const [copiedOwner, setCopiedOwner] = useState(false)
     const [copiedSlug, setCopiedSlug] = useState(false)
     const [copiedInviteLink, setCopiedInviteLink] = useState(false)
+
+    // Dynamic Plan & Quota Upgrade State
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+    const [availablePlans, setAvailablePlans] = useState<any[]>([])
+    const [upgradingPlan, setUpgradingPlan] = useState(false)
+
+    const loadPlans = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/plans`)
+            if (res.ok) {
+                const data = await res.json()
+                setAvailablePlans(data.data || [])
+            }
+        } catch (e) {
+            console.error('Failed to load plans:', e)
+        }
+    }
+
+    const handleUpgradePlan = async (planId: string) => {
+        if (!organization) return
+        setUpgradingPlan(true)
+        try {
+            const res = await fetch(`${API_BASE}/api/organization/${organization._id}/plan`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ planId })
+            })
+            const data = await res.json()
+            if (res.ok && data.success) {
+                setSuccessMessage(`Workspace subscription upgraded to ${planId.toUpperCase()} successfully!`)
+                setShowUpgradeModal(false)
+                loadOrganization(organization._id)
+            } else {
+                setError(data.message || 'Failed to upgrade plan')
+            }
+        } catch (err: any) {
+            setError(err?.message || 'Network error upgrading plan')
+        } finally {
+            setUpgradingPlan(false)
+        }
+    }
 
     // Edit form state
     const [formName, setFormName] = useState('')
@@ -207,7 +275,7 @@ export function OrganizationSettingsPage({
             {error && (
                 <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '10px 14px', borderRadius: '10px', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>⚠️</span>
+                        <IconAlertTriangle size={15} color="#f87171" />
                         <span>{error}</span>
                     </div>
                     {(organizationId || organizations.length > 0) && (
@@ -215,16 +283,17 @@ export function OrganizationSettingsPage({
                             type="button"
                             onClick={() => loadOrganization(organizationId || organizations[0]._id)}
                             className="btn btn-secondary"
-                            style={{ padding: '4px 10px', fontSize: '0.72rem', borderRadius: 6, cursor: 'pointer' }}
+                            style={{ padding: '4px 10px', fontSize: '0.72rem', borderRadius: 6, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                         >
-                            🔄 Retry
+                            <IconRefresh size={12} />
+                            <span>Retry</span>
                         </button>
                     )}
                 </div>
             )}
             {successMessage && (
                 <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', color: '#4ade80', padding: '10px 14px', borderRadius: '10px', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span>✓</span>
+                    <IconCheck size={15} color="#4ade80" />
                     <span>{successMessage}</span>
                 </div>
             )}
@@ -302,7 +371,7 @@ export function OrganizationSettingsPage({
                                             }}
                                         >
                                             /{organization.slug}
-                                            <span style={{ fontSize: '0.65rem' }}>{copiedSlug ? '✓' : '📋'}</span>
+                                            {copiedSlug ? <IconCheck size={11} color="#4ade80" /> : <IconCopy size={11} />}
                                         </button>
                                     </div>
 
@@ -338,7 +407,7 @@ export function OrganizationSettingsPage({
                                     }}
                                     title="Copy public invitation link"
                                 >
-                                    <span>{copiedInviteLink ? '✓' : '🔗'}</span>
+                                    {copiedInviteLink ? <IconCheck size={13} color="#4ade80" /> : <IconExternalLink size={13} />}
                                     <span>{copiedInviteLink ? 'Link Copied!' : 'Copy Invite Link'}</span>
                                 </button>
 
@@ -435,21 +504,24 @@ export function OrganizationSettingsPage({
                             color: 'var(--color-text-secondary)'
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ color: 'var(--color-text-muted)' }}>🌐 Timezone:</span>
+                                <IconGlobe size={13} color="var(--color-text-muted)" />
+                                <span style={{ color: 'var(--color-text-muted)' }}>Timezone:</span>
                                 <span style={{ fontWeight: 600, color: '#fff' }}>{organization.timezone || 'UTC'}</span>
                             </div>
 
                             <span style={{ color: 'rgba(255, 255, 255, 0.15)' }}>•</span>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ color: 'var(--color-text-muted)' }}>📅 Created:</span>
+                                <IconCalendar size={13} color="var(--color-text-muted)" />
+                                <span style={{ color: 'var(--color-text-muted)' }}>Created:</span>
                                 <span style={{ fontWeight: 600, color: '#fff' }}>{new Date(organization.createdAt || Date.now()).toLocaleDateString()}</span>
                             </div>
 
                             <span style={{ color: 'rgba(255, 255, 255, 0.15)' }}>•</span>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ color: 'var(--color-text-muted)' }}>🔑 Owner ID:</span>
+                                <IconLock size={13} color="var(--color-text-muted)" />
+                                <span style={{ color: 'var(--color-text-muted)' }}>Owner ID:</span>
                                 <span style={{ fontFamily: 'monospace', color: '#e4e4e7', background: 'rgba(255,255,255,0.04)', padding: '1px 6px', borderRadius: 4 }}>
                                     {String(organization.ownerId || '').slice(0, 12)}...
                                 </span>
@@ -564,7 +636,7 @@ export function OrganizationSettingsPage({
                     {/* QUICK WORKSPACE SHORTCUT BAR */}
                     <div className="glass-card" style={{ padding: '10px 16px', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: '0.85rem' }}>⚡</span>
+                            <IconZap size={15} color="#eab308" />
                             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Quick Workspace Actions:</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -586,7 +658,7 @@ export function OrganizationSettingsPage({
                                     gap: 5
                                 }}
                             >
-                                <span>+</span>
+                                <IconPlus size={13} />
                                 <span>Invite Member</span>
                             </button>
 
@@ -608,7 +680,7 @@ export function OrganizationSettingsPage({
                                     gap: 5
                                 }}
                             >
-                                <span>+</span>
+                                <IconPlus size={13} />
                                 <span>New Department</span>
                             </button>
 
@@ -630,7 +702,7 @@ export function OrganizationSettingsPage({
                                     gap: 5
                                 }}
                             >
-                                <span>🛡️</span>
+                                <IconShield size={13} />
                                 <span>Manage Roles</span>
                             </button>
 
@@ -652,7 +724,7 @@ export function OrganizationSettingsPage({
                                     gap: 5
                                 }}
                             >
-                                <span>⚙️</span>
+                                <IconSettings size={13} />
                                 <span>Workspace Settings</span>
                             </button>
                         </div>
@@ -661,13 +733,14 @@ export function OrganizationSettingsPage({
                     {/* SEGMENTED TAB NAVIGATION (Teams Style) */}
                     <div style={{ display: 'flex', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
                         {[
-                            { id: 'members', label: `Members (${organization.members?.length || 0})`, icon: '👥' },
-                            { id: 'departments', label: `Departments (${teams.length})`, icon: '🏢' },
-                            { id: 'channels', label: `Channels (${channels.length})`, icon: '💬' },
-                            { id: 'roles', label: 'Roles & Access', icon: '🛡️' },
-                            { id: 'settings', label: 'Organization Profile', icon: '⚙️' },
-                            { id: 'integrations', label: 'Integrations & Webhooks', icon: '🔌' },
-                            { id: 'danger', label: 'Danger Zone', icon: '⚠️' }
+                            { id: 'members', label: `Members (${organization.members?.length || 0})`, icon: <IconUsers size={14} /> },
+                            { id: 'departments', label: `Departments (${teams.length})`, icon: <IconBuilding size={14} /> },
+                            { id: 'channels', label: `Channels (${channels.length})`, icon: <IconHash size={14} /> },
+                            { id: 'roles', label: 'Roles & Access', icon: <IconShield size={14} /> },
+                            { id: 'billing', label: 'Subscription & Quotas', icon: <IconCreditCard size={14} /> },
+                            { id: 'settings', label: 'Organization Profile', icon: <IconSettings size={14} /> },
+                            { id: 'integrations', label: 'Integrations & Webhooks', icon: <IconZap size={14} /> },
+                            { id: 'danger', label: 'Danger Zone', icon: <IconAlertTriangle size={14} color="#f87171" /> }
                         ].map(tab => (
                             <button
                                 key={tab.id}
@@ -748,7 +821,9 @@ export function OrganizationSettingsPage({
 
                             {teams.length === 0 ? (
                                 <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                    <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>🏢</div>
+                                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+                                        <IconBuilding size={36} color="#818cf8" strokeWidth={1.5} />
+                                    </div>
                                     <div style={{ fontWeight: 600, color: '#fff' }}>No departments created yet</div>
                                     <p style={{ fontSize: '0.75rem', margin: '4px 0 12px' }}>Create departments like Engineering, Sales, or Marketing to organize your company.</p>
                                     <button
@@ -827,9 +902,9 @@ export function OrganizationSettingsPage({
 
                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: 10 }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
-                                                        <span>👥 {t.members?.length || 0} members</span>
+                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconUsers size={12} color="var(--color-text-muted)" /> {t.members?.length || 0} members</span>
                                                         <span>•</span>
-                                                        <span>💬 {teamChannels.length} channels</span>
+                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconHash size={12} color="var(--color-text-muted)" /> {teamChannels.length} channels</span>
                                                     </div>
                                                     <button
                                                         type="button"
@@ -875,7 +950,9 @@ export function OrganizationSettingsPage({
 
                             {channels.length === 0 ? (
                                 <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                    <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>💬</div>
+                                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+                                        <IconHash size={36} color="#818cf8" strokeWidth={1.5} />
+                                    </div>
                                     <div style={{ fontWeight: 600, color: '#fff' }}>No channels found in this organization</div>
                                     <p style={{ fontSize: '0.75rem', margin: '4px 0 12px' }}>Channels are hosted within departments. Open a department to create channels.</p>
                                 </div>
@@ -993,10 +1070,10 @@ export function OrganizationSettingsPage({
                                         ].map((row, idx) => (
                                             <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }} className="hover:bg-white/2">
                                                 <td style={{ padding: '9px 14px', fontWeight: 500, color: '#e4e4e7' }}>{row.cap}</td>
-                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.owner ? <span style={{ color: '#4ade80', fontWeight: 800 }}>✓</span> : <span style={{ color: '#52525b' }}>—</span>}</td>
-                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.admin ? <span style={{ color: '#4ade80', fontWeight: 800 }}>✓</span> : <span style={{ color: '#52525b' }}>—</span>}</td>
-                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.member ? <span style={{ color: '#4ade80', fontWeight: 800 }}>✓</span> : <span style={{ color: '#52525b' }}>—</span>}</td>
-                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.guest ? <span style={{ color: '#4ade80', fontWeight: 800 }}>✓</span> : <span style={{ color: '#52525b' }}>—</span>}</td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.owner ? <IconCheck size={14} color="#4ade80" /> : <span style={{ color: '#52525b' }}>—</span>}</td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.admin ? <IconCheck size={14} color="#4ade80" /> : <span style={{ color: '#52525b' }}>—</span>}</td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.member ? <IconCheck size={14} color="#4ade80" /> : <span style={{ color: '#52525b' }}>—</span>}</td>
+                                                <td style={{ padding: '9px 14px', textAlign: 'center' }}>{row.guest ? <IconCheck size={14} color="#4ade80" /> : <span style={{ color: '#52525b' }}>—</span>}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -1124,11 +1201,197 @@ export function OrganizationSettingsPage({
                         </div>
                     )}
 
+                    {/* TAB: SUBSCRIPTION & QUOTA USAGE */}
+                    {activeSubTab === 'billing' && (() => {
+                        const activeMembersCount = organization.members ? organization.members.filter((m: any) => m.status === 'active').length : 0
+                        const totalSeats = organization.maxSeats || 15
+                        const seatUsagePercent = Math.min(100, Math.round((activeMembersCount / totalSeats) * 100))
+                        const maxStorageGb = organization.maxStorageGb || 5
+                        const currentTierSlug = organization.planTier || 'free'
+                        const isEnterprise = currentTierSlug === 'enterprise'
+                        const isGrowth = currentTierSlug === 'starter' || currentTierSlug === 'growth'
+
+                        return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                                {/* Active Plan Overview Banner */}
+                                <div className="glass-card" style={{
+                                    padding: '24px 28px',
+                                    borderRadius: 16,
+                                    border: isEnterprise
+                                        ? '1px solid rgba(99, 102, 241, 0.45)'
+                                        : isGrowth
+                                        ? '1px solid rgba(59, 130, 246, 0.35)'
+                                        : '1px solid rgba(255, 255, 255, 0.1)',
+                                    background: isEnterprise
+                                        ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.08) 100%)'
+                                        : 'rgba(255, 255, 255, 0.03)',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    flexWrap: 'wrap',
+                                    gap: 16
+                                }}>
+                                    <div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <IconCrown size={22} color="#818cf8" />
+                                            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#fff' }}>
+                                                {currentTierSlug.toUpperCase()} PLAN
+                                            </h3>
+                                            <span style={{
+                                                fontSize: '0.72rem',
+                                                fontWeight: 800,
+                                                padding: '2px 8px',
+                                                borderRadius: 9999,
+                                                background: 'rgba(34, 197, 94, 0.15)',
+                                                color: '#4ade80',
+                                                border: '1px solid rgba(34, 197, 94, 0.3)'
+                                            }}>
+                                                ACTIVE
+                                            </span>
+                                        </div>
+                                        <p style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', margin: '6px 0 0' }}>
+                                            Enterprise multi-tenant workspace with {totalSeats} seats allocation & {maxStorageGb} GB dedicated cloud storage vault.
+                                        </p>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            loadPlans()
+                                            setShowUpgradeModal(true)
+                                        }}
+                                        className="btn btn-primary"
+                                        style={{
+                                            padding: '10px 22px',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 800,
+                                            borderRadius: 10,
+                                            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                                            boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        <IconZap size={15} color="#fff" />
+                                        <span>Upgrade / Change Plan</span>
+                                    </button>
+                                </div>
+
+                                {/* Dynamic Quota Metrics Row */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                                    {/* Member Seats Progress Bar */}
+                                    <div className="glass-card" style={{ padding: 22, borderRadius: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                                <IconUsers size={14} color="#818cf8" /> Member Seats Quota
+                                            </span>
+                                            <span style={{ fontSize: '0.78rem', color: seatUsagePercent >= 90 ? '#f87171' : '#a1a1aa', fontWeight: 600 }}>
+                                                {activeMembersCount} / {totalSeats} Used ({seatUsagePercent}%)
+                                            </span>
+                                        </div>
+
+                                        <div style={{ height: 10, width: '100%', background: 'rgba(255, 255, 255, 0.08)', borderRadius: 5, overflow: 'hidden' }}>
+                                            <div style={{
+                                                height: '100%',
+                                                width: `${seatUsagePercent}%`,
+                                                background: seatUsagePercent >= 90
+                                                    ? 'linear-gradient(90deg, #f59e0b, #ef4444)'
+                                                    : 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+                                                borderRadius: 5,
+                                                transition: 'width 0.4s ease'
+                                            }} />
+                                        </div>
+
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                            <span>Available: {Math.max(0, totalSeats - activeMembersCount)} Seats</span>
+                                            {activeMembersCount >= totalSeats && (
+                                                <span style={{ color: '#f87171', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                    <IconAlertTriangle size={12} color="#f87171" /> Limit Reached
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Storage Vault Progress Bar */}
+                                    <div className="glass-card" style={{ padding: 22, borderRadius: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                                <IconDownload size={14} color="#38bdf8" /> Cloud Storage Vault
+                                            </span>
+                                            <span style={{ fontSize: '0.78rem', color: '#a1a1aa', fontWeight: 600 }}>
+                                                0.4 GB / {maxStorageGb} GB Used (8%)
+                                            </span>
+                                        </div>
+
+                                        <div style={{ height: 10, width: '100%', background: 'rgba(255, 255, 255, 0.08)', borderRadius: 5, overflow: 'hidden' }}>
+                                            <div style={{
+                                                height: '100%',
+                                                width: '8%',
+                                                background: 'linear-gradient(90deg, #3b82f6, #06b6d4)',
+                                                borderRadius: 5
+                                            }} />
+                                        </div>
+
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                            <span>High-speed recording & attachment retention</span>
+                                            <span style={{ color: '#4ade80', fontWeight: 600 }}>Healthy</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Active Feature Entitlements Matrix */}
+                                <div className="glass-card" style={{ padding: 22, borderRadius: 14, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                    <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: '#fff', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                        <IconShield size={16} color="#818cf8" /> Active Workspace Feature Entitlements
+                                    </h4>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                                        {[
+                                            { title: 'AI Meeting Summaries', desc: 'Automatic note-taking & action items', active: !isEnterprise && currentTierSlug === 'free' ? false : true },
+                                            { title: 'Cloud Video Recording', desc: 'MP4 recording vault & sharing', active: !isEnterprise && currentTierSlug === 'free' ? false : true },
+                                            { title: '24/7 Unlimited Duration', desc: 'No 45-minute timeout', active: currentTierSlug !== 'free' },
+                                            { title: 'Collaborative Whiteboard', desc: 'Interactive real-time canvas', active: true },
+                                            { title: 'SAML / SSO Sign-On', desc: 'Google Workspace & Okta integration', active: isEnterprise },
+                                            { title: 'Dedicated Priority SLA', desc: '24/7 Enterprise escalation channel', active: isEnterprise }
+                                        ].map((feat, idx) => (
+                                            <div key={idx} style={{
+                                                background: feat.active ? 'rgba(99, 102, 241, 0.06)' : 'rgba(255, 255, 255, 0.02)',
+                                                border: feat.active ? '1px solid rgba(99, 102, 241, 0.2)' : '1px solid rgba(255, 255, 255, 0.05)',
+                                                borderRadius: 10,
+                                                padding: '12px 14px',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: 4
+                                            }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fff' }}>{feat.title}</span>
+                                                    <span style={{
+                                                        fontSize: '0.65rem',
+                                                        fontWeight: 800,
+                                                        padding: '1px 6px',
+                                                        borderRadius: 4,
+                                                        background: feat.active ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                                                        color: feat.active ? '#4ade80' : '#71717a'
+                                                    }}>
+                                                        {feat.active ? 'UNLOCKED' : 'LOCKED'}
+                                                    </span>
+                                                </div>
+                                                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{feat.desc}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )
+                    })()}
+
                     {/* TAB 6: DANGER ZONE */}
                     {activeSubTab === 'danger' && (
                         <div className="glass-card" style={{ padding: '18px 20px', borderRadius: 12, border: '1px solid rgba(239, 68, 68, 0.25)', display: 'flex', flexDirection: 'column', gap: 12 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ color: '#EF4444', fontSize: '1.1rem' }}>⚠️</span>
+                                <IconAlertTriangle size={18} color="#ef4444" />
                                 <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#EF4444', margin: 0 }}>Danger Zone</h3>
                             </div>
                             <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: 0 }}>
@@ -1171,8 +1434,8 @@ export function OrganizationSettingsPage({
                 </div>
             ) : organizations && organizations.length > 0 ? (
                 <div className="glass-card" style={{ padding: 'clamp(24px, 4vw, 36px)', display: 'flex', flexDirection: 'column', gap: 18, textAlign: 'center', alignItems: 'center' }}>
-                    <div style={{ width: 54, height: 54, borderRadius: 16, background: 'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(139,92,246,0.2) 100%)', border: '1px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.6rem' }}>
-                        🏢
+                    <div style={{ width: 54, height: 54, borderRadius: 16, background: 'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(139,92,246,0.2) 100%)', border: '1px solid rgba(99,102,241,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <IconBuilding size={28} color="#818cf8" />
                     </div>
                     <div>
                         <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fff', margin: '0 0 4px' }}>Select an Organization</h3>
@@ -1221,8 +1484,8 @@ export function OrganizationSettingsPage({
                 </div>
             ) : (
                 <div className="glass-card" style={{ padding: 'clamp(28px, 4vw, 44px)', display: 'flex', flexDirection: 'column', gap: 20, textAlign: 'center', alignItems: 'center' }}>
-                    <div style={{ width: 60, height: 60, borderRadius: 20, background: 'linear-gradient(135deg, rgba(99,102,241,0.25) 0%, rgba(168,85,247,0.25) 100%)', border: '1px solid rgba(99,102,241,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>
-                        🏢
+                    <div style={{ width: 60, height: 60, borderRadius: 20, background: 'linear-gradient(135deg, rgba(99,102,241,0.25) 0%, rgba(168,85,247,0.25) 100%)', border: '1px solid rgba(99,102,241,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <IconBuilding size={32} color="#818cf8" />
                     </div>
                     <div style={{ maxWidth: 480 }}>
                         <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>Create Your First Organization</h3>
@@ -1258,6 +1521,136 @@ export function OrganizationSettingsPage({
             <CreateOrganizationModal open={showCreateModal} onClose={() => setShowCreateModal(false)} onCreate={handleCreateOrganization} />
             <InviteMemberModal open={showInviteModal} onClose={() => setShowInviteModal(false)} onInvite={handleInviteMember} />
             <CreateTeamModal open={showCreateTeamModal} onClose={() => setShowCreateTeamModal(false)} onCreate={handleCreateTeam} />
+
+            {/* UPGRADE / PLAN PICKER MODAL */}
+            {showUpgradeModal && createPortal(
+                <div
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget && !upgradingPlan) {
+                            setShowUpgradeModal(false)
+                        }
+                    }}
+                    style={{
+                        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999,
+                        background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)',
+                        display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 16px',
+                        overflowY: 'auto', boxSizing: 'border-box'
+                    }}
+                >
+                    <div className="glass-card anim-scale-in" style={{
+                        maxWidth: 820, width: '100%', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 24
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 4px', color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <IconZap size={20} color="#eab308" /> Upgrade Workspace Subscription
+                                </h3>
+                                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+                                    Select an enterprise tier to instantly scale member seats, cloud storage, and AI features.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowUpgradeModal(false)}
+                                className="btn btn-ghost"
+                                style={{ padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <IconX size={18} />
+                            </button>
+                        </div>
+
+                        {availablePlans.length === 0 ? (
+                            <div style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                <div className="animate-spin" style={{ width: 24, height: 24, margin: '0 auto 12px', border: '2px solid rgba(99,102,241,0.3)', borderTopColor: '#6366f1', borderRadius: '50%' }} />
+                                Loading subscription tiers...
+                            </div>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 16 }}>
+                                {availablePlans.map((plan: any) => {
+                                    const isCurrent = (organization?.planTier || 'free') === plan.planId
+                                    const isEnterprise = plan.planId === 'enterprise'
+
+                                    return (
+                                        <div
+                                            key={plan.planId}
+                                            className="glass-card"
+                                            style={{
+                                                padding: 20,
+                                                borderRadius: 14,
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: 14,
+                                                border: isCurrent
+                                                    ? '2px solid #22c55e'
+                                                    : isEnterprise
+                                                    ? '1px solid rgba(99, 102, 241, 0.4)'
+                                                    : '1px solid rgba(255, 255, 255, 0.1)',
+                                                background: isCurrent
+                                                    ? 'rgba(34, 197, 94, 0.04)'
+                                                    : 'rgba(255, 255, 255, 0.02)'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <h4 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, color: '#fff' }}>
+                                                    {plan.name}
+                                                </h4>
+                                                {plan.badge && (
+                                                    <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.2)', color: '#a5b4fc' }}>
+                                                        {plan.badge}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div>
+                                                <span style={{ fontSize: '1.6rem', fontWeight: 900, color: '#fff' }}>${plan.priceMonthly}</span>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}> / month</span>
+                                            </div>
+
+                                            <div style={{ fontSize: '0.78rem', color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><IconUsers size={13} color="#818cf8" /> <span><strong>{plan.limits?.maxSeats}</strong> Member Seats</span></div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><IconDownload size={13} color="#38bdf8" /> <span><strong>{plan.limits?.maxStorageGb} GB</strong> Storage Vault</span></div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><IconClock size={13} color="#f59e0b" /> <span><strong>{plan.limits?.maxMeetingDurationMins === 0 ? 'Unlimited Duration' : `${plan.limits?.maxMeetingDurationMins}m Duration`}</strong></span></div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{plan.features?.aiSummary ? <><IconCheck size={13} color="#4ade80" /> <span>AI Meeting Summary</span></> : <><IconX size={13} color="#71717a" /> <span style={{ color: '#71717a' }}>No AI Notes</span></>}</div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{plan.features?.cloudRecording ? <><IconCheck size={13} color="#4ade80" /> <span>Cloud Recording</span></> : <><IconX size={13} color="#71717a" /> <span style={{ color: '#71717a' }}>No Recording</span></>}</div>
+                                            </div>
+
+                                            <div style={{ marginTop: 'auto', paddingTop: 8 }}>
+                                                {isCurrent ? (
+                                                    <button
+                                                        type="button"
+                                                        disabled
+                                                        className="btn btn-secondary"
+                                                        style={{ width: '100%', fontSize: '0.8rem', fontWeight: 700, opacity: 0.6, cursor: 'not-allowed', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                                                    >
+                                                        <IconCheck size={14} /> Current Plan
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        disabled={upgradingPlan}
+                                                        onClick={() => handleUpgradePlan(plan.planId)}
+                                                        className="btn btn-primary"
+                                                        style={{
+                                                            width: '100%',
+                                                            fontSize: '0.8rem',
+                                                            fontWeight: 800,
+                                                            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        {upgradingPlan ? 'Upgrading...' : `Select ${plan.name}`}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     )
 }

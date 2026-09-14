@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import type { Socket } from 'socket.io-client'
+import { IconEdit, IconX, IconCopy, IconCheck, IconDownload } from '../../../components/common/Icons'
 
 interface MeetingNotesPanelProps {
     meetingId: string
@@ -99,7 +100,7 @@ export const MeetingNotesPanel: React.FC<MeetingNotesPanelProps> = ({
                 background: 'rgba(255,255,255,0.02)'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: '1.2rem' }}>📝</span>
+                    <IconEdit size={18} color="#818cf8" />
                     <div>
                         <h4 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
                             Meeting Notes
@@ -116,13 +117,15 @@ export const MeetingNotesPanel: React.FC<MeetingNotesPanelProps> = ({
                         border: 'none',
                         color: 'var(--color-text-muted)',
                         cursor: 'pointer',
-                        fontSize: '1.2rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                         padding: 4,
                         borderRadius: 'var(--radius-sm)'
                     }}
                     title="Close Notes"
                 >
-                    ✕
+                    <IconX size={16} />
                 </button>
             </div>
 
@@ -148,10 +151,11 @@ export const MeetingNotesPanel: React.FC<MeetingNotesPanelProps> = ({
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 4
+                        gap: 6
                     }}
                 >
-                    {copied ? '✓ Copied' : '📋 Copy Text'}
+                    {copied ? <IconCheck size={12} color="#34d399" /> : <IconCopy size={12} />}
+                    <span>{copied ? 'Copied' : 'Copy Text'}</span>
                 </button>
 
                 <button
@@ -167,10 +171,11 @@ export const MeetingNotesPanel: React.FC<MeetingNotesPanelProps> = ({
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 4
+                        gap: 6
                     }}
                 >
-                    ⬇ Export (.md)
+                    <IconDownload size={12} />
+                    <span>Export (.md)</span>
                 </button>
             </div>
 

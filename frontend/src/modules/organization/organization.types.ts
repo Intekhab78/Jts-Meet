@@ -26,6 +26,9 @@ export interface Organization {
     members: OrganizationMember[]
     status: OrganizationStatus
     timezone?: string
+    planTier?: string
+    maxSeats?: number
+    maxStorageGb?: number
     createdAt: string
     updatedAt: string
 }

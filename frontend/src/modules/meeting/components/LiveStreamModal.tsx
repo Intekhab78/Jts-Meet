@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { IconVideo, IconZap, IconX, IconLock, IconSparkles, IconSquare, IconPlay, IconGlobe, IconMonitor } from '../../../components/common/Icons'
 
 export interface LiveStreamConfig {
     platform: 'youtube' | 'facebook' | 'twitch' | 'custom'
@@ -22,28 +23,28 @@ interface LiveStreamModalProps {
 const PLATFORM_DEFAULTS = {
     youtube: {
         name: 'YouTube Live',
-        icon: '▶️',
+        renderIcon: (size = 18) => <IconPlay size={size} color="#ef4444" />,
         color: '#ef4444',
         defaultUrl: 'rtmp://a.rtmp.youtube.com/live2',
         guide: 'Get your Stream Key from YouTube Studio > Go Live > Stream Key'
     },
     facebook: {
         name: 'Facebook Live',
-        icon: '🌐',
+        renderIcon: (size = 18) => <IconGlobe size={size} color="#3b82f6" />,
         color: '#3b82f6',
         defaultUrl: 'rtmps://live-api-s.facebook.com:443/rtmp/',
         guide: 'Get your Stream Key from Facebook Live Producer > Stream Setup'
     },
     twitch: {
         name: 'Twitch',
-        icon: '👾',
+        renderIcon: (size = 18) => <IconMonitor size={size} color="#a855f7" />,
         color: '#a855f7',
         defaultUrl: 'rtmp://live.twitch.tv/app/',
         guide: 'Get your Stream Key from Twitch Creator Dashboard > Settings > Stream'
     },
     custom: {
         name: 'Custom RTMP / CDN',
-        icon: '📡',
+        renderIcon: (size = 18) => <IconZap size={size} color="#10b981" />,
         color: '#10b981',
         defaultUrl: 'rtmp://',
         guide: 'Enter any custom RTMP/RTMPS ingest endpoint from OBS, Restream, or your CDN'
@@ -160,7 +161,7 @@ export function LiveStreamModal({
                             fontSize: '1.25rem',
                             boxShadow: isLive ? '0 0 20px rgba(239, 68, 68, 0.5)' : 'none'
                         }}>
-                            {isLive ? '🔴' : '📡'}
+                            {isLive ? <IconVideo size={20} color="#fff" /> : <IconZap size={20} color="#fff" />}
                         </div>
                         <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -193,12 +194,14 @@ export function LiveStreamModal({
                             background: 'transparent',
                             border: 'none',
                             color: '#94a3b8',
-                            fontSize: '1.4rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
                             cursor: 'pointer',
-                            padding: 4
+                            padding: 6
                         }}
                     >
-                        ✕
+                        <IconX size={18} />
                     </button>
                 </div>
 
@@ -225,10 +228,9 @@ export function LiveStreamModal({
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: '1.8rem',
                                 animation: 'pulse 2s infinite'
                             }}>
-                                🔴
+                                <IconVideo size={28} color="#ef4444" />
                             </div>
                             <div>
                                 <h4 style={{ margin: '0 0 6px', fontSize: '1.1rem', color: '#fca5a5' }}>
@@ -260,7 +262,7 @@ export function LiveStreamModal({
                                     gap: 8
                                 }}
                             >
-                                <span>⏹️</span>
+                                <IconSquare size={14} color="#fff" />
                                 <span>End Live Stream</span>
                             </button>
                         </div>
@@ -294,7 +296,9 @@ export function LiveStreamModal({
                                                     transition: 'all 0.2s ease'
                                                 }}
                                             >
-                                                <span style={{ fontSize: '1.2rem' }}>{info.icon}</span>
+                                                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 22 }}>
+                                                    {info.renderIcon(18)}
+                                                </span>
                                                 <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{info.name}</span>
                                             </button>
                                         )
@@ -367,10 +371,13 @@ export function LiveStreamModal({
                                             border: 'none',
                                             color: '#94a3b8',
                                             cursor: 'pointer',
-                                            fontSize: '1rem'
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            padding: 4
                                         }}
                                     >
-                                        {showKey ? '👁️' : '🔒'}
+                                        {showKey ? <IconSparkles size={16} /> : <IconLock size={16} />}
                                     </button>
                                 </div>
                             </div>
@@ -460,7 +467,7 @@ export function LiveStreamModal({
                                         gap: 8
                                     }}
                                 >
-                                    <span>🔴</span>
+                                    <IconVideo size={16} color="#fff" />
                                     <span>Go Live ({PLATFORM_DEFAULTS[platform].name})</span>
                                 </button>
                             </div>

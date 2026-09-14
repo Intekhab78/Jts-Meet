@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { IconX, IconRocket } from '../../../components/common/Icons'
 import type { CodeSnippet } from '../channel.types'
 
 interface CodeSnippetModalProps {
@@ -76,13 +77,15 @@ export function CodeSnippetModal({
             style={{
                 position: 'fixed',
                 inset: 0,
-                zIndex: 9999,
+                zIndex: 9999999,
                 background: 'rgba(0, 0, 0, 0.75)',
                 backdropFilter: 'blur(8px)',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 justifyContent: 'center',
-                padding: 16
+                padding: '24px 16px',
+                overflowY: 'auto',
+                boxSizing: 'border-box'
             }}
         >
             <div
@@ -95,7 +98,9 @@ export function CodeSnippetModal({
                     boxShadow: '0 24px 60px rgba(0, 0, 0, 0.6)',
                     display: 'flex',
                     flexDirection: 'column',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    maxHeight: 'calc(100vh - 48px)',
+                    marginBottom: 24
                 }}
             >
                 {/* Header */}
@@ -147,7 +152,7 @@ export function CodeSnippetModal({
                             borderRadius: '6px'
                         }}
                     >
-                        ✕
+                        <IconX size={16} />
                     </button>
                 </div>
 
@@ -304,7 +309,7 @@ export function CodeSnippetModal({
                                 boxShadow: code.trim() ? '0 4px 14px rgba(99, 102, 241, 0.35)' : 'none'
                             }}
                         >
-                            <span>🚀</span> Post Snippet
+                            <IconRocket size={15} /> Post Snippet
                         </button>
                     </div>
                 </form>

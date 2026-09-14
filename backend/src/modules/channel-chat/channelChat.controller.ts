@@ -130,4 +130,34 @@ export class ChannelChatController {
 
         return sendSuccess(res, updated, 'Reaction updated')
     })
+
+    static togglePin = asyncWrapper(async (req: AuthRequest, res: Response) => {
+        const { channelId, messageId } = req.params as { channelId: string; messageId: string }
+
+        await ChannelService.ensureMember(channelId, req.userId as string)
+        const updated = await ChannelChatService.togglePinMessage(messageId, req.userId as string)
+
+        const io = getIO()
+        if (io) {
+            io.to(channelId).to(`channel:${channelId}`).emit('channel:message:pin', {
+                channelId,
+                messageId,
+                pinned: updated?.pinned,
+                pinnedBy: updated?.pinnedBy,
+                pinnedAt: updated?.pinnedAt,
+                message: updated
+            })
+        }
+
+        return sendSuccess(res, updated, updated?.pinned ? 'Message pinned to channel' : 'Message unpinned')
+    })
+
+    static getPinnedMessages = asyncWrapper(async (req: AuthRequest, res: Response) => {
+        const { channelId } = req.params as { channelId: string }
+
+        await ChannelService.ensureMember(channelId, req.userId as string)
+        const pinned = await ChannelChatService.getPinnedMessages(channelId)
+
+        return sendSuccess(res, pinned, 'Pinned messages retrieved')
+    })
 }

@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import { Types } from 'mongoose'
 import bcrypt from 'bcrypt'
 import { User } from '../../models/user.model'
@@ -186,8 +188,10 @@ export async function getOrganizationUsers(orgId?: string, search = '', roleFilt
         userList = userList.filter(u => u.status.toLowerCase() === statusFilter.toLowerCase())
     }
 
-    const totalSeats = 25
+    const totalSeats = org?.maxSeats || 15
     const usedSeats = userList.filter(u => u.status !== 'suspended').length
+    const planTierName = org?.planTier ? org.planTier.toUpperCase() : 'FREE'
+    const tier = `${planTierName} Tier (${totalSeats} Seats)`
 
     return {
         users: userList,
@@ -195,8 +199,8 @@ export async function getOrganizationUsers(orgId?: string, search = '', roleFilt
             totalSeats,
             usedSeats,
             availableSeats: Math.max(0, totalSeats - usedSeats),
-            tier: 'Enterprise Growth Tier (25 Seats)',
-            utilizationRate: Math.round((usedSeats / totalSeats) * 100)
+            tier,
+            utilizationRate: Math.min(100, Math.round((usedSeats / Math.max(1, totalSeats)) * 100))
         }
     }
 }
@@ -316,68 +320,51 @@ export async function inviteUserToOrg(adminUserId: string, email: string, fullNa
 // =========================================================================
 
 export async function getOrganizationRecordings(orgId?: string) {
-    const query: any = {
+    const recordingBaseCondition = {
         $or: [
             { isRecordingActive: true },
-            { recordingUrl: { $exists: true, $ne: '' } }
+            { recordingUrl: { $exists: true, $ne: '' } },
+            { recorded: true }
         ]
     }
+
+    let query: any = recordingBaseCondition
+
     if (orgId && Types.ObjectId.isValid(orgId)) {
-        query.organizationId = new Types.ObjectId(orgId)
+        const orgObjectId = new Types.ObjectId(orgId)
+        const org = await Organization.findById(orgObjectId).exec()
+        const userIds = org ? [org.ownerId, ...(org.members || []).map(m => m.userId)] : []
+
+        query = {
+            $and: [
+                recordingBaseCondition,
+                {
+                    $or: [
+                        { organizationId: orgObjectId },
+                        { host: { $in: userIds } },
+                        { participants: { $in: userIds } },
+                        { organizationId: { $exists: false } },
+                        { organizationId: null }
+                    ]
+                }
+            ]
+        }
     }
 
-    let recordedMeetings = await Meeting.find(query)
+    const recordedMeetings = await Meeting.find(query)
         .populate('host', 'fullName email')
         .sort({ createdAt: -1 })
-        .limit(50)
+        .limit(100)
         .exec()
 
-    // If database has 0 recordings yet, generate realistic enterprise demo list
     if (recordedMeetings.length === 0) {
-        const dummyRecordings = [
-            {
-                _id: 'rec_sprint_demo_01',
-                title: 'Q3 Product Architecture & Sprint Retrospective',
-                meetingId: 'jts-arch-2026',
-                host: { fullName: 'System Administrator', email: 'admin@jtsmeet.com' },
-                duration: '42 mins',
-                recordingUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-                sizeBytes: 318767104, // ~304 MB
-                createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000)
-            },
-            {
-                _id: 'rec_dubai_client_02',
-                title: 'JTS Middle East Client Onboarding & Security Review',
-                meetingId: 'jts-dxb-9801',
-                host: { fullName: 'Intekhab Lead', email: 'intekhab@jts.ae' },
-                duration: '28 mins',
-                recordingUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-                sizeBytes: 194183168, // ~185 MB
-                createdAt: new Date(Date.now() - 5 * 24 * 3600 * 1000)
-            },
-            {
-                _id: 'rec_webrtc_tuning_03',
-                title: 'Global Edge Node Telemetry & Latency Optimization',
-                meetingId: 'jts-ops-4412',
-                host: { fullName: 'DevOps Lead', email: 'ops@jtsmeet.com' },
-                duration: '56 mins',
-                recordingUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-                sizeBytes: 442499072, // ~422 MB
-                createdAt: new Date(Date.now() - 9 * 24 * 3600 * 1000)
-            }
-        ]
-
-        const totalUsedBytes = dummyRecordings.reduce((sum, r) => sum + r.sizeBytes, 0)
-        const totalQuotaGb = 50
-        const usedGb = parseFloat((totalUsedBytes / (1024 * 1024 * 1024)).toFixed(2))
-
         return {
-            recordings: dummyRecordings,
+            recordings: [],
             storageMetrics: {
-                totalQuotaGb,
-                usedGb,
-                usedBytes: totalUsedBytes,
-                percentage: parseFloat(((usedGb / totalQuotaGb) * 100).toFixed(1)),
+                totalQuotaGb: 50,
+                usedGb: 0,
+                usedBytes: 0,
+                percentage: 0,
                 retentionPolicyDays: globalRetentionPolicyDays,
                 cloudProvider: 'Amazon Web Services (AWS S3 Middle East DXB-1)'
             }
@@ -385,19 +372,49 @@ export async function getOrganizationRecordings(orgId?: string) {
     }
 
     const calculatedList = recordedMeetings.map(m => {
-        const durationSec = (m.endedAt && m.startedAt) 
+        const durationSec = (m as any).recordingDuration || ((m.endedAt && m.startedAt) 
             ? Math.round((m.endedAt.getTime() - m.startedAt.getTime()) / 1000) 
-            : 1800
-        const sizeBytes = durationSec * 125000 // ~1 Mbps video estimate
+            : 0)
+        
+        // Use actual recorded file size if stored, or calculate estimate from duration
+        const sizeBytes = (m as any).recordingSize || (durationSec > 0 ? durationSec * 125000 : 0)
+
+        // Human-readable file size
+        const sizeMB = sizeBytes / (1024 * 1024)
+        const fileSizeDisplay = sizeBytes === 0 
+            ? '0.0 MB'
+            : sizeMB >= 1024
+                ? `${(sizeMB / 1024).toFixed(1)} GB`
+                : `${sizeMB.toFixed(1)} MB`
+
+        // Safely extract host name
+        const hostObj = m.host && typeof m.host === 'object' ? m.host as any : null
+        const hostDisplay = hostObj
+            ? { fullName: hostObj.fullName || 'Organizer', email: hostObj.email || '' }
+            : { fullName: 'Organizer', email: '' }
+
+        // Duration display
+        const durationMin = Math.round(durationSec / 60)
+        const durationDisplay = durationSec === 0
+            ? '0 min'
+            : durationMin >= 60
+                ? `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`
+                : `${Math.max(1, durationMin)} mins`
+
         return {
             _id: m._id,
-            title: m.title,
+            title: m.title || `Conference ${m.meetingId}`,
             meetingId: m.meetingId,
-            host: m.host,
-            duration: `${Math.round(durationSec / 60)} mins`,
-            recordingUrl: m.recordingUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+            host: hostDisplay,
+            duration: durationDisplay,
+            recordingUrl: m.recordingUrl || '',
             sizeBytes,
-            createdAt: m.createdAt
+            fileSizeDisplay,
+            resolution: '1080p Full HD',
+            createdAt: m.createdAt,
+            createdAtFormatted: m.createdAt
+                ? new Date(m.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+                : 'Unknown Date'
         }
     })
 
@@ -429,7 +446,36 @@ export async function updateStorageRetentionPolicy(adminUserId: string, days: nu
 }
 
 export async function deleteRecording(adminUserId: string, meetingId: string) {
-    await Meeting.updateOne({ meetingId }, { $set: { recordingUrl: '', isRecordingActive: false } })
+    const filter = Types.ObjectId.isValid(meetingId)
+        ? { $or: [{ meetingId }, { _id: new Types.ObjectId(meetingId) }] }
+        : { meetingId }
+
+    const meeting = await Meeting.findOne(filter)
+    if (meeting && meeting.recordingUrl) {
+        try {
+            // Delete physical local file from uploads directory if exists
+            if (meeting.recordingUrl.startsWith('/uploads/')) {
+                const relativePath = meeting.recordingUrl.replace(/^\//, '')
+                const fullPath = path.join(process.cwd(), relativePath)
+                if (fs.existsSync(fullPath)) {
+                    fs.unlinkSync(fullPath)
+                }
+            }
+        } catch (err) {
+            // Log warning but continue MongoDB cleanup
+            console.warn('[deleteRecording] Could not delete physical file:', err)
+        }
+    }
+
+    await Meeting.updateOne(filter, {
+        $set: {
+            recordingUrl: '',
+            isRecordingActive: false,
+            recorded: false,
+            recordingSize: 0,
+            recordingDuration: 0
+        }
+    })
     await logActivity(
         adminUserId,
         'RECORDING_DELETE',

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { CreateOrganizationPayload } from './organization.types'
+import { IconBuilding, IconRocket, IconSparkles, IconGlobe, IconInfo, IconX } from '../../components/common/Icons'
 
 interface CreateOrganizationModalProps {
     open: boolean
@@ -11,19 +12,19 @@ interface CreateOrganizationModalProps {
 const TEMPLATES = [
     {
         id: 'education',
-        icon: '🎓',
+        icon: <IconSparkles size={20} color="#818cf8" />,
         title: 'Education & Institute',
         desc: 'Ideal for universities, schools, faculty departments, & student classes.'
     },
     {
         id: 'enterprise',
-        icon: '🏢',
+        icon: <IconBuilding size={20} color="#60a5fa" />,
         title: 'Enterprise & Corporate',
         desc: 'Built for corporate teams, multi-department meetings, & clients.'
     },
     {
         id: 'tech',
-        icon: '🚀',
+        icon: <IconRocket size={20} color="#f472b6" />,
         title: 'Startup & Tech Team',
         desc: 'Designed for agile dev teams, sprint channels, & quick standups.'
     }
@@ -131,10 +132,11 @@ export function CreateOrganizationModal({ open, onClose, onCreate }: CreateOrgan
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 justifyContent: 'center',
                 padding: '24px 16px',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                overflowY: 'auto'
             }}
             onClick={(e) => {
                 if (e.target === e.currentTarget && !submitting) {
@@ -156,7 +158,8 @@ export function CreateOrganizationModal({ open, onClose, onCreate }: CreateOrgan
                     flexDirection: 'column',
                     maxHeight: 'min(88vh, 720px)',
                     overflow: 'hidden',
-                    position: 'relative'
+                    position: 'relative',
+                    marginBottom: 24
                 }}
             >
                 {/* MS Teams Style Header (Always pinned top) */}
@@ -218,7 +221,7 @@ export function CreateOrganizationModal({ open, onClose, onCreate }: CreateOrgan
                             fontSize: '0.9rem'
                         }}
                     >
-                        ✕
+                        <IconX size={15} />
                     </button>
                 </div>
 
@@ -257,7 +260,7 @@ export function CreateOrganizationModal({ open, onClose, onCreate }: CreateOrgan
                                                 gap: 3
                                             }}
                                         >
-                                            <div style={{ fontSize: '1.2rem', marginBottom: 2 }}>{tmpl.icon}</div>
+                                            <div style={{ marginBottom: 4 }}>{tmpl.icon}</div>
                                             <div style={{ fontSize: '0.8rem', fontWeight: 700, color: isSelected ? '#fff' : '#d1d3e2' }}>
                                                 {tmpl.title}
                                             </div>
@@ -359,7 +362,8 @@ export function CreateOrganizationModal({ open, onClose, onCreate }: CreateOrgan
                                     fontSize: '0.72rem',
                                     color: '#a1a4c9'
                                 }}>
-                                    <span>🌐 Live URL:</span>
+                                    <IconGlobe size={13} color="#93c5fd" />
+                                    <span>Live URL:</span>
                                     <strong style={{ color: '#93c5fd' }}>https://{slug}.jtsmeet.com</strong>
                                 </div>
                             )}
@@ -435,7 +439,7 @@ export function CreateOrganizationModal({ open, onClose, onCreate }: CreateOrgan
                                 alignItems: 'center',
                                 gap: 8
                             }}>
-                                <span>⚠️</span>
+                                <IconInfo size={14} color="#f87171" />
                                 <span>{error}</span>
                             </div>
                         )}
@@ -504,7 +508,7 @@ export function CreateOrganizationModal({ open, onClose, onCreate }: CreateOrgan
                             ) : (
                                 <>
                                     <span>Create Organization</span>
-                                    <span>➔</span>
+                                    <span>&rarr;</span>
                                 </>
                             )}
                         </button>

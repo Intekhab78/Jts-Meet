@@ -6,6 +6,7 @@ import { ChannelChat } from '../channel-chat/channelChat.model'
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
 import { FRONTEND_URL } from '../../config'
+import { getPlanByPlanId } from '../plan/plan.service'
 
 export function getMemberUserId(member: any): string {
     if (!member || !member.userId) return ''
@@ -173,6 +174,15 @@ export async function inviteMember(
                 await org.save()
             }
         } else {
+            // Dynamic Quota Enforcement: Check if workspace has reached maximum seats allowed by plan
+            const activeMembersCount = org.members.filter((m) => m.status === 'active').length
+            const allowedSeats = org.maxSeats || 15
+            if (activeMembersCount >= allowedSeats) {
+                throw new Error(
+                    `Workspace seat limit reached (${allowedSeats} seats). Please upgrade your subscription tier in the Admin Console to invite more team members.`
+                )
+            }
+
             org.members.push({
                 userId: targetObjectUserId,
                 role: payload.role,
@@ -463,3 +473,31 @@ export async function deleteOrganization(organizationId: string, userId: string)
 
     return org
 }
+
+export async function upgradeOrganizationPlan(
+    orgId: string,
+    userId: string,
+    planId: string
+): Promise<IOrganization | null> {
+    const org = await getOrganizationById(orgId)
+    if (!org) {
+        throw new Error('Organization not found')
+    }
+
+    if (!isUserOrgAdminOrOwner(org, userId)) {
+        throw new Error('Forbidden: Only organization owners and admins can upgrade subscription plans')
+    }
+
+    const plan = await getPlanByPlanId(planId)
+    if (!plan) {
+        throw new Error(`Selected plan "${planId}" does not exist`)
+    }
+
+    org.planTier = plan.planId
+    org.maxSeats = plan.limits.maxSeats
+    org.maxStorageGb = plan.limits.maxStorageGb
+
+    await org.save()
+    return org
+}
+

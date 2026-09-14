@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import type { Socket } from 'socket.io-client'
 import { SocketEvents } from '../services/socket.service'
+import { IconTarget, IconX, IconPlus, IconCheck } from '../../../components/common/Icons'
 
 interface PollOption {
     id: string
@@ -110,11 +111,11 @@ export function MeetingPollsModal({
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border)', paddingBottom: 14 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: '1.25rem' }}>📊</span>
+                        <IconTarget size={20} color="#a78bfa" />
                         <h3 style={{ fontSize: '1.125rem', fontWeight: 800, margin: 0, color: '#fff' }}>Meeting Polls</h3>
                     </div>
-                    <button onClick={onClose} className="btn-ghost" style={{ border: 'none', background: 'transparent', color: 'var(--color-text-muted)', fontSize: '1.25rem', cursor: 'pointer' }}>
-                        ✕
+                    <button onClick={onClose} className="btn-ghost" style={{ border: 'none', background: 'transparent', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4 }}>
+                        <IconX size={16} />
                     </button>
                 </div>
 
@@ -122,8 +123,9 @@ export function MeetingPollsModal({
                 {isHostOrCoHost && (
                     <div>
                         {!isCreating ? (
-                            <button onClick={() => setIsCreating(true)} className="btn btn-primary" style={{ width: '100%', padding: '10px' }}>
-                                + Create New Poll
+                            <button onClick={() => setIsCreating(true)} className="btn btn-primary" style={{ width: '100%', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                <IconPlus size={15} />
+                                <span>Create New Poll</span>
                             </button>
                         ) : (
                             <form onSubmit={handleCreatePoll} style={{ padding: 16, background: 'var(--color-surface-2)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -217,8 +219,9 @@ export function MeetingPollsModal({
                                                         transition: 'width 0.3s ease', zIndex: 0
                                                     }} />
 
-                                                    <span style={{ position: 'relative', zIndex: 1, fontSize: '0.8125rem', fontWeight: 600, color: '#fff' }}>
-                                                        {hasVoted && '✓ '} {opt.text}
+                                                    <span style={{ position: 'relative', zIndex: 1, fontSize: '0.8125rem', fontWeight: 600, color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                                        {hasVoted && <IconCheck size={12} color="#4ade80" />}
+                                                        <span>{opt.text}</span>
                                                     </span>
 
                                                     <span style={{ position: 'relative', zIndex: 1, fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)' }}>

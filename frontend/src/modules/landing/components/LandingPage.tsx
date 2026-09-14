@@ -1,44 +1,31 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { API_BASE } from '../../../config'
+import {
+    IconVideo,
+    IconShield,
+    IconUsers,
+    IconZap,
+    IconFolder,
+    IconLock,
+    IconGlobe,
+    IconSparkles,
+    IconCheck,
+    IconDownload,
+    IconMonitor,
+    IconPackage,
+    IconFileText,
+    IconCookie,
+    IconMic,
+    IconTarget,
+    IconX
+} from '../../../components/common/Icons'
 
 /* ──────────────────────────────────────────────────────────
-   Inline SVG Icons for Landing Page
+   Inline Brand Icons for Landing Page
    ────────────────────────────────────────────────────────── */
-const IconVideo = () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-    </svg>
-)
-const IconShield = () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-)
-const IconUsers = () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-)
-const IconZap = () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-    </svg>
-)
 const IconArrowRight = () => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-    </svg>
-)
-const IconCheck = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="20 6 9 17 4 12" />
-    </svg>
-)
-const IconFolder = () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
     </svg>
 )
 const IconTwitter = () => (
@@ -69,6 +56,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     const [hostPromptOpen, setHostPromptOpen] = useState(false)
     const [showDownloadModal, setShowDownloadModal] = useState(false)
     const [activeLegalModal, setActiveLegalModal] = useState<'privacy' | 'terms' | 'cookies' | null>(null)
+    const [publicPlans, setPublicPlans] = useState<any[]>([])
+
+    useEffect(() => {
+        let mounted = true
+        fetch(`${API_BASE}/api/plans`)
+            .then(res => res.json())
+            .then(data => {
+                if (mounted && data?.success && Array.isArray(data.data) && data.data.length > 0) {
+                    setPublicPlans(data.data)
+                }
+            })
+            .catch(err => {
+                console.warn('Failed to load dynamic landing plans:', err)
+            })
+        return () => { mounted = false }
+    }, [])
 
     const toggleFaq = (index: number) => {
         setFaqOpen(prev => ({ ...prev, [index]: !prev[index] }))
@@ -210,10 +213,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            fontSize: '2rem',
                             margin: '0 auto'
                         }}>
-                            💻
+                            <IconMonitor size={32} color="#a5b4fc" />
                         </div>
                         <div>
                             <h3 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ffffff', margin: '0 0 8px', letterSpacing: '-0.02em' }}>
@@ -227,19 +229,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                         {/* Feature Badges */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, textAlign: 'left' }}>
                             <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', fontSize: '0.78rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ color: '#34d399' }}>✓</span>
+                                <IconCheck size={14} color="#34d399" />
                                 <span>OS Remote Control</span>
                             </div>
                             <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', fontSize: '0.78rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ color: '#34d399' }}>✓</span>
+                                <IconCheck size={14} color="#34d399" />
                                 <span>Ultra Low Latency</span>
                             </div>
                             <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', fontSize: '0.78rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ color: '#34d399' }}>✓</span>
+                                <IconCheck size={14} color="#34d399" />
                                 <span>Hardware Accelerated</span>
                             </div>
                             <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', fontSize: '0.78rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ color: '#34d399' }}>✓</span>
+                                <IconCheck size={14} color="#34d399" />
                                 <span>1-Click Meetings</span>
                             </div>
                         </div>
@@ -254,7 +256,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                                     setTimeout(() => setShowDownloadModal(false), 2000)
                                 }}
                             >
-                                <span>⬇️</span>
+                                <IconDownload size={18} color="#ffffff" />
                                 <span>Download Windows Installer (.exe)</span>
                             </a>
                             <div style={{ display: 'flex', gap: 8 }}>
@@ -281,7 +283,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                                         setTimeout(() => setShowDownloadModal(false), 2000)
                                     }}
                                 >
-                                    <span>⚡</span>
+                                    <IconZap size={14} color="#818cf8" />
                                     <span>Portable (.exe)</span>
                                 </a>
                                 <a
@@ -307,7 +309,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                                         setTimeout(() => setShowDownloadModal(false), 2000)
                                     }}
                                 >
-                                    <span>📦</span>
+                                    <IconPackage size={14} color="#818cf8" />
                                     <span>Zip Package</span>
                                 </a>
                             </div>
@@ -810,7 +812,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                         className="landing-nav-link"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#c7d2fe', fontWeight: 600 }}
                     >
-                        <span>💻</span>
+                        <IconMonitor size={15} color="#c7d2fe" />
                         <span>Desktop App</span>
                     </a>
                 </div>
@@ -1000,12 +1002,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                             + Instant Meet
                         </button>
                     </form>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: '0.74rem', color: '#64748b', flexWrap: 'wrap', justifyContent: 'center' }}>
-                        <span>🔒 100% Encrypted</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: '0.74rem', color: '#64748b', flexWrap: 'wrap', justifyContent: 'center' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <IconLock size={13} color="#10b981" /> 100% Encrypted
+                        </span>
                         <span>•</span>
-                        <span>⚡ Zero Install Needed</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <IconZap size={13} color="#6366f1" /> Zero Install Needed
+                        </span>
                         <span>•</span>
-                        <span>👥 Free for up to 100 Participants</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <IconUsers size={13} color="#8b5cf6" /> Free for up to 100 Participants
+                        </span>
                     </div>
                 </div>
 
@@ -1221,8 +1229,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                             className={`ai-tab-card ${activeAiTab === 'summary' ? 'ai-tab-card-active' : ''}`}
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(99, 102, 241, 0.2)', color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>
-                                    ✨
+                                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(99, 102, 241, 0.2)', color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <IconSparkles size={16} color="#818cf8" />
                                 </div>
                                 <span style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
                                     Executive TL;DR Summaries
@@ -1238,8 +1246,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                             className={`ai-tab-card ${activeAiTab === 'action' ? 'ai-tab-card-active' : ''}`}
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>
-                                    🎯
+                                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <IconTarget size={16} color="#4ade80" />
                                 </div>
                                 <span style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
                                     Automatic Action Items
@@ -1255,8 +1263,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                             className={`ai-tab-card ${activeAiTab === 'transcript' ? 'ai-tab-card-active' : ''}`}
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(236, 72, 153, 0.2)', color: '#f472b6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>
-                                    🎙️
+                                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(236, 72, 153, 0.2)', color: '#f472b6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <IconMic size={16} color="#f472b6" />
                                 </div>
                                 <span style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
                                     Speaker-Identified Live Transcripts
@@ -1280,8 +1288,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                         {/* Header bar */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: 14, marginBottom: 18 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                                <div style={{ width: 28, height: 28, borderRadius: 6, background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.85rem' }}>
-                                    ✨
+                                <div style={{ width: 28, height: 28, borderRadius: 6, background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+                                    <IconSparkles size={14} color="#ffffff" />
                                 </div>
                                 <div>
                                     <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#ffffff', display: 'block' }}>Sprint Sync & Roadmap Review</span>
@@ -1297,8 +1305,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                         {activeAiTab === 'summary' && (
                             <div className="anim-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                                 <div style={{ background: 'rgba(99, 102, 241, 0.06)', border: '1px solid rgba(99, 102, 241, 0.18)', borderRadius: 10, padding: 14 }}>
-                                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 8 }}>
-                                        🎯 Executive Summary
+                                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                                        <IconTarget size={14} color="#818cf8" /> Executive Summary
                                     </span>
                                     <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.84rem', color: '#e2e8f0', lineHeight: 1.6, display: 'flex', flexDirection: 'column', gap: 6 }}>
                                         <li>Team approved migration to WebRTC SFU mesh for 4K video feeds.</li>
@@ -1332,8 +1340,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                                 ].map((task, i) => (
                                     <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 8 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <span style={{ color: task.status === 'Done' ? '#4ade80' : '#818cf8' }}>
-                                                {task.status === 'Done' ? '☑' : '☐'}
+                                            <span style={{ color: task.status === 'Done' ? '#4ade80' : '#818cf8', display: 'inline-flex', alignItems: 'center' }}>
+                                                {task.status === 'Done' ? <IconCheck size={14} color="#4ade80" /> : <span style={{ width: 13, height: 13, border: '1.5px solid #818cf8', borderRadius: 3, display: 'inline-block' }} />}
                                             </span>
                                             <span style={{ fontSize: '0.82rem', color: '#e2e8f0', textDecoration: task.status === 'Done' ? 'line-through' : 'none' }}>
                                                 {task.text}
@@ -1375,8 +1383,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             {/* ── 4. How It Works (3 Simple Steps) ── */}
             <section className="how-it-works-section">
                 <div style={{ maxWidth: 1080, margin: '0 auto', textAlign: 'center' }}>
-                    <div className="badge badge-accent" style={{ marginBottom: 14, fontSize: '0.74rem', padding: '4px 12px', letterSpacing: '0.04em' }}>
-                        ⚡ EFFORTLESS WORKFLOW
+                    <div className="badge badge-accent" style={{ marginBottom: 14, fontSize: '0.74rem', padding: '4px 12px', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <IconZap size={13} /> EFFORTLESS WORKFLOW
                     </div>
                     <h2 style={{ fontSize: 'clamp(1.7rem, 4vw, 2.4rem)', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 14 }}>
                         Start meeting in <span className="gradient-text">3 simple steps</span>
@@ -1394,8 +1402,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                             <p style={{ fontSize: '0.88rem', color: '#94a3b8', margin: 0, lineHeight: 1.6 }}>
                                 Click "+ Instant Meet" or create a persistent room for your team. Set optional waiting rooms, passwords, or end-to-end encryption keys.
                             </p>
-                            <div style={{ marginTop: 'auto', paddingTop: 8, fontSize: '0.78rem', color: '#818cf8', fontWeight: 600 }}>
-                                ⚡ Ready in under 5 seconds
+                            <div style={{ marginTop: 'auto', paddingTop: 8, fontSize: '0.78rem', color: '#818cf8', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <IconZap size={13} color="#818cf8" /> Ready in under 5 seconds
                             </div>
                         </div>
 
@@ -1407,8 +1415,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                             <p style={{ fontSize: '0.88rem', color: '#94a3b8', margin: 0, lineHeight: 1.6 }}>
                                 Copy the generated URL and send it to clients, candidates, or teammates. They click and join immediately from Chrome, Safari, or mobile.
                             </p>
-                            <div style={{ marginTop: 'auto', paddingTop: 8, fontSize: '0.78rem', color: '#818cf8', fontWeight: 600 }}>
-                                🌐 Works across all modern browsers
+                            <div style={{ marginTop: 'auto', paddingTop: 8, fontSize: '0.78rem', color: '#818cf8', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <IconGlobe size={13} color="#818cf8" /> Works across all modern browsers
                             </div>
                         </div>
 
@@ -1420,8 +1428,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                             <p style={{ fontSize: '0.88rem', color: '#94a3b8', margin: 0, lineHeight: 1.6 }}>
                                 Enjoy high-definition video, low-latency audio, real-time file sharing, screen sharing, and automatic Gemini meeting notes.
                             </p>
-                            <div style={{ marginTop: 'auto', paddingTop: 8, fontSize: '0.78rem', color: '#818cf8', fontWeight: 600 }}>
-                                ✨ AI intelligence built right in
+                            <div style={{ marginTop: 'auto', paddingTop: 8, fontSize: '0.78rem', color: '#818cf8', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <IconSparkles size={13} color="#818cf8" /> AI intelligence built right in
                             </div>
                         </div>
                     </div>
@@ -1474,54 +1482,124 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 'clamp(14px, 2vw, 20px)' }}>
-                    {/* Plan 1 */}
-                    <div className="glass-card" style={{ padding: 'clamp(20px, 3vw, 28px)', display: 'flex', flexDirection: 'column', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Free</span>
-                        <div style={{ margin: '12px 0 18px' }}>
-                            <span style={{ fontSize: '2.2rem', fontWeight: 800, color: '#fff' }}>$0</span>
-                            <span style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}> / month</span>
-                        </div>
-                        <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 28px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> Up to 10 participants</li>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> 40 minutes limit per call</li>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> High-definition audio/video</li>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> Drag & drop file sharing</li>
-                        </ul>
-                        <button onClick={() => onNavigate('register')} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', padding: '10px 16px' }}>Get Started</button>
-                    </div>
+                    {(publicPlans.length > 0 ? publicPlans : [
+                        {
+                            planId: 'free',
+                            name: 'Free',
+                            badge: '',
+                            priceMonthly: 0,
+                            featureBullets: [
+                                'Up to 15 Member Seats',
+                                '45 minutes limit per call',
+                                'High-definition audio/video',
+                                'Drag & drop file sharing'
+                            ]
+                        },
+                        {
+                            planId: 'starter',
+                            name: 'Pro',
+                            badge: 'POPULAR',
+                            priceMonthly: 49,
+                            featureBullets: [
+                                'Up to 50 Member Seats',
+                                'Unlimited meeting duration',
+                                'Cloud recording & downloads',
+                                'AI Meeting Summaries',
+                                'Organization/Team creation'
+                            ]
+                        },
+                        {
+                            planId: 'enterprise',
+                            name: 'Enterprise',
+                            badge: 'CUSTOM',
+                            priceMonthly: 199,
+                            featureBullets: [
+                                'Up to 500+ Member Seats',
+                                'Dedicated cloud storage vault',
+                                'SAML & SSO integrations',
+                                'Dedicated 24/7 support SLA'
+                            ]
+                        }
+                    ]).map((plan: any) => {
+                        const isFree = plan.priceMonthly === 0
+                        const isPopular = (plan.badge && plan.badge.toLowerCase().includes('popular')) || plan.planId === 'starter' || plan.planId === 'pro'
 
-                    {/* Plan 2 - Pro (Popular) */}
-                    <div className="glass-card" style={{ padding: 'clamp(20px, 3vw, 28px)', display: 'flex', flexDirection: 'column', border: '2px solid var(--color-accent)', boxShadow: 'var(--shadow-glow-accent)', position: 'relative' }}>
-                        <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)' }} className="badge badge-accent">POPULAR</div>
-                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pro</span>
-                        <div style={{ margin: '12px 0 18px' }}>
-                            <span style={{ fontSize: '2.2rem', fontWeight: 800, color: '#fff' }}>$12</span>
-                            <span style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}> / user / mo</span>
-                        </div>
-                        <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 28px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> Up to 100 participants</li>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> Unlimited meeting duration</li>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> Screen sharing & recording</li>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> Advanced file uploading (25MB)</li>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> Organization/Team creation</li>
-                        </ul>
-                        <button onClick={() => onNavigate('register')} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '10px 16px' }}>Upgrade Now</button>
-                    </div>
+                        return (
+                            <div
+                                key={plan.planId || plan.name}
+                                className="glass-card"
+                                style={{
+                                    padding: 'clamp(20px, 3vw, 28px)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    border: isPopular ? '2px solid var(--color-accent)' : '1px solid rgba(255,255,255,0.05)',
+                                    boxShadow: isPopular ? 'var(--shadow-glow-accent)' : 'none',
+                                    position: 'relative'
+                                }}
+                            >
+                                {isPopular && (
+                                    <div
+                                        style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)' }}
+                                        className="badge badge-accent"
+                                    >
+                                        {plan.badge ? plan.badge.toUpperCase() : 'POPULAR'}
+                                    </div>
+                                )}
 
-                    {/* Plan 3 */}
-                    <div className="glass-card" style={{ padding: 'clamp(20px, 3vw, 28px)', display: 'flex', flexDirection: 'column', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Enterprise</span>
-                        <div style={{ margin: '12px 0 18px' }}>
-                            <span style={{ fontSize: '2.2rem', fontWeight: 800, color: '#fff' }}>Custom</span>
-                        </div>
-                        <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 28px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> Unlimited participants</li>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> Custom domain hosting</li>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> Dedicated support manager</li>
-                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}><IconCheck /> SSO & SAML integrations</li>
-                        </ul>
-                        <button onClick={() => onNavigate('register')} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', padding: '10px 16px' }}>Contact Sales</button>
-                    </div>
+                                <span style={{
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    color: isPopular ? '#a5b4fc' : 'var(--color-text-muted)',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.05em'
+                                }}>
+                                    {plan.name}
+                                </span>
+
+                                <div style={{ margin: '12px 0 18px' }}>
+                                    <span style={{ fontSize: '2.2rem', fontWeight: 800, color: '#fff' }}>
+                                        {isFree ? '$0' : `$${plan.priceMonthly}`}
+                                    </span>
+                                    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
+                                        {isFree ? ' / month' : isPopular ? ' / user / mo' : ' / month'}
+                                    </span>
+                                </div>
+
+                                <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 28px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+                                    {Array.isArray(plan.featureBullets) && plan.featureBullets.length > 0 ? (
+                                        plan.featureBullets.map((bullet: string, idx: number) => (
+                                            <li key={idx} style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <IconCheck /> {bullet}
+                                            </li>
+                                        ))
+                                    ) : (
+                                        <>
+                                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <IconCheck /> Up to {plan.limits?.maxSeats || 15} participants
+                                            </li>
+                                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <IconCheck /> {plan.limits?.maxMeetingDurationMins === 0 ? 'Unlimited meeting duration' : `${plan.limits?.maxMeetingDurationMins || 45} mins per call`}
+                                            </li>
+                                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <IconCheck /> {plan.limits?.maxStorageGb || 5} GB Cloud Storage
+                                            </li>
+                                            <li style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <IconCheck /> High-definition audio & video
+                                            </li>
+                                        </>
+                                    )}
+                                </ul>
+
+                                <button
+                                    onClick={() => onNavigate('register')}
+                                    className={`btn ${isPopular ? 'btn-primary' : 'btn-secondary'}`}
+                                    style={{ width: '100%', justifyContent: 'center', padding: '10px 16px' }}
+                                >
+                                    {isFree ? 'Get Started' : isPopular ? 'Upgrade Now' : 'Contact Sales'}
+                                </button>
+                            </div>
+                        )
+                    })}
                 </div>
             </section>
 
@@ -1789,11 +1867,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                             background: 'rgba(255, 255, 255, 0.02)'
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ fontSize: '1.4rem' }}>
-                                    {activeLegalModal === 'privacy' && '🛡️'}
-                                    {activeLegalModal === 'terms' && '📜'}
-                                    {activeLegalModal === 'cookies' && '🍪'}
-                                </span>
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {activeLegalModal === 'privacy' && <IconShield size={20} color="#60a5fa" />}
+                                    {activeLegalModal === 'terms' && <IconFileText size={20} color="#a78bfa" />}
+                                    {activeLegalModal === 'cookies' && <IconCookie size={20} color="#fbbf24" />}
+                                </div>
                                 <div>
                                     <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#ffffff' }}>
                                         {activeLegalModal === 'privacy' && 'Privacy Policy'}
@@ -1822,7 +1900,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                                     justifyContent: 'center'
                                 }}
                             >
-                                ✕
+                                <IconX size={15} />
                             </button>
                         </div>
 

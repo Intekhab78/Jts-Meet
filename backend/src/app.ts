@@ -21,6 +21,9 @@ import guestRoutes from './routes/guest.routes'
 import notificationRoutes from './modules/notification/notification.routes'
 import aiRoutes from './routes/ai.routes'
 import integrationRoutes from './modules/integration/integration.routes'
+import planRoutes from './modules/plan/plan.routes'
+import clipRoutes from './modules/clip/clip.routes'
+import { seedDefaultPlans } from './modules/plan/plan.model'
 import { connectDB } from './config/db'
 import { rateLimiter } from './middleware/rateLimiter'
 
@@ -45,10 +48,14 @@ if (!fs.existsSync(uploadsDir)) {
 app.use('/uploads', express.static(uploadsDir))
 
 // Try connecting to DB, but don't crash on failure
-connectDB().catch((err) => {
-    // eslint-disable-next-line no-console
-    console.warn('DB connection failed (continuing):', err?.message || err)
-})
+connectDB()
+    .then(() => {
+        seedDefaultPlans()
+    })
+    .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('DB connection failed (continuing):', err?.message || err)
+    })
 
 // Health check endpoint for dev-environment detection
 app.get('/api/health', (req, res) => {
@@ -65,10 +72,12 @@ app.use('/api/organization', organizationRoutes)
 app.use('/api/team', teamRoutes)
 app.use('/api/channel', channelRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/plans', planRoutes)
 app.use('/api/guest', guestRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/ai', aiRoutes)
 app.use('/api/integrations', integrationRoutes)
+app.use('/api/clips', clipRoutes)
 
 // Global error handler
 app.use(errorHandler)

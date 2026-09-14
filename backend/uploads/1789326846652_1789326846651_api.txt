@@ -1,0 +1,30 @@
+POST /ecommerce_orders/by-customer
+Purpose: customer-wise ecommerce orders
+Body: customer_id, optional user_id, company_id, location_id
+
+
+POST /ecommerce/pending/create
+Purpose: create pending order transaction
+Auth: customerAuth required
+
+
+GET /ecommerce/pending/:txnid
+Purpose: get pending transaction by txnid
+Auth: customerAuth required
+
+
+POST /ecommerce/order-update
+Purpose: update ecommerce order
+
+
+
+POST /ecommerce/order-cancel
+Purpose: cancel ecommerce order items and handle refund logic
+
+
+
+POST /ecommerce/order-payment-details
+Purpose: get ecommerce order payment, refund, transaction detail by order_number
+
+
+https://api.jtserp.cloud/api/order/ecommerce/order-add

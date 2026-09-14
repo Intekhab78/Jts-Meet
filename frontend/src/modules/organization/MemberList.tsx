@@ -2,6 +2,21 @@ import React, { useState, useEffect, useMemo } from 'react'
 import type { OrganizationMember, OrganizationRole } from './organization.types'
 import { API_BASE } from '../../config'
 import { updateOrganizationMemberRole } from './organization.service'
+import {
+    IconPlus,
+    IconDownload,
+    IconCrown,
+    IconCheck,
+    IconExternalLink,
+    IconMail,
+    IconCopy,
+    IconShield,
+    IconUser,
+    IconEye,
+    IconTrash,
+    IconUsers,
+    IconX
+} from '../../components/common/Icons'
 
 interface MemberListProps {
     organizationId: string
@@ -282,7 +297,7 @@ export function MemberList({
                                 cursor: 'pointer'
                             }}
                         >
-                            <span>+</span>
+                            <IconPlus size={13} />
                             <span>Invite Member</span>
                         </button>
                     )}
@@ -306,11 +321,7 @@ export function MemberList({
                             cursor: 'pointer'
                         }}
                     >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="7 10 12 15 17 10" />
-                            <line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
+                        <IconDownload size={13} color="#d4d4d8" />
                         <span>Export CSV</span>
                     </button>
                 </div>
@@ -403,10 +414,12 @@ export function MemberList({
                                     border: 'none',
                                     color: '#71717A',
                                     cursor: 'pointer',
-                                    fontSize: '0.85rem'
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
                                 }}
                             >
-                                ✕
+                                <IconX size={12} color="#71717A" />
                             </button>
                         )}
                     </div>
@@ -479,7 +492,11 @@ export function MemberList({
                         ) : filteredMembers.length === 0 ? (
                             <tr>
                                 <td colSpan={5} style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                    <div style={{ fontSize: '1.2rem', marginBottom: 6 }}>👥</div>
+                                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+                                        <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <IconUsers size={22} color="#818cf8" />
+                                        </div>
+                                    </div>
                                     <div style={{ fontWeight: 600, color: '#fff', marginBottom: 2 }}>No organization members found</div>
                                     <div style={{ fontSize: '0.725rem' }}>Try clearing filters or invite new team members to this workspace.</div>
                                 </td>
@@ -607,9 +624,10 @@ export function MemberList({
                                                         fontWeight: 700,
                                                         display: 'inline-flex',
                                                         alignItems: 'center',
-                                                        gap: 4
+                                                        gap: 5
                                                     }}>
-                                                        👑 Primary Owner
+                                                        <IconCrown size={12} color="#fbbf24" />
+                                                        <span>Primary Owner</span>
                                                     </span>
                                                 )}
 
@@ -627,10 +645,23 @@ export function MemberList({
                                                             background: 'rgba(99, 102, 241, 0.08)',
                                                             border: '1px solid rgba(99, 102, 241, 0.2)',
                                                             cursor: 'pointer',
-                                                            fontWeight: 600
+                                                            fontWeight: 600,
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 5
                                                         }}
                                                     >
-                                                        {copiedUserId === userIdStr ? '✓ Copied' : '🔗 Invite Link'}
+                                                        {copiedUserId === userIdStr ? (
+                                                            <>
+                                                                <IconCheck size={11} color="#4ade80" />
+                                                                <span>Copied</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <IconExternalLink size={11} color="#818cf8" />
+                                                                <span>Invite Link</span>
+                                                            </>
+                                                        )}
                                                     </button>
                                                 )}
 
@@ -711,8 +742,8 @@ export function MemberList({
                                                                     onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
                                                                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                                 >
-                                                                    <span>📧</span>
-                                                                    <span>{copiedUserId === `email-${userIdStr}` ? '✓ Copied Email' : 'Copy Email'}</span>
+                                                                    <IconMail size={13} color="#94a3b8" />
+                                                                    <span>{copiedUserId === `email-${userIdStr}` ? 'Copied Email' : 'Copy Email'}</span>
                                                                 </button>
                                                             )}
 
@@ -743,8 +774,8 @@ export function MemberList({
                                                                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'}
                                                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                             >
-                                                                <span>📋</span>
-                                                                <span>{copiedUserId === `id-${userIdStr}` ? '✓ Copied ID' : 'Copy User ID'}</span>
+                                                                <IconCopy size={13} color="#94a3b8" />
+                                                                <span>{copiedUserId === `id-${userIdStr}` ? 'Copied ID' : 'Copy User ID'}</span>
                                                             </button>
 
                                                             {/* Role Promotion / Demotion for Non-Owners */}
@@ -775,7 +806,7 @@ export function MemberList({
                                                                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(192, 132, 252, 0.1)'}
                                                                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                                         >
-                                                                            <span>🛡️</span>
+                                                                            <IconShield size={13} color="#c084fc" />
                                                                             <span>Promote to Admin</span>
                                                                         </button>
                                                                     )}
@@ -803,7 +834,7 @@ export function MemberList({
                                                                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(74, 222, 128, 0.1)'}
                                                                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                                         >
-                                                                            <span>👤</span>
+                                                                            <IconUser size={13} color="#4ade80" />
                                                                             <span>Set as Member</span>
                                                                         </button>
                                                                     )}
@@ -831,7 +862,7 @@ export function MemberList({
                                                                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(148, 163, 184, 0.1)'}
                                                                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                                         >
-                                                                            <span>👁️</span>
+                                                                            <IconEye size={13} color="#94a3b8" />
                                                                             <span>Set as Guest</span>
                                                                         </button>
                                                                     )}
@@ -867,7 +898,7 @@ export function MemberList({
                                                                         onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)'}
                                                                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                                     >
-                                                                        <span>🗑️</span>
+                                                                        <IconTrash size={13} color="#f87171" />
                                                                         <span>Remove Member</span>
                                                                     </button>
                                                                 </>

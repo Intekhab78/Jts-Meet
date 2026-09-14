@@ -9,12 +9,14 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
     const userId = authSocket.userId
 
     socket.on(SocketEvents.CALL_INITIATE, async (payload: {
-        targetUserId: string
-        callType?: 'video' | 'audio'
+        targetUserId?: string
+        calleeId?: string
+        callType?: 'video' | 'audio' | 'screenshare'
         callerName?: string
         callerAvatar?: string
     }) => {
-        if (!userId || !payload?.targetUserId || userId === payload.targetUserId) {
+        const targetUserId = payload?.targetUserId || payload?.calleeId
+        if (!userId || !targetUserId || userId === targetUserId) {
             socket.emit('error', { message: 'Invalid call target' })
             return
         }
@@ -34,7 +36,7 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
             const meetingId = callMeeting.meetingId
 
             // Emit to target user's personal room
-            io.to(`user:${payload.targetUserId}`).emit(SocketEvents.CALL_INCOMING, {
+            io.to(`user:${targetUserId}`).emit(SocketEvents.CALL_INCOMING, {
                 meetingId,
                 callerId: userId,
                 callerName,
@@ -46,7 +48,7 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
             // Confirm initiation to caller with the meetingId
             socket.emit('call:initiated', {
                 meetingId,
-                targetUserId: payload.targetUserId
+                targetUserId
             })
         } catch (error: any) {
             socket.emit('error', { message: error?.message || 'Failed to initiate direct call' })

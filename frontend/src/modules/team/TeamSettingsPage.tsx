@@ -19,6 +19,12 @@ import type { Channel } from '../channel/channel.types'
 import { CreateTeamModal } from './CreateTeamModal'
 import { InviteTeamMemberModal } from './InviteTeamMemberModal'
 import { CreateChannelDialog } from '../channel/CreateChannelDialog'
+import {
+    IconUsers, IconUser, IconUserPlus, IconHash, IconSettings,
+    IconChart, IconShield, IconCrown, IconGlobe, IconLock,
+    IconAlertTriangle, IconCheck, IconPlus, IconSearch, IconX,
+    IconVideo, IconCalendar, IconTrash, IconZap, IconBuilding
+} from '../../components/common/Icons'
 
 interface TeamSettingsPageProps {
     token: string
@@ -491,15 +497,15 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
             {/* Top Alerts */}
             {error && (
                 <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '10px 16px', borderRadius: 10, fontSize: '0.8125rem', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>⚠️ {error}</span>
-                    <button type="button" onClick={() => setError('')} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.9rem' }}>✕</button>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><IconAlertTriangle size={15} color="#f87171" /> {error}</span>
+                    <button type="button" onClick={() => setError('')} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}><IconX size={14} /></button>
                 </div>
             )}
 
             {successMessage && (
                 <div style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)', color: '#4ade80', padding: '10px 16px', borderRadius: 10, fontSize: '0.8125rem', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>✓ {successMessage}</span>
-                    <button type="button" onClick={() => setSuccessMessage('')} style={{ background: 'none', border: 'none', color: '#4ade80', cursor: 'pointer', fontSize: '0.9rem' }}>✕</button>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><IconCheck size={15} color="#4ade80" /> {successMessage}</span>
+                    <button type="button" onClick={() => setSuccessMessage('')} style={{ background: 'none', border: 'none', color: '#4ade80', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}><IconX size={14} /></button>
                 </div>
             )}
 
@@ -509,8 +515,8 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                     Loading team directory and workspace settings...
                 </div>
             ) : !organizationId ? (
-                <div className="glass-card" style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                    🏢 No active organization selected. Please select one in the workspace sidebar.
+                <div className="glass-card" style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <IconBuilding size={16} /> <span>No active organization selected. Please select one in the workspace sidebar.</span>
                 </div>
             ) : (
                 /* UNIFIED MICROSOFT TEAMS WORKSPACE CONTAINER */
@@ -629,9 +635,9 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                     <button
                                         type="button"
                                         onClick={() => setSearchQuery('')}
-                                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: '0.7rem', padding: 0 }}
+                                        style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: '0.7rem', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                     >
-                                        ✕
+                                        <IconX size={11} />
                                     </button>
                                 )}
                             </div>
@@ -639,10 +645,10 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                             {/* Quick Filter Pills */}
                             <div style={{ display: 'flex', gap: 4, overflowX: 'auto', paddingBottom: 2 }}>
                                 {[
-                                    { id: 'all', label: 'All' },
-                                    { id: 'my', label: 'My Teams' },
-                                    { id: 'public', label: '🌍 Public' },
-                                    { id: 'private', label: '🔒 Private' }
+                                    { id: 'all', label: 'All', icon: null },
+                                    { id: 'my', label: 'My Teams', icon: null },
+                                    { id: 'public', label: 'Public', icon: <IconGlobe size={11} /> },
+                                    { id: 'private', label: 'Private', icon: <IconLock size={11} /> }
                                 ].map((cat) => (
                                     <button
                                         key={cat.id}
@@ -658,10 +664,14 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                             color: filterCategory === cat.id ? '#c7d2fe' : 'var(--color-text-muted)',
                                             cursor: 'pointer',
                                             whiteSpace: 'nowrap',
-                                            transition: 'all 0.12s ease'
+                                            transition: 'all 0.12s ease',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4
                                         }}
                                     >
-                                        {cat.label}
+                                        {cat.icon}
+                                        <span>{cat.label}</span>
                                     </button>
                                 ))}
                             </div>
@@ -737,11 +747,15 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                         {team.name}
                                                     </div>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                                                        <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)' }}>
-                                                            👥 {team.members.length}
+                                                        <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                                            <IconUsers size={11} /> {team.members.length}
                                                         </span>
-                                                        <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)' }}>
-                                                            {team.visibility === 'public' ? '🌍 Public' : '🔒 Private'}
+                                                        <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                                            {team.visibility === 'public' ? (
+                                                                <><IconGlobe size={11} /> Public</>
+                                                            ) : (
+                                                                <><IconLock size={11} /> Private</>
+                                                            )}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -755,7 +769,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                         {/* Bottom Workspace Badge */}
                         <div style={{ padding: '12px 14px', borderTop: '1px solid rgba(255, 255, 255, 0.06)', background: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>🏢</span>
+                                <IconGlobe size={13} color="#818cf8" />
                                 <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     Org: <strong style={{ color: '#e4e4e7' }}>{organizationId.slice(0, 10)}...</strong>
                                 </span>
@@ -778,7 +792,9 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                     }}>
                         {!selectedTeam ? (
                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, color: 'var(--color-text-muted)', gap: 12 }}>
-                                <span style={{ fontSize: '2.5rem' }}>👥</span>
+                                <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <IconUsers size={32} color="#818cf8" />
+                                </div>
                                 <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#e4e4e7', margin: 0 }}>Select or Create a Team</h3>
                                 <p style={{ fontSize: '0.8125rem', maxWidth: 360, textAlign: 'center', margin: 0 }}>
                                     Organize discussions, schedule conferences, and manage members in dedicated team spaces.
@@ -787,9 +803,9 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                     type="button"
                                     onClick={() => setShowCreateModal(true)}
                                     className="btn btn-primary"
-                                    style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: 8, marginTop: 8 }}
+                                    style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: 8, marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                                 >
-                                    + Create New Team
+                                    <IconPlus size={14} /> Create New Team
                                 </button>
                             </div>
                         ) : (
@@ -827,14 +843,14 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                 <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: '#fff', letterSpacing: '-0.02em' }}>
                                                     {selectedTeam.name}
                                                 </h2>
-                                                <span className={`badge ${selectedTeam.visibility === 'public' ? 'badge-success' : 'badge-accent'}`} style={{ fontSize: '0.6875rem', padding: '2px 8px' }}>
-                                                    {selectedTeam.visibility === 'public' ? '🌍 Public' : '🔒 Private'}
+                                                <span className={`badge ${selectedTeam.visibility === 'public' ? 'badge-success' : 'badge-accent'}`} style={{ fontSize: '0.6875rem', padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                    {selectedTeam.visibility === 'public' ? <><IconGlobe size={11} /> Public</> : <><IconLock size={11} /> Private</>}
                                                 </span>
-                                                <span style={{ fontSize: '0.6875rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: '#d4d4d8' }}>
-                                                    👥 {selectedTeam.members.length} members
+                                                <span style={{ fontSize: '0.6875rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: '#d4d4d8', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                    <IconUsers size={11} /> {selectedTeam.members.length} members
                                                 </span>
-                                                <span style={{ fontSize: '0.6875rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: '#d4d4d8' }}>
-                                                    # {teamChannels.length} channels
+                                                <span style={{ fontSize: '0.6875rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: '#d4d4d8', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                    <IconHash size={11} /> {teamChannels.length} channels
                                                 </span>
                                             </div>
                                             <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 540 }}>
@@ -865,7 +881,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                             }}
                                             title="Start an instant conference for this team"
                                         >
-                                            <span>🎥</span> Meet Now
+                                            <IconVideo size={14} /> Meet Now
                                         </button>
 
                                         {/* Add Channel */}
@@ -875,7 +891,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                             className="btn btn-secondary"
                                             style={{ padding: '7px 12px', fontSize: '0.78rem', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 4 }}
                                         >
-                                            <span>#</span> + Channel
+                                            <IconHash size={12} /> + Channel
                                         </button>
 
                                         {/* Add Member */}
@@ -893,7 +909,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                 gap: 5
                                             }}
                                         >
-                                            <span>+</span> Invite Member
+                                            <IconUserPlus size={13} /> Invite Member
                                         </button>
 
                                         {/* Join Team if public and not member */}
@@ -940,10 +956,10 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                     gap: 24
                                 }}>
                                     {[
-                                        { id: 'members', label: `👥 Members (${selectedTeam.members.length})` },
-                                        { id: 'channels', label: `#️⃣ Channels (${teamChannels.length})` },
-                                        { id: 'overview', label: '📊 Overview' },
-                                        { id: 'settings', label: '⚙️ Settings' }
+                                        { id: 'members', label: `Members (${selectedTeam.members.length})`, icon: <IconUsers size={14} /> },
+                                        { id: 'channels', label: `Channels (${teamChannels.length})`, icon: <IconHash size={14} /> },
+                                        { id: 'overview', label: 'Overview', icon: <IconChart size={14} /> },
+                                        { id: 'settings', label: 'Settings', icon: <IconSettings size={14} /> }
                                     ].map((tab) => (
                                         <button
                                             key={tab.id}
@@ -958,10 +974,14 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                 borderBottom: activeTab === tab.id ? `2px solid ${selectedTeam.color || '#6366f1'}` : '2px solid transparent',
                                                 background: 'transparent',
                                                 cursor: 'pointer',
-                                                transition: 'all 120ms ease'
+                                                transition: 'all 120ms ease',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 6
                                             }}
                                         >
-                                            {tab.label}
+                                            {tab.icon}
+                                            <span>{tab.label}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -979,11 +999,11 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                 {/* Role Pills */}
                                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                                     {[
-                                                        { id: 'all', label: `All (${selectedTeam.members.length})` },
-                                                        { id: 'owner', label: `👑 Owners (${roleStats.owners})` },
-                                                        { id: 'admin', label: `🛡️ Admins (${roleStats.admins})` },
-                                                        { id: 'member', label: `👤 Members (${roleStats.members})` },
-                                                        { id: 'guest', label: `👥 Guests (${roleStats.guests})` }
+                                                        { id: 'all', label: `All (${selectedTeam.members.length})`, icon: null },
+                                                        { id: 'owner', label: `Owners (${roleStats.owners})`, icon: <IconCrown size={12} /> },
+                                                        { id: 'admin', label: `Admins (${roleStats.admins})`, icon: <IconShield size={12} /> },
+                                                        { id: 'member', label: `Members (${roleStats.members})`, icon: <IconUser size={12} /> },
+                                                        { id: 'guest', label: `Guests (${roleStats.guests})`, icon: <IconUsers size={12} /> }
                                                     ].map((r) => (
                                                         <button
                                                             key={r.id}
@@ -998,38 +1018,32 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                                 background: roleFilter === r.id ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255, 255, 255, 0.04)',
                                                                 color: roleFilter === r.id ? '#c7d2fe' : 'var(--color-text-muted)',
                                                                 cursor: 'pointer',
-                                                                transition: 'all 0.12s ease'
+                                                                transition: 'all 0.12s ease',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 5
                                                             }}
                                                         >
-                                                            {r.label}
+                                                            {r.icon}
+                                                            <span>{r.label}</span>
                                                         </button>
                                                     ))}
                                                 </div>
 
                                                 {/* Search Box */}
                                                 <div style={{ position: 'relative', width: 'clamp(200px, 30vw, 300px)' }}>
-                                                    <svg
-                                                        width="14"
-                                                        height="14"
-                                                        viewBox="0 0 24 24"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        strokeWidth="2.2"
-                                                        strokeLinecap="round"
-                                                        strokeLinejoin="round"
-                                                        style={{
-                                                            position: 'absolute',
-                                                            left: 10,
-                                                            top: '50%',
-                                                            transform: 'translateY(-50%)',
-                                                            color: 'var(--color-text-muted)',
-                                                            pointerEvents: 'none',
-                                                            opacity: 0.75
-                                                        }}
-                                                    >
-                                                        <circle cx="11" cy="11" r="8" />
-                                                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                                                    </svg>
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        left: 10,
+                                                        top: '50%',
+                                                        transform: 'translateY(-50%)',
+                                                        color: 'var(--color-text-muted)',
+                                                        pointerEvents: 'none',
+                                                        display: 'flex',
+                                                        alignItems: 'center'
+                                                    }}>
+                                                        <IconSearch size={14} />
+                                                    </div>
                                                     <input
                                                         type="text"
                                                         placeholder="Filter members by name or email..."
@@ -1051,9 +1065,9 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                         <button
                                                             type="button"
                                                             onClick={() => setMemberSearchQuery('')}
-                                                            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: '0.7rem' }}
+                                                            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#999', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}
                                                         >
-                                                            ✕
+                                                            <IconX size={12} />
                                                         </button>
                                                     )}
                                                 </div>
@@ -1099,7 +1113,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                                     ? '#94a3b8'
                                                                     : '#4ade80'
 
-                                                                const roleIcon = m.role === 'owner' ? '👑' : m.role === 'admin' ? '🛡️' : m.role === 'guest' ? '👥' : '👤'
+                                                                const roleIcon = m.role === 'owner' ? <IconCrown size={13} /> : m.role === 'admin' ? <IconShield size={13} /> : m.role === 'guest' ? <IconUsers size={13} /> : <IconUser size={13} />
 
                                                                 return (
                                                                     <tr
@@ -1159,9 +1173,9 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                                                         cursor: 'pointer'
                                                                                     }}
                                                                                 >
-                                                                                    <option value="admin" style={{ background: '#18181b' }}>🛡️ Admin</option>
-                                                                                    <option value="member" style={{ background: '#18181b' }}>👤 Member</option>
-                                                                                    <option value="guest" style={{ background: '#18181b' }}>👥 Guest</option>
+                                                                                    <option value="admin" style={{ background: '#18181b' }}>Admin</option>
+                                                                                    <option value="member" style={{ background: '#18181b' }}>Member</option>
+                                                                                    <option value="guest" style={{ background: '#18181b' }}>Guest</option>
                                                                                 </select>
                                                                             ) : (
                                                                                 <span style={{
@@ -1201,11 +1215,11 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                                                         cursor: 'pointer',
                                                                                         display: 'flex',
                                                                                         alignItems: 'center',
-                                                                                        gap: 4
+                                                                                        gap: 5
                                                                                     }}
                                                                                     title="Message in channel"
                                                                                 >
-                                                                                    <span>💬</span> Chat
+                                                                                    <IconHash size={12} /> Chat
                                                                                 </button>
 
                                                                                 {/* Remove Button */}
@@ -1268,16 +1282,18 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                     Loading channels...
                                                 </div>
                                             ) : teamChannels.length === 0 ? (
-                                                <div className="glass-card" style={{ padding: '36px 20px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                    <span style={{ fontSize: '2rem' }}>#️⃣</span>
-                                                    <p style={{ margin: '8px 0 14px', fontSize: '0.85rem' }}>No channels created yet for this team.</p>
+                                                <div className="glass-card" style={{ padding: '36px 20px', textAlign: 'center', color: 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                                                    <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <IconHash size={28} color="#818cf8" />
+                                                    </div>
+                                                    <p style={{ margin: '4px 0 10px', fontSize: '0.85rem' }}>No channels created yet for this team.</p>
                                                     <button
                                                         type="button"
                                                         onClick={() => setShowCreateChannelModal(true)}
                                                         className="btn btn-secondary"
-                                                        style={{ padding: '6px 14px', fontSize: '0.78rem', borderRadius: 8 }}
+                                                        style={{ padding: '6px 14px', fontSize: '0.78rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                                                     >
-                                                        + Create First Channel
+                                                        <IconPlus size={13} /> Create First Channel
                                                     </button>
                                                 </div>
                                             ) : (
@@ -1306,8 +1322,8 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                                 >
                                                                     <td style={{ padding: '12px 16px', fontWeight: 600, color: '#fff' }}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <span style={{ fontSize: '0.9rem', color: selectedTeam.color || '#6366F1' }}>
-                                                                                {c.type === 'private' ? '🔒' : '#'}
+                                                                            <span style={{ fontSize: '0.9rem', color: selectedTeam.color || '#6366F1', display: 'flex', alignItems: 'center' }}>
+                                                                                {c.type === 'private' ? <IconLock size={14} /> : <IconHash size={14} />}
                                                                             </span>
                                                                             <span>{c.name}</span>
                                                                         </div>
@@ -1326,9 +1342,9 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                                                 type="button"
                                                                                 onClick={() => handleOpenChannel(c)}
                                                                                 className="btn btn-secondary"
-                                                                                style={{ padding: '4px 10px', fontSize: '0.72rem', borderRadius: 6 }}
+                                                                                style={{ padding: '4px 10px', fontSize: '0.72rem', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}
                                                                             >
-                                                                                💬 Open
+                                                                                <IconHash size={12} /> Open
                                                                             </button>
                                                                             {isOwnerOrAdmin && c.name.toLowerCase() !== 'general' && (
                                                                                 <button
@@ -1340,7 +1356,9 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                                                         color: '#f87171',
                                                                                         cursor: 'pointer',
                                                                                         fontSize: '0.72rem',
-                                                                                        padding: '4px 6px'
+                                                                                        padding: '4px 6px',
+                                                                                        display: 'inline-flex',
+                                                                                        alignItems: 'center'
                                                                                     }}
                                                                                 >
                                                                                     Delete
@@ -1365,21 +1383,27 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                             {/* Metrics Grid */}
                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
                                                 <div className="glass-card" style={{ padding: '16px 18px', borderRadius: 12 }}>
-                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Total Members</span>
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                        <IconUsers size={13} color="#818cf8" /> Total Members
+                                                    </span>
                                                     <h3 style={{ fontSize: '1.6rem', fontWeight: 800, margin: '6px 0 0', color: '#fff' }}>{selectedTeam.members.length}</h3>
                                                     <span style={{ fontSize: '0.7rem', color: '#4ade80', marginTop: 4, display: 'block' }}>● Active workspace members</span>
                                                 </div>
 
                                                 <div className="glass-card" style={{ padding: '16px 18px', borderRadius: 12 }}>
-                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Channels</span>
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                        <IconHash size={13} color="#818cf8" /> Channels
+                                                    </span>
                                                     <h3 style={{ fontSize: '1.6rem', fontWeight: 800, margin: '6px 0 0', color: '#fff' }}>{teamChannels.length}</h3>
                                                     <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: 4, display: 'block' }}>Text & Voice spaces</span>
                                                 </div>
 
                                                 <div className="glass-card" style={{ padding: '16px 18px', borderRadius: 12 }}>
-                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Privacy Mode</span>
-                                                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '8px 0 0', color: '#fff', textTransform: 'capitalize' }}>
-                                                        {selectedTeam.visibility === 'public' ? '🌍 Public' : '🔒 Private'}
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                        <IconShield size={13} color="#818cf8" /> Privacy Mode
+                                                    </span>
+                                                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '8px 0 0', color: '#fff', textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                        {selectedTeam.visibility === 'public' ? <><IconGlobe size={16} /> Public</> : <><IconLock size={16} /> Private</>}
                                                     </h3>
                                                     <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: 4, display: 'block' }}>
                                                         {selectedTeam.visibility === 'public' ? 'Open to all colleagues' : 'Restricted to invited members'}
@@ -1387,7 +1411,9 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                 </div>
 
                                                 <div className="glass-card" style={{ padding: '16px 18px', borderRadius: 12 }}>
-                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Created Date</span>
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                        <IconCalendar size={13} color="#818cf8" /> Created Date
+                                                    </span>
                                                     <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '8px 0 0', color: '#fff' }}>
                                                         {selectedTeam.createdAt ? new Date(selectedTeam.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Active'}
                                                     </h3>
@@ -1413,7 +1439,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                         className="btn btn-secondary"
                                                         style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}
                                                     >
-                                                        <span>🎥</span> Launch Instant Video Conference
+                                                        <IconVideo size={14} /> Launch Instant Video Conference
                                                     </button>
                                                     <button
                                                         type="button"
@@ -1421,7 +1447,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                         className="btn btn-secondary"
                                                         style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}
                                                     >
-                                                        <span>📅</span> Schedule a Team Sync
+                                                        <IconCalendar size={14} /> Schedule a Team Sync
                                                     </button>
                                                     <button
                                                         type="button"
@@ -1429,7 +1455,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                         className="btn btn-secondary"
                                                         style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}
                                                     >
-                                                        <span>👤</span> Invite New Colleagues
+                                                        <IconUserPlus size={14} /> Invite New Colleagues
                                                     </button>
                                                 </div>
                                             </div>
@@ -1484,8 +1510,8 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                         className="input"
                                                         style={{ padding: '9px 12px', fontSize: '0.82rem' }}
                                                     >
-                                                        <option value="public">🌍 Public (Open to org)</option>
-                                                        <option value="private">🔒 Private (Invite-only)</option>
+                                                        <option value="public">Public (Open to organization)</option>
+                                                        <option value="private">Private (Invite-only)</option>
                                                     </select>
                                                 </div>
 

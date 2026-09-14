@@ -1,4 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react'
+import { IconShield, IconRefresh, IconZap, IconBuilding } from './common/Icons'
 
 interface Props {
     children: ReactNode
@@ -72,10 +73,9 @@ export class ErrorBoundary extends Component<Props, State> {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            margin: '0 auto 20px',
-                            fontSize: 28
+                            margin: '0 auto 20px'
                         }}>
-                            🛡️
+                            <IconShield size={28} color="#f87171" />
                         </div>
 
                         <h2 style={{
@@ -129,10 +129,14 @@ export class ErrorBoundary extends Component<Props, State> {
                                     fontSize: '0.875rem',
                                     cursor: 'pointer',
                                     boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
-                                    transition: 'transform 0.15s ease'
+                                    transition: 'transform 0.15s ease',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6
                                 }}
                             >
-                                🔄 Try Recovering
+                                <IconRefresh size={15} color="#fff" />
+                                <span>Try Recovering</span>
                             </button>
 
                             <button
@@ -145,10 +149,14 @@ export class ErrorBoundary extends Component<Props, State> {
                                     color: '#e2e8f0',
                                     fontWeight: 600,
                                     fontSize: '0.875rem',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6
                                 }}
                             >
-                                ⚡ Reload Tab
+                                <IconZap size={14} color="#e2e8f0" />
+                                <span>Reload Tab</span>
                             </button>
 
                             <button
@@ -161,10 +169,14 @@ export class ErrorBoundary extends Component<Props, State> {
                                     color: '#94a3b8',
                                     fontWeight: 600,
                                     fontSize: '0.875rem',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6
                                 }}
                             >
-                                🏠 Home
+                                <IconBuilding size={14} color="#94a3b8" />
+                                <span>Home</span>
                             </button>
                         </div>
                     </div>

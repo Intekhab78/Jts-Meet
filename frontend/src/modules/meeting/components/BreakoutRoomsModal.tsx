@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { Socket } from 'socket.io-client'
+import {
+    IconUsers,
+    IconX,
+    IconBell,
+    IconClock,
+    IconSparkles,
+    IconPin
+} from '../../../components/common/Icons'
 
 export interface BreakoutRoomItem {
     name: string
@@ -119,9 +127,11 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                 backdropFilter: 'blur(20px)',
                 WebkitBackdropFilter: 'blur(20px)',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 justifyContent: 'center',
-                padding: '24px'
+                padding: '24px 16px',
+                overflowY: 'auto',
+                boxSizing: 'border-box'
             }}
             onClick={onClose}
         >
@@ -129,7 +139,7 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                 style={{
                     width: '100%',
                     maxWidth: 620,
-                    maxHeight: '90vh',
+                    maxHeight: 'calc(100vh - 48px)',
                     background: 'rgba(16, 20, 29, 0.98)',
                     border: '1px solid rgba(255, 255, 255, 0.14)',
                     borderRadius: '24px',
@@ -138,7 +148,8 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                     flexDirection: 'column',
                     overflow: 'hidden',
                     animation: 'jts-slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-                    color: '#ffffff'
+                    color: '#ffffff',
+                    marginBottom: 24
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -163,11 +174,10 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                                 border: '1px solid rgba(168, 85, 247, 0.35)',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '1.4rem'
+                                justifyContent: 'center'
                             }}
                         >
-                            👥
+                            <IconUsers size={22} color="#c084fc" />
                         </div>
                         <div>
                             <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#ffffff', letterSpacing: '-0.01em' }}>
@@ -205,7 +215,7 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                             e.currentTarget.style.color = '#9ca3af'
                         }}
                     >
-                        ✕
+                        <IconX size={15} />
                     </button>
                 </div>
 
@@ -258,7 +268,7 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                                     onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
                                     onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
                                 >
-                                    <span>🚪</span>
+                                    <IconX size={14} color="#ffffff" />
                                     <span>End Session</span>
                                 </button>
                             </div>
@@ -266,7 +276,7 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                             {/* Broadcast message form */}
                             <form onSubmit={handleSendBroadcast} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span>📢</span> Broadcast Announcement to All Rooms
+                                    <IconBell size={14} color="#c084fc" /> Broadcast Announcement to All Rooms
                                 </label>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                     <input
@@ -348,7 +358,7 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                                 {/* Timer selector */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                     <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                        <span>⏰</span> Timer Duration
+                                        <IconClock size={13} color="#9ca3af" /> Timer Duration
                                     </label>
                                     <div style={{ display: 'flex', gap: 6, background: '#111520', padding: 4, borderRadius: 14, border: '1px solid rgba(255,255,255,0.08)' }}>
                                         {[5, 10, 15, 30].map((m) => {
@@ -403,7 +413,7 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                                         }}
                                     >
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <span style={{ fontSize: '1.1rem' }}>✨</span>
+                                            <IconSparkles size={16} color="#c084fc" />
                                             <span style={{ fontSize: '0.875rem', fontWeight: 700, color: allocationMode === 'auto' ? '#c084fc' : '#ffffff' }}>
                                                 Automatically
                                             </span>
@@ -430,7 +440,7 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                                         }}
                                     >
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <span style={{ fontSize: '1.1rem' }}>🎯</span>
+                                            <IconUsers size={16} color="#c084fc" />
                                             <span style={{ fontSize: '0.875rem', fontWeight: 700, color: allocationMode === 'manual' ? '#c084fc' : '#ffffff' }}>
                                                 Manually
                                             </span>
@@ -469,7 +479,7 @@ export const BreakoutRoomsModal: React.FC<BreakoutRoomsModalProps> = ({
                                         >
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                    <span style={{ fontSize: '0.85rem', color: '#a855f7' }}>📍</span>
+                                                    <IconPin size={13} color="#a855f7" />
                                                     <span style={{ fontSize: '0.825rem', fontWeight: 700, color: '#ffffff' }}>{r.name}</span>
                                                 </div>
                                                 <span style={{ fontSize: '0.7rem', background: 'rgba(168,85,247,0.22)', color: '#d8b4fe', padding: '2px 8px', borderRadius: 20, fontWeight: 700 }}>

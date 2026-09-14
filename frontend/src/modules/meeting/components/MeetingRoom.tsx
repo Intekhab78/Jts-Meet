@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useSocketContext } from '../context/SocketContext'
 import { useMeetingContext } from '../context/MeetingContext'
 import { useWebRTCContext } from '../context/WebRTCContext'
@@ -27,6 +28,38 @@ import { BreakoutRoomsModal } from './BreakoutRoomsModal'
 import { LiveStreamModal, LiveStreamConfig } from './LiveStreamModal'
 import { soundEffects } from '../../../utils/soundEffects'
 import { noiseCancellationService } from '../services/noiseCancellation.service'
+import { MeetingAttendanceModal } from './MeetingAttendanceModal'
+import { LateJoinerCatchUpModal } from './LateJoinerCatchUpModal'
+import {
+    IconCheck,
+    IconZap,
+    IconFileText,
+    IconCopy,
+    IconMail,
+    IconBuilding,
+    IconMessage,
+    IconCalendar,
+    IconDownload,
+    IconLock,
+    IconClock,
+    IconHand,
+    IconHelp,
+    IconPin,
+    IconMicOff,
+    IconMic,
+    IconX,
+    IconVideo,
+    IconVideoOff,
+    IconSparkles,
+    IconRocket,
+    IconEdit,
+    IconMonitor,
+    IconInfo,
+    IconCrown,
+    IconShield,
+    IconRefresh,
+    IconHeart
+} from '../../../components/common/Icons'
 
 const parseJwt = (token: string) => {
     try {
@@ -52,13 +85,6 @@ const IconStopRecord = () => (
     </svg>
 )
 
-const IconMonitor = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="3" width="20" height="14" rx="2" />
-        <line x1="8" y1="21" x2="16" y2="21" />
-        <line x1="12" y1="17" x2="12" y2="21" />
-    </svg>
-)
 const IconUsers = () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -78,14 +104,9 @@ const IconFiles = () => (
         <polyline points="13 2 13 9 20 9" />
     </svg>
 )
-const IconPhoneOff = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+const IconPhoneOff = ({ size = 20, color = 'currentColor' }: { size?: number, color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
         <path d="M12 9c-2.2 0-4.3.4-6.2 1.1-.6.2-1 .7-1 1.3v3c0 .6.4 1 1 1 1.4-.4 2.8-1.1 4-2v-3.4c.7-.2 1.5-.3 2.2-.3s1.5.1 2.2.3v3.4c1.2.9 2.6 1.6 4 2 .6 0 1-.4 1-1v-3c0-.6-.4-1.1-1-1.3C16.3 9.4 14.2 9 12 9z" />
-    </svg>
-)
-const IconX = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
     </svg>
 )
 const IconWifi = ({ on }: { on: boolean }) => on ? (
@@ -102,11 +123,6 @@ const IconWifi = ({ on }: { on: boolean }) => on ? (
         <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
         <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
         <line x1="12" y1="20" x2="12.01" y2="20" />
-    </svg>
-)
-const IconVideo = () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
     </svg>
 )
 const IconChevronRight = () => (
@@ -455,7 +471,8 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     fontWeight: 700, boxShadow: 'var(--shadow-md)',
                     zIndex: 10
                 }}>
-                    ✋ {isCompact ? '' : 'Hand Raised'}
+                    <IconHand size={12} color="#ffffff" />
+                    {!isCompact && <span>Hand Raised</span>}
                 </div>
             )}
 
@@ -763,6 +780,7 @@ interface ParticipantsPanelProps {
     isWatermarkEnabled?: boolean
     onToggleWatermark?: () => void
     onExportAttendance?: () => void
+    onOpenAttendance?: () => void
     recordingAllowedUserIds?: string[]
     whiteboardAllowedUserIds?: string[]
     onTogglePermission?: (targetUserId: string, permission: 'recording' | 'whiteboard', enabled: boolean) => void
@@ -773,17 +791,24 @@ interface ParticipantsPanelProps {
     onApproveAllGuests?: () => void
     isWaitingRoomActive?: boolean
     onToggleWaitingRoom?: (enabled: boolean) => void
+    // Virtual Green Room props
+    backstageUserIds?: string[]
+    canUseBackstage?: boolean
+    onStageStatusChange?: (targetUserId: string, isBackstage: boolean) => void
+    onUpgradeRequired?: (feature: string) => void
 }
 
 function ParticipantsPanel({
     participants, onClose, spotlightUserId, setSpotlightUserId,
     coHostIds, setCoHostIds, renamedUsers, setRenamedUsers, addToast,
     hostId, isLocalHost, isLocked, onToggleLock, onMuteAll,
-    isWatermarkEnabled, onToggleWatermark, onExportAttendance,
+    isWatermarkEnabled, onToggleWatermark, onExportAttendance, onOpenAttendance,
     recordingAllowedUserIds = [], whiteboardAllowedUserIds = [],
     onTogglePermission, onPromoteCoHost,
     waitingGuests = [], onApproveGuest, onDenyGuest, onApproveAllGuests,
-    isWaitingRoomActive = true, onToggleWaitingRoom
+    isWaitingRoomActive = true, onToggleWaitingRoom,
+    backstageUserIds = [], canUseBackstage = false,
+    onStageStatusChange, onUpgradeRequired
 }: ParticipantsPanelProps) {
     const [search, setSearch] = useState('')
     const [activeMenu, setActiveMenu] = useState<string | null>(null)
@@ -868,10 +893,37 @@ function ParticipantsPanel({
         <div className="side-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100%', minHeight: 0 } as React.CSSProperties}>
             <div className="side-panel-header" style={{ flexShrink: 0 }}>
                 <span className="side-panel-title">Participants</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span className="badge badge-neutral" style={{ fontSize: '0.75rem', fontWeight: 700 }}>
                         {participants.length + 1}
                     </span>
+                    {onOpenAttendance && (
+                        <button
+                            onClick={onOpenAttendance}
+                            title="View & Export Attendance Report"
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '4px 10px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'rgba(99, 102, 241, 0.15)',
+                                border: '1px solid rgba(99, 102, 241, 0.35)',
+                                color: '#a5b4fc',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                            }}
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="20" x2="18" y2="10" />
+                                <line x1="12" y1="20" x2="12" y2="4" />
+                                <line x1="6" y1="20" x2="6" y2="14" />
+                            </svg>
+                            <span>Report</span>
+                        </button>
+                    )}
                     <button className="btn-icon" onClick={onClose} aria-label="Close panel" style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.06)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <IconX />
                     </button>
@@ -948,14 +1000,21 @@ function ParticipantsPanel({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: 3,
+                            gap: 4,
                             minWidth: 0,
                             whiteSpace: 'nowrap',
-                            overflow: 'hidden'
+                            overflow: 'hidden',
+                            transition: 'all 0.15s ease'
                         }}
                         title="Mute all participants' microphones"
                     >
-                        <span style={{ flexShrink: 0, fontSize: '0.75rem' }}>🔇</span>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                            <line x1="1" y1="1" x2="23" y2="23" />
+                            <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+                            <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
+                            <line x1="12" y1="19" x2="12" y2="23" />
+                            <line x1="8" y1="23" x2="16" y2="23" />
+                        </svg>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Mute All</span>
                     </button>
                     <button
@@ -972,14 +1031,25 @@ function ParticipantsPanel({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: 3,
+                            gap: 4,
                             minWidth: 0,
                             whiteSpace: 'nowrap',
-                            overflow: 'hidden'
+                            overflow: 'hidden',
+                            transition: 'all 0.15s ease'
                         }}
                         title={isLocked ? "Unlock meeting to allow new participants" : "Lock meeting to reject new participants"}
                     >
-                        <span style={{ flexShrink: 0, fontSize: '0.75rem' }}>{isLocked ? '🔒' : '🔓'}</span>
+                        {isLocked ? (
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                            </svg>
+                        ) : (
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                            </svg>
+                        )}
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{isLocked ? 'Unlock' : 'Lock'}</span>
                     </button>
                     <button
@@ -996,14 +1066,17 @@ function ParticipantsPanel({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: 3,
+                            gap: 4,
                             minWidth: 0,
                             whiteSpace: 'nowrap',
-                            overflow: 'hidden'
+                            overflow: 'hidden',
+                            transition: 'all 0.15s ease'
                         }}
                         title={isWatermarkEnabled ? "Confidential Watermark is ON. Click to disable." : "Confidential Watermark is OFF. Click to enable."}
                     >
-                        <span style={{ flexShrink: 0, fontSize: '0.75rem' }}>🛡️</span>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                        </svg>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{isWatermarkEnabled ? 'Mark: ON' : 'Mark: OFF'}</span>
                     </button>
                     {onToggleWaitingRoom && (
@@ -1021,14 +1094,25 @@ function ParticipantsPanel({
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                gap: 3,
+                                gap: 4,
                                 minWidth: 0,
                                 whiteSpace: 'nowrap',
-                                overflow: 'hidden'
+                                overflow: 'hidden',
+                                transition: 'all 0.15s ease'
                             }}
                             title={isWaitingRoomActive ? "Waiting Room is ACTIVE: Host must approve attendees. Click to allow everyone without permission." : "Waiting Room is OFF: Anyone can join without approval. Click to require host approval."}
                         >
-                            <span style={{ flexShrink: 0, fontSize: '0.75rem' }}>{isWaitingRoomActive ? '⏳' : '🔓'}</span>
+                            {isWaitingRoomActive ? (
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                    <circle cx="12" cy="12" r="10" />
+                                    <polyline points="12 6 12 12 16 14" />
+                                </svg>
+                            ) : (
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                                </svg>
+                            )}
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{isWaitingRoomActive ? 'Wait: ON' : 'Open'}</span>
                         </button>
                     )}
@@ -1041,7 +1125,8 @@ function ParticipantsPanel({
                     <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 'var(--radius-md)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>⏳</span> Waiting to Join ({waitingGuests.length})
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                                <span>Waiting to Join ({waitingGuests.length})</span>
                             </span>
                             {waitingGuests.length > 1 && onApproveAllGuests && (
                                 <button
@@ -1070,7 +1155,15 @@ function ParticipantsPanel({
                                         </div>
                                         {(g.company || g.email) && (
                                             <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                {g.company ? `🏢 ${g.company}` : `✉️ ${g.email}`}
+                                                {g.company ? (
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                        <IconBuilding size={11} /> {g.company}
+                                                    </span>
+                                                ) : (
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                        <IconMail size={11} /> {g.email}
+                                                    </span>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -1220,14 +1313,16 @@ function ParticipantsPanel({
                                             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
                                             className="btn-secondary"
                                         >
-                                            🔇 Mute Participant
+                                            <IconMicOff size={14} color="#f87171" />
+                                            <span>Mute Participant</span>
                                         </button>
                                         <button
                                             onClick={() => handleSpotlight(p)}
                                             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
                                             className="btn-secondary"
                                         >
-                                            🔦 {isSpotlighted ? 'Unspotlight' : 'Spotlight'}
+                                            <IconSparkles size={14} color="#fbbf24" />
+                                            <span>{isSpotlighted ? 'Unspotlight' : 'Spotlight'}</span>
                                         </button>
                                         {isLocalHost && (
                                             <>
@@ -1236,21 +1331,44 @@ function ParticipantsPanel({
                                                     style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
                                                     className="btn-secondary"
                                                 >
-                                                    👑 {isCoHost ? 'Demote to Attendee' : 'Make Co-Host'}
+                                                    <IconCrown size={14} color="#f59e0b" />
+                                                    <span>{isCoHost ? 'Demote to Attendee' : 'Make Co-Host'}</span>
                                                 </button>
                                                 <button
                                                     onClick={() => handleToggleRecordingPerm(p)}
                                                     style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
                                                     className="btn-secondary"
                                                 >
-                                                    🔴 {recordingAllowedUserIds.includes(p) ? 'Revoke Recording' : 'Allow Recording'}
+                                                    <IconVideo size={14} color="#ef4444" />
+                                                    <span>{recordingAllowedUserIds.includes(p) ? 'Revoke Recording' : 'Allow Recording'}</span>
                                                 </button>
                                                 <button
                                                     onClick={() => handleToggleWhiteboardPerm(p)}
                                                     style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
                                                     className="btn-secondary"
                                                 >
-                                                    🖊️ {whiteboardAllowedUserIds.includes(p) ? 'Revoke Whiteboard' : 'Allow Whiteboard'}
+                                                    <IconEdit size={14} color="#818cf8" />
+                                                    <span>{whiteboardAllowedUserIds.includes(p) ? 'Revoke Whiteboard' : 'Allow Whiteboard'}</span>
+                                                </button>
+                                                {/* Virtual Green Room — Move to Backstage / Bring to Stage */}
+                                                <button
+                                                    onClick={() => {
+                                                        if (!canUseBackstage) {
+                                                            onUpgradeRequired?.('Virtual Green Room')
+                                                            setActiveMenu(null)
+                                                            return
+                                                        }
+                                                        const isCurrentlyBackstage = backstageUserIds.includes(p)
+                                                        onStageStatusChange?.(p, !isCurrentlyBackstage)
+                                                        setActiveMenu(null)
+                                                    }}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: backstageUserIds.includes(p) ? 'rgba(52,211,153,0.08)' : 'rgba(34,197,94,0.06)', color: backstageUserIds.includes(p) ? '#34d399' : '#86efac', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
+                                                    className="btn-secondary"
+                                                    title={canUseBackstage ? '' : 'Enterprise plan required'}
+                                                >
+                                                    <span style={{ fontSize: '0.85rem' }}>{backstageUserIds.includes(p) ? '🎬' : '🎭'}</span>
+                                                    <span>{backstageUserIds.includes(p) ? 'Bring to Stage' : 'Move to Backstage'}</span>
+                                                    {!canUseBackstage && <span style={{ marginLeft: 'auto', fontSize: '0.6rem', color: '#a78bfa', background: 'rgba(167,139,250,0.15)', padding: '1px 5px', borderRadius: 4 }}>Enterprise</span>}
                                                 </button>
                                             </>
                                         )}
@@ -1262,7 +1380,8 @@ function ParticipantsPanel({
                                             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
                                             className="btn-secondary"
                                         >
-                                            ✏️ Rename
+                                            <IconEdit size={14} />
+                                            <span>Rename</span>
                                         </button>
                                     </div>
                                 )}
@@ -1273,16 +1392,40 @@ function ParticipantsPanel({
             </div>
 
             {/* Attendance Audit Export Footer (Host / Co-Host Only) */}
-            {isLocalHost && onExportAttendance && (
-                <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)', background: 'rgba(255, 255, 255, 0.02)', flexShrink: 0 }}>
-                    <button
-                        onClick={onExportAttendance}
-                        className="btn btn-secondary"
-                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '9px 12px', fontSize: '0.8125rem', fontWeight: 600 }}
-                        title="Export full attendance audit report as CSV"
-                    >
-                        <span>📊</span> Export Attendance Audit (CSV)
-                    </button>
+            {isLocalHost && (
+                <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)', background: 'rgba(255, 255, 255, 0.02)', flexShrink: 0, display: 'flex', gap: 8 }}>
+                    {onOpenAttendance && (
+                        <button
+                            type="button"
+                            onClick={onOpenAttendance}
+                            className="btn btn-primary"
+                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 10px', fontSize: '0.78rem', fontWeight: 700 }}
+                            title="Open full interactive attendance & participation report"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                                <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+                                <path d="M9 14l2 2 4-4" />
+                            </svg>
+                            <span>Attendance Report</span>
+                        </button>
+                    )}
+                    {onExportAttendance && (
+                        <button
+                            type="button"
+                            onClick={onExportAttendance}
+                            className="btn btn-secondary"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 12px', fontSize: '0.78rem', fontWeight: 600 }}
+                            title="Export full attendance audit report as CSV"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            <span>CSV</span>
+                        </button>
+                    )}
                 </div>
             )}
         </div>
@@ -1459,15 +1602,15 @@ function SettingsPanel({
                 }}>
                     {(() => {
                         const tabs = [
-                            { id: 'audio', icon: '🎤', label: 'Audio' },
-                            { id: 'video', icon: '📹', label: 'Video' },
-                            { id: 'background', icon: '🖼', label: 'Virtual' },
-                            { id: 'accessibility', icon: '♿', label: 'Access' },
-                            { id: 'shortcuts', icon: '⌨', label: 'Keys' },
-                            { id: 'theme', icon: '🎨', label: 'Theme' }
+                            { id: 'audio', icon: <IconMic size={18} />, label: 'Audio' },
+                            { id: 'video', icon: <IconVideo size={18} />, label: 'Video' },
+                            { id: 'background', icon: <IconSparkles size={18} />, label: 'Virtual' },
+                            { id: 'accessibility', icon: <IconHelp size={18} />, label: 'Access' },
+                            { id: 'shortcuts', icon: <IconMonitor size={18} />, label: 'Keys' },
+                            { id: 'theme', icon: <IconEdit size={18} />, label: 'Theme' }
                         ];
                         if (isHost) {
-                            tabs.push({ id: 'host', icon: '🛡️', label: 'Host' });
+                            tabs.push({ id: 'host', icon: <IconShield size={18} />, label: 'Host' });
                         }
                         return tabs;
                     })().map(tab => (
@@ -1544,8 +1687,8 @@ function SettingsPanel({
                                 </select>
                             </div>
 
-                            <button onClick={playTestSound} className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '0.8125rem', alignSelf: 'flex-start' }}>
-                                🔊 Test Speaker output
+                            <button onClick={playTestSound} className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '0.8125rem', alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <IconMic size={14} /> <span>Test Speaker output</span>
                             </button>
 
                             <div style={{ width: '100%', height: 1, background: 'var(--color-border)' }} />
@@ -1847,23 +1990,6 @@ function MicLevelIndicator({ stream, testing }: { stream: MediaStream | null, te
 /* ──────────────────────────────────────────────────────────
    Lobby Icons (no external dependency)
    ────────────────────────────────────────────────────────── */
-const IconMic = ({ size = 20 }: { size?: number }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-        <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
-        <line x1="12" y1="19" x2="12" y2="23" />
-        <line x1="8" y1="23" x2="16" y2="23" />
-    </svg>
-)
-const IconMicOff = ({ size = 20 }: { size?: number }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="1" y1="1" x2="23" y2="23" />
-        <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
-        <path d="M17 11a5 5 0 0 1-8 4" />
-        <line x1="12" y1="19" x2="12" y2="23" />
-        <line x1="8" y1="23" x2="16" y2="23" />
-    </svg>
-)
 const IconCamera = ({ size = 20 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <polygon points="23 7 16 12 23 17 23 7" />
@@ -1882,12 +2008,6 @@ const IconSettings = ({ size = 20 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3" />
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-)
-const IconCopy = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </svg>
 )
 
@@ -2368,7 +2488,7 @@ function SetupScreen({
                                 gap: 10
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                                    <span style={{ fontSize: '1rem', lineHeight: 1 }}>⚠️</span>
+                                    <IconInfo size={16} color="#fde047" />
                                     <span style={{ fontSize: '0.75rem', color: '#fde047', lineHeight: 1.4 }}>
                                         {mediaError}
                                     </span>
@@ -2444,8 +2564,9 @@ function SetupScreen({
                                             gap: 12
                                         }}>
                                             <div style={{ minWidth: 0, flex: 1 }}>
-                                                <div style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#a5b4fc', fontWeight: 700 }}>
-                                                    🔄 Last Active Meeting
+                                                <div style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#a5b4fc', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                    <IconRefresh size={12} color="#a5b4fc" />
+                                                    <span>Last Active Meeting</span>
                                                 </div>
                                                 <div style={{ fontSize: '0.875rem', color: '#fff', fontWeight: 600, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
                                                     {recentMeetingId}
@@ -2498,7 +2619,7 @@ function SetupScreen({
                                                         e.currentTarget.style.color = 'var(--color-text-muted)'
                                                     }}
                                                 >
-                                                    ✕
+                                                    <IconX size={12} />
                                                 </button>
                                             </div>
                                         </div>
@@ -2606,7 +2727,7 @@ function useMeetingTimer() {
         ].filter(Boolean).join(':')
     }
 
-    return format()
+    return { timerStr: format(), seconds }
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -2617,17 +2738,50 @@ export function MeetingRoom({
     isAdminOrOwner = false,
     initialMeetingId = '',
     autoJoin = false,
+    planTier = 'free',
+    onUpgradePlanRequest,
     onLeave
 }: {
     initialToken?: string
     isAdminOrOwner?: boolean
     initialMeetingId?: string
     autoJoin?: boolean
+    planTier?: string
+    onUpgradePlanRequest?: () => void
     onLeave?: () => void
 }) {
     const [token, setToken] = useState(initialToken)
     const hasLeftRef = useRef(false)
     const hasAutoJoinedRef = useRef(false)
+
+    // Workspace Plan Tier Entitlements
+    const currentPlanTier = useMemo(() => {
+        if (planTier) return planTier.toLowerCase()
+        try {
+            const saved = localStorage.getItem('jts_active_plan_tier')
+            if (saved) return saved.toLowerCase()
+        } catch (_) {}
+        return 'free'
+    }, [planTier])
+
+    const canAccessRecording = useMemo(() => {
+        return ['starter', 'pro', 'enterprise'].includes(currentPlanTier)
+    }, [currentPlanTier])
+
+    const canAccessAI = useMemo(() => {
+        return ['starter', 'pro', 'enterprise'].includes(currentPlanTier)
+    }, [currentPlanTier])
+
+    const canAccessRTMP = useMemo(() => {
+        return ['enterprise', 'pro'].includes(currentPlanTier)
+    }, [currentPlanTier])
+
+    const [upgradeModalFeature, setUpgradeModalFeature] = useState<{
+        title: string
+        requiredPlan: string
+        icon: string | React.ReactNode
+        description: string
+    } | null>(null)
 
     useEffect(() => {
         if (initialToken && initialToken !== token) {
@@ -2675,12 +2829,31 @@ export function MeetingRoom({
 
     const { meetingId, setMeetingId, joined, setJoined, participants } = useMeetingContext()
     const {
-        localStream, remoteStreams, connectToMeeting, leaveMeeting,
+        localStream, cameraStream, remoteStreams, connectToMeeting, leaveMeeting,
         startScreenShare, stopScreenShare, screenSharingUserId,
+        screenSharingUserIds, switchActivePresenter,
         screenError, clearScreenError, mediaError, mediaLoading, replaceTrackOnPeers,
         requestMedia, stopMedia, networkStatus, isReconnecting
     } = useWebRTCContext()
     const { messages, typingUsers, sendMessage, emitTyping, emitStopTyping, toggleChatReaction } = useMeetingChat()
+
+    // Multi-Presenter Takeover Confirmation States
+    const [showTakeoverModal, setShowTakeoverModal] = useState(false)
+    const [takeoverPresenterId, setTakeoverPresenterId] = useState<string | null>(null)
+
+    const handleToggleScreenShare = useCallback(() => {
+        if (screenSharingUserId === 'me' || screenSharingUserIds.includes('me')) {
+            stopScreenShare()
+            return
+        }
+        const activeRemoteSharer = screenSharingUserIds.find(id => id !== 'me')
+        if (activeRemoteSharer) {
+            setTakeoverPresenterId(activeRemoteSharer)
+            setShowTakeoverModal(true)
+        } else {
+            startScreenShare()
+        }
+    }, [screenSharingUserId, screenSharingUserIds, startScreenShare, stopScreenShare])
 
     // Remote Desktop Control Engine State
     const [activeControllerId, setActiveControllerId] = useState<string | null>(null)
@@ -2699,7 +2872,7 @@ export function MeetingRoom({
                     requesterId: data.requesterId,
                     requesterName: data.requesterName || 'Participant'
                 })
-                addToast(`🎮 ${data.requesterName || 'A participant'} has requested remote control of your screen.`, 'info')
+                addToast(`${data.requesterName || 'A participant'} has requested remote control of your screen.`, 'info')
             }
         }
 
@@ -2711,9 +2884,9 @@ export function MeetingRoom({
                     setActiveControllerId(myId)
                     setActiveControllerName(myDisplayName)
                     soundEffects.playMessageNotificationChime()
-                    addToast(`🎮 Remote control granted! You can now click & type on the screen.`, 'success')
+                    addToast(`Remote control granted! You can now interact with the screen.`, 'success')
                 } else {
-                    addToast(`❌ Remote control request was declined by presenter.`, 'warning')
+                    addToast(`Remote control request was declined by presenter.`, 'warning')
                 }
             } else if (data.granted) {
                 setActiveControllerId(data.requesterId)
@@ -2725,7 +2898,7 @@ export function MeetingRoom({
             setActiveControllerId(null)
             setActiveControllerName(null)
             setIsRequestingControl(false)
-            addToast(`🎮 Remote control session ended.`, 'info')
+            addToast(`Remote control session ended.`, 'info')
         }
 
         socket.on('remote-control:request', handleControlRequest)
@@ -2750,7 +2923,7 @@ export function MeetingRoom({
             requesterName: myDisplayName,
             targetUserId: screenSharingUserId
         })
-        addToast(`🎮 Sent remote control request to presenter...`, 'info')
+        addToast(`Sent remote control request to presenter...`, 'info')
     }
 
     const handleAcceptControlRequest = () => {
@@ -2766,7 +2939,7 @@ export function MeetingRoom({
             presenterName: myDisplayName
         })
         setIncomingControlRequest(null)
-        addToast(`🎮 Granted remote control to ${incomingControlRequest.requesterName}`, 'success')
+        addToast(`Granted remote control to ${incomingControlRequest.requesterName}`, 'success')
     }
 
     const handleDenyControlRequest = () => {
@@ -2791,7 +2964,7 @@ export function MeetingRoom({
             meetingId: currentMeetingId,
             presenterId: 'me'
         })
-        addToast(`🎮 Remote control revoked`, 'info')
+        addToast(`Remote control revoked`, 'info')
     }
 
     const handleReleaseRemoteControl = () => {
@@ -2805,7 +2978,7 @@ export function MeetingRoom({
             controllerId: myId,
             presenterId: screenSharingUserId
         })
-        addToast(`🎮 Released remote control`, 'info')
+        addToast(`Released remote control`, 'info')
     }
 
     const requestMediaRef = useRef(requestMedia)
@@ -3076,8 +3249,18 @@ export function MeetingRoom({
         }
     }
 
-    // Meeting timer
-    const timerStr = useMeetingTimer()
+    // Meeting timer & Free Tier Limit (45 minutes = 2700s)
+    const { timerStr, seconds: meetingSecondsElapsed } = useMeetingTimer()
+    const FREE_PLAN_LIMIT_SECONDS = 2700
+    const freeTimeRemaining = Math.max(0, FREE_PLAN_LIMIT_SECONDS - meetingSecondsElapsed)
+    const isTimeLimitExpired = currentPlanTier === 'free' && freeTimeRemaining <= 0
+    const isLowTimeWarning = currentPlanTier === 'free' && freeTimeRemaining <= 600 && freeTimeRemaining > 0
+
+    const formatRemainingTime = (totalSec: number) => {
+        const mins = Math.floor(totalSec / 60)
+        const secs = totalSec % 60
+        return `${mins}:${secs.toString().padStart(2, '0')}`
+    }
 
     // Local mute/camera states
     const [isMuted, setIsMuted] = useState(false)
@@ -3214,6 +3397,10 @@ export function MeetingRoom({
     const reactionBtnRef = useRef<HTMLButtonElement>(null)
     const reactionsPopoverRef = useRef<HTMLDivElement>(null)
 
+    // Presenter Backstage / Virtual Green Room (Enterprise)
+    const [backstageUserIds, setBackstageUserIds] = useState<string[]>([])
+    const [isGoingLive, setIsGoingLive] = useState(false)
+
     useEffect(() => {
         if (!showReactionsPopover) return
         const handleClickOutside = (e: MouseEvent) => {
@@ -3250,6 +3437,7 @@ export function MeetingRoom({
         status: 'Active' | 'Left'
     }>>({})
     const joinTimeMapRef = useRef<Record<string, number>>({})
+    const [showAttendanceModal, setShowAttendanceModal] = useState(false)
 
     const [toasts, setToasts] = useState<{ id: string, message: string, type: 'info' | 'success' | 'warning' }[]>([])
     const [meetingInfo, setMeetingInfo] = useState<any>(null)
@@ -3285,6 +3473,27 @@ export function MeetingRoom({
     const [showDeviceSettings, setShowDeviceSettings] = useState(false)
     const [showSummary, setShowSummary] = useState(false)
     const [showShortcuts, setShowShortcuts] = useState(false)
+    const [isWarningDismissed, setIsWarningDismissed] = useState(false)
+
+    // Late-Joiner AI "Catch Me Up" (Teams / Zoom Copilot feature)
+    const [showCatchUpPrompt, setShowCatchUpPrompt] = useState(false)
+    const [showCatchUpModal, setShowCatchUpModal] = useState(false)
+    const [joinedMinutesLate, setJoinedMinutesLate] = useState(0)
+    const hasTriggeredCatchUpRef = useRef(false)
+
+    useEffect(() => {
+        if (!joined || hasTriggeredCatchUpRef.current) return
+
+        const isLate = (participants && participants.length > 0) || (messages && messages.length > 1)
+        if (isLate) {
+            hasTriggeredCatchUpRef.current = true
+            const approxLate = Math.min(60, Math.max(3, (messages?.length || 2) * 2))
+            setJoinedMinutesLate(approxLate)
+            setShowCatchUpPrompt(true)
+            const promptTimer = setTimeout(() => setShowCatchUpPrompt(false), 20000)
+            return () => clearTimeout(promptTimer)
+        }
+    }, [joined, participants, messages])
     const [transcripts, setTranscripts] = useState<Array<{ speaker: string; text: string; timestamp: Date }>>([])
     const [isBlurEnabled, setIsBlurEnabled] = useState(false)
     const [virtualBgPreset, setVirtualBgPreset] = useState<string>('none')
@@ -3365,7 +3574,7 @@ export function MeetingRoom({
                 if (prev.some(g => g.socketId === guest.socketId)) return prev
                 return [...prev, guest]
             })
-            playJoinChime()
+            playKnockChime()
             addToast(`⏳ ${guest.guestName || 'A participant'} is waiting in the lobby`, 'info')
         }
 
@@ -3413,10 +3622,10 @@ export function MeetingRoom({
             setCoHostIds(prev => prev.includes(payload.targetUserId) ? prev : [...prev, payload.targetUserId])
             const myId = getUserIdFromToken(token)
             if (payload.targetUserId === myId || payload.targetUserId === 'me') {
-                addToast('👑 You have been promoted to Co-Host! Full meeting controls unlocked.', 'success')
+                addToast('You have been promoted to Co-Host! Full meeting controls unlocked.', 'success')
             } else {
                 const name = renamedUsers[payload.targetUserId] || payload.targetUserId
-                addToast(`👑 ${name} has been promoted to Co-Host`, 'info')
+                addToast(`${name} has been promoted to Co-Host`, 'info')
             }
         }
 
@@ -3433,12 +3642,12 @@ export function MeetingRoom({
             if (payload.permission === 'recording') {
                 setRecordingAllowedUserIds(prev => payload.enabled ? [...new Set([...prev, payload.targetUserId])] : prev.filter(id => id !== payload.targetUserId))
                 if (payload.targetUserId === myId || payload.targetUserId === 'me') {
-                    addToast(payload.enabled ? '🔴 Host has granted you permission to Record this meeting!' : '🔴 Host has revoked recording permission.', payload.enabled ? 'success' : 'info')
+                    addToast(payload.enabled ? 'Host has granted you permission to Record this meeting!' : 'Host has revoked recording permission.', payload.enabled ? 'success' : 'info')
                 }
             } else if (payload.permission === 'whiteboard') {
                 setWhiteboardAllowedUserIds(prev => payload.enabled ? [...new Set([...prev, payload.targetUserId])] : prev.filter(id => id !== payload.targetUserId))
                 if (payload.targetUserId === myId || payload.targetUserId === 'me') {
-                    addToast(payload.enabled ? '🖊️ Host has granted you permission to use Whiteboard!' : '🖊️ Host has closed whiteboard access.', payload.enabled ? 'success' : 'info')
+                    addToast(payload.enabled ? 'Host has granted you permission to use Whiteboard!' : 'Host has closed whiteboard access.', payload.enabled ? 'success' : 'info')
                 }
             }
         }
@@ -3446,7 +3655,7 @@ export function MeetingRoom({
         const handleLiveStreamStatus = (payload: { isStreaming: boolean; platform: string; broadcastTitle?: string }) => {
             if (payload.isStreaming) {
                 setRemoteLiveStatus({ isStreaming: true, platform: payload.platform, broadcastTitle: payload.broadcastTitle })
-                addToast(`🔴 Conference is now LIVE streaming on ${payload.platform?.toUpperCase() || 'RTMP'}!`, 'info')
+                addToast(`Conference is now LIVE streaming on ${payload.platform?.toUpperCase() || 'RTMP'}!`, 'info')
             } else {
                 setRemoteLiveStatus(null)
                 setIsLiveStreaming(false)
@@ -3597,12 +3806,12 @@ export function MeetingRoom({
     useEffect(() => {
         const handleOffline = () => {
             setIsNetworkOffline(true)
-            addToast('⚠️ Internet connection lost. Attempting to reconnect...', 'warning')
+            addToast('Internet connection lost. Attempting to reconnect...', 'warning')
         }
         const handleOnline = () => {
             setIsNetworkOffline(false)
             setShowRestoredNotice(true)
-            addToast('✅ Internet connection restored', 'success')
+            addToast('Internet connection restored', 'success')
             setTimeout(() => setShowRestoredNotice(false), 4000)
             if (socket) {
                 socket.connect()
@@ -3674,7 +3883,7 @@ export function MeetingRoom({
             else if (payload.soundType === 'bell') soundEffects.playBell()
 
             if (payload.senderName) {
-                addToast(`🔊 ${payload.senderName} played sound: ${payload.soundType}!`, 'info')
+                addToast(`${payload.senderName} played sound: ${payload.soundType}!`, 'info')
             }
         }
 
@@ -3687,20 +3896,20 @@ export function MeetingRoom({
             const myId = parseJwt(token)?.userId || 'me'
             const myRoom = payload.rooms?.find((r: any) => r.participantIds?.includes(myId) || r.participantIds?.includes(socket.id))
             if (myRoom) {
-                addToast(`👥 You were assigned to ${myRoom.name}`, 'info')
+                addToast(`You were assigned to ${myRoom.name}`, 'info')
             } else {
-                addToast('👥 Breakout rooms have started!', 'info')
+                addToast('Breakout rooms have started!', 'info')
             }
         }
 
         const handleBreakoutAnnouncement = (payload: any) => {
-            addToast(`📢 Host Announcement: ${payload.message}`, 'warning')
+            addToast(`Host Announcement: ${payload.message}`, 'warning')
             soundEffects.playKnockChime()
         }
 
         const handleBreakoutEnded = () => {
             setActiveBreakoutSession(null)
-            addToast('👥 Breakout session ended. Returned to main room.', 'info')
+            addToast('Breakout session ended. Returned to main room.', 'info')
         }
 
         socket.on('meeting:reaction', handleReaction)
@@ -3893,7 +4102,7 @@ export function MeetingRoom({
 
         const chatNotes = messages.map(m => `> **${m.senderName || 'Participant'}:** ${m.message}`).slice(-12).join('\n')
 
-        return `# 📋 Minutes of Meeting (MoM)
+        return `# Minutes of Meeting (MoM)
 **Meeting Title:** ${title}
 **Meeting ID:** ${currentMeetingId}
 **Date:** ${dateStr} at ${timeStr}
@@ -3902,24 +4111,24 @@ export function MeetingRoom({
 
 ---
 
-## 👥 Attendees (${Object.keys(attendanceRecordsRef.current).length || participants.length + 1})
+## Attendees (${Object.keys(attendanceRecordsRef.current).length || participants.length + 1})
 ${attendeeList}
 
 ---
 
-## 📌 Executive Summary
+## Executive Summary
 - The team convened for **${title}** via JTS-Meet secure enterprise video conference.
 - Key operational updates, architectural milestones, and active decisions were aligned.
 - Discussion notes and structured action items were recorded for team accountability.
 
 ---
 
-## 💬 Discussion Highlights & Chat Notes
+## Discussion Highlights & Chat Notes
 ${chatNotes || '_No public chat notes recorded during this session._'}
 
 ---
 
-## ✅ Action Items & Task Ownership
+## Action Items & Task Ownership
 | # | Action Item / Deliverable | Owner | Priority | Status |
 |---|---|---|---|---|
 | 1 | Review meeting summary and distribute action items | ${myDisplayName} | High | In Progress |
@@ -3956,10 +4165,47 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     const toggleVideo = async () => {
         if (!localStream) return
         if (!isVideoOff) {
+            // 1. Physically stop all hardware video tracks on localStream
             localStream.getVideoTracks().forEach(track => {
-                track.stop()
+                try {
+                    track.stop()
+                } catch { }
                 localStream.removeTrack(track)
             })
+
+            // 1.1 Also stop any active camera tracks on cameraStream backup
+            if (cameraStream) {
+                cameraStream.getVideoTracks().forEach(track => {
+                    try {
+                        track.stop()
+                    } catch { }
+                    cameraStream.removeTrack(track)
+                })
+            }
+
+            // 2. Stop and release virtual background or wallpaper preview stream
+            if (activeLocalStream) {
+                activeLocalStream.getVideoTracks().forEach(track => {
+                    try {
+                        track.stop()
+                    } catch { }
+                })
+                setActiveLocalStream(null)
+            }
+
+            // 3. Stop raw physical camera track backup ref to ensure laptop LED turns off completely
+            if (rawCameraTrackRef.current) {
+                try {
+                    rawCameraTrackRef.current.stop()
+                } catch { }
+                rawCameraTrackRef.current = null
+            }
+
+            // 4. Cleanup processing loop & offscreen canvas/video in virtualBackgroundService
+            try {
+                virtualBackgroundService.cleanup()
+            } catch { }
+
             const dummyTrack = createDummyVideoTrack()
             localStream.addTrack(dummyTrack)
             replaceTrackOnPeers(dummyTrack)
@@ -3978,11 +4224,14 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 const videoTrack = freshStream.getVideoTracks()[0]
                 if (videoTrack) {
                     localStream.getVideoTracks().forEach(t => {
-                        t.stop()
+                        try {
+                            t.stop()
+                        } catch { }
                         localStream.removeTrack(t)
                     })
                     localStream.addTrack(videoTrack)
                     replaceTrackOnPeers(videoTrack)
+                    rawCameraTrackRef.current = videoTrack
                 }
                 setIsVideoOff(false)
                 socket?.emit('meeting:camera-toggle', { meetingId: meetingId || meetingInput, isVideoOff: false })
@@ -4215,7 +4464,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         replaceTrackOnPeers(cleanTrack)
                         cleanTrack.enabled = !isMuted
                     }
-                    addToast('🔕 AI Ultra Voice Isolation active (Background chatter & fan noise eliminated)', 'success')
+                    addToast('AI Ultra Voice Isolation active (Background chatter & fan noise eliminated)', 'success')
                 } else {
                     noiseCancellationService.cleanup()
                     addToast('Standard audio mode active (Noise cancellation off)', 'info')
@@ -4277,8 +4526,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 if (key === 's') {
                     e.preventDefault()
                     if (isScreenShareSupported()) {
-                        if (screenSharingUserId === 'me') stopScreenShare()
-                        else startScreenShare()
+                        handleToggleScreenShare()
                     }
                     return
                 }
@@ -4502,6 +4750,21 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         }
     }, [connected, joined, initialToken, token, mediaLoading, initialMeetingId, autoJoin, meetingInput])
 
+    // Auto-start pending pre-captured screen share from 1-on-1 Teams-style direct screen call
+    useEffect(() => {
+        if (!joined) return
+        const pendingStream = (window as any).__jts_pending_screenshare_stream as MediaStream | undefined
+        if (pendingStream) {
+            delete (window as any).__jts_pending_screenshare_stream
+            const t = setTimeout(() => {
+                startScreenShare(pendingStream).catch(err => {
+                    console.warn('[MeetingRoom] Auto-start pending screen share failed:', err)
+                })
+            }, 300)
+            return () => clearTimeout(t)
+        }
+    }, [joined, startScreenShare])
+
     const togglePanel = (panel: ActivePanel) => {
         setActivePanel((prev) => (prev === panel ? null : panel))
     }
@@ -4548,6 +4811,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     const canManageParticipants = isLocalHost || isCoHost || isAdminOrOwner
     const canRecord = canManageParticipants || recordingAllowedUserIds.includes(localUserId)
     const canUseWhiteboard = canManageParticipants || showWhiteboard || whiteboardAllowedUserIds.includes(localUserId)
+
+    // Virtual Green Room derived state (needs localUserId which is declared above)
+    const isCurrentUserBackstage = backstageUserIds.includes(localUserId || '')
+    const canUseBackstage = currentPlanTier === 'enterprise'
 
     const handlePromoteCoHost = (targetUserId: string, isPromoting: boolean) => {
         const activeRoom = meetingId || meetingInput.trim()
@@ -4646,8 +4913,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         }
         addToast(
             enabled
-                ? '🛡️ Waiting Room enabled (Host approval required for invitees)'
-                : '🔓 Open Access enabled (Everyone can join without approval)',
+                ? 'Waiting Room enabled (Host approval required for invitees)'
+                : 'Open Access enabled (Everyone can join without approval)',
             'success'
         )
     }
@@ -4668,7 +4935,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
         const onLockToggleEvent = (data: { isLocked: boolean }) => {
             setIsLocked(!!data.isLocked)
-            addToast(data.isLocked ? '🔒 Meeting has been locked by the host' : '🔓 Meeting has been unlocked', 'info')
+            addToast(data.isLocked ? 'Meeting has been locked by the host' : 'Meeting has been unlocked', 'info')
         }
 
         const onEndAllEvent = () => {
@@ -4679,7 +4946,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
         const onWatermarkToggleEvent = (data: { enabled: boolean }) => {
             setIsWatermarkEnabled(!!data.enabled)
-            addToast(data.enabled ? '🛡️ Confidential Watermark enabled by host' : '🛡️ Confidential Watermark disabled', 'info')
+            addToast(data.enabled ? 'Confidential Watermark enabled by host' : 'Confidential Watermark disabled', 'info')
         }
 
         const onReactionEvent = (data: { emoji: string; senderName?: string }) => {
@@ -4694,12 +4961,26 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         socket.on(SocketEvents.MEETING_WATERMARK_TOGGLE, onWatermarkToggleEvent)
         socket.on(SocketEvents.MEETING_REACTION, onReactionEvent)
 
+        // Virtual Green Room — Stage Status Change
+        const onStageStatusChange = (data: { targetUserId: string; isBackstage: boolean; backstageUsers: string[] }) => {
+            setBackstageUserIds(data.backstageUsers || [])
+        }
+        const onStageStateSync = (data: { backstageUsers: string[] }) => {
+            if (Array.isArray(data?.backstageUsers)) {
+                setBackstageUserIds(data.backstageUsers)
+            }
+        }
+        socket.on(SocketEvents.STAGE_STATUS_CHANGE, onStageStatusChange)
+        socket.on(SocketEvents.STAGE_STATE_SYNC, onStageStateSync)
+
         return () => {
             socket.off('meeting:mute-all', onMuteAllEvent)
             socket.off('meeting:lock-toggle', onLockToggleEvent)
             socket.off('meeting:end-all', onEndAllEvent)
             socket.off(SocketEvents.MEETING_WATERMARK_TOGGLE, onWatermarkToggleEvent)
             socket.off(SocketEvents.MEETING_REACTION, onReactionEvent)
+            socket.off(SocketEvents.STAGE_STATUS_CHANGE, onStageStatusChange)
+            socket.off(SocketEvents.STAGE_STATE_SYNC, onStageStateSync)
         }
     }, [socket, isLocalHost, leaveMeeting])
 
@@ -4814,7 +5095,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 }
             };
 
-            recorder.onstop = () => {
+            recorder.onstop = async () => {
                 const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -4827,7 +5108,38 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
                 displayStream.getTracks().forEach(t => t.stop());
                 setIsRecording(false);
-                addToast('Meeting recording saved and downloaded successfully!', 'success');
+                addToast('Local recording saved! Uploading to JTS Cloud Hub...', 'info');
+
+                // Cloud Storage Upload to backend
+                try {
+                    const roomFromHash = new URLSearchParams(window.location.hash.split('?')[1] || '').get('room');
+                    const activeId = meetingId || meetingInput || roomFromHash || 'meeting';
+                    const activeToken = token || initialToken || localStorage.getItem('jts_token') || localStorage.getItem('token') || '';
+                    const durationSec = Math.max(1, Math.round(recordedChunksRef.current.length));
+
+                    if (activeId && activeToken) {
+                        const formData = new FormData();
+                        formData.append('recording', blob, `rec-${activeId}-${Date.now()}.webm`);
+                        formData.append('duration', String(durationSec));
+                        formData.append('title', meetingInfo?.title || `Conference ${activeId}`);
+
+                        const uploadRes = await fetch(`${API_BASE}/api/meeting/${encodeURIComponent(activeId)}/recording`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${activeToken}`
+                            },
+                            body: formData
+                        });
+                        if (uploadRes.ok) {
+                            addToast('Recording saved to Cloud Storage! Available for instant playback in History & Dashboard.', 'success');
+                        } else {
+                            const errJson = await uploadRes.json().catch(() => null);
+                            console.error('[Recording] Upload response not OK:', uploadRes.status, errJson);
+                        }
+                    }
+                } catch (err) {
+                    console.error('[Recording] Cloud upload error:', err);
+                }
             };
 
             displayStream.getVideoTracks()[0].onended = () => {
@@ -4869,7 +5181,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             broadcastTitle: config.broadcastTitle,
             streamUrl: config.serverUrl
         });
-        addToast(`🔴 Broadcast initiated for ${config.platform.toUpperCase()} (${config.resolution})!`, 'success');
+        addToast(`Broadcast initiated for ${config.platform.toUpperCase()} (${config.resolution})!`, 'success');
     };
 
     const handleStopLiveStream = () => {
@@ -4896,7 +5208,12 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 key={userId}
                 onMouseEnter={() => setHoveredTile(userId)}
                 onMouseLeave={() => setHoveredTile(null)}
-                onClick={() => setPinnedUserId(pinnedUserId === userId ? null : userId)}
+                onClick={() => {
+                    if (screenSharingUserIds.includes(userId)) {
+                        switchActivePresenter(userId)
+                    }
+                    setPinnedUserId(pinnedUserId === userId ? null : userId)
+                }}
                 onDoubleClick={() => setFullScreenUserId(fullScreenUserId === userId ? null : userId)}
                 style={{
                     width: isSingleTile ? 'min(100%, calc((100vh - 160px) * 16 / 9))' : '100%',
@@ -4906,8 +5223,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     margin: isSingleTile ? 'auto' : undefined,
                     position: 'relative',
                     borderRadius: isCompact ? 'var(--radius-md)' : 'var(--radius-xl)',
-                    border: isUserSpeaking ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
-                    boxShadow: isUserSpeaking ? '0 0 0 2px rgba(59, 130, 246, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3)' : 'var(--shadow-sm)',
+                    border: isUserSpeaking ? '2.5px solid #22c55e' : '1px solid rgba(255,255,255,0.08)',
+                    boxShadow: isUserSpeaking ? '0 0 0 2px rgba(34, 197, 94, 0.45), 0 0 24px rgba(34, 197, 94, 0.65)' : 'var(--shadow-sm)',
                     overflow: 'hidden',
                     background: 'var(--color-surface-2)',
                     transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -4943,9 +5260,27 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     gap: isCompact ? 4 : 8,
                     zIndex: 20
                 }}>
+                    {screenSharingUserIds.includes(userId) && (
+                        <span style={{
+                            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.95), rgba(139, 92, 246, 0.95))',
+                            backdropFilter: 'blur(8px)',
+                            color: '#fff',
+                            fontSize: isCompact ? '0.62rem' : '0.7rem',
+                            fontWeight: 800,
+                            padding: isCompact ? '2px 6px' : '3px 8px',
+                            borderRadius: 'var(--radius-full)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            boxShadow: '0 0 12px rgba(99, 102, 241, 0.6)'
+                        }}>
+                            <IconMonitor size={isCompact ? 10 : 12} />
+                            <span>SCREEN</span>
+                        </span>
+                    )}
                     {isUserHandRaised && (
-                        <span className="badge badge-warning anim-pulse" style={{ fontSize: isCompact ? '0.65rem' : '0.75rem', padding: isCompact ? '2px 6px' : '4px 8px' }}>
-                            ✋ Raised Hand
+                        <span className="badge badge-warning anim-pulse" style={{ fontSize: isCompact ? '0.65rem' : '0.75rem', padding: isCompact ? '2px 6px' : '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <IconHand size={isCompact ? 11 : 13} /> Raised Hand
                         </span>
                     )}
                     {/* Connection Health Indicator */}
@@ -4986,10 +5321,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 e.stopPropagation();
                                 setPinnedUserId(pinnedUserId === userId ? null : userId);
                             }}
-                            style={{ background: pinnedUserId === userId ? 'var(--color-accent)' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: isCompact ? 28 : 32, height: isCompact ? 28 : 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: isCompact ? '0.75rem' : '0.875rem' }}
+                            style={{ background: pinnedUserId === userId ? 'var(--color-accent)' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: isCompact ? 28 : 32, height: isCompact ? 28 : 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
                             title={pinnedUserId === userId ? "Unpin user" : "Pin user to center"}
                         >
-                            📌
+                            <IconPin size={isCompact ? 13 : 15} />
                         </button>
 
                         {/* Full Screen Toggle Button */}
@@ -5019,10 +5354,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     e.stopPropagation();
                                     socket?.emit('meeting:mute-user', { meetingId, targetUserId: userId });
                                 }}
-                                style={{ background: 'rgba(239, 68, 68, 0.25)', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.875rem' }}
+                                style={{ background: 'rgba(239, 68, 68, 0.25)', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
                                 title="Request Mute"
                             >
-                                🔇
+                                <IconMicOff size={15} />
                             </button>
                         )}
 
@@ -5033,10 +5368,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     e.stopPropagation();
                                     socket?.emit('meeting:remove-user', { meetingId, targetUserId: userId });
                                 }}
-                                style={{ background: 'var(--color-danger)', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.875rem' }}
+                                style={{ background: 'var(--color-danger)', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
                                 title="Kick participant"
                             >
-                                ❌
+                                <IconX size={15} strokeWidth={2.5} />
                             </button>
                         )}
                     </div>
@@ -5111,37 +5446,6 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             width: '100%',
         }}>
 
-            {/* ── Network Resilience / Reconnecting Floating Banner ── */}
-            {(networkStatus === 'reconnecting' || networkStatus === 'offline' || isReconnecting) && (
-                <div style={{
-                    position: 'fixed',
-                    top: 68,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    zIndex: 99999,
-                    background: 'rgba(239, 68, 68, 0.95)',
-                    backdropFilter: 'blur(10px)',
-                    color: '#fff',
-                    borderRadius: '24px',
-                    padding: '8px 20px',
-                    boxShadow: '0 8px 32px rgba(239, 68, 68, 0.5)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                }}>
-                    <span style={{
-                        display: 'inline-block',
-                        width: 10,
-                        height: 10,
-                        borderRadius: '50%',
-                        background: '#fff',
-                        boxShadow: '0 0 8px #fff'
-                    }} />
-                    <span>{networkStatus === 'offline' ? 'Network offline. Re-establishing connection…' : 'Connection interrupted. Auto-reconnecting call…'}</span>
-                </div>
-            )}
 
             {/* ── Google Meet Style "Talking While Muted" Floating Alert ── */}
             {showTalkingWhileMuted && isMuted && (
@@ -5164,7 +5468,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     fontSize: '0.75rem',
                     fontWeight: 500,
                 }}>
-                    <span style={{ fontSize: '0.9rem', lineHeight: 1 }}>🎙️</span>
+                    <IconMicOff size={14} color="#f87171" />
                     <span style={{ whiteSpace: 'nowrap' }}>Your mic is muted</span>
                     <button
                         onClick={toggleMute}
@@ -5249,12 +5553,19 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onClick={() => setIsInviteOpen(true)}
                             style={{
                                 padding: '4px 10px', fontSize: '0.75rem', fontWeight: 700,
-                                borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: 4,
+                                borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: 6,
                                 background: 'rgba(99, 102, 241, 0.12)', color: 'var(--color-accent)',
-                                border: '1px solid rgba(99, 102, 241, 0.25)', cursor: 'pointer'
+                                border: '1px solid rgba(99, 102, 241, 0.25)', cursor: 'pointer',
+                                transition: 'all 0.15s ease'
                             }}
                         >
-                            ➕ Invite
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                <circle cx="8.5" cy="7" r="4" />
+                                <line x1="20" y1="8" x2="20" y2="14" />
+                                <line x1="23" y1="11" x2="17" y2="11" />
+                            </svg>
+                            <span>Invite</span>
                         </button>
                     )}
                     {canManageParticipants && (
@@ -5270,14 +5581,25 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 borderRadius: 'var(--radius-sm)',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 4,
+                                gap: 6,
                                 background: isWaitingRoomActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
                                 color: isWaitingRoomActive ? '#34d399' : '#fbbf24',
                                 border: `1px solid ${isWaitingRoomActive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
-                                cursor: 'pointer'
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
                             }}
                         >
-                            <span>{isWaitingRoomActive ? '🛡️' : '🔓'}</span>
+                            {isWaitingRoomActive ? (
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                                    <path d="m9 12 2 2 4-4" />
+                                </svg>
+                            ) : (
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                                </svg>
+                            )}
                             <span className="hidden sm:inline">{isWaitingRoomActive ? 'Waiting Room: ON' : 'Open: ON'}</span>
                         </button>
                     )}
@@ -5292,14 +5614,18 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 borderRadius: 'var(--radius-sm)',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 4,
+                                gap: 6,
                                 background: 'rgba(239, 68, 68, 0.2)',
                                 color: '#f87171',
                                 border: '1px solid rgba(239, 68, 68, 0.4)',
-                                cursor: 'pointer'
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
                             }}
                         >
-                            <span>⏳</span>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10" />
+                                <polyline points="12 6 12 12 16 14" />
+                            </svg>
                             <span>{waitingGuests.length} Waiting</span>
                         </button>
                     )}
@@ -5313,6 +5639,91 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
                 {/* Right: status & participant count */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {/* Plan Duration / Free Plan Countdown Pill */}
+                    {currentPlanTier === 'free' ? (
+                        <div
+                            onClick={() => {
+                                if (onUpgradePlanRequest) onUpgradePlanRequest()
+                                else setUpgradeModalFeature({
+                                    title: 'Unlimited Meeting Duration',
+                                    requiredPlan: 'Growth Pro',
+                                    icon: <IconClock size={20} color="#f59e0b" />,
+                                    description: 'Upgrade to Growth Pro or Enterprise to host unlimited 24/7 meetings with no time limits.'
+                                })
+                            }}
+                            title="Free Plan: 45-minute meeting limit. Click to upgrade for unlimited duration."
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '4px 10px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: freeTimeRemaining <= 600 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(245, 158, 11, 0.12)',
+                                border: `1px solid ${freeTimeRemaining <= 600 ? 'rgba(239, 68, 68, 0.45)' : 'rgba(245, 158, 11, 0.3)'}`,
+                                color: freeTimeRemaining <= 600 ? '#f87171' : '#fbbf24',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                boxShadow: freeTimeRemaining <= 600 ? '0 0 12px rgba(239, 68, 68, 0.3)' : undefined
+                            }}
+                        >
+                            {freeTimeRemaining <= 600 ? (
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                                    <line x1="12" y1="9" x2="12" y2="13" />
+                                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                                </svg>
+                            ) : (
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <polyline points="12 6 12 12 16 14" />
+                                </svg>
+                            )}
+                            <span>{formatRemainingTime(freeTimeRemaining)} left</span>
+                            <span style={{
+                                fontSize: '0.62rem',
+                                background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                                color: '#fff',
+                                padding: '1px 5px',
+                                borderRadius: 4,
+                                fontWeight: 800,
+                                letterSpacing: '0.02em'
+                            }}>UPGRADE</span>
+                        </div>
+                    ) : (
+                        <div
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '4px 10px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'rgba(255, 255, 255, 0.04)',
+                                border: '1px solid var(--color-border)',
+                                color: 'var(--color-text-secondary)',
+                                fontSize: '0.72rem',
+                                fontWeight: 600
+                            }}
+                            title={`Call Duration: ${timerStr}`}
+                        >
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+                            <span>{timerStr}</span>
+                            <span style={{
+                                fontSize: '0.6rem',
+                                background: currentPlanTier === 'enterprise' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(99, 102, 241, 0.2)',
+                                color: currentPlanTier === 'enterprise' ? '#c084fc' : '#818cf8',
+                                border: `1px solid ${currentPlanTier === 'enterprise' ? 'rgba(168, 85, 247, 0.4)' : 'rgba(99, 102, 241, 0.4)'}`,
+                                padding: '1px 5px',
+                                borderRadius: 4,
+                                fontWeight: 700,
+                                textTransform: 'uppercase'
+                            }}>
+                                {currentPlanTier}
+                            </span>
+                        </div>
+                    )}
+
                     <span className={`badge ${connected ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem', padding: '4px 10px' }}>
                         <span className={`badge-dot ${connected ? 'success pulse' : 'danger'}`} />
                         {connected ? 'Live' : 'Offline'}
@@ -5323,16 +5734,104 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)',
                         padding: '4px 10px', borderRadius: 'var(--radius-sm)'
                     }}>
-                        <IconUsers />
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                            <circle cx="9" cy="7" r="4" />
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                        </svg>
                         <span>{participants.length + 1}</span>
                     </div>
                 </div>
             </header>
 
+            {/* Ambient Free Tier Warning Pill (Compact floating Zoom/Meet style) */}
+            {isLowTimeWarning && !isWarningDismissed && (
+                <div style={{
+                    position: 'fixed',
+                    top: (isNetworkOffline || networkStatus === 'offline' || networkStatus === 'reconnecting' || isReconnecting || showRestoredNotice) ? 112 : 64,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 9990,
+                    background: 'linear-gradient(135deg, rgba(220, 38, 38, 0.95) 0%, rgba(217, 119, 6, 0.95) 100%)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
+                    border: '1px solid rgba(255, 255, 255, 0.25)',
+                    borderRadius: 9999,
+                    color: '#fff',
+                    padding: '4px 10px 4px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4), 0 0 14px rgba(220, 38, 38, 0.35)',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap'
+                }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'pulse 1.2s infinite', flexShrink: 0 }}>
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                    <span>
+                        Meeting ends in <strong>{formatRemainingTime(freeTimeRemaining)}</strong>
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (onUpgradePlanRequest) {
+                                onUpgradePlanRequest()
+                            } else {
+                                window.location.hash = '#organization'
+                            }
+                        }}
+                        style={{
+                            background: '#fff',
+                            color: '#b91c1c',
+                            border: 'none',
+                            borderRadius: 9999,
+                            padding: '2px 9px',
+                            fontWeight: 800,
+                            fontSize: '0.6875rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                            flexShrink: 0
+                        }}
+                    >
+                        <IconZap size={11} color="#b91c1c" />
+                        <span>Upgrade</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setIsWarningDismissed(true)}
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.18)',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: 18,
+                            height: 18,
+                            color: '#fff',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: 0,
+                            flexShrink: 0,
+                            marginLeft: 2
+                        }}
+                        title="Dismiss notification"
+                    >
+                        <IconX size={11} />
+                    </button>
+                </div>
+            )}
+
             {/* ── Main Content Area ── */}
             <main style={{
                 flex: 1,
-                paddingTop: 64,
+                paddingTop: isLowTimeWarning ? 104 : 64,
                 paddingBottom: 20,
                 display: 'flex',
                 overflow: 'hidden',
@@ -5354,7 +5853,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 marginBottom: 12
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span>⚠</span>
+                                    <IconInfo size={16} color="#f87171" />
                                     <span>{screenError}</span>
                                 </div>
                                 <button
@@ -5373,7 +5872,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     }}
                                     title="Dismiss error"
                                 >
-                                    ✕
+                                    <IconX size={14} />
                                 </button>
                             </div>
                         )}
@@ -5391,8 +5890,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                         position: 'relative',
                                         borderRadius: 'var(--radius-xl)',
                                         overflow: 'hidden',
-                                        border: activeSpeaker === primaryUser ? '2px solid #3b82f6' : '1px solid var(--color-border)',
-                                        boxShadow: activeSpeaker === primaryUser ? '0 0 0 2px rgba(59, 130, 246, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3)' : 'var(--shadow-sm)',
+                                        border: activeSpeaker === primaryUser ? '2.5px solid #22c55e' : '1px solid var(--color-border)',
+                                        boxShadow: activeSpeaker === primaryUser ? '0 0 0 2px rgba(34, 197, 94, 0.45), 0 0 24px rgba(34, 197, 94, 0.65)' : 'var(--shadow-sm)',
                                         transition: 'border-color 0.3s ease'
                                     }}>
                                         <VideoTile
@@ -5412,6 +5911,81 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             isActiveSpeaker={activeSpeaker === primaryUser}
                                             isMutedProp={primaryUser === 'me' ? isMuted : (remoteMuteStates[primaryUser] !== undefined ? remoteMuteStates[primaryUser] : !primaryStream?.getAudioTracks()[0]?.enabled)}
                                         />
+
+                                        {/* Multi-Presenter Floating Switcher Bar (Google Meet Style) */}
+                                        {screenSharingUserIds && screenSharingUserIds.length > 1 && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: 14,
+                                                left: '50%',
+                                                transform: 'translateX(-50%)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 8,
+                                                zIndex: 48,
+                                                background: 'rgba(15, 23, 42, 0.88)',
+                                                backdropFilter: 'blur(16px)',
+                                                WebkitBackdropFilter: 'blur(16px)',
+                                                padding: '5px 10px',
+                                                borderRadius: 'var(--radius-full)',
+                                                border: '1px solid rgba(99, 102, 241, 0.45)',
+                                                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6), 0 0 16px rgba(99, 102, 241, 0.3)',
+                                                maxWidth: '90%',
+                                                overflowX: 'auto',
+                                                scrollbarWidth: 'none'
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 4px', fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>
+                                                    <IconMonitor size={14} color="#818cf8" />
+                                                    <span>Presenters:</span>
+                                                </div>
+                                                {screenSharingUserIds.map((uId) => {
+                                                    const isViewing = primaryUser === uId || (screenSharingUserId === uId && !pinnedUserId)
+                                                    const name = uId === 'me' ? 'You' : getUserDisplayName(uId)
+                                                    return (
+                                                        <button
+                                                            key={uId}
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                switchActivePresenter(uId)
+                                                                setPinnedUserId(uId === 'me' ? 'me' : uId)
+                                                                addToast(`Viewing ${name}'s presentation`, 'info')
+                                                            }}
+                                                            style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 6,
+                                                                padding: '5px 12px',
+                                                                borderRadius: 'var(--radius-full)',
+                                                                border: isViewing ? '1px solid #818cf8' : '1px solid rgba(255, 255, 255, 0.12)',
+                                                                background: isViewing ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.95), rgba(139, 92, 246, 0.95))' : 'rgba(255, 255, 255, 0.08)',
+                                                                color: '#fff',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: isViewing ? 800 : 500,
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.2s ease',
+                                                                boxShadow: isViewing ? '0 0 16px rgba(99, 102, 241, 0.6)' : 'none',
+                                                                whiteSpace: 'nowrap'
+                                                            }}
+                                                        >
+                                                            <span style={{
+                                                                width: 7,
+                                                                height: 7,
+                                                                borderRadius: '50%',
+                                                                background: isViewing ? '#4ade80' : '#94a3b8',
+                                                                boxShadow: isViewing ? '0 0 8px #4ade80' : 'none'
+                                                            }} />
+                                                            <span>{name}&apos;s Screen</span>
+                                                            {isViewing && (
+                                                                <span style={{ fontSize: '0.62rem', background: 'rgba(0,0,0,0.35)', padding: '1px 5px', borderRadius: 4, fontWeight: 800, textTransform: 'uppercase' }}>
+                                                                    Viewing
+                                                                </span>
+                                                            )}
+                                                        </button>
+                                                    )
+                                                })}
+                                            </div>
+                                        )}
 
                                         {/* Screen Share Action Controls Container (Top Left - Never overlaps Top Right name/SCREEN badge) */}
                                         {isScreenShareActive && (
@@ -5448,7 +6022,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                         }}
                                                         title="Toggle interactive drawing & laser pointer on screen"
                                                     >
-                                                        <span>🖊️</span>
+                                                        <IconEdit size={14} />
                                                         <span>{isAnnotationActive ? 'Drawing Active' : 'Annotate & Laser'}</span>
                                                     </button>
                                                 )}
@@ -5484,7 +6058,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                         }}
                                                         title={activeControllerId === (parseJwt(token)?.userId || 'me') ? 'Release Remote Control' : 'Request Remote Control of this screen'}
                                                     >
-                                                        <span>🎮</span>
+                                                        <IconMonitor size={14} />
                                                         <span>
                                                             {activeControllerId === (parseJwt(token)?.userId || 'me')
                                                                 ? 'Release Control'
@@ -5517,7 +6091,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                 color: '#fff'
                                             }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                    <span style={{ fontSize: '1.25rem' }}>🎮</span>
+                                                    <IconMonitor size={20} color="#60a5fa" />
                                                     <div>
                                                         <div style={{ fontSize: '0.8125rem', fontWeight: 700 }}>
                                                             {incomingControlRequest.requesterName} wants remote control
@@ -5646,7 +6220,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                         e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
                                                     }}
                                                 >
-                                                    📌 Unpin Screen
+                                                    <IconPin size={13} />
+                                                    <span>Unpin Screen</span>
                                                 </button>
                                             );
                                         })()}
@@ -5730,6 +6305,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             isWatermarkEnabled={isWatermarkEnabled}
                             onToggleWatermark={handleToggleWatermark}
                             onExportAttendance={exportAttendanceCSV}
+                            onOpenAttendance={() => setShowAttendanceModal(true)}
                             recordingAllowedUserIds={recordingAllowedUserIds}
                             whiteboardAllowedUserIds={whiteboardAllowedUserIds}
                             onTogglePermission={handleTogglePermission}
@@ -5933,10 +6509,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 {/* Screen Share Trigger (Enabled by default for guest and team) */}
                 {isScreenShareSupported() && (
                     <button
-                        onClick={screenSharingUserId === 'me' ? stopScreenShare : startScreenShare}
+                        onClick={handleToggleScreenShare}
                         disabled={!connected || !joined}
-                        style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: screenSharingUserId === 'me' ? 'var(--color-accent)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                        title={screenSharingUserId === 'me' ? "Stop sharing screen" : "Share screen"}
+                        style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: (screenSharingUserId === 'me' || screenSharingUserIds.includes('me')) ? 'var(--color-accent)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                        title={(screenSharingUserId === 'me' || screenSharingUserIds.includes('me')) ? "Stop sharing screen" : "Share screen"}
                     >
                         <IconMonitor />
                     </button>
@@ -5948,10 +6524,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         socket?.emit('meeting:raise-hand', { meetingId: meetingId || meetingInput, raised: !handRaised })
                         setHandRaised(!handRaised)
                     }}
-                    style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: handRaised ? 'var(--color-warning)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', flexShrink: 0 }}
+                    style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: handRaised ? 'var(--color-warning)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                     title={handRaised ? "Lower hand" : "Raise hand"}
                 >
-                    ✋
+                    <IconHand size={windowWidth < 640 ? 18 : 20} />
                 </button>
 
                 {/* Real-time Emoji Reactions Popover Trigger */}
@@ -5977,9 +6553,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         transition: 'all 0.2s ease',
                         boxShadow: showReactionsPopover ? '0 0 14px rgba(99,102,241,0.5)' : 'none'
                     }}
-                    title="Send Reaction (Click to send ❤️ and open emoji bar)"
+                    title="Send Reaction (Click to send love reaction and open emoji bar)"
                 >
-                    ❤️
+                    <IconHeart size={18} color="#f43f5e" />
                 </button>
 
                 <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
@@ -6053,9 +6629,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     className={`btn-icon ${activePanel === 'qa' ? 'active' : ''}`}
                     onClick={() => togglePanel('qa')}
                     title="Q&A with Upvoting"
-                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'qa' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'qa' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0, fontSize: '1.1rem' }}
+                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'qa' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'qa' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}
                 >
-                    ❓
+                    <IconHelp size={windowWidth < 640 ? 18 : 20} />
                 </button>
 
                 <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
@@ -6070,28 +6646,29 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     }}
                     title="More options (⋮)"
                     style={{
-                        width: windowWidth < 640 ? 38 : 44,
-                        height: windowWidth < 640 ? 38 : 44,
+                        width: windowWidth < 640 ? 36 : 40,
+                        height: windowWidth < 640 ? 36 : 40,
+                        border: 'none',
                         borderRadius: '50%',
-                        border: showMoreMenu ? '1.5px solid var(--color-accent)' : '1px solid rgba(255,255,255,0.12)',
-                        background: showMoreMenu ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.08)',
-                        color: showMoreMenu ? 'var(--color-accent)' : '#fff',
+                        background: showMoreMenu ? 'rgba(255,255,255,0.18)' : 'transparent',
+                        color: '#fff',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '1.25rem',
-                        fontWeight: 700,
-                        flexShrink: 0,
-                        transition: 'all 0.2s ease'
+                        flexShrink: 0
                     }}
                 >
-                    ⋮
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="12" cy="5" r="2" />
+                        <circle cx="12" cy="12" r="2" />
+                        <circle cx="12" cy="19" r="2" />
+                    </svg>
                 </button>
 
                 <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
 
-                {/* Hang up leave meeting */}
+                {/* Leave / End Meeting Trigger */}
                 <button
                     onClick={() => {
                         if (isLocalHost) {
@@ -6100,20 +6677,36 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             handleExitMeeting()
                         }
                     }}
-                    style={{ background: 'var(--color-danger)', border: 'none', borderRadius: '24px', padding: windowWidth < 640 ? '6px 14px' : '8px 20px', color: '#fff', fontWeight: 700, fontSize: windowWidth < 640 ? '0.75rem' : '0.8125rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)' }}
-                    title={isLocalHost ? "Leave or End Meeting" : "Leave Meeting Room"}
+                    style={{
+                        height: windowWidth < 640 ? 38 : 44,
+                        padding: windowWidth < 640 ? '0 12px' : '0 16px',
+                        borderRadius: '24px',
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        color: '#ffffff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        flexShrink: 0,
+                        boxShadow: '0 4px 14px rgba(239, 68, 68, 0.45)',
+                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                    title={isLocalHost ? "End or Leave Meeting" : "Leave Meeting"}
                 >
-                    <IconPhoneOff />
-                    Leave
+                    <IconPhoneOff size={18} color="#fff" />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
+                        {isLocalHost ? "End" : "Leave"}
+                    </span>
                 </button>
             </footer>
 
-            {/* Consolidated Google Meet Style [⋮ More Options] Floating Popover (Never clipped by toolbar) */}
+            {/* Google Meet Style Dynamic "More Options" Floating Popover */}
             {showMoreMenu && (() => {
                 const rect = moreBtnRef.current?.getBoundingClientRect()
-                const bottom = rect ? window.innerHeight - rect.top + 14 : 96
-                const rawLeft = rect ? rect.left + rect.width / 2 : window.innerWidth / 2
-                const left = Math.min(window.innerWidth - 155, Math.max(155, rawLeft))
+                const bottom = rect ? window.innerHeight - rect.top + 12 : 90
+                const left = rect ? Math.max(160, Math.min(window.innerWidth - 160, rect.left + rect.width / 2)) : window.innerWidth / 2
 
                 return (
                     <div
@@ -6123,19 +6716,19 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             bottom: `${bottom}px`,
                             left: `${left}px`,
                             transform: 'translateX(-50%)',
-                            width: 290,
+                            width: 300,
                             maxHeight: 'calc(100vh - 120px)',
                             overflowY: 'auto',
-                            background: 'rgba(18, 22, 31, 0.98)',
+                            background: 'rgba(15, 18, 26, 0.98)',
                             backdropFilter: 'blur(24px)',
                             WebkitBackdropFilter: 'blur(24px)',
-                            border: '1px solid rgba(255, 255, 255, 0.14)',
-                            borderRadius: '20px',
+                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                            borderRadius: '16px',
                             padding: '8px',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '2px',
-                            boxShadow: '0 24px 48px rgba(0,0,0,0.8), 0 0 1px 1px rgba(255,255,255,0.15)',
+                            gap: '3px',
+                            boxShadow: '0 24px 54px rgba(0,0,0,0.85), 0 0 1px 1px rgba(255,255,255,0.1)',
                             zIndex: 10005,
                             animation: 'jts-slide-up 0.18s ease-out'
                         }}
@@ -6145,6 +6738,15 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             <button
                                 onClick={() => {
                                     setShowMoreMenu(false)
+                                    if (!canAccessRecording) {
+                                        setUpgradeModalFeature({
+                                            title: 'Cloud Video Recording',
+                                            requiredPlan: 'Starter or Enterprise',
+                                            icon: <IconVideo size={20} color="#ef4444" />,
+                                            description: 'Recording meetings with cloud storage and MP4 downloads is available on Starter and Enterprise plans. Free plan workspaces do not include cloud recording.'
+                                        })
+                                        return
+                                    }
                                     if (isRecording) {
                                         stopRecording()
                                     } else {
@@ -6153,7 +6755,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 }}
                                 disabled={!connected || !joined}
                                 style={{
-                                    display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                     background: 'transparent', border: 'none', borderRadius: '10px',
                                     color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                     transition: 'background 0.15s ease'
@@ -6161,13 +6763,37 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                             >
-                                <span style={{ fontSize: '1rem', color: isRecording ? '#ef4444' : '#fff' }}>
-                                    {isRecording ? '⏹️' : '⏺️'}
-                                </span>
-                                <span style={{ flex: 1, textAlign: 'left' }}>
+                                <div style={{
+                                    width: 28, height: 28, borderRadius: 7,
+                                    background: isRecording ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.12)',
+                                    color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                }}>
+                                    {isRecording ? (
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>
+                                    ) : (
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>
+                                    )}
+                                </div>
+                                <span style={{ flex: 1, textAlign: 'left', opacity: canAccessRecording ? 1 : 0.85 }}>
                                     {isRecording ? 'Stop Recording' : 'Record Meeting'}
                                 </span>
                                 {isRecording && <span style={{ fontSize: '0.65rem', background: '#ef4444', color: '#fff', padding: '2px 6px', borderRadius: 10, fontWeight: 700 }}>REC</span>}
+                                {!canAccessRecording && (
+                                    <span style={{
+                                        fontSize: '0.625rem',
+                                        fontWeight: 800,
+                                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                        color: '#000',
+                                        padding: '1px 6px',
+                                        borderRadius: 4,
+                                        letterSpacing: '0.04em',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 3
+                                    }}>
+                                        <IconLock size={9} /> PRO
+                                    </span>
+                                )}
                             </button>
                         )}
 
@@ -6179,7 +6805,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     setShowWhiteboard(prev => !prev)
                                 }}
                                 style={{
-                                    display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                     background: 'transparent', border: 'none', borderRadius: '10px',
                                     color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                     transition: 'background 0.15s ease'
@@ -6187,7 +6813,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                             >
-                                <span style={{ fontSize: '1rem' }}>🎨</span>
+                                <div style={{
+                                    width: 28, height: 28, borderRadius: 7,
+                                    background: 'rgba(168, 85, 247, 0.12)',
+                                    color: '#c084fc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                }}>
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                </div>
                                 <span style={{ flex: 1, textAlign: 'left' }}>Collaborative Whiteboard</span>
                                 {showWhiteboard && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>OPEN</span>}
                             </button>
@@ -6201,7 +6833,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     setShowPolls(prev => !prev)
                                 }}
                                 style={{
-                                    display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                     background: 'transparent', border: 'none', borderRadius: '10px',
                                     color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                     transition: 'background 0.15s ease'
@@ -6209,7 +6841,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                             >
-                                <span style={{ fontSize: '1rem' }}>📊</span>
+                                <div style={{
+                                    width: 28, height: 28, borderRadius: 7,
+                                    background: 'rgba(99, 102, 241, 0.12)',
+                                    color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                }}>
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                                </div>
                                 <span style={{ flex: 1, textAlign: 'left' }}>In-Call Polls</span>
                                 {showPolls && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>ACTIVE</span>}
                             </button>
@@ -6223,7 +6861,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     setIsBreakoutModalOpen(true)
                                 }}
                                 style={{
-                                    display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                     background: 'transparent', border: 'none', borderRadius: '10px',
                                     color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                     transition: 'background 0.15s ease'
@@ -6231,7 +6869,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                             >
-                                <span style={{ fontSize: '1rem' }}>👥</span>
+                                <div style={{
+                                    width: 28, height: 28, borderRadius: 7,
+                                    background: 'rgba(59, 130, 246, 0.12)',
+                                    color: '#60a5fa', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                }}>
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
+                                </div>
                                 <span style={{ flex: 1, textAlign: 'left' }}>Breakout Rooms</span>
                                 {activeBreakoutSession?.isActive && (
                                     <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#c084fc', background: 'rgba(168,85,247,0.2)', padding: '2px 6px', borderRadius: '6px' }}>
@@ -6248,7 +6892,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 togglePanel('qa')
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6256,7 +6900,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '1rem' }}>❓</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(236, 72, 153, 0.12)',
+                                color: '#f472b6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                            </div>
                             <span style={{ flex: 1, textAlign: 'left' }}>Q&amp;A Panel</span>
                             {activePanel === 'qa' && (
                                 <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>
@@ -6271,12 +6921,12 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 setShowMoreMenu(false)
                                 setShowCaptions(prev => {
                                     const next = !prev
-                                    addToast(next ? '🎙️ Live Captions (CC) turned ON: Speak to see real-time subtitles' : 'Live Captions (CC) turned OFF', 'info')
+                                    addToast(next ? 'Live Captions (CC) turned ON: Speak to see real-time subtitles' : 'Live Captions (CC) turned OFF', 'info')
                                     return next
                                 })
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6284,7 +6934,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '0.85rem', fontWeight: 800, background: 'rgba(255,255,255,0.1)', padding: '1px 5px', borderRadius: 4 }}>CC</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(34, 197, 94, 0.12)',
+                                color: '#4ade80', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M7 15h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2H7v6z"/><path d="M15 15h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-2v6z"/></svg>
+                            </div>
                             <span style={{ flex: 1, textAlign: 'left' }}>Live Captions (Subtitles)</span>
                             <span style={{ fontSize: '0.7rem', color: showCaptions ? '#34d399' : 'var(--color-text-muted)', fontWeight: 600 }}>
                                 {showCaptions ? 'ON' : 'OFF'}
@@ -6296,10 +6952,19 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             <button
                                 onClick={() => {
                                     setShowMoreMenu(false)
+                                    if (!canAccessAI) {
+                                        setUpgradeModalFeature({
+                                            title: 'AI Minutes of Meeting (MoM)',
+                                            requiredPlan: 'Starter or Enterprise',
+                                            icon: <IconFileText size={20} color="#fbbf24" />,
+                                            description: 'Real-time AI-generated executive summaries, decisions, and action-item tracking require a Starter or Enterprise plan.'
+                                        })
+                                        return
+                                    }
                                     setShowMoMModal(true)
                                 }}
                                 style={{
-                                    display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                     background: 'transparent', border: 'none', borderRadius: '10px',
                                     color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                     transition: 'background 0.15s ease'
@@ -6307,8 +6972,30 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                             >
-                                <span style={{ fontSize: '1rem' }}>📋</span>
-                                <span style={{ flex: 1, textAlign: 'left' }}>AI Minutes of Meeting (MoM)</span>
+                                <div style={{
+                                    width: 28, height: 28, borderRadius: 7,
+                                    background: 'rgba(245, 158, 11, 0.12)',
+                                    color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                }}>
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>
+                                </div>
+                                <span style={{ flex: 1, textAlign: 'left', opacity: canAccessAI ? 1 : 0.85 }}>AI Minutes of Meeting (MoM)</span>
+                                {!canAccessAI && (
+                                    <span style={{
+                                        fontSize: '0.625rem',
+                                        fontWeight: 800,
+                                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                        color: '#000',
+                                        padding: '1px 6px',
+                                        borderRadius: 4,
+                                        letterSpacing: '0.04em',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 3
+                                    }}>
+                                        <IconLock size={9} /> PRO
+                                    </span>
+                                )}
                             </button>
                         )}
 
@@ -6317,10 +7004,19 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             <button
                                 onClick={() => {
                                     setShowMoreMenu(false)
+                                    if (!canAccessAI) {
+                                        setUpgradeModalFeature({
+                                            title: 'AI Smart Summary',
+                                            requiredPlan: 'Starter or Enterprise',
+                                            icon: <IconSparkles size={20} color="#a78bfa" />,
+                                            description: 'Automated AI transcript processing and meeting highlights extraction are available on Starter and Enterprise plans.'
+                                        })
+                                        return
+                                    }
                                     setShowSummary(prev => !prev)
                                 }}
                                 style={{
-                                    display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                     background: 'transparent', border: 'none', borderRadius: '10px',
                                     color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                     transition: 'background 0.15s ease'
@@ -6328,11 +7024,59 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                             >
-                                <span style={{ fontSize: '1rem' }}>🪄</span>
-                                <span style={{ flex: 1, textAlign: 'left' }}>AI Smart Summary</span>
+                                <div style={{
+                                    width: 28, height: 28, borderRadius: 7,
+                                    background: 'rgba(139, 92, 246, 0.12)',
+                                    color: '#a78bfa', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                }}>
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+                                </div>
+                                <span style={{ flex: 1, textAlign: 'left', opacity: canAccessAI ? 1 : 0.85 }}>AI Smart Summary</span>
                                 {showSummary && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>OPEN</span>}
+                                {!canAccessAI && (
+                                    <span style={{
+                                        fontSize: '0.625rem',
+                                        fontWeight: 800,
+                                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                        color: '#000',
+                                        padding: '1px 6px',
+                                        borderRadius: 4,
+                                        letterSpacing: '0.04em',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 3
+                                    }}>
+                                        <IconLock size={9} /> PRO
+                                    </span>
+                                )}
                             </button>
                         )}
+
+                        {/* Catch Me Up (Late Joiner AI Summary) */}
+                        <button
+                            onClick={() => {
+                                setShowMoreMenu(false)
+                                setShowCatchUpModal(true)
+                            }}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                                background: 'transparent', border: 'none', borderRadius: '10px',
+                                color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(168, 85, 247, 0.16)',
+                                color: '#c084fc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <IconSparkles size={15} />
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left' }}>Catch Me Up (Recap)</span>
+                            <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#d8b4fe', background: 'rgba(168,85,247,0.2)', padding: '2px 6px', borderRadius: '6px' }}>AI</span>
+                        </button>
 
                         {/* Shared Files */}
                         {(!isGuest || canManageParticipants) && (
@@ -6342,7 +7086,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     togglePanel('files')
                                 }}
                                 style={{
-                                    display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                     background: 'transparent', border: 'none', borderRadius: '10px',
                                     color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                     transition: 'background 0.15s ease'
@@ -6350,7 +7094,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                             >
-                                <span style={{ fontSize: '1rem' }}>📁</span>
+                                <div style={{
+                                    width: 28, height: 28, borderRadius: 7,
+                                    background: 'rgba(14, 165, 233, 0.12)',
+                                    color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                }}>
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                                </div>
                                 <span style={{ flex: 1, textAlign: 'left' }}>Shared Files</span>
                                 {activePanel === 'files' && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>OPEN</span>}
                             </button>
@@ -6363,7 +7113,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 togglePanel('notes')
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6371,7 +7121,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '1rem' }}>📝</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(234, 179, 8, 0.12)',
+                                color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            </div>
                             <span style={{ flex: 1, textAlign: 'left' }}>Meeting Notes</span>
                             {activePanel === 'notes' && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>OPEN</span>}
                         </button>
@@ -6383,7 +7139,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 handleTogglePiP()
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6391,7 +7147,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '1rem' }}>🔲</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(99, 102, 241, 0.12)',
+                                color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><rect x="13" y="11" width="7" height="6" rx="1.5" fill="currentColor" opacity="0.4"/></svg>
+                            </div>
                             <span style={{ flex: 1, textAlign: 'left' }}>Picture-in-Picture</span>
                             {isPiPActive && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>ACTIVE</span>}
                         </button>
@@ -6403,13 +7165,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 setLowBandwidthMode(!lowBandwidthMode)
                                 addToast(
                                     !lowBandwidthMode
-                                        ? '⚡ Low-Bandwidth Mode active: Video decoding paused to save ~85% data.'
-                                        : '⚡ Low-Bandwidth Mode disabled: Full video stream restored.',
+                                        ? 'Low-Bandwidth Mode active: Video decoding paused to save ~85% data.'
+                                        : 'Low-Bandwidth Mode disabled: Full video stream restored.',
                                     'info'
                                 )
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6417,7 +7179,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '1rem', color: lowBandwidthMode ? '#34d399' : '#fff' }}>⚡</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: lowBandwidthMode ? 'rgba(34, 197, 94, 0.18)' : 'rgba(148, 163, 184, 0.1)',
+                                color: lowBandwidthMode ? '#34d399' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                            </div>
                             <span style={{ flex: 1, textAlign: 'left' }}>Data Saver Mode</span>
                             <span style={{ fontSize: '0.7rem', color: lowBandwidthMode ? '#34d399' : 'var(--color-text-muted)', fontWeight: 600 }}>
                                 {lowBandwidthMode ? 'ON' : 'OFF'}
@@ -6431,7 +7199,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 setIsLayoutModalOpen(true)
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6439,7 +7207,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '1rem' }}>📐</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(59, 130, 246, 0.12)',
+                                color: '#60a5fa', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                            </div>
                             <span style={{ flex: 1, textAlign: 'left' }}>Change Layout</span>
                             <span style={{ fontSize: '0.6875rem', color: '#60a5fa', fontWeight: 700, textTransform: 'uppercase', background: 'rgba(59,130,246,0.15)', padding: '2px 6px', borderRadius: 4 }}>
                                 {layoutMode}
@@ -6452,12 +7226,12 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 setShowMoreMenu(false)
                                 setIsStudioLightingEnabled(prev => {
                                     const next = !prev
-                                    addToast(next ? '💡 Studio soft lighting enabled' : 'Studio lighting disabled', 'info')
+                                    addToast(next ? 'Studio soft lighting enabled' : 'Studio lighting disabled', 'info')
                                     return next
                                 })
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6465,7 +7239,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '1rem', color: isStudioLightingEnabled ? '#fbbf24' : '#fff' }}>💡</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: isStudioLightingEnabled ? 'rgba(251, 191, 36, 0.18)' : 'rgba(148, 163, 184, 0.1)',
+                                color: isStudioLightingEnabled ? '#fbbf24' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                            </div>
                             <span style={{ flex: 1, textAlign: 'left' }}>Studio Soft Lighting</span>
                             <span style={{ fontSize: '0.7rem', color: isStudioLightingEnabled ? '#fbbf24' : 'var(--color-text-muted)', fontWeight: 600 }}>
                                 {isStudioLightingEnabled ? 'ON' : 'OFF'}
@@ -6476,10 +7256,19 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         <button
                             onClick={() => {
                                 setShowMoreMenu(false)
+                                if (!canAccessRTMP) {
+                                    setUpgradeModalFeature({
+                                        title: 'RTMP Live Streaming Studio',
+                                        requiredPlan: 'Enterprise Tier',
+                                        icon: <IconRocket size={20} color="#c084fc" />,
+                                        description: 'Streaming live broadcast video to YouTube, Facebook, Twitch, or external CDN endpoints requires the Enterprise tier.'
+                                    })
+                                    return
+                                }
                                 setShowLiveStreamModal(true)
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: isLiveStreaming ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
                                 border: isLiveStreaming ? '1px solid rgba(239, 68, 68, 0.3)' : 'none',
                                 borderRadius: '10px',
@@ -6494,29 +7283,52 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = isLiveStreaming ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = isLiveStreaming ? 'rgba(239, 68, 68, 0.15)' : 'transparent'}
                         >
-                            <span style={{ fontSize: '1rem' }}>🔴</span>
-                            <span style={{ flex: 1, textAlign: 'left' }}>RTMP Live Streaming Studio</span>
-                            <span style={{
-                                fontSize: '0.6875rem',
-                                color: isLiveStreaming ? '#ef4444' : '#818cf8',
-                                fontWeight: 700,
-                                textTransform: 'uppercase',
-                                background: isLiveStreaming ? 'rgba(239,68,68,0.2)' : 'rgba(99,102,241,0.15)',
-                                padding: '2px 6px',
-                                borderRadius: 4
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: isLiveStreaming ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.12)',
+                                color: '#f87171', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
                             }}>
-                                {isLiveStreaming ? 'LIVE' : 'SETUP'}
-                            </span>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.48"/><path d="M7.76 7.76a6 6 0 0 0 0 8.48"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left', opacity: canAccessRTMP ? 1 : 0.85 }}>RTMP Live Streaming Studio</span>
+                            {canAccessRTMP ? (
+                                <span style={{
+                                    fontSize: '0.6875rem',
+                                    color: isLiveStreaming ? '#ef4444' : '#818cf8',
+                                    fontWeight: 700,
+                                    textTransform: 'uppercase',
+                                    background: isLiveStreaming ? 'rgba(239,68,68,0.2)' : 'rgba(99,102,241,0.15)',
+                                    padding: '2px 6px',
+                                    borderRadius: 4
+                                }}>
+                                    {isLiveStreaming ? 'LIVE' : 'SETUP'}
+                                </span>
+                            ) : (
+                                <span style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 800,
+                                    background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+                                    color: '#fff',
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    letterSpacing: '0.04em',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3
+                                }}>
+                                    <IconLock size={9} /> ENTERPRISE
+                                </span>
+                            )}
                         </button>
 
-                        {/* Export Attendance CSV */}
+                        {/* Meeting Attendance & Participation Report */}
                         <button
                             onClick={() => {
                                 setShowMoreMenu(false)
-                                exportAttendanceCSV()
+                                setShowAttendanceModal(true)
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6524,8 +7336,25 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '1rem' }}>📊</span>
-                            <span style={{ flex: 1, textAlign: 'left' }}>Export Attendance (CSV)</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(99, 102, 241, 0.12)',
+                                color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left' }}>Attendance &amp; Participation</span>
+                            <span style={{
+                                fontSize: '0.625rem',
+                                fontWeight: 800,
+                                background: 'rgba(99, 102, 241, 0.2)',
+                                color: '#818cf8',
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                letterSpacing: '0.02em'
+                            }}>
+                                REPORT
+                            </span>
                         </button>
 
                         {/* Visual Effects & Virtual Backgrounds */}
@@ -6535,7 +7364,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 setShowVirtualBgModal(true)
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6543,7 +7372,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '1rem' }}>🖼️</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(168, 85, 247, 0.12)',
+                                color: '#c084fc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                            </div>
                             <span style={{ flex: 1, textAlign: 'left' }}>Apply Visual Effects</span>
                             {virtualBgPreset !== 'none' && (
                                 <span style={{ fontSize: '0.6875rem', color: '#818cf8', fontWeight: 700, background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: 4 }}>
@@ -6561,7 +7396,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 setShowDeviceSettings(true)
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6569,8 +7404,14 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '1rem' }}>⚙️</span>
-                            <span style={{ flex: 1, textAlign: 'left' }}>Audio & Video Settings</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(148, 163, 184, 0.1)',
+                                color: '#cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left' }}>Audio &amp; Video Settings</span>
                         </button>
 
                         {/* Shortcuts */}
@@ -6580,7 +7421,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 setShowShortcuts(prev => !prev)
                             }}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px',
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
                                 background: 'transparent', border: 'none', borderRadius: '10px',
                                 color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
@@ -6588,8 +7429,45 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <span style={{ fontSize: '0.9rem', fontWeight: 800, background: 'rgba(255,255,255,0.1)', width: 20, height: 20, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>?</span>
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(148, 163, 184, 0.1)',
+                                color: '#cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="7" y1="16" x2="17" y2="16"/></svg>
+                            </div>
                             <span style={{ flex: 1, textAlign: 'left' }}>Keyboard Shortcuts</span>
+                        </button>
+
+                        <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
+
+                        {/* Leave Meeting item */}
+                        <button
+                            onClick={() => {
+                                setShowMoreMenu(false)
+                                if (isLocalHost) {
+                                    setShowEndMeetingModal(true)
+                                } else {
+                                    handleExitMeeting()
+                                }
+                            }}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                                background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '10px',
+                                color: '#f87171', fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
+                        >
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(239, 68, 68, 0.2)',
+                                color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <IconPhoneOff size={15} color="#ef4444" />
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left' }}>{isLocalHost ? 'End / Leave Meeting' : 'Leave Meeting'}</span>
                         </button>
                     </div>
                 )
@@ -6616,7 +7494,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     boxShadow: isMuted ? '0 4px 16px rgba(239, 68, 68, 0.35)' : '0 4px 16px rgba(34, 197, 94, 0.35)',
                     whiteSpace: 'nowrap'
                 }}>
-                    <span style={{ fontSize: '0.9rem', lineHeight: 1 }}>{isMuted ? '🔇' : '🎙️'}</span>
+                    {isMuted ? <IconMicOff size={13} color="#fff" /> : <IconMic size={13} color="#fff" />}
                     <span>{isMuted ? 'Microphone muted' : 'Microphone unmuted'}</span>
                 </div>
             )}
@@ -6629,11 +7507,32 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     setShowEndMeetingModal(false)
                     handleExitMeeting()
                 }}
-                onEndForAll={() => {
+                onEndForAll={(sendSummaryEmail) => {
                     setShowEndMeetingModal(false)
+                    if (sendSummaryEmail) {
+                        fetch(`${API_BASE}/api/meeting/${meetingId || meetingInput.trim()}/dispatch-summary-email`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token || initialToken}`
+                            },
+                            body: JSON.stringify({
+                                duration: timerStr,
+                                attendees: [
+                                    { name: `${myDisplayName} (Host)` },
+                                    ...participants.map(p => ({ name: getUserDisplayName(p) }))
+                                ]
+                            })
+                        }).catch(e => console.error('[dispatchSummaryEmail] error:', e))
+                        addToast('Executive summary email queued for dispatch!', 'success')
+                    }
                     setMeetingInput('')
                     socket?.emit('meeting:end-all', { meetingId: meetingId || meetingInput.trim() })
                     handleExitMeeting()
+                }}
+                onDownloadAttendance={() => {
+                    exportAttendanceCSV()
+                    addToast('Attendance sheet exported successfully!', 'success')
                 }}
             />
 
@@ -6646,6 +7545,182 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 isLocalMuted={isMuted}
                 onTranscriptUpdate={(newTranscripts) => setTranscripts(newTranscripts)}
             />
+
+            {/* ── Virtual Green Room: Backstage Banner (shown to backstage user) ── */}
+            {isCurrentUserBackstage && (
+                <div style={{
+                    position: 'absolute',
+                    top: 16,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 200,
+                    background: 'linear-gradient(135deg, rgba(6,78,59,0.97), rgba(4,120,87,0.93))',
+                    border: '1.5px solid rgba(52,211,153,0.7)',
+                    borderRadius: 14,
+                    padding: '10px 22px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    backdropFilter: 'blur(20px)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.6), 0 0 24px rgba(52,211,153,0.25)',
+                    maxWidth: '90vw'
+                }}>
+                    <span style={{ fontSize: '1.2rem' }}>🎭</span>
+                    <div>
+                        <p style={{ margin: 0, fontWeight: 800, fontSize: '0.85rem', color: '#34d399', letterSpacing: '0.02em' }}>
+                            You are Backstage (Green Room)
+                        </p>
+                        <p style={{ margin: 0, fontSize: '0.72rem', color: 'rgba(167,243,208,0.85)', lineHeight: 1.4 }}>
+                            Audience cannot see or hear your stream — you are in the private green room
+                        </p>
+                    </div>
+                    <span style={{
+                        marginLeft: 8, padding: '3px 10px',
+                        background: 'rgba(52,211,153,0.2)',
+                        border: '1px solid rgba(52,211,153,0.5)',
+                        borderRadius: 6, fontSize: '0.65rem',
+                        color: '#6ee7b7', fontWeight: 700, letterSpacing: '0.06em',
+                        textTransform: 'uppercase', whiteSpace: 'nowrap'
+                    }}>
+                        🔴 OFF AIR
+                    </span>
+                </div>
+            )}
+
+            {/* ── Virtual Green Room: Host "Go Live" Broadcast Switch ── */}
+            {isLocalHost && canUseBackstage && backstageUserIds.length > 0 && (
+                <div style={{
+                    position: 'absolute',
+                    top: 16,
+                    right: 20,
+                    zIndex: 200,
+                    background: 'rgba(15,17,23,0.95)',
+                    border: '1px solid rgba(52,211,153,0.4)',
+                    borderRadius: 12,
+                    padding: '10px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    backdropFilter: 'blur(16px)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                    minWidth: 220
+                }}>
+                    <span style={{ fontSize: '1rem' }}>🎬</span>
+                    <div style={{ flex: 1 }}>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: '0.78rem', color: '#e2e8f0' }}>
+                            Green Room Active
+                        </p>
+                        <p style={{ margin: 0, fontSize: '0.68rem', color: 'rgba(255,255,255,0.5)' }}>
+                            {backstageUserIds.length} backstage presenter{backstageUserIds.length > 1 ? 's' : ''}
+                        </p>
+                    </div>
+                    <button
+                        onClick={() => {
+                            setIsGoingLive(true)
+                            // Bring all backstage users to stage
+                            backstageUserIds.forEach(uid => {
+                                socket?.emit(SocketEvents.STAGE_STATUS_CHANGE, {
+                                    meetingId: activeRoomKey,
+                                    targetUserId: uid,
+                                    isBackstage: false
+                                })
+                            })
+                            setTimeout(() => setIsGoingLive(false), 1500)
+                        }}
+                        disabled={isGoingLive}
+                        style={{
+                            background: isGoingLive
+                                ? 'rgba(239,68,68,0.4)'
+                                : 'linear-gradient(135deg, #ef4444, #dc2626)',
+                            border: 'none', borderRadius: 8,
+                            padding: '6px 14px', color: '#fff',
+                            fontWeight: 800, fontSize: '0.75rem',
+                            cursor: isGoingLive ? 'default' : 'pointer',
+                            letterSpacing: '0.04em',
+                            display: 'flex', alignItems: 'center', gap: 5
+                        }}
+                    >
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff', display: 'inline-block', animation: isGoingLive ? 'none' : 'agy-pulse 1.2s ease infinite' }} />
+                        {isGoingLive ? 'Going Live...' : 'Go Live'}
+                    </button>
+                </div>
+            )}
+
+            {/* Late-Joiner AI "Catch Me Up" Floating Prompt (Teams / Zoom Copilot) */}
+            {showCatchUpPrompt && !showCatchUpModal && (
+                <div style={{
+                    position: 'absolute',
+                    top: 72,
+                    right: 20,
+                    zIndex: 95,
+                    background: 'rgba(18, 19, 26, 0.95)',
+                    backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
+                    border: '1px solid rgba(168, 85, 247, 0.45)',
+                    borderRadius: 'var(--radius-lg, 12px)',
+                    padding: '10px 16px',
+                    boxShadow: '0 8px 30px rgba(0,0,0,0.6), 0 0 20px rgba(168, 85, 247, 0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 8,
+                            background: 'rgba(168, 85, 247, 0.25)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#c084fc',
+                            flexShrink: 0
+                        }}>
+                            <IconSparkles size={16} />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>
+                                Joined ~{joinedMinutesLate}m in
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: '#d8b4fe' }}>
+                                Get a quick recap with AI Copilot
+                            </div>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => { setShowCatchUpModal(true); setShowCatchUpPrompt(false); }}
+                        className="btn btn-primary"
+                        style={{
+                            padding: '5px 12px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
+                            borderRadius: 8
+                        }}
+                    >
+                        Catch Me Up
+                    </button>
+                    <button
+                        onClick={() => setShowCatchUpPrompt(false)}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                    >
+                        <IconX size={14} />
+                    </button>
+                </div>
+            )}
+
+            {/* Late-Joiner AI "Catch Me Up" Modal */}
+            {showCatchUpModal && (
+                <LateJoinerCatchUpModal
+                    meetingTitle={meetingInfo?.title || `Session ${meetingId || meetingInput}`}
+                    meetingId={meetingId || meetingInput}
+                    token={token || initialToken}
+                    joinedMinutesLate={joinedMinutesLate}
+                    transcripts={transcripts}
+                    chatMessages={messages.map(m => ({ sender: m.senderName || 'Participant', text: m.message }))}
+                    onClose={() => setShowCatchUpModal(false)}
+                />
+            )}
 
             {/* Collaborative Whiteboard Canvas */}
             <MeetingWhiteboard
@@ -6794,29 +7869,38 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 </div>
             )}
 
-            {/* Network Offline / Reconnection Banner */}
-            {isNetworkOffline && (
+            {/* Network Offline / Reconnection Banner (Unified Single Source of Truth) */}
+            {(isNetworkOffline || networkStatus === 'offline' || networkStatus === 'reconnecting' || isReconnecting) && (
                 <div style={{
                     position: 'fixed',
                     top: 66,
                     left: '50%',
                     transform: 'translateX(-50%)',
                     zIndex: 10002,
-                    background: 'rgba(239, 68, 68, 0.95)',
+                    background: 'rgba(239, 68, 68, 0.96)',
                     backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
                     color: '#fff',
-                    padding: '8px 24px',
+                    padding: '6px 18px',
                     borderRadius: 30,
                     fontSize: '0.8125rem',
                     fontWeight: 600,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 12,
-                    boxShadow: '0 8px 32px rgba(239, 68, 68, 0.4)',
-                    border: '1px solid rgba(255,255,255,0.2)'
+                    gap: 10,
+                    boxShadow: '0 8px 32px rgba(239, 68, 68, 0.45)',
+                    border: '1px solid rgba(255,255,255,0.25)',
+                    whiteSpace: 'nowrap'
                 }}>
                     <span className="spinner-sm" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                    <span>⚠️ Network connection lost. Attempting to reconnect...</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <IconInfo size={15} color="#fff" />
+                        <span>
+                            {isNetworkOffline || networkStatus === 'offline'
+                                ? 'Network offline. Re-establishing connection…'
+                                : 'Connection interrupted. Auto-reconnecting call…'}
+                        </span>
+                    </span>
                     <button
                         onClick={() => {
                             if (socket) {
@@ -6835,7 +7919,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             padding: '3px 12px',
                             fontSize: '0.75rem',
                             fontWeight: 700,
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            transition: 'opacity 0.15s ease'
                         }}
                     >
                         Retry Now
@@ -6844,7 +7929,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             )}
 
             {/* Connection Restored Success Banner */}
-            {showRestoredNotice && !isNetworkOffline && (
+            {showRestoredNotice && !(isNetworkOffline || networkStatus === 'offline' || networkStatus === 'reconnecting' || isReconnecting) && (
                 <div style={{
                     position: 'fixed',
                     top: 66,
@@ -6864,7 +7949,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     boxShadow: '0 8px 32px rgba(34, 197, 94, 0.4)',
                     border: '1px solid rgba(255,255,255,0.2)'
                 }}>
-                    <span>✅ Connection restored</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><IconCheck size={14} color="#34d399" /> Connection restored</span>
                 </div>
             )}
 
@@ -6888,7 +7973,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
                     border: '1px solid rgba(255,255,255,0.2)'
                 }}>
-                    <span>⚡</span>
+                    <IconZap size={14} color="#ffffff" />
                     <span>Data Saver: Active (Incoming video paused)</span>
                 </div>
             )}
@@ -6961,13 +8046,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 style={{
                                     background: 'rgba(255,255,255,0.08)',
                                     border: '1px solid rgba(255,255,255,0.14)',
-                                    fontSize: '1.1rem',
+                                    fontSize: '1rem',
                                     cursor: 'pointer',
-                                    padding: '4px 8px',
+                                    padding: '5px 9px',
                                     borderRadius: '16px',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 4,
+                                    gap: 5,
                                     color: '#fff',
                                     transition: 'all 0.15s ease'
                                 }}
@@ -6975,7 +8060,12 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)' }}
                                 onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
                             >
-                                <span>👏</span>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 11V6a2 2 0 0 0-4 0v5" />
+                                    <path d="M14 10V4a2 2 0 0 0-4 0v7" />
+                                    <path d="M10 10.5V6a2 2 0 0 0-4 0v8" />
+                                    <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.7-2.3L3.6 17a2 2 0 0 1 3-2.6L8 16" />
+                                </svg>
                                 <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#93c5fd' }}>Clap</span>
                             </button>
 
@@ -6988,13 +8078,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 style={{
                                     background: 'rgba(255,255,255,0.08)',
                                     border: '1px solid rgba(255,255,255,0.14)',
-                                    fontSize: '1.1rem',
+                                    fontSize: '1rem',
                                     cursor: 'pointer',
-                                    padding: '4px 8px',
+                                    padding: '5px 9px',
                                     borderRadius: '16px',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 4,
+                                    gap: 5,
                                     color: '#fff',
                                     transition: 'all 0.15s ease'
                                 }}
@@ -7002,7 +8092,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)' }}
                                 onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
                             >
-                                <span>🎉</span>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbcfe8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                </svg>
                                 <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#fbcfe8' }}>Cheer</span>
                             </button>
 
@@ -7015,13 +8107,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 style={{
                                     background: 'rgba(255,255,255,0.08)',
                                     border: '1px solid rgba(255,255,255,0.14)',
-                                    fontSize: '1.1rem',
+                                    fontSize: '1rem',
                                     cursor: 'pointer',
-                                    padding: '4px 8px',
+                                    padding: '5px 9px',
                                     borderRadius: '16px',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 4,
+                                    gap: 5,
                                     color: '#fff',
                                     transition: 'all 0.15s ease'
                                 }}
@@ -7029,7 +8121,12 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)' }}
                                 onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
                             >
-                                <span>🥁</span>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fef08a" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <ellipse cx="12" cy="8" rx="8" ry="4" />
+                                    <path d="M4 8v8c0 2.2 3.6 4 8 4s8-1.8 8-4V8" />
+                                    <line x1="8" y1="2" x2="10" y2="8" />
+                                    <line x1="16" y1="2" x2="14" y2="8" />
+                                </svg>
                                 <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#fef08a' }}>Roll</span>
                             </button>
 
@@ -7042,13 +8139,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 style={{
                                     background: 'rgba(255,255,255,0.08)',
                                     border: '1px solid rgba(255,255,255,0.14)',
-                                    fontSize: '1.1rem',
+                                    fontSize: '1rem',
                                     cursor: 'pointer',
-                                    padding: '4px 8px',
+                                    padding: '5px 9px',
                                     borderRadius: '16px',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 4,
+                                    gap: 5,
                                     color: '#fff',
                                     transition: 'all 0.15s ease'
                                 }}
@@ -7056,7 +8153,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)' }}
                                 onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
                             >
-                                <span>🔔</span>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fed7aa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                                </svg>
                                 <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#fed7aa' }}>Bell</span>
                             </button>
                         </div>
@@ -7066,8 +8166,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
             {/* Real-time Floating Reactions Container (Zoom Style) */}
             <div style={{
-                position: 'fixed', bottom: 100, left: 0, right: 0, height: 480,
-                pointerEvents: 'none', zIndex: 9999, overflow: 'hidden'
+                position: 'fixed', inset: 0,
+                pointerEvents: 'none', zIndex: 99999, overflow: 'hidden'
             }}>
                 {floatingReactions.map(r => (
                     <div
@@ -7126,7 +8226,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             background: 'rgba(255, 255, 255, 0.02)'
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ fontSize: '1.4rem' }}>📋</span>
+                                <IconFileText size={22} color="#818cf8" />
                                 <div>
                                     <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 700, color: '#fff' }}>
                                         AI Minutes of Meeting (MoM) & Action Items
@@ -7230,7 +8330,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     className="btn btn-secondary"
                                     style={{ padding: '8px 14px', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 6 }}
                                 >
-                                    <span>📋</span> Copy Text
+                                    <IconCopy size={14} /> Copy Text
                                 </button>
                                 <button
                                     onClick={() => {
@@ -7304,7 +8404,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             fontSize: '0.75rem',
                             fontWeight: 'bold'
                         }}>
-                            {t.type === 'success' ? '✓' : t.type === 'warning' ? '!' : 'i'}
+                            {t.type === 'success' ? <IconCheck size={12} strokeWidth={2.5} /> : t.type === 'warning' ? '!' : 'i'}
                         </span>
                         <div style={{ flex: 1, lineHeight: 1.4 }}>{t.message}</div>
                     </div>
@@ -7370,13 +8470,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     {guest.guestName}
                                 </span>
                                 {guest.email && (
-                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', display: 'block', marginTop: 2 }}>
-                                        ✉️ {guest.email}
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                                        <IconMail size={12} color="var(--color-text-secondary)" /> {guest.email}
                                     </span>
                                 )}
                                 {guest.company && (
-                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'block', marginTop: 2 }}>
-                                        🏢 {guest.company}
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                                        <IconBuilding size={12} color="var(--color-text-muted)" /> {guest.company}
                                     </span>
                                 )}
                             </div>
@@ -7524,7 +8624,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             className="btn"
                                             style={{ background: '#25d366', color: '#fff', padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', fontWeight: 700, textDecoration: 'none' }}
                                         >
-                                            💬 Share on WhatsApp
+                                            <IconMessage size={14} color="#fff" /> Share on WhatsApp
                                         </a>
 
                                         <a
@@ -7534,7 +8634,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             className="btn btn-secondary"
                                             style={{ padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: '0.8125rem', fontWeight: 600, textDecoration: 'none' }}
                                         >
-                                            📅 Google Calendar
+                                            <IconCalendar size={14} /> Google Calendar
                                         </a>
 
                                         <a
@@ -7544,7 +8644,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             className="btn btn-secondary"
                                             style={{ padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: '0.8125rem', fontWeight: 600, textDecoration: 'none' }}
                                         >
-                                            📅 Outlook Calendar
+                                            <IconCalendar size={14} /> Outlook Calendar
                                         </a>
 
                                         <button
@@ -7553,7 +8653,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             className="btn btn-secondary"
                                             style={{ padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}
                                         >
-                                            📥 Download iCal (.ics)
+                                            <IconDownload size={14} /> Download iCal (.ics)
                                         </button>
                                     </div>
                                 </div>
@@ -7607,6 +8707,340 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 }}
                 meetingTitle={meetingInfo?.title || meetingId || 'Enterprise Conference Session'}
             />
+
+            {/* Feature Plan Upgrade Restriction Modal */}
+            {upgradeModalFeature && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 99999,
+                    background: 'rgba(0, 0, 0, 0.78)',
+                    backdropFilter: 'blur(10px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 20
+                }}>
+                    <div style={{
+                        maxWidth: 480,
+                        width: '100%',
+                        background: '#0d111d',
+                        border: '1px solid rgba(251, 191, 36, 0.35)',
+                        borderRadius: 20,
+                        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(245, 158, 11, 0.15)',
+                        overflow: 'hidden',
+                        textAlign: 'center',
+                        padding: '28px 24px',
+                        animation: 'jts-slide-up 0.2s ease-out'
+                    }}>
+                        <div style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(217, 119, 6, 0.1))',
+                            border: '1px solid rgba(245, 158, 11, 0.4)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.9rem',
+                            margin: '0 auto 16px',
+                            boxShadow: '0 0 20px rgba(245, 158, 11, 0.2)'
+                        }}>
+                            {upgradeModalFeature.icon}
+                        </div>
+
+                        <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            padding: '3px 12px',
+                            borderRadius: 9999,
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            color: '#fbbf24',
+                            marginBottom: 12
+                        }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><IconLock size={12} color="#fbbf24" /> Locked on Free Plan • Requires {upgradeModalFeature.requiredPlan}</span>
+                        </div>
+
+                        <h3 style={{ margin: '0 0 10px', fontSize: '1.25rem', fontWeight: 800, color: '#fff' }}>
+                            {upgradeModalFeature.title}
+                        </h3>
+
+                        <p style={{ margin: '0 0 20px', fontSize: '0.84rem', color: '#94a3b8', lineHeight: 1.6 }}>
+                            {upgradeModalFeature.description}
+                        </p>
+
+                        <div style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            borderRadius: 12,
+                            padding: '14px 18px',
+                            marginBottom: 20,
+                            textAlign: 'left'
+                        }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Included with upgraded plan:
+                            </span>
+                            <ul style={{ margin: '6px 0 0', padding: '0 0 0 16px', fontSize: '0.76rem', color: '#cbd5e1', lineHeight: 1.65 }}>
+                                <li>Cloud MP4 Recording &amp; Auto-Archive Vault</li>
+                                <li>AI Meeting Minutes (MoM) &amp; Action Item Tracking</li>
+                                <li>Multi-Platform 1080p RTMP Live Broadcast Studio</li>
+                                <li>Unlimited Meeting Duration &amp; Expanded Seats</li>
+                            </ul>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 10 }}>
+                            <button
+                                type="button"
+                                onClick={() => setUpgradeModalFeature(null)}
+                                style={{
+                                    flex: 1,
+                                    padding: '10px 0',
+                                    borderRadius: 8,
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    background: 'transparent',
+                                    color: '#94a3b8',
+                                    fontSize: '0.82rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Maybe Later
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setUpgradeModalFeature(null)
+                                    if (onUpgradePlanRequest) {
+                                        onUpgradePlanRequest()
+                                    } else {
+                                        window.location.hash = '#organization'
+                                    }
+                                }}
+                                style={{
+                                    flex: 1.4,
+                                    padding: '10px 0',
+                                    borderRadius: 8,
+                                    border: 'none',
+                                    background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                                    color: '#fff',
+                                    fontSize: '0.82rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+                                }}
+                            >
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><IconZap size={14} /> Upgrade Workspace Plan</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Free Plan 45-Minute Time Limit Reached Modal */}
+            {isTimeLimitExpired && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 100020,
+                    background: 'rgba(5, 7, 13, 0.88)',
+                    backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 24
+                }}>
+                    <div className="glass-card anim-scale-in" style={{
+                        maxWidth: 480,
+                        width: '100%',
+                        background: 'linear-gradient(180deg, #1a1d2e 0%, #0f111a 100%)',
+                        border: '1px solid rgba(239, 68, 68, 0.45)',
+                        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.85), 0 0 35px rgba(239, 68, 68, 0.25)',
+                        borderRadius: 'var(--radius-xl)',
+                        padding: 32,
+                        textAlign: 'center'
+                    }}>
+                        <div style={{
+                            width: 68,
+                            height: 68,
+                            borderRadius: '50%',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1.5px solid rgba(239, 68, 68, 0.35)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto 18px',
+                            boxShadow: '0 0 25px rgba(239, 68, 68, 0.25)'
+                        }}>
+                            <IconClock size={32} color="#ef4444" />
+                        </div>
+                        <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#fff', margin: '0 0 10px' }}>
+                            Free Plan Time Limit Reached
+                        </h2>
+                        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', lineHeight: 1.6, margin: '0 0 24px' }}>
+                            Your meeting has reached the <strong>45-minute limit</strong> included in the Starter Free plan. Upgrade your workspace to unlock unlimited 24/7 meetings, AI summaries, and cloud recordings.
+                        </p>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (onUpgradePlanRequest) {
+                                        onUpgradePlanRequest()
+                                    } else {
+                                        window.location.hash = '#organization'
+                                    }
+                                }}
+                                style={{
+                                    width: '100%',
+                                    padding: '12px 20px',
+                                    borderRadius: 'var(--radius-md)',
+                                    border: 'none',
+                                    background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                                    color: '#fff',
+                                    fontSize: '0.92rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 8,
+                                    boxShadow: '0 4px 16px rgba(99, 102, 241, 0.4)'
+                                }}
+                            >
+                                <IconZap size={15} color="#fff" />
+                                <span>Upgrade to Growth Pro (Unlimited)</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (onLeave) onLeave()
+                                    else window.location.href = '/'
+                                }}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 20px',
+                                    borderRadius: 'var(--radius-md)',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    color: 'var(--color-text-secondary)',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Exit Meeting
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Meeting Attendance & Participation Audit Modal */}
+            <MeetingAttendanceModal
+                isOpen={showAttendanceModal}
+                onClose={() => setShowAttendanceModal(false)}
+                meetingId={meetingId || meetingInput}
+                meetingTitle={meetingInfo?.title || 'Meeting Session'}
+                totalDurationSeconds={meetingSecondsElapsed}
+                totalDurationFormatted={timerStr}
+                attendanceRecords={attendanceRecords}
+                joinTimeMap={joinTimeMapRef.current}
+                onExportCSV={exportAttendanceCSV}
+            />
+
+            {/* Takeover Presentation Confirmation Dialog (Google Meet Style) */}
+            {showTakeoverModal && createPortal(
+                <div
+                    onClick={(e) => { if (e.target === e.currentTarget) setShowTakeoverModal(false) }}
+                    style={{
+                        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+                        background: 'rgba(0, 0, 0, 0.75)', backdropFilter: 'blur(8px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        zIndex: 9999999, padding: 16, boxSizing: 'border-box'
+                    }}
+                >
+                    <div className="glass-card anim-scale-in" style={{
+                        maxWidth: 440, width: '100%', padding: 26, borderRadius: 18,
+                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                        display: 'flex', flexDirection: 'column', gap: 18
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                            <div style={{
+                                width: 44, height: 44, borderRadius: '50%',
+                                background: 'rgba(99, 102, 241, 0.15)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                border: '1px solid rgba(99, 102, 241, 0.3)', flexShrink: 0
+                            }}>
+                                <IconMonitor size={22} color="#818cf8" />
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color: '#fff' }}>
+                                    Someone is already presenting
+                                </h3>
+                                <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', margin: '3px 0 0' }}>
+                                    Multi-screen presentation
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            padding: '14px 16px',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255, 255, 255, 0.06)',
+                            fontSize: '0.875rem',
+                            color: '#e2e8f0',
+                            lineHeight: 1.5
+                        }}>
+                            <strong style={{ color: '#818cf8' }}>{takeoverPresenterId ? getUserDisplayName(takeoverPresenterId) : 'Another participant'}</strong> is currently sharing their screen.
+                            <div style={{ marginTop: 8, fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
+                                Starting your screen share will keep both presentations live, and attendees can switch between screens using the top Presenter Switcher bar.
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowTakeoverModal(false)
+                                    setTakeoverPresenterId(null)
+                                }}
+                                className="btn btn-secondary"
+                                style={{ fontSize: '0.82rem', padding: '8px 18px' }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowTakeoverModal(false)
+                                    setTakeoverPresenterId(null)
+                                    startScreenShare()
+                                }}
+                                className="btn btn-primary"
+                                style={{
+                                    fontSize: '0.82rem',
+                                    fontWeight: 700,
+                                    padding: '8px 20px',
+                                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6
+                                }}
+                            >
+                                <IconMonitor size={15} />
+                                <span>Share Screen Anyway</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     )
 }

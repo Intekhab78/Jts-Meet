@@ -1,5 +1,21 @@
 import React, { useState, useEffect } from 'react'
 import { API_BASE } from '../../../config'
+import {
+    IconPlus,
+    IconCheck,
+    IconX,
+    IconRefresh,
+    IconZap,
+    IconMessage,
+    IconFolder,
+    IconPlay,
+    IconPause,
+    IconTrash,
+    IconRocket,
+    IconFlag,
+    IconVideo,
+    IconUser
+} from '../../../components/common/Icons'
 
 interface IntegrationsTabProps {
     token: string
@@ -211,7 +227,7 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                             boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
                         }}
                     >
-                        <span>➕</span>
+                        <IconPlus size={15} color="#fff" />
                         <span>Add Webhook</span>
                     </button>
                 </div>
@@ -225,9 +241,13 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                     border: '1px solid rgba(34, 197, 94, 0.3)',
                     color: '#4ade80',
                     fontSize: '0.88rem',
-                    fontWeight: 600
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
                 }}>
-                    ✓ {successMsg}
+                    <IconCheck size={15} color="#4ade80" />
+                    <span>{successMsg}</span>
                 </div>
             )}
 
@@ -256,10 +276,9 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                 background: '#4A154B',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '1.4rem'
+                                justifyContent: 'center'
                             }}>
-                                💬
+                                <IconMessage size={22} color="#fff" />
                             </div>
                             <div>
                                 <h4 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#fff', fontWeight: 700 }}>Slack Incoming Webhook</h4>
@@ -304,10 +323,9 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                 background: '#5865F2',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '1.4rem'
+                                justifyContent: 'center'
                             }}>
-                                🎮
+                                <IconMessage size={22} color="#fff" />
                             </div>
                             <div>
                                 <h4 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#fff', fontWeight: 700 }}>Discord Webhook</h4>
@@ -352,10 +370,9 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                 background: '#10b981',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '1.4rem'
+                                justifyContent: 'center'
                             }}>
-                                📁
+                                <IconFolder size={22} color="#fff" />
                             </div>
                             <div>
                                 <h4 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#fff', fontWeight: 700 }}>Google Drive Sync</h4>
@@ -400,10 +417,9 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                 background: '#6366f1',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '1.4rem'
+                                justifyContent: 'center'
                             }}>
-                                ⚡
+                                <IconZap size={22} color="#fff" />
                             </div>
                             <div>
                                 <h4 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#fff', fontWeight: 700 }}>Custom REST Webhook</h4>
@@ -451,10 +467,14 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                             padding: '4px 10px',
                             color: '#94a3b8',
                             fontSize: '0.78rem',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 5
                         }}
                     >
-                        🔄 Refresh
+                        <IconRefresh size={12} />
+                        <span>Refresh</span>
                     </button>
                 </div>
 
@@ -462,7 +482,19 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                     <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: '20px 0' }}>Loading integrations...</p>
                 ) : integrations.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '36px 20px', color: '#94a3b8' }}>
-                        <div style={{ fontSize: '2rem', marginBottom: 8 }}>🔌</div>
+                        <div style={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: 12,
+                            background: 'rgba(99, 102, 241, 0.1)',
+                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto 12px'
+                        }}>
+                            <IconZap size={24} color="#818cf8" />
+                        </div>
                         <p style={{ margin: 0, fontSize: '0.9rem' }}>No webhook endpoints configured yet.</p>
                         <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#64748b' }}>Connect Slack, Discord, or a custom webhook endpoint above.</p>
                     </div>
@@ -488,9 +520,23 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                 >
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                            <span style={{ fontSize: '1.3rem' }}>
-                                                {item.type === 'slack' ? '💬' : item.type === 'discord' ? '🎮' : item.type === 'googledrive' ? '📁' : '⚡'}
-                                            </span>
+                                            <div style={{
+                                                width: 32,
+                                                height: 32,
+                                                borderRadius: 8,
+                                                background: item.type === 'slack' ? '#4A154B' : item.type === 'discord' ? '#5865F2' : item.type === 'googledrive' ? '#10b981' : '#6366f1',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}>
+                                                {item.type === 'googledrive' ? (
+                                                    <IconFolder size={16} color="#fff" />
+                                                ) : item.type === 'webhook' ? (
+                                                    <IconZap size={16} color="#fff" />
+                                                ) : (
+                                                    <IconMessage size={16} color="#fff" />
+                                                )}
+                                            </div>
                                             <div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                     <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.95rem' }}>{item.name}</span>
@@ -527,10 +573,11 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                                     cursor: isTestingThis ? 'not-allowed' : 'pointer',
                                                     display: 'flex',
                                                     alignItems: 'center',
-                                                    gap: 4
+                                                    gap: 6
                                                 }}
                                             >
-                                                {isTestingThis ? '⏳ Testing...' : '⚡ Send Test Ping'}
+                                                <IconZap size={12} />
+                                                <span>{isTestingThis ? 'Testing...' : 'Send Test Ping'}</span>
                                             </button>
 
                                             <button
@@ -542,10 +589,23 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                                     borderRadius: 8,
                                                     color: '#cbd5e1',
                                                     fontSize: '0.78rem',
-                                                    cursor: 'pointer'
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 5
                                                 }}
                                             >
-                                                {item.status === 'active' ? '⏸️ Pause' : '▶️ Resume'}
+                                                {item.status === 'active' ? (
+                                                    <>
+                                                        <IconPause size={12} color="#cbd5e1" />
+                                                        <span>Pause</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <IconPlay size={12} color="#cbd5e1" />
+                                                        <span>Resume</span>
+                                                    </>
+                                                )}
                                             </button>
 
                                             <button
@@ -557,10 +617,14 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                                     borderRadius: 8,
                                                     color: '#f87171',
                                                     fontSize: '0.78rem',
-                                                    cursor: 'pointer'
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
                                                 }}
+                                                title="Delete webhook"
                                             >
-                                                🗑️
+                                                <IconTrash size={13} color="#f87171" />
                                             </button>
                                         </div>
                                     </div>
@@ -569,7 +633,7 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                         <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Events:</span>
                                         {(item.events || []).map((ev: string) => (
-                                            <span
+                                             <span
                                                 key={ev}
                                                 style={{
                                                     fontSize: '0.72rem',
@@ -602,14 +666,15 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                             justifyContent: 'space-between',
                                             alignItems: 'center'
                                         }}>
-                                            <span style={{ color: thisTestResult.success ? '#4ade80' : '#f87171' }}>
-                                                {thisTestResult.success ? '✓ Payload delivered successfully' : '✕ Delivery test failed'} (HTTP {thisTestResult.statusCode} • {thisTestResult.durationMs}ms)
+                                            <span style={{ color: thisTestResult.success ? '#4ade80' : '#f87171', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                {thisTestResult.success ? <IconCheck size={14} color="#4ade80" /> : <IconX size={14} color="#f87171" />}
+                                                <span>{thisTestResult.success ? 'Payload delivered successfully' : 'Delivery test failed'} (HTTP {thisTestResult.statusCode} • {thisTestResult.durationMs}ms)</span>
                                             </span>
                                             <button
                                                 onClick={() => setTestResult(null)}
-                                                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                                                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                                             >
-                                                ✕
+                                                <IconX size={13} color="#94a3b8" />
                                             </button>
                                         </div>
                                     )}
@@ -698,9 +763,9 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                             </h3>
                             <button
                                 onClick={() => setShowAddModal(false)}
-                                style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.3rem', cursor: 'pointer' }}
+                                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                             >
-                                ✕
+                                <IconX size={18} color="#94a3b8" />
                             </button>
                         </div>
 
@@ -781,10 +846,10 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                 </label>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                     {[
-                                        { id: 'meeting.started', label: '🚀 Meeting Started' },
-                                        { id: 'meeting.ended', label: '🏁 Meeting Ended' },
-                                        { id: 'recording.ready', label: '📹 Recording Ready' },
-                                        { id: 'participant.joined', label: '👤 Participant Joined' }
+                                        { id: 'meeting.started', label: 'Meeting Started', Icon: IconRocket, color: '#818cf8' },
+                                        { id: 'meeting.ended', label: 'Meeting Ended', Icon: IconFlag, color: '#f87171' },
+                                        { id: 'recording.ready', label: 'Recording Ready', Icon: IconVideo, color: '#fbbf24' },
+                                        { id: 'participant.joined', label: 'Participant Joined', Icon: IconUser, color: '#34d399' }
                                     ].map(item => {
                                         const isChecked = selectedEvents.includes(item.id)
                                         return (
@@ -814,6 +879,7 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                                     }}
                                                     style={{ accentColor: '#6366f1' }}
                                                 />
+                                                <item.Icon size={14} color={item.color} />
                                                 <span>{item.label}</span>
                                             </label>
                                         )

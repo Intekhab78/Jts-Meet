@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react'
 import { BACKGROUND_PRESETS, BackgroundPreset } from '../../../services/virtualBackground.service'
+import { IconSparkles, IconX, IconVideoOff, IconZap, IconPlus, IconCheck, IconInfo } from '../../../components/common/Icons'
 
 interface VirtualBackgroundModalProps {
     isOpen: boolean
@@ -104,11 +105,10 @@ export function VirtualBackgroundModal({
                                 border: '1px solid rgba(99,102,241,0.3)',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '1.25rem'
+                                justifyContent: 'center'
                             }}
                         >
-                            🖼️
+                            <IconSparkles size={22} color="#a5b4fc" />
                         </div>
                         <div>
                             <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>
@@ -132,7 +132,6 @@ export function VirtualBackgroundModal({
                             alignItems: 'center',
                             justifyContent: 'center',
                             cursor: 'pointer',
-                            fontSize: '1rem',
                             transition: 'all 0.15s ease'
                         }}
                         onMouseEnter={(e) => {
@@ -145,7 +144,7 @@ export function VirtualBackgroundModal({
                         }}
                         aria-label="Close"
                     >
-                        ✕
+                        <IconX size={15} />
                     </button>
                 </div>
 
@@ -190,7 +189,7 @@ export function VirtualBackgroundModal({
                                     color: 'var(--color-text-muted)'
                                 }}
                             >
-                                <span style={{ fontSize: '2rem' }}>📹</span>
+                                <IconVideoOff size={32} color="var(--color-text-muted)" />
                                 <span style={{ fontSize: '0.875rem' }}>Camera preview inactive or turned off</span>
                             </div>
                         )}
@@ -238,9 +237,6 @@ export function VirtualBackgroundModal({
                                 position: 'absolute',
                                 top: 12,
                                 right: 14,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
                                 background: 'rgba(99, 102, 241, 0.2)',
                                 border: '1px solid rgba(99, 102, 241, 0.4)',
                                 backdropFilter: 'blur(10px)',
@@ -250,10 +246,13 @@ export function VirtualBackgroundModal({
                                 color: '#a5b4fc',
                                 fontWeight: 700,
                                 textTransform: 'uppercase',
-                                letterSpacing: '0.04em'
+                                letterSpacing: '0.04em',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5
                             }}
                         >
-                            ⚡ MediaPipe WebGL Engine
+                            <IconZap size={12} color="#a5b4fc" /> MediaPipe WebGL Engine
                         </div>
                     </div>
 
@@ -309,7 +308,7 @@ export function VirtualBackgroundModal({
                                         color: '#818cf8'
                                     }}
                                 >
-                                    <span style={{ fontSize: '1.4rem' }}>➕</span>
+                                    <IconPlus size={22} color="#818cf8" />
                                     <span style={{ fontSize: '0.6875rem', fontWeight: 600 }}>Upload Image</span>
                                 </div>
                                 <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#fff', textAlign: 'center' }}>
@@ -365,15 +364,15 @@ export function VirtualBackgroundModal({
                                             }}
                                         >
                                             {preset.id === 'none' && (
-                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                                                    <span style={{ fontSize: '1.3rem' }}>🚫</span>
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                                                    <IconVideoOff size={20} color="var(--color-text-muted)" />
                                                     <span style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)' }}>Off</span>
                                                 </div>
                                             )}
 
                                             {preset.type === 'blur' && (
-                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                                                    <span style={{ fontSize: '1.4rem' }}>{preset.id === 'blur_light' ? '💧' : '🌊'}</span>
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                                                    <IconSparkles size={18} color="#a5b4fc" />
                                                     <span style={{ fontSize: '0.625rem', color: '#a5b4fc', fontWeight: 600 }}>
                                                         {preset.id === 'blur_light' ? '8px Soft' : '20px Deep'}
                                                     </span>
@@ -408,12 +407,10 @@ export function VirtualBackgroundModal({
                                                         display: 'flex',
                                                         alignItems: 'center',
                                                         justifyContent: 'center',
-                                                        fontSize: '0.75rem',
-                                                        fontWeight: 800,
                                                         boxShadow: '0 2px 6px rgba(0,0,0,0.5)'
                                                     }}
                                                 >
-                                                    ✓
+                                                    <IconCheck size={12} color="#ffffff" />
                                                 </div>
                                             )}
                                         </div>
@@ -455,7 +452,7 @@ export function VirtualBackgroundModal({
                             gap: 12
                         }}
                     >
-                        <span style={{ fontSize: '1.25rem' }}>💡</span>
+                        <IconInfo size={20} color="#818cf8" />
                         <div style={{ fontSize: '0.78125rem', color: '#cbd5e1', lineHeight: 1.45 }}>
                             <strong style={{ color: '#fff' }}>Crystal-Clear Guarantee:</strong> Unlike basic CSS filters that blur your entire screen, our real-time WebGL neural model separates your silhouette from your surroundings. Both your local preview and all participants on the call receive the AI composited video.
                         </div>

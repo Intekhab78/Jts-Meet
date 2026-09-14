@@ -183,4 +183,29 @@ export class ChannelChatService {
             }
         )
     }
+
+    static async togglePinMessage(messageId: string, userId: string) {
+        const message = await ChannelChat.findById(messageId)
+        if (!message || message.deleted) {
+            throw new Error('Message not found')
+        }
+
+        const isPinned = !message.pinned
+        message.pinned = isPinned
+        message.pinnedBy = isPinned ? new Types.ObjectId(userId) : null
+        message.pinnedAt = isPinned ? new Date() : null
+        await message.save()
+
+        return ChannelChat.findById(messageId)
+            .populate('senderId', 'fullName email profileImage')
+            .populate('pinnedBy', 'fullName email profileImage')
+    }
+
+    static async getPinnedMessages(channelId: string) {
+        return ChannelChat.find({ channelId, pinned: true, deleted: false })
+            .sort({ pinnedAt: -1 })
+            .populate('senderId', 'fullName email profileImage')
+            .populate('pinnedBy', 'fullName email profileImage')
+            .lean()
+    }
 }

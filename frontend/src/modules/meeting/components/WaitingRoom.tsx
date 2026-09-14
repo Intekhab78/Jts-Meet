@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { io } from 'socket.io-client'
 import { SOCKET_URL } from '../../../config'
+import { IconMic, IconMicOff, IconVideo, IconVideoOff, IconSparkles, IconUser, IconX } from '../../../components/common/Icons'
 
 interface WaitingRoomProps {
     meetingId: string
@@ -144,12 +145,39 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
         }
     }, [])
 
-    const toggleCamera = () => {
-        if (streamRef.current) {
-            const vTrack = streamRef.current.getVideoTracks()[0]
-            if (vTrack) {
-                vTrack.enabled = !vTrack.enabled
-                setIsCameraOn(vTrack.enabled)
+    const toggleCamera = async () => {
+        if (isCameraOn) {
+            // Stop all hardware video tracks completely so webcam hardware LED turns off
+            if (streamRef.current) {
+                streamRef.current.getVideoTracks().forEach(t => {
+                    try { t.stop() } catch {}
+                    streamRef.current?.removeTrack(t)
+                })
+            }
+            if (videoRef.current) {
+                videoRef.current.srcObject = null
+            }
+            setIsCameraOn(false)
+        } else {
+            try {
+                const freshStream = await navigator.mediaDevices.getUserMedia({
+                    video: selectedVideoDevice ? { deviceId: { exact: selectedVideoDevice } } : true
+                })
+                const vTrack = freshStream.getVideoTracks()[0]
+                if (vTrack && streamRef.current) {
+                    streamRef.current.getVideoTracks().forEach(t => {
+                        try { t.stop() } catch {}
+                        streamRef.current?.removeTrack(t)
+                    })
+                    streamRef.current.addTrack(vTrack)
+                    if (videoRef.current) {
+                        videoRef.current.srcObject = streamRef.current
+                        videoRef.current.play().catch(() => {})
+                    }
+                }
+                setIsCameraOn(true)
+            } catch (err) {
+                console.warn('Failed to restart camera in waiting room:', err)
             }
         }
     }
@@ -322,12 +350,11 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    fontSize: '1.1rem',
                                     transition: 'all 0.2s ease',
                                     boxShadow: !isMicOn ? '0 0 12px rgba(239, 68, 68, 0.4)' : 'none'
                                 }}
                             >
-                                {isMicOn ? '🎙️' : '🔇'}
+                                {isMicOn ? <IconMic size={18} /> : <IconMicOff size={18} />}
                             </button>
 
                             {/* Camera Toggle */}
@@ -345,12 +372,11 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    fontSize: '1.1rem',
                                     transition: 'all 0.2s ease',
                                     boxShadow: !isCameraOn ? '0 0 12px rgba(239, 68, 68, 0.4)' : 'none'
                                 }}
                             >
-                                {isCameraOn ? '📹' : '🚫'}
+                                {isCameraOn ? <IconVideo size={18} /> : <IconVideoOff size={18} />}
                             </button>
 
                             {/* Background Blur Toggle */}
@@ -368,11 +394,10 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    fontSize: '1rem',
                                     transition: 'all 0.2s ease'
                                 }}
                             >
-                                ✨
+                                <IconSparkles size={18} color={isBlurred ? '#818cf8' : '#ffffff'} />
                             </button>
                         </div>
                     </div>
@@ -479,7 +504,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                                 background: isHostOnline ? '#4ade80' : '#fbbf24',
                                 animation: 'jts-pulse-dot 1.4s infinite'
                             }} />
-                            {isHostOnline ? '🟢 Host is in the meeting' : '⏳ Waiting for Host to start...'}
+                            {isHostOnline ? 'Host is in the meeting' : 'Waiting for Host to start...'}
                         </div>
                         <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-0.02em', lineHeight: 1.3 }}>
                             {isHostOnline
@@ -515,8 +540,8 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                             <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 2 }}>
                                 Host / Organizer
                             </span>
-                            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#93c5fd' }}>
-                                👤 {hostName || 'Meeting Organizer'}
+                            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#93c5fd', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <IconUser size={14} color="#93c5fd" /> {hostName || 'Meeting Organizer'}
                             </span>
                         </div>
                     </div>
@@ -549,7 +574,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                             e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)'
                         }}
                     >
-                        ✕ Cancel Request
+                        <IconX size={15} /> Cancel Request
                     </button>
                 </div>
             </div>

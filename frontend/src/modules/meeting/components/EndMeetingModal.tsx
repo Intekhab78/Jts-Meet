@@ -1,18 +1,23 @@
 import React from 'react'
+import { IconPhoneOff, IconLogOut, IconDownload, IconMail } from '../../../components/common/Icons'
 
 interface EndMeetingModalProps {
     isOpen: boolean
     onClose: () => void
     onLeaveOnly: () => void
-    onEndForAll: () => void
+    onEndForAll: (sendSummaryEmail?: boolean) => void
+    onDownloadAttendance?: () => void
 }
 
 export const EndMeetingModal: React.FC<EndMeetingModalProps> = ({
     isOpen,
     onClose,
     onLeaveOnly,
-    onEndForAll
+    onEndForAll,
+    onDownloadAttendance
 }) => {
+    const [dispatchEmail, setDispatchEmail] = React.useState(true)
+
     if (!isOpen) return null
 
     return (
@@ -23,10 +28,12 @@ export const EndMeetingModal: React.FC<EndMeetingModalProps> = ({
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'center',
             zIndex: 99999,
-            padding: 16
+            padding: '24px 16px',
+            overflowY: 'auto',
+            boxSizing: 'border-box'
         }}>
             <div 
                 className="anim-scale-in"
@@ -41,7 +48,8 @@ export const EndMeetingModal: React.FC<EndMeetingModalProps> = ({
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    textAlign: 'center'
+                    textAlign: 'center',
+                    marginBottom: 24
                 }}
             >
                 {/* Warning / Door Icon */}
@@ -58,7 +66,7 @@ export const EndMeetingModal: React.FC<EndMeetingModalProps> = ({
                     fontSize: '1.5rem',
                     marginBottom: 16
                 }}>
-                    🚪
+                    <IconPhoneOff size={28} color="#ef4444" />
                 </div>
 
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 8 }}>
@@ -69,8 +77,57 @@ export const EndMeetingModal: React.FC<EndMeetingModalProps> = ({
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+                    {onDownloadAttendance && (
+                        <button
+                            type="button"
+                            onClick={onDownloadAttendance}
+                            style={{
+                                width: '100%',
+                                padding: '10px 16px',
+                                background: 'rgba(99, 102, 241, 0.12)',
+                                color: '#a5b4fc',
+                                border: '1px solid rgba(99, 102, 241, 0.3)',
+                                borderRadius: 'var(--radius-md)',
+                                fontWeight: 700,
+                                fontSize: '0.8125rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                                marginBottom: 2,
+                                transition: 'background 0.2s'
+                            }}
+                        >
+                            <IconDownload size={15} color="#a5b4fc" />
+                            <span>Download Attendance (CSV) Before Exiting</span>
+                        </button>
+                    )}
+
+                    <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        fontSize: '0.8125rem',
+                        color: 'var(--color-text-secondary)',
+                        cursor: 'pointer',
+                        padding: '6px 8px',
+                        borderRadius: 'var(--radius-sm, 6px)',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        marginBottom: 2
+                    }}>
+                        <input
+                            type="checkbox"
+                            checked={dispatchEmail}
+                            onChange={(e) => setDispatchEmail(e.target.checked)}
+                            style={{ cursor: 'pointer', accentColor: '#6366f1' }}
+                        />
+                        <IconMail size={14} color="#a5b4fc" />
+                        <span>Send executive summary email to attendees</span>
+                    </label>
+
                     <button
-                        onClick={onEndForAll}
+                        onClick={() => onEndForAll(dispatchEmail)}
                         style={{
                             width: '100%',
                             padding: '12px 16px',
@@ -89,7 +146,8 @@ export const EndMeetingModal: React.FC<EndMeetingModalProps> = ({
                             transition: 'opacity 0.2s'
                         }}
                     >
-                        <span>🛑</span> End Meeting for All
+                        <IconPhoneOff size={16} color="#fff" />
+                        <span>End Meeting for All</span>
                     </button>
 
                     <button
@@ -111,7 +169,8 @@ export const EndMeetingModal: React.FC<EndMeetingModalProps> = ({
                             transition: 'background 0.2s'
                         }}
                     >
-                        <span>🏃</span> Just Leave Meeting
+                        <IconLogOut size={16} color="currentColor" />
+                        <span>Just Leave Meeting</span>
                     </button>
 
                     <button

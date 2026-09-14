@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { IconCheck, IconCopy } from '../../../components/common/Icons'
 import type { CodeSnippet } from '../channel.types'
 
 interface CodeSnippetCardProps {
@@ -91,7 +92,7 @@ export function CodeSnippetCard({ snippet }: CodeSnippetCardProps) {
                         transition: 'all 0.15s ease'
                     }}
                 >
-                    <span>{copied ? '✓' : '📋'}</span>
+                    {copied ? <IconCheck size={12} color="#4ade80" /> : <IconCopy size={12} />}
                     <span>{copied ? 'Copied!' : 'Copy Code'}</span>
                 </button>
             </div>

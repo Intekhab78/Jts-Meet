@@ -3,7 +3,7 @@ import { Server, Socket } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-adapter'
 import { SocketEvents } from './events'
 import { authenticateSocket, AuthenticatedSocket } from './auth'
-import { setUserOnline, removeUserSocket, markUserOnline, markUserOffline } from './presence'
+import { setUserOnline, removeUserSocket, markUserOnline, markUserOffline, getAllUserPresences, updateUserStatus, getUserPresenceState, PresenceStatus } from './presence'
 import { createMessage, markMessageDelivered, markConversationSeen, addReactionToMessage, removeReactionFromMessage } from '../modules/chat/chat.service'
 import { registerMeetingHandlers } from './meeting'
 import { registerMeetingChatHandlers } from './meetingChat'
@@ -173,6 +173,30 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         setUserOnline(userId, socket.id)
         await markUserOnline(userId)
         io.emit(SocketEvents.USER_ONLINE, { userId })
+        
+        // Sync existing presences with newly connected socket
+        socket.emit(SocketEvents.PRESENCE_SYNC, getAllUserPresences())
+        io.emit(SocketEvents.PRESENCE_UPDATE, {
+            userId,
+            status: 'online',
+            customStatus: getUserPresenceState(userId)?.customStatus || '',
+            lastSeen: new Date()
+        })
+
+        socket.on(SocketEvents.PRESENCE_STATUS, async (payload: { status: PresenceStatus; customStatus?: string }) => {
+            if (!payload?.status) return
+            try {
+                await updateUserStatus(userId, payload.status, payload.customStatus)
+                io.emit(SocketEvents.PRESENCE_UPDATE, {
+                    userId,
+                    status: payload.status,
+                    customStatus: payload.customStatus !== undefined ? payload.customStatus : '',
+                    lastSeen: new Date()
+                })
+            } catch (err) {
+                console.warn('[Presence] Failed to update user status:', err)
+            }
+        })
 
         socket.on(SocketEvents.CHAT_SEND, async (payload: { receiverId: string; message: string; parentMessageId?: string }) => {
             const chatMessage = await createMessage(userId, payload)
@@ -314,6 +338,11 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
             removeUserSocket(userId)
             await markUserOffline(userId)
             io.emit(SocketEvents.USER_OFFLINE, { userId })
+            io.emit(SocketEvents.PRESENCE_UPDATE, { 
+                userId, 
+                status: 'offline', 
+                lastSeen: new Date() 
+            })
         })
     })
 

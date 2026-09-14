@@ -1,12 +1,13 @@
 import React, { useEffect } from 'react'
 import { startRingtone, stopRingtone } from '../services/chime.service'
+import { IconPhone, IconVideo, IconMonitor } from '../../../components/common/Icons'
 
 export interface IncomingCallData {
     meetingId: string
     callerId: string
     callerName: string
     callerAvatar?: string
-    callType?: 'video' | 'audio'
+    callType?: 'video' | 'audio' | 'screenshare'
 }
 
 interface IncomingCallModalProps {
@@ -77,8 +78,20 @@ export function IncomingCallModal({ call, onAccept, onDecline }: IncomingCallMod
                         {call.callerName}
                     </h3>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--color-accent)', fontSize: '0.875rem', fontWeight: 600 }}>
-                        <span>{call.callType === 'audio' ? '📞' : '📹'}</span>
-                        <span>Incoming {call.callType === 'audio' ? 'Audio' : 'Video'} Call...</span>
+                        {call.callType === 'audio' ? (
+                            <IconPhone size={15} color="var(--color-accent)" />
+                        ) : call.callType === 'screenshare' ? (
+                            <IconMonitor size={15} color="var(--color-accent)" />
+                        ) : (
+                            <IconVideo size={15} color="var(--color-accent)" />
+                        )}
+                        <span>
+                            {call.callType === 'audio'
+                                ? 'Incoming Audio Call...'
+                                : call.callType === 'screenshare'
+                                    ? 'Incoming Screen Share Call...'
+                                    : 'Incoming Video Call...'}
+                        </span>
                     </div>
                 </div>
 

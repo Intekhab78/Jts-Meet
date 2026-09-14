@@ -30,6 +30,9 @@ export interface IChannelChat extends Document {
     }[]
     edited: boolean
     deleted: boolean
+    pinned?: boolean
+    pinnedBy?: Types.ObjectId | null
+    pinnedAt?: Date | null
     createdAt: Date
     updatedAt: Date
 }
@@ -69,7 +72,10 @@ const ChannelChatSchema = new Schema<IChannelChat>(
             }
         ],
         edited: { type: Boolean, default: false },
-        deleted: { type: Boolean, default: false }
+        deleted: { type: Boolean, default: false },
+        pinned: { type: Boolean, default: false, index: true },
+        pinnedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+        pinnedAt: { type: Date, default: null }
     },
     { timestamps: true }
 )

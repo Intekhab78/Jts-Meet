@@ -31,12 +31,16 @@ export async function sendOTPEmail(to: string, code: string): Promise<void> {
         </div>
     `
 
-    await transporter.sendMail({
-        from: EMAIL_FROM,
-        to,
-        subject: 'Verify your JTS-Meet Account',
-        html
-    })
+    try {
+        await transporter.sendMail({
+            from: EMAIL_FROM,
+            to,
+            subject: 'Verify your JTS-Meet Account',
+            html
+        })
+    } catch (err: any) {
+        console.error(`[EMAIL_SERVICE] Failed to send OTP email to ${to}:`, err?.message || err)
+    }
 }
 
 export async function sendResetPasswordEmail(to: string, code: string): Promise<void> {
@@ -58,12 +62,16 @@ export async function sendResetPasswordEmail(to: string, code: string): Promise<
         </div>
     `
 
-    await transporter.sendMail({
-        from: EMAIL_FROM,
-        to,
-        subject: 'Reset your JTS-Meet Password',
-        html
-    })
+    try {
+        await transporter.sendMail({
+            from: EMAIL_FROM,
+            to,
+            subject: 'Reset your JTS-Meet Password',
+            html
+        })
+    } catch (err: any) {
+        console.error(`[EMAIL_SERVICE] Failed to send reset password email to ${to}:`, err?.message || err)
+    }
 }
 
 export interface MeetingEmailDetails {
@@ -203,12 +211,16 @@ export async function sendTeamInvitationEmail(
         </div>
     `
 
-    await transporter.sendMail({
-        from: EMAIL_FROM,
-        to,
-        subject: `👥 Team Invitation: You've been added to "${teamName}"`,
-        html
-    })
+    try {
+        await transporter.sendMail({
+            from: EMAIL_FROM,
+            to,
+            subject: `👥 Team Invitation: You've been added to "${teamName}"`,
+            html
+        })
+    } catch (err: any) {
+        console.error(`[EMAIL_SERVICE] Failed to send team invite email to ${to}:`, err?.message || err)
+    }
 }
 
 export async function sendOrganizationInvitationEmail(
@@ -257,10 +269,121 @@ export async function sendOrganizationInvitationEmail(
         </div>
     `
 
-    await transporter.sendMail({
-        from: EMAIL_FROM,
-        to,
-        subject: `🏢 Invitation to join "${orgName}" on JTS-Meet`,
-        html
-    })
+    try {
+        await transporter.sendMail({
+            from: EMAIL_FROM,
+            to,
+            subject: `🏢 Invitation to join "${orgName}" on JTS-Meet`,
+            html
+        })
+    } catch (err: any) {
+        console.error(`[EMAIL_SERVICE] Failed to send org invite email to ${to}:`, err?.message || err)
+    }
 }
+
+export interface PostMeetingEmailParams {
+    to: string[]
+    meetingTitle: string
+    meetingId: string
+    duration: string
+    date: string
+    summaryBullets?: string[]
+    actionItems?: string[]
+    attendees?: Array<{ name: string; email?: string; duration?: string }>
+    recordingUrl?: string
+}
+
+export async function sendPostMeetingSummaryEmail(params: PostMeetingEmailParams): Promise<void> {
+    if (!params.to || params.to.length === 0) return
+
+    const summaryHtml = (params.summaryBullets && params.summaryBullets.length > 0)
+        ? `<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 18px 0;">
+            <h4 style="margin: 0 0 10px 0; color: #1e293b; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">📋 Key Discussion Points & MoM</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #334155; font-size: 13.5px; line-height: 1.6;">
+                ${params.summaryBullets.map(b => `<li style="margin-bottom: 6px;">${b}</li>`).join('')}
+            </ul>
+           </div>`
+        : ''
+
+    const actionItemsHtml = (params.actionItems && params.actionItems.length > 0)
+        ? `<div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin: 18px 0;">
+            <h4 style="margin: 0 0 10px 0; color: #1d4ed8; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">⚡ Next Steps & Action Items</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #1e40af; font-size: 13.5px; line-height: 1.6;">
+                ${params.actionItems.map(a => `<li style="margin-bottom: 6px;">${a}</li>`).join('')}
+            </ul>
+           </div>`
+        : ''
+
+    const attendeesHtml = (params.attendees && params.attendees.length > 0)
+        ? `<div style="margin: 20px 0;">
+            <h4 style="margin: 0 0 10px 0; color: #1e293b; font-size: 14px;">👥 Attendees (${params.attendees.length})</h4>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="background: #f1f5f9; text-align: left;">
+                        <th style="padding: 8px 12px; border-radius: 6px 0 0 6px; color: #475569;">Name</th>
+                        <th style="padding: 8px 12px; color: #475569;">Duration</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${params.attendees.map(a => `
+                        <tr style="border-bottom: 1px solid #f1f5f9;">
+                            <td style="padding: 8px 12px; font-weight: 600; color: #1e293b;">${a.name}</td>
+                            <td style="padding: 8px 12px; color: #64748b;">${a.duration || params.duration}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+           </div>`
+        : ''
+
+    const html = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1e293b; line-height: 1.5;">
+            <div style="border-bottom: 2px solid #6366f1; padding-bottom: 16px; margin-bottom: 20px;">
+                <h2 style="color: #4f46e5; margin: 0; font-size: 22px; font-weight: 800;">JTS-Meet</h2>
+                <div style="margin-top: 6px;">
+                    <span style="font-size: 11px; font-weight: 700; color: #6366f1; background: #e0e7ff; padding: 3px 8px; border-radius: 12px;">
+                        POST-MEETING EXECUTIVE SUMMARY
+                    </span>
+                </div>
+            </div>
+
+            <h3 style="font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 12px 0;">
+                ${params.meetingTitle}
+            </h3>
+
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 18px;">
+                <p style="margin: 0 0 6px 0; font-size: 13px;"><strong>Date:</strong> ${params.date}</p>
+                <p style="margin: 0 0 6px 0; font-size: 13px;"><strong>Duration:</strong> ${params.duration}</p>
+                <p style="margin: 0; font-size: 13px;"><strong>Meeting ID:</strong> ${params.meetingId}</p>
+            </div>
+
+            ${summaryHtml}
+            ${actionItemsHtml}
+            ${attendeesHtml}
+
+            ${params.recordingUrl ? `
+                <div style="text-align: center; margin: 24px 0;">
+                    <a href="${params.recordingUrl}" style="background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%); color: #ffffff; padding: 12px 28px; font-size: 14px; font-weight: 700; text-decoration: none; border-radius: 8px; display: inline-block;">
+                        ▶ Watch Meeting Recording
+                    </a>
+                </div>
+            ` : ''}
+
+            <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-top: 30px; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+                Generated automatically by JTS-Meet Enterprise Conferencing Suite.
+            </p>
+        </div>
+    `
+
+    try {
+        await transporter.sendMail({
+            from: EMAIL_FROM,
+            to: params.to.join(','),
+            subject: `📋 Executive Minutes: ${params.meetingTitle} (${params.date})`,
+            html
+        })
+    } catch (err) {
+        console.error('[sendPostMeetingSummaryEmail] Error dispatching post-meeting email:', err)
+    }
+}
+
