@@ -67,33 +67,88 @@ export function useMediaDevices(): UseMediaDevicesResult {
         setMediaLoading(true)
         setMediaError(null)
 
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                    // Chrome WebRTC native voice clarity flags
-                    googEchoCancellation: true,
-                    googAutoGainControl: true,
-                    googNoiseSuppression: true,
-                    googHighpassFilter: true,
-                    googTypingNoiseDetection: true
-                } as any,
-                video: audioOnly ? false : {
-                    width: { ideal: 1920, min: 1280 },
-                    height: { ideal: 1080, min: 720 },
-                    frameRate: { ideal: 30, max: 60 },
-                    aspectRatio: { ideal: 1.7777777778 }
-                }
-            })
-            if (!isRequestActiveRef.current) {
-                // If stopMedia was called while awaiting getUserMedia, shut down tracks immediately
-                stream.getTracks().forEach(track => {
-                    try { track.stop() } catch {}
+        // ── Stage 1: Try HD camera (1920x1080 ideal) ─────────────────────────────
+        // OverconstrainedError fix: Remove 'min' constraints — 'ideal' is enough.
+        // 'min' was causing OverconstrainedError even when camera was ON but < 1280px.
+        const audioConstraints: any = {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            googEchoCancellation: true,
+            googAutoGainControl: true,
+            googNoiseSuppression: true,
+            googHighpassFilter: true,
+            googTypingNoiseDetection: true
+        }
+
+        let stream: MediaStream | null = null
+
+        if (!audioOnly) {
+            // Stage 1 — HD: ideal 1920x1080 (no min, so any camera can succeed)
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: audioConstraints,
+                    video: {
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30, max: 60 }
+                    }
                 })
+            } catch (hdErr: any) {
+                console.warn('[Media] HD camera request failed, trying SD fallback:', hdErr?.name, hdErr?.message)
+
+                // Stage 2 — SD: any resolution, just true (browser picks best available)
+                if (hdErr?.name !== 'NotAllowedError' && hdErr?.name !== 'PermissionDeniedError' && !hdErr?.message?.toLowerCase().includes('permission denied')) {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            audio: audioConstraints,
+                            video: true
+                        })
+                    } catch (sdErr: any) {
+                        console.warn('[Media] SD camera request failed, trying audio-only fallback:', sdErr?.name, sdErr?.message)
+                        // Stage 3 — audio only (camera error, not permission error)
+                        if (sdErr?.name !== 'NotAllowedError' && sdErr?.name !== 'PermissionDeniedError' && !sdErr?.message?.toLowerCase().includes('permission denied')) {
+                            try {
+                                const audioOnlyStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false })
+                                if (!isRequestActiveRef.current) {
+                                    audioOnlyStream.getTracks().forEach(t => { try { t.stop() } catch {} })
+                                    return
+                                }
+                                const rawAudio = audioOnlyStream.getAudioTracks()[0]
+                                if (rawAudio) {
+                                    const clean = noiseCancellationService.processAudioTrack(rawAudio, 'high')
+                                    audioOnlyStream.removeTrack(rawAudio)
+                                    audioOnlyStream.addTrack(clean)
+                                }
+                                localStreamRef.current = audioOnlyStream
+                                cameraStreamRef.current = audioOnlyStream
+                                setCameraStream(audioOnlyStream)
+                                setLocalStream(audioOnlyStream)
+                                setMediaError('Camera unavailable. Connected with microphone only.')
+                                setMediaLoading(false)
+                                return
+                            } catch { }
+                        }
+                        // Propagate sd error to outer catch for proper error message
+                        throw sdErr
+                    }
+                } else {
+                    // Propagate hd permission error to outer catch
+                    throw hdErr
+                }
+            }
+        } else {
+            // Audio-only requested explicitly
+            stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false })
+        }
+
+        try {
+            if (!isRequestActiveRef.current) {
+                stream?.getTracks().forEach(track => { try { track.stop() } catch {} })
                 return
             }
+
+            if (!stream) throw new Error('No stream obtained')
 
             // Apply AI Voice Isolation DSP pipeline to raw microphone track
             const rawAudioTrack = stream.getAudioTracks()[0]
@@ -109,26 +164,7 @@ export function useMediaDevices(): UseMediaDevicesResult {
             setLocalStream(stream)
         } catch (error: any) {
             if (!isRequestActiveRef.current) return
-            console.warn('Initial full media request failed, attempting audio fallback:', error)
-
-            // If video failed but permissions weren't denied, try audio-only
-            if (error?.name !== 'NotAllowedError' && error?.name !== 'PermissionDeniedError' && !error?.message?.toLowerCase().includes('permission denied')) {
-                try {
-                    const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-                    if (!isRequestActiveRef.current) {
-                        audioStream.getTracks().forEach(track => {
-                            try { track.stop() } catch {}
-                        })
-                        return
-                    }
-                    localStreamRef.current = audioStream
-                    cameraStreamRef.current = audioStream
-                    setCameraStream(audioStream)
-                    setLocalStream(audioStream)
-                    setMediaError('Camera unavailable. Connected with microphone only.')
-                    return
-                } catch { }
-            }
+            console.warn('Media stream setup error:', error)
 
             if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError' || error?.message?.toLowerCase().includes('permission denied')) {
                 setMediaError('Camera & Mic permission denied. Please allow permissions in your browser address bar.')
