@@ -163,7 +163,17 @@ export function useMediaDevices(): UseMediaDevicesResult {
         if (!deviceId) return
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                audio: { deviceId: { exact: deviceId } },
+                audio: {
+                    deviceId: { exact: deviceId },
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    googEchoCancellation: true,
+                    googAutoGainControl: true,
+                    googNoiseSuppression: true,
+                    googHighpassFilter: true,
+                    googTypingNoiseDetection: true
+                } as any,
                 video: false
             })
             const rawTrack = stream.getAudioTracks()[0]

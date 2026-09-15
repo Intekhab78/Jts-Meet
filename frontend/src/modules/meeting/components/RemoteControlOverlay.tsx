@@ -19,28 +19,7 @@ interface RemoteCursorState {
     lastActive: number
 }
 
-// Extend Window interface for Electron Desktop Client integration
-declare global {
-    interface Window {
-        electronAPI?: {
-            isDesktop?: boolean
-            sendRemoteControlInput: (event: {
-                type: 'mouse' | 'key'
-                action: string
-                x?: number
-                y?: number
-                button?: number
-                deltaY?: number
-                key?: string
-                code?: string
-                ctrlKey?: boolean
-                altKey?: boolean
-                shiftKey?: boolean
-                metaKey?: boolean
-            }) => void
-        }
-    }
-}
+
 
 export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
     meetingId,

@@ -91,9 +91,19 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
         try {
             stopMediaStream()
 
-            const constraints: MediaStreamConstraints = {
+            const constraints: any = {
                 video: videoDeviceId ? { deviceId: { exact: videoDeviceId } } : true,
-                audio: audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true
+                audio: {
+                    ...(audioDeviceId ? { deviceId: { exact: audioDeviceId } } : {}),
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    googEchoCancellation: true,
+                    googAutoGainControl: true,
+                    googNoiseSuppression: true,
+                    googHighpassFilter: true,
+                    googTypingNoiseDetection: true
+                }
             }
 
             const stream = await navigator.mediaDevices.getUserMedia(constraints)

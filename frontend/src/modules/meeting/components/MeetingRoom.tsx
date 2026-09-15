@@ -500,7 +500,7 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     }
                 }}
                 autoPlay
-                muted={muted}
+                muted={true}
                 playsInline
                 style={{
                     width: '100%',

@@ -11,6 +11,22 @@ function enhanceSdpForHdVideo(sdp?: string): string {
         // Boost video bandwidth allocation to 4000 kbps (4 Mbps)
         modified = modified.replace(/(m=video [^\r\n]+[\r\n]+)/g, `$1b=AS:4000\r\nb=TIAS:4000000\r\n`)
     }
+
+    // Opus Audio Clarity & Silence Gating (Eliminates background hiss & static):
+    // usedtx=1: Discontinuous Transmission (completely stops sending audio packets during pauses/silence)
+    // useinbandfec=1: In-band Forward Error Correction (recovers packet loss smoothly)
+    // cbr=0: Variable bitrate (drops bitrate to minimal during quiet moments)
+    // maxaveragebitrate=64000: High-fidelity 64kbps crystal voice
+    if (modified.includes('opus/48000')) {
+        modified = modified.replace(
+            /(a=fmtp:\d+ [^\r\n]+)/g,
+            (match) => {
+                if (match.includes('usedtx=1')) return match
+                return `${match};usedtx=1;cbr=0;maxaveragebitrate=64000`
+            }
+        )
+    }
+
     return modified
 }
 

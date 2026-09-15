@@ -334,6 +334,7 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                                     }
                                 }}
                                 autoPlay
+                                muted={true}
                                 playsInline
                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                             />
@@ -661,6 +662,7 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                                 }
                             }}
                             autoPlay
+                            muted={true}
                             playsInline
                             style={{
                                 width: '100%',

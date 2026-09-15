@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, Menu, desktopCapturer, session } = require('electron')
 const path = require('path')
 const { exec } = require('child_process')
 
@@ -60,6 +60,23 @@ function createWindow() {
             sandbox: false
         }
     })
+
+    // ─── FIX: Enable screen sharing via getDisplayMedia in Electron ──────────
+    // Electron blocks getDisplayMedia by default. This handler intercepts the
+    // browser's screen-share request and routes it through desktopCapturer.
+    mainWindow.webContents.session.setDisplayMediaRequestHandler(
+        (request, callback) => {
+            desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
+                // Auto-select the primary screen (sources[0]).
+                // The frontend can also send a preferred sourceId via IPC for a picker.
+                callback({ video: sources[0], audio: 'loopback' })
+            }).catch((err) => {
+                console.error('[ScreenShare] desktopCapturer error:', err)
+                callback({}) // empty callback cancels gracefully
+            })
+        },
+        { useSystemPicker: false } // use our own source picker flow
+    )
 
     // Determine target URL:
     // 1. If packaged (.exe production release): loads live cloud frontend https://meet.jtsmiddleeast.com
@@ -141,6 +158,39 @@ function createWindow() {
         mainWindow = null
     })
 }
+
+// ─── IPC: Provide list of screen/window sources to frontend for picker UI ───
+ipcMain.handle('get-screen-sources', async () => {
+    try {
+        const sources = await desktopCapturer.getSources({
+            types: ['screen', 'window'],
+            thumbnailSize: { width: 320, height: 180 }
+        })
+        // Serialize sources (thumbnail is a NativeImage — convert to dataURL)
+        return sources.map(src => ({
+            id: src.id,
+            name: src.name,
+            thumbnail: src.thumbnail.toDataURL()
+        }))
+    } catch (err) {
+        console.error('[ScreenShare] getSources error:', err)
+        return []
+    }
+})
+
+// ─── IPC: Set a specific sourceId for next getDisplayMedia call ──────────────
+ipcMain.on('set-screen-source', (_event, sourceId) => {
+    if (!mainWindow) return
+    mainWindow.webContents.session.setDisplayMediaRequestHandler(
+        (_request, callback) => {
+            desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
+                const chosen = sources.find(s => s.id === sourceId) || sources[0]
+                callback({ video: chosen, audio: 'loopback' })
+            }).catch(() => callback({}))
+        },
+        { useSystemPicker: false }
+    )
+})
 
 // Handle Remote Control Input Events from Presenter's Frontend Overlay
 ipcMain.on('remote-control:input', (event, data) => {
