@@ -26,6 +26,7 @@ import clipRoutes from './modules/clip/clip.routes'
 import { seedDefaultPlans } from './modules/plan/plan.model'
 import { connectDB } from './config/db'
 import { rateLimiter } from './middleware/rateLimiter'
+import { authenticate } from './middleware/authMiddleware'
 
 const app = express()
 
@@ -40,7 +41,7 @@ app.use(urlencoded({ extended: true }))
 app.use(passport.initialize())
 app.use(requestLogger)
 
-// Static uploads directory for local file storage
+// Static uploads directory for local file storage (avatars, attachments, media)
 const uploadsDir = path.join(process.cwd(), 'uploads')
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true })

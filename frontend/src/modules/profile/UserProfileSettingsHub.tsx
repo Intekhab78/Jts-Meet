@@ -60,6 +60,7 @@ export function UserProfileSettingsHub({
     // Profile & Avatar State
     const [fullName, setFullName] = useState(profileName)
     const [avatarUrl, setAvatarUrl] = useState<string>(initialProfileImage || '')
+    const [avatarError, setAvatarError] = useState(false)
     const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
     const [userStatus, setUserStatus] = useState<string>(() => localStorage.getItem('jts_user_status') || 'available')
     const [statusMessage, setStatusMessage] = useState<string>(() => localStorage.getItem('jts_status_message') || '')
@@ -427,10 +428,11 @@ export function UserProfileSettingsHub({
                         {/* Avatar Image + Upload button */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
                             <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
-                                {avatarUrl ? (
+                                {avatarUrl && !avatarError ? (
                                     <img
                                         src={avatarUrl}
                                         alt={fullName}
+                                        onError={() => setAvatarError(true)}
                                         style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(99, 102, 241, 0.4)', boxShadow: '0 4px 14px rgba(0,0,0,0.4)' }}
                                     />
                                 ) : (

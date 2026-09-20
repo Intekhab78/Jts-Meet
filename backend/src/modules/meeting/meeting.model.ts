@@ -23,6 +23,7 @@ export interface IMeeting extends Document {
     recurrencePattern?: 'daily' | 'weekly' | 'weekdays' | 'monthly' | 'none'
     scheduledDate?: string
     scheduledTime?: string
+    planTier?: string
     organizationId?: Types.ObjectId | null
     teamId?: Types.ObjectId | null
     notifyByEmail?: boolean
@@ -57,6 +58,7 @@ const MeetingSchema = new Schema<IMeeting>(
         recurrencePattern: { type: String, enum: ['daily', 'weekly', 'weekdays', 'monthly', 'none'], default: 'none' },
         scheduledDate: { type: String, default: '' },
         scheduledTime: { type: String, default: '' },
+        planTier: { type: String, default: 'free' },
         organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null },
         teamId: { type: Schema.Types.ObjectId, ref: 'Team', default: null },
         notifyByEmail: { type: Boolean, default: true },

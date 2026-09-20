@@ -25,9 +25,7 @@ setInterval(() => {
  */
 export function rateLimiter(windowMs: number = 60 * 1000, maxRequests: number = 120) {
     return (req: Request, res: Response, next: NextFunction): void => {
-        const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || 
-                         req.socket.remoteAddress || 
-                         'unknown_ip'
+        const clientIp = req.ip || req.socket.remoteAddress || 'unknown_ip'
         
         const now = Date.now()
         const record = ipRequestStore.get(clientIp)

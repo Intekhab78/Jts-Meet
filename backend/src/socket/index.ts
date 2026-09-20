@@ -335,14 +335,16 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         registerMeetingQAHandlers(io, socket)
 
         socket.on(SocketEvents.DISCONNECT, async () => {
-            removeUserSocket(userId)
-            await markUserOffline(userId)
-            io.emit(SocketEvents.USER_OFFLINE, { userId })
-            io.emit(SocketEvents.PRESENCE_UPDATE, { 
-                userId, 
-                status: 'offline', 
-                lastSeen: new Date() 
-            })
+            const hasRemainingSockets = removeUserSocket(userId, socket.id)
+            if (!hasRemainingSockets) {
+                await markUserOffline(userId)
+                io.emit(SocketEvents.USER_OFFLINE, { userId })
+                io.emit(SocketEvents.PRESENCE_UPDATE, { 
+                    userId, 
+                    status: 'offline', 
+                    lastSeen: new Date() 
+                })
+            }
         })
     })
 

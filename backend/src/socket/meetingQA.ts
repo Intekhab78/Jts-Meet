@@ -159,3 +159,7 @@ export function registerMeetingQAHandlers(io: Server, socket: Socket) {
         io.to(`meeting:${payload.meetingId}`).emit('qa:list', [])
     })
 }
+
+export function cleanupMeetingQA(meetingId: string) {
+    meetingQuestionsMap.delete(meetingId)
+}

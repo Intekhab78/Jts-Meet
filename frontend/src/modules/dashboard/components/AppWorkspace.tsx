@@ -104,10 +104,15 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
     const [profileName, setProfileName] = useState('Team Member')
     const [profileEmail, setProfileEmail] = useState('member@jtsmeet.com')
     const [profileImage, setProfileImage] = useState('')
+    const [profileImageError, setProfileImageError] = useState(false)
     const [userId, setUserId] = useState('')
     const [isSavingProfile, setIsSavingProfile] = useState(false)
     const [profileSaveSuccess, setProfileSaveSuccess] = useState(false)
     const [profileError, setProfileError] = useState('')
+
+    useEffect(() => {
+        setProfileImageError(false)
+    }, [profileImage])
 
     const { joined, setMeetingId, meetingId } = useMeetingContext()
     const { socket, connectSocket, connected } = useSocketContext()
@@ -1355,8 +1360,13 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                                     overflow: 'hidden',
                                     flexShrink: 0
                                 }}>
-                                    {profileImage ? (
-                                        <img src={profileImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    {profileImage && !profileImageError ? (
+                                        <img
+                                            src={profileImage}
+                                            alt=""
+                                            onError={() => setProfileImageError(true)}
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
                                     ) : (
                                         profileName.slice(0, 2).toUpperCase()
                                     )}

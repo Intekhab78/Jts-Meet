@@ -1,7 +1,8 @@
-import { Types, startSession } from 'mongoose'
+import { Types } from 'mongoose'
 import { Message, IMessage } from './chat.model'
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
+import { withTransactionOrDirect } from '../../utils/transactionHelper'
 
 export interface RecentChatItem {
     conversationWith: Types.ObjectId
@@ -34,32 +35,28 @@ export async function createMessage(
         msgData.parentMessageId = new Types.ObjectId(payload.parentMessageId)
     }
 
-    const session = await startSession()
-    let savedMessage: IMessage
-
-    try {
-        session.startTransaction()
-
+    const savedMessage = await withTransactionOrDirect(async (session) => {
         const message = new Message(msgData)
-        savedMessage = await message.save({ session })
+        const saved = await message.save(session ? { session } : undefined)
 
         if (payload.parentMessageId) {
+            const updateOpts: any = session ? { session } : {}
             await Message.findByIdAndUpdate(
                 payload.parentMessageId,
                 {
                     $inc: { threadCount: 1 },
                     $set: { lastReplyAt: new Date() }
                 },
-                { session }
+                updateOpts
             ).exec()
         }
 
-        await session.commitTransaction()
+        return saved
+    })
 
-        // Asynchronously dispatch message notification
-        const senderUser = await User.findById(senderId)
+    // Asynchronously dispatch message notification
+    User.findById(senderId).then((senderUser) => {
         const senderName = senderUser?.fullName || 'Someone'
-
         NotificationService.send({
             recipientId: payload.receiverId,
             title: 'New Message',
@@ -69,12 +66,7 @@ export async function createMessage(
         }).catch((err) => {
             console.error('Failed to dispatch message notification:', err)
         })
-    } catch (error) {
-        await session.abortTransaction()
-        throw error
-    } finally {
-        await session.endSession()
-    }
+    }).catch(() => {})
 
     return savedMessage
 }

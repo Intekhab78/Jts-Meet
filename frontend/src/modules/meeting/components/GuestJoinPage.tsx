@@ -191,7 +191,8 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                 onGuestRequestSuccess(token, userId, isPending, {
                     guestName: guestName.trim(),
                     meetingTitle,
-                    hostName
+                    hostName,
+                    planTier: data.data.planTier || 'free'
                 })
             } else {
                 alert(data.message || 'Failed to submit guest request')

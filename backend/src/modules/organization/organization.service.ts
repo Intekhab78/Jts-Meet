@@ -5,8 +5,9 @@ import { Channel } from '../channel/channel.model'
 import { ChannelChat } from '../channel-chat/channelChat.model'
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
-import { FRONTEND_URL } from '../../config'
+import { FRONTEND_URL, ADMIN_EMAIL } from '../../config'
 import { getPlanByPlanId } from '../plan/plan.service'
+import { withTransactionOrDirect } from '../../utils/transactionHelper'
 
 export function getMemberUserId(member: any): string {
     if (!member || !member.userId) return ''
@@ -19,18 +20,17 @@ export function hasOrganizationRole(member: IOrganizationMember | undefined, rol
 }
 
 export function isUserOrgAdminOrOwner(org: any, userId: string): boolean {
-    if (!org || !userId) return true
+    if (!org || !userId) return false
     const userIdStr = userId.toString()
     const ownerIdStr = org.ownerId?._id ? org.ownerId._id.toString() : org.ownerId?.toString()
     if (ownerIdStr && ownerIdStr === userIdStr) return true
 
     if (Array.isArray(org.members) && org.members.length > 0) {
-        const member = org.members.find((m: any) => getMemberUserId(m) === userIdStr)
+        const member = org.members.find((m: any) => getMemberUserId(m) === userIdStr && m.status === 'active')
         if (member && ['owner', 'admin'].includes(member.role)) return true
-        if (getMemberUserId(org.members[0]) === userIdStr) return true
     }
 
-    return true
+    return false
 }
 
 export async function createOrganization(
@@ -101,18 +101,14 @@ export async function inviteMember(
     inviterId: string,
     payload: { userId: string; role: OrganizationRole }
 ): Promise<IOrganization | null> {
-    let session: mongoose.ClientSession | null = null
-    try {
-        session = await mongoose.startSession()
-        session.startTransaction()
-    } catch (_) {
-        session = null
-    }
+    let targetEmail = ''
+    let isNewUserPlaceholder = false
+    let inviterName = 'A workspace administrator'
+    let orgName = ''
 
-    try {
-        const org = await getOrganizationById(orgId, session || undefined)
+    const org = await withTransactionOrDirect(async (session) => {
+        const org = await getOrganizationById(orgId, session)
         if (!org) {
-            if (session) await session.commitTransaction()
             return null
         }
 
@@ -121,8 +117,6 @@ export async function inviteMember(
         }
 
         let targetUserId = payload.userId.trim()
-        let isNewUserPlaceholder = false
-        let targetEmail = ''
 
         if (!Types.ObjectId.isValid(targetUserId)) {
             targetEmail = targetUserId.toLowerCase().trim()
@@ -139,11 +133,7 @@ export async function inviteMember(
                     status: 'offline',
                     emailVerified: false
                 })
-                if (session) {
-                    await user.save({ session })
-                } else {
-                    await user.save()
-                }
+                await user.save(session ? { session } : undefined)
                 isNewUserPlaceholder = true
             } else {
                 isNewUserPlaceholder = !user.emailVerified
@@ -168,11 +158,7 @@ export async function inviteMember(
             existingMember.role = payload.role
             existingMember.invitedBy = inviterObjectId
             existingMember.joinedAt = existingMember.joinedAt || new Date()
-            if (session) {
-                await org.save({ session })
-            } else {
-                await org.save()
-            }
+            await org.save(session ? { session } : undefined)
         } else {
             // Dynamic Quota Enforcement: Check if workspace has reached maximum seats allowed by plan
             const activeMembersCount = org.members.filter((m) => m.status === 'active').length
@@ -190,61 +176,50 @@ export async function inviteMember(
                 invitedBy: inviterObjectId,
                 status: 'active'
             })
-            if (session) {
-                await org.save({ session })
-            } else {
-                await org.save()
-            }
+            await org.save(session ? { session } : undefined)
         }
 
         if (targetUserId) {
+            const updateQuery = User.findByIdAndUpdate(targetUserId, { emailVerified: true })
             if (session) {
-                await User.findByIdAndUpdate(targetUserId, { emailVerified: true }).session(session)
+                await updateQuery.session(session)
             } else {
-                await User.findByIdAndUpdate(targetUserId, { emailVerified: true })
+                await updateQuery.exec()
             }
         }
 
-        if (session) {
-            await session.commitTransaction()
-        }
-
-        // Proactively send invitation in background
-        if (targetEmail) {
-            const inviter = await User.findById(inviterId)
-            const inviterName = inviter ? inviter.fullName : 'A workspace administrator'
-            const appUrl = FRONTEND_URL
-
-            const recipientUser = await User.findOne({ email: targetEmail.toLowerCase().trim() })
-            const recipientId = recipientUser ? recipientUser._id.toString() : inviterId
-
-            NotificationService.send({
-                recipientId,
-                title: 'Organization Invitation',
-                body: `${inviterName} has invited you to join the organization "${org.name}"`,
-                type: 'org_invite',
-                metadata: { orgId: org._id.toString(), orgName: org.name, inviterName },
-                emailData: {
-                    to: targetEmail,
-                    template: 'org_invite',
-                    params: { orgName: org.name, inviterName, joinLink: appUrl, isRegistered: !isNewUserPlaceholder }
-                }
-            }).catch((err) => {
-                console.error('Failed to send organization invitation notification:', err)
-            })
-        }
-
+        orgName = org.name
         return org
-    } catch (err) {
-        if (session) {
-            await session.abortTransaction()
-        }
-        throw err
-    } finally {
-        if (session) {
-            session.endSession()
-        }
+    })
+
+    if (!org) return null
+
+    // Proactively send invitation in background
+    if (targetEmail) {
+        const inviter = await User.findById(inviterId)
+        if (inviter) inviterName = inviter.fullName
+        const appUrl = FRONTEND_URL
+
+        const recipientUser = await User.findOne({ email: targetEmail.toLowerCase().trim() })
+        const recipientId = recipientUser ? recipientUser._id.toString() : inviterId
+
+        NotificationService.send({
+            recipientId,
+            title: 'Organization Invitation',
+            body: `${inviterName} has invited you to join the organization "${orgName}"`,
+            type: 'org_invite',
+            metadata: { orgId: org._id.toString(), orgName: orgName, inviterName },
+            emailData: {
+                to: targetEmail,
+                template: 'org_invite',
+                params: { orgName: orgName, inviterName, joinLink: appUrl, isRegistered: !isNewUserPlaceholder }
+            }
+        }).catch((err) => {
+            console.error('Failed to send organization invitation notification:', err)
+        })
     }
+
+    return org
 }
 
 export async function acceptInvitation(orgId: string, userId: string): Promise<IOrganization | null> {
@@ -477,20 +452,31 @@ export async function deleteOrganization(organizationId: string, userId: string)
 export async function upgradeOrganizationPlan(
     orgId: string,
     userId: string,
-    planId: string
+    planId: string,
+    paymentToken?: string
 ): Promise<IOrganization | null> {
     const org = await getOrganizationById(orgId)
     if (!org) {
         throw new Error('Organization not found')
     }
 
-    if (!isUserOrgAdminOrOwner(org, userId)) {
+    const user = await User.findById(userId).select('isSuperAdmin email').exec()
+    const isSuperAdmin = !!user?.isSuperAdmin || (ADMIN_EMAIL && user?.email?.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim())
+
+    if (!isSuperAdmin && !isUserOrgAdminOrOwner(org, userId)) {
         throw new Error('Forbidden: Only organization owners and admins can upgrade subscription plans')
     }
 
     const plan = await getPlanByPlanId(planId)
     if (!plan) {
         throw new Error(`Selected plan "${planId}" does not exist`)
+    }
+
+    const isFreeTier = plan.planId === 'free' || (plan.priceMonthly === 0 && plan.priceYearly === 0)
+    if (!isFreeTier && !isSuperAdmin) {
+        if (!paymentToken || typeof paymentToken !== 'string' || paymentToken.trim().length === 0) {
+            throw new Error('Payment verification required: Paid subscription tiers require a valid payment confirmation')
+        }
     }
 
     org.planTier = plan.planId

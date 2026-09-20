@@ -41,5 +41,5 @@ export const SOCKET_URL = detectedUrl
 
 export const AZURE_CLIENT_ID = import.meta.env.VITE_AZURE_CLIENT_ID || ''
 export const AZURE_TENANT_ID = import.meta.env.VITE_AZURE_TENANT_ID || 'common'
-export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '891554409880-taebmj4jos83ab7d4sbbvrkuh5lg2j7j.apps.googleusercontent.com'
+export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 

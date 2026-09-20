@@ -1,42 +1,102 @@
 const { app, BrowserWindow, ipcMain, screen, Menu, desktopCapturer, session } = require('electron')
 const path = require('path')
-const { exec } = require('child_process')
+const { spawn } = require('child_process')
 
 let mainWindow = null
+let inputProcess = null
+let lastMoveTime = 0
+let selectedScreenSourceId = null
 
-// Native Windows Input Simulator using Windows Win32 API
+function setupDisplayMediaHandler(sess) {
+    if (!sess || typeof sess.setDisplayMediaRequestHandler !== 'function') return
+    sess.setDisplayMediaRequestHandler(
+        (request, callback) => {
+            desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
+                if (!sources || sources.length === 0) {
+                    return callback({})
+                }
+                const chosen = (selectedScreenSourceId && sources.find(s => s.id === selectedScreenSourceId)) || sources[0]
+                const response = { video: chosen }
+                // Only attach audio if the renderer explicitly requested audio capture
+                if (request.audioRequested) {
+                    response.audio = 'loopback'
+                }
+                callback(response)
+            }).catch((err) => {
+                console.error('[ScreenShare] desktopCapturer error:', err)
+                callback({})
+            })
+        },
+        { useSystemPicker: false }
+    )
+}
+
+
+function initInputProcess() {
+    if (process.platform !== 'win32') return
+    try {
+        inputProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], {
+            stdio: ['pipe', 'ignore', 'ignore'],
+            windowsHide: true
+        })
+        inputProcess.on('error', (err) => {
+            console.error('[Desktop] Input process error:', err?.message || err)
+            inputProcess = null
+        })
+        inputProcess.on('exit', () => {
+            inputProcess = null
+        })
+        // Initialize Win32 Types once on the persistent stream
+        const initScript = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -TypeDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' -Name Win32Mouse -Namespace Win32
+`
+        inputProcess.stdin.write(initScript + '\r\n')
+    } catch (e) {
+        console.error('[Desktop] Failed to spawn input process:', e)
+    }
+}
+
+// Native Windows Input Simulator using persistent stdin streaming
 function simulateWindowsInput(action, x, y, button, key, deltaY) {
     if (process.platform !== 'win32') return
+    if (!inputProcess || !inputProcess.stdin || inputProcess.stdin.destroyed) {
+        initInputProcess()
+    }
+    if (!inputProcess || !inputProcess.stdin || inputProcess.stdin.destroyed) return
 
-    if (action === 'move') {
-        const psCommand = `powershell -NoProfile -Command "[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x}, ${y})"`
-        exec(psCommand)
-    } else if (action === 'click') {
-        const flag = button === 2 ? 0x18 : 0x06 // Right click (0x08 | 0x10) : Left click (0x02 | 0x04)
-        const psCommand = `powershell -NoProfile -Command "[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x}, ${y}); Add-Type -TypeDefinition '[DllImport(\\"user32.dll\\")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' -Name Win32Mouse -Namespace Win32; [Win32.Win32Mouse]::mouse_event(${flag}, 0, 0, 0, 0)"`
-        exec(psCommand)
-    } else if (action === 'down') {
-        const flag = button === 2 ? 0x08 : 0x02 // Right down : Left down
-        const psCommand = `powershell -NoProfile -Command "[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x}, ${y}); Add-Type -TypeDefinition '[DllImport(\\"user32.dll\\")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' -Name Win32Mouse -Namespace Win32; [Win32.Win32Mouse]::mouse_event(${flag}, 0, 0, 0, 0)"`
-        exec(psCommand)
-    } else if (action === 'up') {
-        const flag = button === 2 ? 0x10 : 0x04 // Right up : Left up
-        const psCommand = `powershell -NoProfile -Command "Add-Type -TypeDefinition '[DllImport(\\"user32.dll\\")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' -Name Win32Mouse -Namespace Win32; [Win32.Win32Mouse]::mouse_event(${flag}, 0, 0, 0, 0)"`
-        exec(psCommand)
-    } else if (action === 'dblclick') {
-        const psCommand = `powershell -NoProfile -Command "[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x}, ${y}); Add-Type -TypeDefinition '[DllImport(\\"user32.dll\\")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' -Name Win32Mouse -Namespace Win32; [Win32.Win32Mouse]::mouse_event(0x06, 0, 0, 0, 0); Start-Sleep -Milliseconds 50; [Win32.Win32Mouse]::mouse_event(0x06, 0, 0, 0, 0)"`
-        exec(psCommand)
-    } else if (action === 'contextmenu') {
-        const psCommand = `powershell -NoProfile -Command "[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x}, ${y}); Add-Type -TypeDefinition '[DllImport(\\"user32.dll\\")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' -Name Win32Mouse -Namespace Win32; [Win32.Win32Mouse]::mouse_event(0x18, 0, 0, 0, 0)"`
-        exec(psCommand)
-    } else if (action === 'scroll') {
-        const scrollAmount = Math.round((deltaY || 0) * -1)
-        const psCommand = `powershell -NoProfile -Command "Add-Type -TypeDefinition '[DllImport(\\"user32.dll\\")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' -Name Win32Mouse -Namespace Win32; [Win32.Win32Mouse]::mouse_event(0x0800, 0, 0, ${scrollAmount}, 0)"`
-        exec(psCommand)
-    } else if (action === 'key' && key) {
-        const escapedKey = key.replace(/([+^%~{}()])/g, '{$1}')
-        const psCommand = `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${escapedKey}')"`
-        exec(psCommand)
+    const safeX = Number.isFinite(x) ? Math.round(x) : 0
+    const safeY = Number.isFinite(y) ? Math.round(y) : 0
+
+    try {
+        if (action === 'move') {
+            const now = Date.now()
+            if (now - lastMoveTime < 16) return // Cap cursor move to ~60Hz
+            lastMoveTime = now
+            inputProcess.stdin.write(`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safeX}, ${safeY})\r\n`)
+        } else if (action === 'click') {
+            const flag = button === 2 ? 0x18 : 0x06
+            inputProcess.stdin.write(`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safeX}, ${safeY}); [Win32.Win32Mouse]::mouse_event(${flag}, 0, 0, 0, 0)\r\n`)
+        } else if (action === 'down') {
+            const flag = button === 2 ? 0x08 : 0x02
+            inputProcess.stdin.write(`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safeX}, ${safeY}); [Win32.Win32Mouse]::mouse_event(${flag}, 0, 0, 0, 0)\r\n`)
+        } else if (action === 'up') {
+            const flag = button === 2 ? 0x10 : 0x04
+            inputProcess.stdin.write(`[Win32.Win32Mouse]::mouse_event(${flag}, 0, 0, 0, 0)\r\n`)
+        } else if (action === 'dblclick') {
+            inputProcess.stdin.write(`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safeX}, ${safeY}); [Win32.Win32Mouse]::mouse_event(0x06, 0, 0, 0, 0); Start-Sleep -Milliseconds 50; [Win32.Win32Mouse]::mouse_event(0x06, 0, 0, 0, 0)\r\n`)
+        } else if (action === 'contextmenu') {
+            inputProcess.stdin.write(`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safeX}, ${safeY}); [Win32.Win32Mouse]::mouse_event(0x18, 0, 0, 0, 0)\r\n`)
+        } else if (action === 'scroll') {
+            const scrollAmount = Math.round((Number.isFinite(deltaY) ? deltaY : 0) * -1)
+            inputProcess.stdin.write(`[Win32.Win32Mouse]::mouse_event(0x0800, 0, 0, ${scrollAmount}, 0)\r\n`)
+        } else if (action === 'key' && key) {
+            const safeKey = String(key).slice(0, 50).replace(/([+^%~{}()[\]])/g, '{$1}')
+            const keyB64 = Buffer.from(safeKey, 'utf8').toString('base64')
+            inputProcess.stdin.write(`try { [System.Windows.Forms.SendKeys]::SendWait([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${keyB64}"))) } catch {}\r\n`)
+        }
+    } catch (err) {
+        console.error('[Desktop] Failed to write to input stream:', err)
     }
 }
 
@@ -64,19 +124,9 @@ function createWindow() {
     // ─── FIX: Enable screen sharing via getDisplayMedia in Electron ──────────
     // Electron blocks getDisplayMedia by default. This handler intercepts the
     // browser's screen-share request and routes it through desktopCapturer.
-    mainWindow.webContents.session.setDisplayMediaRequestHandler(
-        (request, callback) => {
-            desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
-                // Auto-select the primary screen (sources[0]).
-                // The frontend can also send a preferred sourceId via IPC for a picker.
-                callback({ video: sources[0], audio: 'loopback' })
-            }).catch((err) => {
-                console.error('[ScreenShare] desktopCapturer error:', err)
-                callback({}) // empty callback cancels gracefully
-            })
-        },
-        { useSystemPicker: false } // use our own source picker flow
-    )
+    setupDisplayMediaHandler(mainWindow.webContents.session)
+    setupDisplayMediaHandler(session.defaultSession)
+
 
     // Determine target URL:
     // 1. If packaged (.exe production release): loads live cloud frontend https://meet.jtsmiddleeast.com
@@ -180,16 +230,13 @@ ipcMain.handle('get-screen-sources', async () => {
 
 // ─── IPC: Set a specific sourceId for next getDisplayMedia call ──────────────
 ipcMain.on('set-screen-source', (_event, sourceId) => {
-    if (!mainWindow) return
-    mainWindow.webContents.session.setDisplayMediaRequestHandler(
-        (_request, callback) => {
-            desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
-                const chosen = sources.find(s => s.id === sourceId) || sources[0]
-                callback({ video: chosen, audio: 'loopback' })
-            }).catch(() => callback({}))
-        },
-        { useSystemPicker: false }
-    )
+    selectedScreenSourceId = sourceId
+    if (mainWindow && mainWindow.webContents && mainWindow.webContents.session) {
+        setupDisplayMediaHandler(mainWindow.webContents.session)
+    }
+    if (session.defaultSession) {
+        setupDisplayMediaHandler(session.defaultSession)
+    }
 })
 
 // Handle Remote Control Input Events from Presenter's Frontend Overlay
@@ -224,5 +271,15 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit()
+    }
+})
+
+app.on('will-quit', () => {
+    if (inputProcess) {
+        try {
+            inputProcess.stdin.end()
+            inputProcess.kill()
+        } catch (e) {}
+        inputProcess = null
     }
 })

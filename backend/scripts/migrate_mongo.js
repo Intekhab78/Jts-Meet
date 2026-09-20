@@ -1,15 +1,17 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
 
-const ATLAS_URI = 'mongodb+srv://chatAI:bawsfL1sbUHjKTVt@cluster0.ehduwnn.mongodb.net/jts-meet?retryWrites=true&w=majority';
+const ATLAS_URI = process.env.ATLAS_URI || process.env.SOURCE_MONGO_URI || '';
+const VPS_USER = process.env.VPS_USER || 'jts_meet_user';
+const VPS_PASS_RAW = process.env.VPS_PASS || '';
+const VPS_PASS_ENCODED = encodeURIComponent(VPS_PASS_RAW);
 
-// The password is 'jts_@2026#Secur' -> URL encoded: 'jts_%402026%23Secur'
-const VPS_USER = 'jts_meet_user';
-const VPS_PASS_RAW = 'jts_@2026#Secur';
-const VPS_PASS_ENCODED = encodeURIComponent(VPS_PASS_RAW); // 'jts_%402026%23Secur'
-
-// Port 27018 is the local SSH tunnel forwarded to VPS 27017
-const VPS_TUNNEL_URI = `mongodb://${VPS_USER}:${VPS_PASS_ENCODED}@127.0.0.1:27018/jts_meet?authSource=jts_meet&directConnection=true`;
-const VPS_ADMIN_AUTH_URI = `mongodb://${VPS_USER}:${VPS_PASS_ENCODED}@127.0.0.1:27018/jts_meet?authSource=admin&directConnection=true`;
+const VPS_TUNNEL_URI = process.env.TARGET_MONGO_URI || (VPS_PASS_RAW
+    ? `mongodb://${VPS_USER}:${VPS_PASS_ENCODED}@127.0.0.1:27018/jts_meet?authSource=jts_meet&directConnection=true`
+    : '');
+const VPS_ADMIN_AUTH_URI = process.env.VPS_ADMIN_AUTH_URI || (VPS_PASS_RAW
+    ? `mongodb://${VPS_USER}:${VPS_PASS_ENCODED}@127.0.0.1:27018/jts_meet?authSource=admin&directConnection=true`
+    : '');
 
 async function main() {
     console.log('----------------------------------------------------');

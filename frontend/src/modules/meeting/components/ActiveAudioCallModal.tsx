@@ -340,7 +340,7 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                             />
                         ) : (
                             <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'linear-gradient(135deg, #181b2a 0%, #0d0f17 100%)' }}>
-                                <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#6264a7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '1rem', border: isRemoteSpeaking ? '2px solid #22c55e' : 'none' }}>
+                                <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#6264a7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '1rem', border: isRemoteSpeaking ? '1.5px solid #3b82f6' : 'none' }}>
                                     {call.peerName.charAt(0).toUpperCase()}
                                 </div>
                                 <span style={{ fontSize: '0.6875rem', color: '#94a3b8' }}>Camera Off</span>
@@ -367,7 +367,7 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                                         justifyContent: 'center',
                                         fontWeight: 700,
                                         fontSize: '0.8125rem',
-                                        border: isRemoteSpeaking ? '2px solid #22c55e' : '2px solid transparent'
+                                        border: isRemoteSpeaking ? '1.5px solid #3b82f6' : '1.5px solid transparent'
                                     }}
                                 >
                                     {call.peerName.charAt(0).toUpperCase()}

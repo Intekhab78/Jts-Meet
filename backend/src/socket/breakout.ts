@@ -71,3 +71,7 @@ export function registerBreakoutHandlers(io: Server, socket: Socket) {
         })
     })
 }
+
+export function cleanupBreakout(meetingId: string) {
+    activeBreakoutSessions.delete(meetingId)
+}

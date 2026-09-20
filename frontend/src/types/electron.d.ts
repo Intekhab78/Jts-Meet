@@ -9,6 +9,7 @@ declare global {
         electronAPI?: {
             /** True when running inside the Electron desktop app */
             isDesktop?: boolean
+            isElectron?: boolean
 
             /** Current OS platform (win32 | darwin | linux) */
             platform?: string

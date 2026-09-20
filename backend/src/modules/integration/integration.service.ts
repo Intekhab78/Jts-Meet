@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import https from 'https'
 import http from 'http'
+import dns from 'dns'
 import { Integration, IIntegration, IntegrationEvent, IntegrationType } from './integration.model'
 
 export interface CreateIntegrationDto {
@@ -13,6 +14,74 @@ export interface CreateIntegrationDto {
         channelName?: string
         googleFolderId?: string
         autoSyncRecordings?: boolean
+    }
+}
+
+export function isPrivateOrReservedIp(ip: string): boolean {
+    if (ip.startsWith('::ffff:')) {
+        ip = ip.substring(7)
+    }
+
+    if (ip === '::1' || ip === '0.0.0.0' || ip === 'localhost') return true
+
+    const parts = ip.split('.').map(Number)
+    if (parts.length === 4 && parts.every(p => !isNaN(p) && p >= 0 && p <= 255)) {
+        const [a, b] = parts
+        // 127.0.0.0/8 (Loopback)
+        if (a === 127) return true
+        // 10.0.0.0/8 (Private)
+        if (a === 10) return true
+        // 172.16.0.0/12 (Private)
+        if (a === 172 && b >= 16 && b <= 31) return true
+        // 192.168.0.0/16 (Private)
+        if (a === 192 && b === 168) return true
+        // 169.254.0.0/16 (Link Local / Cloud Metadata)
+        if (a === 169 && b === 254) return true
+        // 0.0.0.0/8 (Current network)
+        if (a === 0) return true
+    }
+
+    const lower = ip.toLowerCase()
+    if (lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80:')) {
+        return true
+    }
+
+    return false
+}
+
+export async function validateWebhookUrl(urlStr: string): Promise<{ valid: boolean; reason?: string }> {
+    try {
+        const parsed = new URL(urlStr)
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return { valid: false, reason: 'Webhook URL must use HTTP or HTTPS protocol' }
+        }
+
+        const hostname = parsed.hostname.toLowerCase().trim()
+        if (
+            hostname === 'localhost' ||
+            hostname.endsWith('.localhost') ||
+            hostname.endsWith('.internal') ||
+            hostname.endsWith('.local')
+        ) {
+            return { valid: false, reason: 'Localhost and internal hostnames are prohibited' }
+        }
+
+        if (isPrivateOrReservedIp(hostname)) {
+            return { valid: false, reason: 'Private or reserved IP addresses are prohibited' }
+        }
+
+        try {
+            const resolved = await dns.promises.lookup(hostname)
+            if (isPrivateOrReservedIp(resolved.address)) {
+                return { valid: false, reason: `Target host resolves to restricted IP: ${resolved.address}` }
+            }
+        } catch (dnsErr: any) {
+            return { valid: false, reason: `Unable to resolve webhook hostname: ${dnsErr.message}` }
+        }
+
+        return { valid: true }
+    } catch (err: any) {
+        return { valid: false, reason: 'Invalid URL format' }
     }
 }
 
@@ -35,6 +104,11 @@ export async function listIntegrations(userId: string, orgId?: string) {
 }
 
 export async function createIntegration(userId: string, orgId: string | undefined, dto: CreateIntegrationDto) {
+    const urlValidation = await validateWebhookUrl(dto.url)
+    if (!urlValidation.valid) {
+        throw { status: 400, message: urlValidation.reason || 'Invalid webhook URL' }
+    }
+
     const item = {
         organizationId: orgId,
         userId,
@@ -94,9 +168,18 @@ export async function toggleIntegration(userId: string, id: string, status: 'act
 }
 
 function sendHttpRequest(urlStr: string, body: string, headers: Record<string, string>): Promise<{ statusCode: number, responseBody: string, durationMs: number }> {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
         const start = Date.now()
         try {
+            const validation = await validateWebhookUrl(urlStr)
+            if (!validation.valid) {
+                return resolve({
+                    statusCode: 403,
+                    responseBody: 'SSRF Protection: Blocked target address (' + (validation.reason || 'Restricted host') + ')',
+                    durationMs: Date.now() - start
+                })
+            }
+
             const url = new URL(urlStr)
             const isHttps = url.protocol === 'https:'
             const client = isHttps ? https : http

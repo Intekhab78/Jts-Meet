@@ -240,9 +240,16 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
     const isLocalUser = label.toLowerCase().includes('you') || label === 'me'
     const [isMuted, setIsMuted] = useState(false)
     const [isVideoOffInternal, setIsVideoOffInternal] = useState(false)
-    const isVideoOff = isVideoOffProp !== undefined
-        ? isVideoOffProp
-        : (!stream || stream.getVideoTracks().length === 0 || isVideoOffInternal)
+    const hasLiveVideoTrack = !!stream &&
+        stream.getVideoTracks().length > 0 &&
+        stream.getVideoTracks()[0].readyState === 'live' &&
+        !stream.getVideoTracks()[0].muted &&
+        !(stream.getVideoTracks()[0] as any).isDummy
+
+    const isVideoOff = isVideoOffProp === true ||
+        (!isLocalUser && !hasLiveVideoTrack) ||
+        (isLocalUser && (!stream || stream.getVideoTracks().length === 0 || isVideoOffInternal))
+
     const [isSpeaking, setIsSpeaking] = useState(false)
     const activeSpeakerSpeaking = isActiveSpeaker || isSpeaking
     const effectiveMuted = isMutedProp !== undefined ? isMutedProp : isMuted
@@ -252,24 +259,32 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
         const el = videoRef.current
         if (!el) return
         if (stream) {
-            el.srcObject = null
-            el.srcObject = stream
+            if (el.srcObject !== stream) {
+                el.srcObject = stream
+            }
             el.play().catch(() => { })
 
             const handleTrackChange = () => {
-                if (el) {
-                    el.srcObject = null
+                if (el && el.srcObject !== stream) {
                     el.srcObject = stream
-                    el.play().catch(() => { })
                 }
+                el?.play().catch(() => { })
             }
 
             stream.addEventListener('addtrack', handleTrackChange)
             stream.addEventListener('removetrack', handleTrackChange)
 
+            const vTracks = stream.getVideoTracks()
+            vTracks.forEach(t => {
+                t.addEventListener('unmute', handleTrackChange)
+            })
+
             return () => {
                 stream.removeEventListener('addtrack', handleTrackChange)
                 stream.removeEventListener('removetrack', handleTrackChange)
+                vTracks.forEach(t => {
+                    t.removeEventListener('unmute', handleTrackChange)
+                })
             }
         } else {
             el.srcObject = null
@@ -647,9 +662,9 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                         )}
                         {activeSpeakerSpeaking && (
                             <span style={{ display: 'inline-flex', gap: 2, alignItems: 'flex-end', height: 12, paddingBottom: 1 }} title="Speaking">
-                                <span style={{ width: 2.5, height: 6, background: '#22c55e', borderRadius: 1, animation: 'audioWave 0.6s infinite alternate' }} />
-                                <span style={{ width: 2.5, height: 11, background: '#22c55e', borderRadius: 1, animation: 'audioWave 0.8s 0.2s infinite alternate' }} />
-                                <span style={{ width: 2.5, height: 7, background: '#22c55e', borderRadius: 1, animation: 'audioWave 0.5s 0.1s infinite alternate' }} />
+                                <span style={{ width: 2.5, height: 6, background: '#3b82f6', borderRadius: 1, animation: 'audioWave 0.6s infinite alternate' }} />
+                                <span style={{ width: 2.5, height: 11, background: '#3b82f6', borderRadius: 1, animation: 'audioWave 0.8s 0.2s infinite alternate' }} />
+                                <span style={{ width: 2.5, height: 7, background: '#3b82f6', borderRadius: 1, animation: 'audioWave 0.5s 0.1s infinite alternate' }} />
                             </span>
                         )}
                         <span>{isLocalUser ? 'You' : getFirstName(label)}</span>
@@ -2754,15 +2769,35 @@ export function MeetingRoom({
     const hasLeftRef = useRef(false)
     const hasAutoJoinedRef = useRef(false)
 
+    // User identity & guest state
+    const localUserId = getUserIdFromToken(token)
+    const isGuest = useMemo(() => {
+        try {
+            const decoded = parseJwt(token || initialToken)
+            return !!decoded?.isGuest || localUserId?.startsWith('guest_') || false
+        } catch (e) {
+            return false
+        }
+    }, [token, initialToken, localUserId])
+
+    const [meetingInfo, setMeetingInfo] = useState<any>(null)
+
     // Workspace Plan Tier Entitlements
+    // Priority:
+    // 1. Authoritative: Meeting's plan tier set by the meeting host / organization
+    // 2. Host's specific plan tier
+    // 3. Explicit prop passed to MeetingRoom (e.g. from guest or host router)
+    // 4. Saved local tier for logged-in host
     const currentPlanTier = useMemo(() => {
+        if (meetingInfo?.planTier) return meetingInfo.planTier.toLowerCase()
+        if (meetingInfo?.host?.planTier) return meetingInfo.host.planTier.toLowerCase()
         if (planTier) return planTier.toLowerCase()
         try {
             const saved = localStorage.getItem('jts_active_plan_tier')
             if (saved) return saved.toLowerCase()
         } catch (_) {}
         return 'free'
-    }, [planTier])
+    }, [planTier, meetingInfo])
 
     const canAccessRecording = useMemo(() => {
         return ['starter', 'pro', 'enterprise'].includes(currentPlanTier)
@@ -2827,7 +2862,19 @@ export function MeetingRoom({
         }
     }, [socket])
 
-    const { meetingId, setMeetingId, joined, setJoined, participants } = useMeetingContext()
+    const { meetingId, setMeetingId, joined, setJoined, participants: rawParticipants } = useMeetingContext()
+    const myUserId = useMemo(() => {
+        try {
+            const decoded = parseJwt(token || initialToken)
+            return decoded?.userId || decoded?.id || decoded?.sub || ''
+        } catch (_) {
+            return ''
+        }
+    }, [token, initialToken])
+
+    const participants = useMemo(() => {
+        return rawParticipants.filter(p => p && p !== 'me' && (!myUserId || p !== myUserId) && (!socket?.id || p !== socket.id))
+    }, [rawParticipants, myUserId, socket?.id])
     const {
         localStream, cameraStream, remoteStreams, connectToMeeting, leaveMeeting,
         startScreenShare, stopScreenShare, screenSharingUserId,
@@ -3250,11 +3297,13 @@ export function MeetingRoom({
     }
 
     // Meeting timer & Free Tier Limit (45 minutes = 2700s)
+    // When the host has a paid plan (Starter, Pro, Enterprise), meetings have UNLIMITED duration for ALL attendees.
     const { timerStr, seconds: meetingSecondsElapsed } = useMeetingTimer()
     const FREE_PLAN_LIMIT_SECONDS = 2700
     const freeTimeRemaining = Math.max(0, FREE_PLAN_LIMIT_SECONDS - meetingSecondsElapsed)
-    const isTimeLimitExpired = currentPlanTier === 'free' && freeTimeRemaining <= 0
-    const isLowTimeWarning = currentPlanTier === 'free' && freeTimeRemaining <= 600 && freeTimeRemaining > 0
+    const isMeetingPaid = ['starter', 'pro', 'enterprise'].includes(currentPlanTier)
+    const isTimeLimitExpired = !isMeetingPaid && freeTimeRemaining <= 0 && !isGuest
+    const isLowTimeWarning = !isMeetingPaid && freeTimeRemaining <= 600 && freeTimeRemaining > 0
 
     const formatRemainingTime = (totalSec: number) => {
         const mins = Math.floor(totalSec / 60)
@@ -3440,7 +3489,6 @@ export function MeetingRoom({
     const [showAttendanceModal, setShowAttendanceModal] = useState(false)
 
     const [toasts, setToasts] = useState<{ id: string, message: string, type: 'info' | 'success' | 'warning' }[]>([])
-    const [meetingInfo, setMeetingInfo] = useState<any>(null)
 
     // RTMP Live Streaming States
     const [showLiveStreamModal, setShowLiveStreamModal] = useState(false)
@@ -4776,7 +4824,6 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     const gridCols = totalStreams === 1 ? 1 : totalStreams <= 2 ? 2 : totalStreams <= 4 ? 2 : 3
 
     // Host & Role permissions
-    const localUserId = getUserIdFromToken(token)
     const activeRoomKey = meetingId || meetingInput.trim()
 
     const isRoomCreator = useMemo(() => {
@@ -4786,15 +4833,6 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             return false
         }
     }, [activeRoomKey])
-
-    const isGuest = useMemo(() => {
-        try {
-            const decoded = parseJwt(token || initialToken)
-            return !!decoded?.isGuest || localUserId?.startsWith('guest_') || false
-        } catch (e) {
-            return false
-        }
-    }, [token, initialToken, localUserId])
 
     const isLocalHost = useMemo(() => {
         if (meetingInfo && meetingInfo.host) {
@@ -5223,8 +5261,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     margin: isSingleTile ? 'auto' : undefined,
                     position: 'relative',
                     borderRadius: isCompact ? 'var(--radius-md)' : 'var(--radius-xl)',
-                    border: isUserSpeaking ? '2.5px solid #22c55e' : '1px solid rgba(255,255,255,0.08)',
-                    boxShadow: isUserSpeaking ? '0 0 0 2px rgba(34, 197, 94, 0.45), 0 0 24px rgba(34, 197, 94, 0.65)' : 'var(--shadow-sm)',
+                    border: isUserSpeaking ? '1.5px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
+                    boxShadow: isUserSpeaking ? '0 0 10px rgba(59, 130, 246, 0.35)' : 'var(--shadow-sm)',
                     overflow: 'hidden',
                     background: 'var(--color-surface-2)',
                     transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -5890,8 +5928,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                         position: 'relative',
                                         borderRadius: 'var(--radius-xl)',
                                         overflow: 'hidden',
-                                        border: activeSpeaker === primaryUser ? '2.5px solid #22c55e' : '1px solid var(--color-border)',
-                                        boxShadow: activeSpeaker === primaryUser ? '0 0 0 2px rgba(34, 197, 94, 0.45), 0 0 24px rgba(34, 197, 94, 0.65)' : 'var(--shadow-sm)',
+                                        border: activeSpeaker === primaryUser ? '1.5px solid #3b82f6' : '1px solid var(--color-border)',
+                                        boxShadow: activeSpeaker === primaryUser ? '0 0 10px rgba(59, 130, 246, 0.35)' : 'var(--shadow-sm)',
                                         transition: 'border-color 0.3s ease'
                                     }}>
                                         <VideoTile
@@ -8840,8 +8878,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 </div>
             )}
 
-            {/* Free Plan 45-Minute Time Limit Reached Modal */}
-            {isTimeLimitExpired && (
+            {/* Free Plan 45-Minute Time Limit Reached Modal - ONLY shown for Host on Free Plan */}
+            {isTimeLimitExpired && !isMeetingPaid && !isGuest && (
                 <div style={{
                     position: 'fixed',
                     inset: 0,

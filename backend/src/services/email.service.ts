@@ -1,8 +1,8 @@
 import nodemailer from 'nodemailer'
 
-const SMTP_USER = process.env.SMTP_USER || 'mohitmaurya644@gmail.com'
-const SMTP_PASS = process.env.SMTP_PASS || 'msfoohnceenbyruf'
-const EMAIL_FROM = process.env.EMAIL_FROM || `"JTS-Meet" <${SMTP_USER}>`
+const SMTP_USER = process.env.SMTP_USER || ''
+const SMTP_PASS = process.env.SMTP_PASS || ''
+const EMAIL_FROM = process.env.EMAIL_FROM || (SMTP_USER ? `"JTS-Meet" <${SMTP_USER}>` : '"JTS-Meet" <noreply@jtsmeet.com>')
 
 const transporter = nodemailer.createTransport({
     service: 'gmail',

@@ -117,3 +117,7 @@ export function registerPollHandlers(io: Server, socket: Socket) {
         })
     })
 }
+
+export function cleanupPolls(meetingId: string) {
+    meetingPollsMap.delete(meetingId)
+}

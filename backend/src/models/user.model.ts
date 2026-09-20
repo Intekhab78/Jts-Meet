@@ -16,6 +16,7 @@ export interface IUser extends Document {
     lastSeen?: Date | null
     otpCode?: string | null
     otpExpires?: Date | null
+    isSuperAdmin?: boolean
     createdAt: Date
     updatedAt: Date
 }
@@ -33,6 +34,7 @@ const UserSchema = new Schema<IUser>(
         },
         customStatus: { type: String, default: '', maxlength: 100 },
         emailVerified: { type: Boolean, default: false },
+        isSuperAdmin: { type: Boolean, default: false },
         googleId: { type: String, default: null, index: true },
         microsoftId: { type: String, default: null, index: true },
         tenantId: { type: String, default: null },

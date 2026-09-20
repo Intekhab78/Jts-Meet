@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express'
+import { Types } from 'mongoose'
 import {
     generateMeetingSummary,
     askMeetingAssistant,
@@ -7,9 +8,15 @@ import {
     generateMeetingAgenda
 } from '../services/gemini.service'
 import jwt from 'jsonwebtoken'
-import { JWT_SECRET } from '../config'
+import { JWT_SECRET, ADMIN_EMAIL } from '../config'
+import { User } from '../models/user.model'
+import { Organization } from '../modules/organization/organization.model'
 
 const router = Router()
+
+interface AuthenticatedAiRequest extends Request {
+    userId?: string
+}
 
 const optionalAuth = (req: any, _res: any, next: any) => {
     const authHeader = req.headers.authorization
@@ -21,6 +28,31 @@ const optionalAuth = (req: any, _res: any, next: any) => {
         } catch (e) {}
     }
     next()
+}
+
+async function getUserPlanTier(userId?: string): Promise<string> {
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+        return 'free'
+    }
+
+    try {
+        const user = await User.findById(userId).select('isSuperAdmin email').lean()
+        if (!user) return 'free'
+        if (user.isSuperAdmin || (ADMIN_EMAIL && user.email?.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim())) {
+            return 'enterprise'
+        }
+
+        const org = await Organization.findOne({
+            $or: [
+                { ownerId: new Types.ObjectId(userId) },
+                { 'members.userId': new Types.ObjectId(userId), 'members.status': 'active' }
+            ]
+        }).select('planTier').lean()
+
+        return org?.planTier?.toLowerCase() || 'free'
+    } catch {
+        return 'free'
+    }
 }
 
 // Generate AI meeting summary & action items
@@ -113,10 +145,10 @@ router.post('/catch-up', optionalAuth, async (req: Request, res: Response): Prom
 // AI Meeting Agenda & Prep Generator (Zoom / Teams Copilot style)
 router.post('/agenda-generate', optionalAuth, async (req: Request, res: Response): Promise<void> => {
     try {
-        const { title, durationMinutes, context, participants, userPlan } = req.body
+        const { title, durationMinutes, context, participants } = req.body
 
-        // Free-tier gate: return upgrade prompt instead of 403 so frontend can handle gracefully
-        const plan = (userPlan || 'free').toLowerCase()
+        // Free-tier gate: verify plan from DB and return upgrade prompt instead of 403
+        const plan = await getUserPlanTier((req as AuthenticatedAiRequest).userId)
         if (plan === 'free') {
             res.status(403).json({
                 success: false,

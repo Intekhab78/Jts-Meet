@@ -48,6 +48,28 @@ export async function createMeeting(hostId: string, options: string | CreateMeet
         .filter(id => Types.ObjectId.isValid(id))
         .map(id => new Types.ObjectId(id))
 
+    // Resolve organization and host's active planTier
+    let resolvedOrgId = opts.organizationId && Types.ObjectId.isValid(opts.organizationId) ? new Types.ObjectId(opts.organizationId) : null
+    let resolvedPlanTier = 'free'
+
+    if (resolvedOrgId) {
+        const org = await Organization.findById(resolvedOrgId).select('planTier').exec()
+        if (org?.planTier) {
+            resolvedPlanTier = org.planTier
+        }
+    } else {
+        const userOrg = await Organization.findOne({
+            'members.userId': hostObjectId,
+            'members.status': 'active'
+        }).select('planTier').sort({ createdAt: -1 }).exec()
+        if (userOrg) {
+            resolvedOrgId = userOrg._id as Types.ObjectId
+            if (userOrg.planTier) {
+                resolvedPlanTier = userOrg.planTier
+            }
+        }
+    }
+
     const meeting = new Meeting({
         title: opts.title.trim(),
         meetingId,
@@ -66,7 +88,8 @@ export async function createMeeting(hostId: string, options: string | CreateMeet
         recurrencePattern: opts.recurrencePattern || (opts.isRecurring ? 'daily' : 'none'),
         scheduledDate: opts.scheduledDate || '',
         scheduledTime: opts.scheduledTime || '',
-        organizationId: opts.organizationId && Types.ObjectId.isValid(opts.organizationId) ? new Types.ObjectId(opts.organizationId) : null,
+        planTier: resolvedPlanTier,
+        organizationId: resolvedOrgId,
         teamId: opts.teamId && Types.ObjectId.isValid(opts.teamId) ? new Types.ObjectId(opts.teamId) : null,
         notifyByEmail: opts.notifyByEmail !== false,
         startedAt: null,
@@ -120,13 +143,33 @@ export async function createMeeting(hostId: string, options: string | CreateMeet
 }
 
 export async function getMeetingByMeetingId(meetingId: string): Promise<IMeeting | null> {
-    return Meeting.findOne({ meetingId })
+    const meeting = await Meeting.findOne({ meetingId })
         .populate('host', 'fullName email')
         .populate('coHosts', 'fullName email')
         .populate('participants', 'fullName email')
         .populate('waitingRoom', 'fullName email')
         .populate('mutedUsers', 'fullName email')
         .exec()
+
+    if (meeting && (!meeting.planTier || meeting.planTier === 'free') && meeting.host) {
+        try {
+            const hostId = (meeting.host as any)._id || meeting.host
+            if (Types.ObjectId.isValid(hostId)) {
+                const hostOrg = await Organization.findOne({
+                    'members.userId': new Types.ObjectId(hostId),
+                    'members.status': 'active'
+                }).select('planTier').exec()
+                if (hostOrg?.planTier && hostOrg.planTier !== 'free') {
+                    meeting.planTier = hostOrg.planTier
+                    Meeting.updateOne({ _id: meeting._id }, { planTier: hostOrg.planTier }).exec().catch(() => {})
+                }
+            }
+        } catch (e) {
+            console.error('[Meeting] Failed to dynamically resolve host plan tier:', e)
+        }
+    }
+
+    return meeting
 }
 
 export async function joinMeeting(meetingId: string, userId: string): Promise<IMeeting | null> {
@@ -137,6 +180,21 @@ export async function joinMeeting(meetingId: string, userId: string): Promise<IM
     const userObjectId = new Types.ObjectId(userId)
 
     if (!meeting) {
+        let instantPlanTier = 'free'
+        let instantOrgId: Types.ObjectId | null = null
+        try {
+            const userOrg = await Organization.findOne({
+                'members.userId': userObjectId,
+                'members.status': 'active'
+            }).select('planTier').sort({ createdAt: -1 }).exec()
+            if (userOrg) {
+                instantOrgId = userOrg._id as Types.ObjectId
+                if (userOrg.planTier) {
+                    instantPlanTier = userOrg.planTier
+                }
+            }
+        } catch (_) {}
+
         meeting = new Meeting({
             title: `Instant Meeting (${meetingId})`,
             meetingId,
@@ -147,6 +205,8 @@ export async function joinMeeting(meetingId: string, userId: string): Promise<IM
             mutedUsers: [],
             blockedUsers: [],
             isWaitingRoomEnabled: false,
+            planTier: instantPlanTier,
+            organizationId: instantOrgId,
             status: 'active',
             startedAt: new Date(),
             endedAt: null

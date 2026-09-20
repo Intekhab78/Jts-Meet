@@ -44,9 +44,15 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
         return { x, y }
     }
 
+    const lastMouseMoveRef = useRef<number>(0)
+
     // CONTROLLER: Capture mouse movements and clicks
     const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!isController || !socket || !meetingId) return
+        const now = Date.now()
+        if (now - lastMouseMoveRef.current < 25) return // Throttle to ~40fps to prevent socket flooding
+        lastMouseMoveRef.current = now
+
         const { x, y } = getNormalizedCoords(e)
 
         socket.emit('remote-control:mouse', {

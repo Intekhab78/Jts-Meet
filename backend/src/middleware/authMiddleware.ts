@@ -9,7 +9,10 @@ export interface AuthRequest extends Request {
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
+    let token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
+    if (!token && req.query?.token && typeof req.query.token === 'string') {
+        token = req.query.token
+    }
 
     if (!token) {
         return sendError(res, 401, 'Unauthorized access')

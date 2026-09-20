@@ -54,3 +54,7 @@ export function registerWhiteboardHandlers(io: Server, socket: Socket) {
         })
     })
 }
+
+export function cleanupWhiteboard(meetingId: string) {
+    meetingWhiteboardStrokesMap.delete(meetingId)
+}

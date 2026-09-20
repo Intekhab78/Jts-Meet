@@ -65,9 +65,9 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             isMuted: payload.isMuted
         })
 
-        // Get total participants in the meeting room and existing peer roster
+        // Get total participants in the meeting room and existing peer roster (excluding the joining user themselves)
         const sockets = await io.in(`meeting:${payload.meetingId}`).allSockets()
-        const peers = getMeetingPeersInfo(payload.meetingId)
+        const peers = getMeetingPeersInfo(payload.meetingId).filter((p) => p.userId !== userId)
 
         socket.emit(SocketEvents.WEBRTC_JOIN, { 
             meetingId: payload.meetingId, 

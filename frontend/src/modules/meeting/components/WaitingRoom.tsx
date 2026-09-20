@@ -53,7 +53,6 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
             const approvedToken = data?.token || guestToken
             try {
                 localStorage.setItem('jts_guest_token', approvedToken)
-                localStorage.setItem('jts_token', approvedToken)
             } catch (e) {}
             // Stop preview stream before moving into room
             stopMediaStream()

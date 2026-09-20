@@ -8,6 +8,7 @@ import mongoose, { Types } from 'mongoose'
 import { JWT_SECRET, JWT_EXPIRES_IN } from '../config'
 import { LoginPayload, RegisterPayload } from '../validators/auth.validator'
 import { sendOTPEmail, sendResetPasswordEmail } from './email.service'
+import { withTransactionOrDirect } from '../utils/transactionHelper'
 
 interface AuthResult {
     user: Record<string, any>
@@ -35,7 +36,7 @@ export async function createSession(userId: string, deviceInfo = '', ipAddress =
         ipAddress,
         expiresAt
     })
-    await newSession.save({ session })
+    await newSession.save(session ? { session } : undefined)
 
     return { accessToken, refreshToken }
 }
@@ -45,11 +46,9 @@ function generateOTP(): string {
 }
 
 export async function registerUser(payload: RegisterPayload, deviceInfo?: string, ipAddress?: string): Promise<AuthResult> {
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    try {
-        let user = await User.findOne({ email: payload.email.toLowerCase().trim() }).session(session)
+    return withTransactionOrDirect(async (session) => {
+        const query = User.findOne({ email: payload.email.toLowerCase().trim() })
+        let user = await (session ? query.session(session) : query)
         
         const otpCode = generateOTP()
         const otpExpires = new Date(Date.now() + 15 * 60 * 1000)
@@ -60,7 +59,7 @@ export async function registerUser(payload: RegisterPayload, deviceInfo?: string
                 user.password = payload.password
                 user.otpCode = otpCode
                 user.otpExpires = otpExpires
-                await user.save({ session })
+                await user.save(session ? { session } : undefined)
             } else {
                 throw { status: 409, message: 'Email already exists' }
             }
@@ -76,32 +75,23 @@ export async function registerUser(payload: RegisterPayload, deviceInfo?: string
                 otpCode,
                 otpExpires
             })
-            await user.save({ session })
+            await user.save(session ? { session } : undefined)
         }
 
         const { accessToken, refreshToken } = await createSession(user._id.toString(), deviceInfo, ipAddress, session)
-
-        await session.commitTransaction()
 
         sendOTPEmail(user.email, otpCode).catch((err) => {
             console.error('Failed to send verification email:', err)
         })
 
         return { user: user.toJSON(), accessToken, refreshToken }
-    } catch (err) {
-        await session.abortTransaction()
-        throw err
-    } finally {
-        session.endSession()
-    }
+    })
 }
 
 export async function loginUser(payload: LoginPayload, deviceInfo?: string, ipAddress?: string): Promise<AuthResult> {
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    try {
-        const user = await User.findOne({ email: payload.email.toLowerCase().trim() }).select('+password').session(session)
+    return withTransactionOrDirect(async (session) => {
+        const query = User.findOne({ email: payload.email.toLowerCase().trim() }).select('+password')
+        const user = await (session ? query.session(session) : query)
         if (!user) {
             throw { status: 401, message: 'Invalid credentials' }
         }
@@ -113,21 +103,18 @@ export async function loginUser(payload: LoginPayload, deviceInfo?: string, ipAd
 
         user.status = 'online'
         user.lastSeen = new Date()
-        await user.save({ session })
+        await user.save(session ? { session } : undefined)
 
         const { accessToken, refreshToken } = await createSession(user._id.toString(), deviceInfo, ipAddress, session)
 
-        await session.commitTransaction()
         return { user: user.toJSON(), accessToken, refreshToken }
-    } catch (err) {
-        await session.abortTransaction()
-        throw err
-    } finally {
-        session.endSession()
-    }
+    })
 }
 
 export async function getCurrentUser(userId: string): Promise<Record<string, any>> {
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+        throw { status: 401, message: 'Invalid user session' }
+    }
     const user = await User.findById(userId)
     if (!user) {
         throw { status: 404, message: 'User not found' }
@@ -136,11 +123,9 @@ export async function getCurrentUser(userId: string): Promise<Record<string, any
 }
 
 export async function verifyOtp(email: string, code: string, deviceInfo?: string, ipAddress?: string): Promise<AuthResult> {
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    try {
-        const user = await User.findOne({ email: email.toLowerCase().trim() }).session(session)
+    return withTransactionOrDirect(async (session) => {
+        const query = User.findOne({ email: email.toLowerCase().trim() })
+        const user = await (session ? query.session(session) : query)
         if (!user) {
             throw { status: 404, message: 'User not found' }
         }
@@ -156,18 +141,12 @@ export async function verifyOtp(email: string, code: string, deviceInfo?: string
         user.emailVerified = true
         user.otpCode = null
         user.otpExpires = null
-        await user.save({ session })
+        await user.save(session ? { session } : undefined)
 
         const { accessToken, refreshToken } = await createSession(user._id.toString(), deviceInfo, ipAddress, session)
 
-        await session.commitTransaction()
         return { user: user.toJSON(), accessToken, refreshToken }
-    } catch (err) {
-        await session.abortTransaction()
-        throw err
-    } finally {
-        session.endSession()
-    }
+    })
 }
 
 export async function resendOtp(email: string): Promise<void> {
@@ -221,33 +200,23 @@ export async function resetPassword(email: string, code: string, password: Regis
 }
 
 export async function refreshSessionToken(oldRefreshToken: string, deviceInfo = '', ipAddress = ''): Promise<{ accessToken: string; refreshToken: string }> {
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    try {
-        const currentSession = await Session.findOne({ refreshToken: oldRefreshToken }).session(session)
+    return withTransactionOrDirect(async (session) => {
+        const query = Session.findOne({ refreshToken: oldRefreshToken })
+        const currentSession = await (session ? query.session(session) : query)
         if (!currentSession) {
             throw { status: 401, message: 'Invalid refresh token' }
         }
         if (currentSession.expiresAt < new Date()) {
-            await currentSession.deleteOne({ session })
-            await session.commitTransaction()
+            await currentSession.deleteOne(session ? { session } : undefined)
             throw { status: 401, message: 'Refresh token expired' }
         }
 
         const userId = currentSession.userId.toString()
-        await currentSession.deleteOne({ session })
+        await currentSession.deleteOne(session ? { session } : undefined)
 
         const tokens = await createSession(userId, deviceInfo, ipAddress, session)
-
-        await session.commitTransaction()
         return tokens
-    } catch (err) {
-        await session.abortTransaction()
-        throw err
-    } finally {
-        session.endSession()
-    }
+    })
 }
 
 export async function invalidateSession(refreshToken: string): Promise<void> {
@@ -289,19 +258,18 @@ export async function revokeSession(userId: string, sessionId: string): Promise<
 }
 
 export async function loginOrCreateSsoUser(email: string, orgSlug: string, deviceInfo = '', ipAddress = ''): Promise<AuthResult> {
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    try {
+    return withTransactionOrDirect(async (session) => {
         const cleanEmail = email.toLowerCase().trim()
         const cleanSlug = orgSlug.toLowerCase().trim()
 
-        const org = await Organization.findOne({ slug: cleanSlug }).session(session)
+        const orgQuery = Organization.findOne({ slug: cleanSlug })
+        const org = await (session ? orgQuery.session(session) : orgQuery)
         if (!org) {
             throw { status: 404, message: 'Organization workspace not found' }
         }
 
-        let user = await User.findOne({ email: cleanEmail }).session(session)
+        const userQuery = User.findOne({ email: cleanEmail })
+        let user = await (session ? userQuery.session(session) : userQuery)
         if (!user) {
             user = new User({
                 fullName: cleanEmail.split('@')[0],
@@ -312,12 +280,12 @@ export async function loginOrCreateSsoUser(email: string, orgSlug: string, devic
                 emailVerified: true,
                 lastSeen: new Date()
             })
-            await user.save({ session })
+            await user.save(session ? { session } : undefined)
         } else {
             user.status = 'online'
             user.lastSeen = new Date()
             user.emailVerified = true
-            await user.save({ session })
+            await user.save(session ? { session } : undefined)
         }
 
         const isMember = org.members.some(m => m.userId.toString() === user!._id.toString())
@@ -329,26 +297,20 @@ export async function loginOrCreateSsoUser(email: string, orgSlug: string, devic
                 invitedBy: org.ownerId,
                 status: 'active'
             })
-            await org.save({ session })
+            await org.save(session ? { session } : undefined)
         } else {
             const member = org.members.find(m => m.userId.toString() === user!._id.toString())
             if (member && member.status !== 'active') {
                 member.status = 'active'
                 member.joinedAt = new Date()
-                await org.save({ session })
+                await org.save(session ? { session } : undefined)
             }
         }
 
         const { accessToken, refreshToken } = await createSession(user._id.toString(), deviceInfo, ipAddress, session)
 
-        await session.commitTransaction()
         return { user: user.toJSON(), accessToken, refreshToken }
-    } catch (err) {
-        await session.abortTransaction()
-        throw err
-    } finally {
-        session.endSession()
-    }
+    })
 }
 
 async function verifyGoogleIdToken(idToken: string) {
@@ -384,22 +346,21 @@ async function verifyGoogleIdToken(idToken: string) {
 export async function loginOrCreateGoogleUser(idToken: string, deviceInfo = '', ipAddress = ''): Promise<AuthResult> {
     const googleData = await verifyGoogleIdToken(idToken)
 
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    try {
+    return withTransactionOrDirect(async (session) => {
         const cleanEmail = googleData.email.toLowerCase().trim()
 
-        let user = await User.findOne({ googleId: googleData.googleId }).session(session)
+        const userQuery = User.findOne({ googleId: googleData.googleId })
+        let user = await (session ? userQuery.session(session) : userQuery)
 
         if (!user) {
-            user = await User.findOne({ email: cleanEmail }).session(session)
+            const emailQuery = User.findOne({ email: cleanEmail })
+            user = await (session ? emailQuery.session(session) : emailQuery)
 
             if (user) {
                 user.googleId = googleData.googleId
                 user.provider = 'google'
                 user.emailVerified = true
-                await user.save({ session })
+                await user.save(session ? { session } : undefined)
             } else {
                 const secureRandomPassword = crypto.randomBytes(16).toString('hex')
                 user = new User({
@@ -413,24 +374,18 @@ export async function loginOrCreateGoogleUser(idToken: string, deviceInfo = '', 
                     status: 'online',
                     lastSeen: new Date()
                 })
-                await user.save({ session })
+                await user.save(session ? { session } : undefined)
             }
         } else {
             user.status = 'online'
             user.lastSeen = new Date()
-            await user.save({ session })
+            await user.save(session ? { session } : undefined)
         }
 
         const { accessToken, refreshToken } = await createSession(user._id.toString(), deviceInfo, ipAddress, session)
 
-        await session.commitTransaction()
         return { user: user.toJSON(), accessToken, refreshToken }
-    } catch (err) {
-        await session.abortTransaction()
-        throw err
-    } finally {
-        session.endSession()
-    }
+    })
 }
 
 export async function loginOrCreateMicrosoftUser(code: string, redirectUri: string, deviceInfo = '', ipAddress = ''): Promise<AuthResult> {
@@ -501,21 +456,20 @@ export async function loginOrCreateMicrosoftUser(code: string, redirectUri: stri
     const cleanEmail = email.toLowerCase().trim()
 
     // 3. Database operations
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    try {
-        let user = await User.findOne({ microsoftId: decoded.oid }).session(session)
+    return withTransactionOrDirect(async (session) => {
+        const userQuery = User.findOne({ microsoftId: decoded.oid })
+        let user = await (session ? userQuery.session(session) : userQuery)
 
         if (!user) {
-            user = await User.findOne({ email: cleanEmail }).session(session)
+            const emailQuery = User.findOne({ email: cleanEmail })
+            user = await (session ? emailQuery.session(session) : emailQuery)
 
             if (user) {
                 user.microsoftId = decoded.oid
                 user.tenantId = decoded.tid
                 user.provider = 'microsoft'
                 user.emailVerified = true
-                await user.save({ session })
+                await user.save(session ? { session } : undefined)
             } else {
                 const secureRandomPassword = crypto.randomBytes(16).toString('hex')
                 user = new User({
@@ -530,22 +484,16 @@ export async function loginOrCreateMicrosoftUser(code: string, redirectUri: stri
                     status: 'online',
                     lastSeen: new Date()
                 })
-                await user.save({ session })
+                await user.save(session ? { session } : undefined)
             }
         } else {
             user.status = 'online'
             user.lastSeen = new Date()
-            await user.save({ session })
+            await user.save(session ? { session } : undefined)
         }
 
         const { accessToken, refreshToken } = await createSession(user._id.toString(), deviceInfo, ipAddress, session)
 
-        await session.commitTransaction()
         return { user: user.toJSON(), accessToken, refreshToken }
-    } catch (err) {
-        await session.abortTransaction()
-        throw err
-    } finally {
-        session.endSession()
-    }
+    })
 }

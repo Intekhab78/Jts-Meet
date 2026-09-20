@@ -8,12 +8,13 @@ import { createGeneralChannel } from '../channel/channel.service'
 import { Channel } from '../channel/channel.model'
 import { ChannelChat } from '../channel-chat/channelChat.model'
 import { NotificationService } from '../notification/notification.service'
-import { FRONTEND_URL } from '../../config'
+import { FRONTEND_URL, ADMIN_EMAIL } from '../../config'
+import { withTransactionOrDirect } from '../../utils/transactionHelper'
 
 async function isTeamOwnerOrAdmin(team: ITeam, userId: string): Promise<boolean> {
     try {
-        const user = await User.findById(userId).select('email').exec()
-        if (user?.email?.toLowerCase().trim() === 'admin@jtsmeet.com') return true
+        const user = await User.findById(userId).select('email isSuperAdmin').exec()
+        if (user?.isSuperAdmin || (ADMIN_EMAIL && user?.email?.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim())) return true
     } catch (_) {}
 
     const member = team.members.find((m) => m.userId.equals(new Types.ObjectId(userId)))
@@ -37,16 +38,14 @@ export async function createTeam(userId: string, payload: {
     color?: string
     visibility: 'public' | 'private'
 }): Promise<ITeam> {
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
-    try {
+    return withTransactionOrDirect(async (session) => {
         const organization = await getOrganizationById(payload.organizationId, session)
         if (!organization) {
             throw { status: 404, message: 'Organization not found' }
         }
 
-        const existingTeam = await Team.findOne({ organizationId: organization._id, name: payload.name.trim(), deletedAt: null }).session(session).exec()
+        const teamQuery = Team.findOne({ organizationId: organization._id, name: payload.name.trim(), deletedAt: null })
+        const existingTeam = await (session ? teamQuery.session(session) : teamQuery).exec()
         if (existingTeam) {
             throw { status: 409, message: 'Team name already exists in organization' }
         }
@@ -71,17 +70,11 @@ export async function createTeam(userId: string, payload: {
             ]
         })
 
-        const savedTeam = await team.save({ session })
+        const savedTeam = await team.save(session ? { session } : undefined)
         await createGeneralChannel(userId, savedTeam.organizationId.toHexString(), savedTeam._id.toHexString(), session)
 
-        await session.commitTransaction()
         return savedTeam
-    } catch (err) {
-        await session.abortTransaction()
-        throw err
-    } finally {
-        session.endSession()
-    }
+    })
 }
 
 export async function getTeam(teamId: string): Promise<ITeam | null> {

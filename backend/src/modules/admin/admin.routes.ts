@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { adminController } from './admin.controller'
 import { asyncWrapper } from '../../utils/asyncWrapper'
 import { authenticate } from '../../middleware/authMiddleware'
-import { requireAdmin } from '../../middleware/adminMiddleware'
+import { requireAdmin, requireSuperAdmin } from '../../middleware/adminMiddleware'
 import { planController } from '../plan/plan.controller'
 
 const router = Router()
@@ -16,7 +16,7 @@ router.get('/logs', authenticate, requireAdmin, asyncWrapper(adminController.get
 router.get('/users', authenticate, requireAdmin, asyncWrapper(adminController.getUsers))
 router.patch('/users/:userId/role', authenticate, requireAdmin, asyncWrapper(adminController.updateRole))
 router.patch('/users/:userId/status', authenticate, requireAdmin, asyncWrapper(adminController.updateStatus))
-router.post('/users/:userId/reset-password', authenticate, requireAdmin, asyncWrapper(adminController.resetPassword))
+router.post('/users/:userId/reset-password', authenticate, requireSuperAdmin, asyncWrapper(adminController.resetPassword))
 router.post('/users/invite', authenticate, requireAdmin, asyncWrapper(adminController.inviteUser))
 
 // TAB 2: Attendance & Compliance
@@ -28,17 +28,17 @@ router.patch('/storage/retention', authenticate, requireAdmin, asyncWrapper(admi
 router.delete('/recordings/:meetingId', authenticate, requireAdmin, asyncWrapper(adminController.deleteRecordingItem))
 
 // SUPER ADMIN MASTER PLATFORM CENTER (MULTI-TENANT & TELEMETRY)
-router.get('/tenants', authenticate, requireAdmin, asyncWrapper(adminController.getTenantsList))
-router.patch('/tenants/:orgId/status', authenticate, requireAdmin, asyncWrapper(adminController.updateTenantStatusAction))
-router.patch('/tenants/:orgId/quota', authenticate, requireAdmin, asyncWrapper(adminController.updateTenantQuotaAction))
-router.get('/telemetry', authenticate, requireAdmin, asyncWrapper(adminController.getTelemetryAction))
-router.post('/broadcast', authenticate, requireAdmin, asyncWrapper(adminController.broadcastNoticeAction))
+router.get('/tenants', authenticate, requireSuperAdmin, asyncWrapper(adminController.getTenantsList))
+router.patch('/tenants/:orgId/status', authenticate, requireSuperAdmin, asyncWrapper(adminController.updateTenantStatusAction))
+router.patch('/tenants/:orgId/quota', authenticate, requireSuperAdmin, asyncWrapper(adminController.updateTenantQuotaAction))
+router.get('/telemetry', authenticate, requireSuperAdmin, asyncWrapper(adminController.getTelemetryAction))
+router.post('/broadcast', authenticate, requireSuperAdmin, asyncWrapper(adminController.broadcastNoticeAction))
 
 // DYNAMIC SAAS PLAN TIER MANAGEMENT (SUPER ADMIN)
-router.get('/plans', authenticate, requireAdmin, asyncWrapper(planController.getAllPlans))
-router.post('/plans', authenticate, requireAdmin, asyncWrapper(planController.createPlan))
-router.patch('/plans/:planId', authenticate, requireAdmin, asyncWrapper(planController.updatePlan))
-router.delete('/plans/:planId', authenticate, requireAdmin, asyncWrapper(planController.deletePlan))
+router.get('/plans', authenticate, requireSuperAdmin, asyncWrapper(planController.getAllPlans))
+router.post('/plans', authenticate, requireSuperAdmin, asyncWrapper(planController.createPlan))
+router.patch('/plans/:planId', authenticate, requireSuperAdmin, asyncWrapper(planController.updatePlan))
+router.delete('/plans/:planId', authenticate, requireSuperAdmin, asyncWrapper(planController.deletePlan))
 
 export default router
 

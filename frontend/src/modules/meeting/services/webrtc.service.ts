@@ -84,21 +84,26 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
     pc.ontrack = (event) => {
         console.log(`[WebRTC] ontrack received: kind=${event.track.kind} id=${event.track.id} from user ${userId}`)
         
-        let pStream = peerRemoteStreams.get(userId)
+        let pStream = (event.streams && event.streams[0]) ? event.streams[0] : peerRemoteStreams.get(userId)
         if (!pStream) {
             pStream = new MediaStream()
-            peerRemoteStreams.set(userId, pStream)
+        }
+        peerRemoteStreams.set(userId, pStream)
+
+        if (!pStream.getTracks().some(t => t.id === event.track.id)) {
+            pStream.addTrack(event.track)
         }
 
-        // Replace existing track of same kind so we don't accumulate duplicates
-        const existing = pStream.getTracks().find(t => t.kind === event.track.kind)
-        if (existing) {
-            pStream.removeTrack(existing)
+        const notify = () => {
+            handlers.onTrack(pStream!)
         }
-        pStream.addTrack(event.track)
 
-        // Always create a fresh MediaStream clone so React triggers useEffect and state updates
-        handlers.onTrack(new MediaStream(pStream.getTracks()))
+        notify()
+
+        event.track.onunmute = () => {
+            console.log(`[WebRTC] track unmuted: kind=${event.track.kind} from user ${userId}`)
+            notify()
+        }
     }
 
     if (localStream) {

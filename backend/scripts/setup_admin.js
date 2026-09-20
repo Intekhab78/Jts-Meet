@@ -6,8 +6,8 @@ async function run() {
   await mongoose.connect(process.env.MONGO_URI);
   const users = mongoose.connection.collection('users');
   
-  const email = 'admin@jtsmeet.com';
-  const rawPassword = 'Admin@12345';
+  const email = process.env.ADMIN_EMAIL || 'admin@jtsmeet.com';
+  const rawPassword = process.env.ADMIN_PASSWORD || 'Admin@12345';
   const hashedPassword = await bcrypt.hash(rawPassword, 12);
   
   const existing = await users.findOne({ email });
@@ -16,7 +16,8 @@ async function run() {
       fullName: 'System Administrator',
       email,
       password: hashedPassword,
-      isEmailVerified: true,
+      emailVerified: true,
+      isSuperAdmin: true,
       createdAt: new Date(),
       updatedAt: new Date()
     });
@@ -24,7 +25,7 @@ async function run() {
   } else {
     await users.updateOne(
       { email },
-      { $set: { password: hashedPassword, isEmailVerified: true, fullName: 'System Administrator' } }
+      { $set: { password: hashedPassword, emailVerified: true, isSuperAdmin: true, fullName: 'System Administrator' } }
     );
     console.log('SUCCESS: Admin updated ->', email, '/', rawPassword);
   }

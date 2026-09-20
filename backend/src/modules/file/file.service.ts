@@ -20,18 +20,23 @@ export async function createFileMetadata(
     messageId?: string
 ): Promise<IFileMetadata> {
     const checksum = await computeChecksum(buffer)
-    const existing = await FileMetadata.findOne({ checksum, originalName, deletedAt: null }).exec()
+    const existing = await FileMetadata.findOne({
+        checksum,
+        originalName,
+        uploadedBy: new Types.ObjectId(uploadedBy),
+        deletedAt: null
+    }).exec()
     if (existing) {
         return existing
     }
 
     const extension = originalName.includes('.') ? originalName.split('.').pop()?.toLowerCase() || '' : ''
-    const fileName = `${Date.now()}_${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-    const stored = await storeFile(buffer, fileName, mimeType)
+    const safeOriginal = originalName.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const stored = await storeFile(buffer, safeOriginal, mimeType)
 
     const metadata = new FileMetadata({
         originalName,
-        fileName,
+        fileName: stored.publicId,
         mimeType,
         checksum,
         extension,

@@ -7,16 +7,36 @@ import {
     joinMeeting as joinMeetingService,
     leaveMeeting as leaveMeetingService,
     endMeeting as endMeetingService,
-    computeNextOccurrenceDate
+    computeNextOccurrenceDate,
+    getMeetingByMeetingId
 } from '../modules/meeting/meeting.service'
 import { Meeting } from '../modules/meeting/meeting.model'
 import { SocketEvents } from './events'
 import { adHocRoomSettings } from '../routes/guest.routes'
 import { dispatchWebhookEvent } from '../modules/integration/integration.service'
 import { setUserPresenceState } from './presence'
+import { cleanupWhiteboard } from './whiteboard'
+import { cleanupMeetingQA } from './meetingQA'
+import { cleanupPolls } from './poll'
+import { cleanupBreakout } from './breakout'
 
 // Track backstage participants per meeting room for Virtual Green Room
 const meetingBackstageMap = new Map<string, Set<string>>()
+// Track authorized remote control participants per meeting room
+const activeRemoteControllers = new Map<string, string>()
+
+async function verifyIsHostOrCoHost(meetingId: string, checkUserId: string): Promise<boolean> {
+    try {
+        const meeting = await getMeetingByMeetingId(meetingId)
+        if (!meeting) return false
+        const hostId = String(meeting.host)
+        if (hostId === String(checkUserId)) return true
+        if (Array.isArray(meeting.coHosts) && meeting.coHosts.some(id => String(id) === String(checkUserId))) return true
+        return false
+    } catch {
+        return false
+    }
+}
 
 export function registerMeetingHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
@@ -120,20 +140,40 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                 return
             }
 
+            // Cleanup transient in-memory meeting state across all modules
+            meetingBackstageMap.delete(payload.meetingId)
+            activeRemoteControllers.delete(payload.meetingId)
+            cleanupWhiteboard(payload.meetingId)
+            cleanupMeetingQA(payload.meetingId)
+            cleanupPolls(payload.meetingId)
+            cleanupBreakout(payload.meetingId)
+
             io.emit(SocketEvents.MEETING_END, { meetingId: payload.meetingId, status: meeting.status, participants: meeting.participants })
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Forbidden' })
         }
     })
 
-    socket.on(SocketEvents.MEETING_MUTE_USER, (payload: { meetingId: string; targetUserId: string }) => {
+    socket.on(SocketEvents.MEETING_MUTE_USER, async (payload: { meetingId: string; targetUserId: string }) => {
         if (!userId || !payload?.meetingId || !payload?.targetUserId) return
         
+        const authorized = await verifyIsHostOrCoHost(payload.meetingId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can mute participants' })
+            return
+        }
+
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_MUTE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
     })
 
-    socket.on(SocketEvents.MEETING_REMOVE_USER, (payload: { meetingId: string; targetUserId: string }) => {
+    socket.on(SocketEvents.MEETING_REMOVE_USER, async (payload: { meetingId: string; targetUserId: string }) => {
         if (!userId || !payload?.meetingId || !payload?.targetUserId) return
+
+        const authorized = await verifyIsHostOrCoHost(payload.meetingId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can remove participants' })
+            return
+        }
 
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_REMOVE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
         io.to(`user:${payload.targetUserId}`).emit(SocketEvents.MEETING_REMOVE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId, kicked: true })
@@ -489,21 +529,35 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
     socket.on('remote-control:response', (payload: { meetingId: string; requesterId: string; granted: boolean; presenterId: string; presenterName?: string }) => {
         if (!payload?.meetingId || !payload?.requesterId) return
+        if (payload.granted) {
+            activeRemoteControllers.set(payload.meetingId, payload.requesterId)
+        } else {
+            activeRemoteControllers.delete(payload.meetingId)
+        }
         socket.to(`meeting:${payload.meetingId}`).emit('remote-control:response', payload)
     })
 
     socket.on('remote-control:revoke', (payload: { meetingId: string; controllerId?: string; presenterId: string }) => {
         if (!payload?.meetingId) return
+        activeRemoteControllers.delete(payload.meetingId)
         socket.to(`meeting:${payload.meetingId}`).emit('remote-control:revoke', payload)
     })
 
     socket.on('remote-control:mouse', (payload: { meetingId: string; controllerId: string; type: string; x: number; y: number; button?: number; deltaY?: number }) => {
         if (!payload?.meetingId) return
+        const authorizedController = activeRemoteControllers.get(payload.meetingId)
+        if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
+            return
+        }
         socket.to(`meeting:${payload.meetingId}`).emit('remote-control:mouse', payload)
     })
 
     socket.on('remote-control:key', (payload: { meetingId: string; controllerId: string; type: string; key: string; code: string; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }) => {
         if (!payload?.meetingId) return
+        const authorizedController = activeRemoteControllers.get(payload.meetingId)
+        if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
+            return
+        }
         socket.to(`meeting:${payload.meetingId}`).emit('remote-control:key', payload)
     })
 

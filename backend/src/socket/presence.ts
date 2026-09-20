@@ -9,11 +9,17 @@ interface UserPresenceInfo {
     lastSeen?: Date
 }
 
-const socketMap = new Map<string, string>()
+const socketMap = new Map<string, Set<string>>()
 const userStatusMap = new Map<string, UserPresenceInfo>()
 
 export function setUserOnline(userId: string, socketId: string) {
-    socketMap.set(userId, socketId)
+    let sockets = socketMap.get(userId)
+    if (!sockets) {
+        sockets = new Set<string>()
+        socketMap.set(userId, sockets)
+    }
+    sockets.add(socketId)
+
     const existing = userStatusMap.get(userId)
     userStatusMap.set(userId, {
         status: (existing?.status && existing.status !== 'offline') ? existing.status : 'online',
@@ -21,17 +27,27 @@ export function setUserOnline(userId: string, socketId: string) {
     })
 }
 
-export function removeUserSocket(userId: string) {
+export function removeUserSocket(userId: string, socketId?: string): boolean {
+    const sockets = socketMap.get(userId)
+    if (sockets && socketId) {
+        sockets.delete(socketId)
+        if (sockets.size > 0) {
+            return true
+        }
+    }
     socketMap.delete(userId)
     const existing = userStatusMap.get(userId)
     if (existing) {
         existing.status = 'offline'
         existing.lastSeen = new Date()
     }
+    return false
 }
 
-export function getUserSocket(userId: string) {
-    return socketMap.get(userId)
+export function getUserSocket(userId: string): string | undefined {
+    const sockets = socketMap.get(userId)
+    if (!sockets || sockets.size === 0) return undefined
+    return Array.from(sockets)[0]
 }
 
 export function setUserPresenceState(userId: string, status: PresenceStatus, customStatus?: string) {

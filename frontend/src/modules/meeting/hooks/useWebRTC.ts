@@ -4,30 +4,15 @@ import { SocketEvents } from '../services/socket.service'
 import { createPeerConnection, peerRemoteStreams, optimizePeerConnectionForHd } from '../services/webrtc.service'
 import { getScreenShareStream, stopScreenShareStream } from '../services/screen.service'
 
-function enhanceSdpForHdVideo(sdp?: string): string {
-    if (!sdp) return ''
-    let modified = sdp
-    if (modified.includes('m=video')) {
-        // Boost video bandwidth allocation to 4000 kbps (4 Mbps)
-        modified = modified.replace(/(m=video [^\r\n]+[\r\n]+)/g, `$1b=AS:4000\r\nb=TIAS:4000000\r\n`)
-    }
+function getTargetBitrateForPeers(peerCount: number): { as: number; tias: number } {
+    if (peerCount <= 2) return { as: 2500, tias: 2500000 }
+    if (peerCount <= 4) return { as: 1200, tias: 1200000 }
+    if (peerCount <= 8) return { as: 600, tias: 600000 }
+    return { as: 350, tias: 350000 }
+}
 
-    // Opus Audio Clarity & Silence Gating (Eliminates background hiss & static):
-    // usedtx=1: Discontinuous Transmission (completely stops sending audio packets during pauses/silence)
-    // useinbandfec=1: In-band Forward Error Correction (recovers packet loss smoothly)
-    // cbr=0: Variable bitrate (drops bitrate to minimal during quiet moments)
-    // maxaveragebitrate=64000: High-fidelity 64kbps crystal voice
-    if (modified.includes('opus/48000')) {
-        modified = modified.replace(
-            /(a=fmtp:\d+ [^\r\n]+)/g,
-            (match) => {
-                if (match.includes('usedtx=1')) return match
-                return `${match};usedtx=1;cbr=0;maxaveragebitrate=64000`
-            }
-        )
-    }
-
-    return modified
+function enhanceSdpForHdVideo(sdp?: string, _peerCount: number = 1): string {
+    return sdp || ''
 }
 
 interface UseWebRTCResult {
@@ -164,11 +149,20 @@ export function useWebRTC(
             if (!newTrack) return
             const kind = newTrack.kind
             Object.values(peerConnectionsRef.current).forEach((pc) => {
-                const sender = pc.getSenders().find((s) => {
-                    if (s.track) return s.track.kind === kind
-                    const tc = pc.getTransceivers().find(t => t.sender === s)
-                    return tc && tc.receiver.track && tc.receiver.track.kind === kind
-                })
+                const tc = pc.getTransceivers().find(t => (t.sender && t.sender.track && t.sender.track.kind === kind) || (t.receiver && t.receiver.track && t.receiver.track.kind === kind))
+                if (tc) {
+                    if (tc.direction !== 'sendrecv' && tc.direction !== 'sendonly') {
+                        tc.direction = 'sendrecv'
+                    }
+                    if (tc.sender) {
+                        tc.sender.replaceTrack(newTrack).catch(err => {
+                            console.warn('Failed to replace track on transceiver:', err)
+                        })
+                        return
+                    }
+                }
+
+                const sender = pc.getSenders().find((s) => s.track && s.track.kind === kind)
                 if (sender) {
                     sender.replaceTrack(newTrack).catch(err => {
                         console.warn('Failed to replace track on peer:', err)
@@ -333,10 +327,11 @@ export function useWebRTC(
             setIsReconnecting(true)
             setNetworkStatus('reconnecting')
             const offer = await pc.createOffer({ iceRestart: true })
-            const hdSdp = enhanceSdpForHdVideo(offer.sdp)
+            const activePeers = Object.keys(peerConnectionsRef.current).length + 1
+            const hdSdp = enhanceSdpForHdVideo(offer.sdp, activePeers)
             const hdOffer = { type: offer.type, sdp: hdSdp }
             await pc.setLocalDescription(hdOffer)
-            optimizePeerConnectionForHd(pc, Object.keys(peerConnectionsRef.current).length + 1)
+            optimizePeerConnectionForHd(pc, activePeers)
             socket.emit(SocketEvents.WEBRTC_OFFER, {
                 targetUserId,
                 meetingId: activeMeetingId,
@@ -384,7 +379,35 @@ export function useWebRTC(
             return
         }
 
-        const handleUserJoined = (payload: { userId: string; meetingId: string }) => {
+        const getLocalUserId = () => {
+            try {
+                const token = localStorage.getItem('jts_guest_token') || localStorage.getItem('jts_token') || ''
+                if (token) {
+                    const parts = token.split('.')
+                    if (parts.length === 3) {
+                        const decoded = JSON.parse(atob(parts[1]))
+                        return decoded.userId || decoded.id || decoded.sub || ''
+                    }
+                }
+            } catch (_) {}
+            return ''
+        }
+
+        const handleUserJoined = async (payload: { userId: string; meetingId: string }) => {
+            const localId = getLocalUserId()
+            if (!payload.userId || payload.userId === socket.id || (localId && payload.userId === localId) || payload.userId === 'me') {
+                return
+            }
+
+            // Wait briefly if localStream is still initializing
+            if (!localStreamRef.current) {
+                let attempts = 0
+                while (!localStreamRef.current && attempts < 12) {
+                    await new Promise(r => setTimeout(r, 100))
+                    attempts++
+                }
+            }
+
             addParticipant(payload.userId)
 
             const existingPc = peerConnectionsRef.current[payload.userId]
@@ -438,7 +461,7 @@ export function useWebRTC(
             rebalanceMeshBitrate()
 
             pc.createOffer().then((offer) => {
-                const hdSdp = enhanceSdpForHdVideo(offer.sdp)
+                const hdSdp = enhanceSdpForHdVideo(offer.sdp, currentPeerCount)
                 const hdOffer = { type: offer.type, sdp: hdSdp }
                 return pc.setLocalDescription(hdOffer).then(() => {
                     optimizePeerConnectionForHd(pc, currentPeerCount)
@@ -476,6 +499,20 @@ export function useWebRTC(
         }
 
         const handleOffer = async (payload: { fromUserId: string; meetingId: string; offer: RTCSessionDescriptionInit }) => {
+            const localId = getLocalUserId()
+            if (!payload.fromUserId || payload.fromUserId === socket.id || (localId && payload.fromUserId === localId) || payload.fromUserId === 'me') {
+                return
+            }
+
+            // Wait briefly if localStream is still initializing so the answer includes live video and audio
+            if (!localStreamRef.current) {
+                let attempts = 0
+                while (!localStreamRef.current && attempts < 12) {
+                    await new Promise(r => setTimeout(r, 100))
+                    attempts++
+                }
+            }
+
             addParticipant(payload.fromUserId)
 
             const existingPc = peerConnectionsRef.current[payload.fromUserId]
@@ -526,7 +563,7 @@ export function useWebRTC(
             try {
                 await pc.setRemoteDescription(new RTCSessionDescription(payload.offer))
                 const answer = await pc.createAnswer()
-                const hdSdp = enhanceSdpForHdVideo(answer.sdp)
+                const hdSdp = enhanceSdpForHdVideo(answer.sdp, currentPeerCount)
                 const hdAnswer = { type: answer.type, sdp: hdSdp }
                 await pc.setLocalDescription(hdAnswer)
                 optimizePeerConnectionForHd(pc, currentPeerCount)
@@ -644,6 +681,18 @@ export function useWebRTC(
             }
         }
 
+        const handleRosterSync = (payload: { meetingId: string; participants: number; peers?: Array<{ userId: string; displayName?: string; isVideoOff?: boolean; isMuted?: boolean }> }) => {
+            if (Array.isArray(payload?.peers)) {
+                const localId = getLocalUserId()
+                payload.peers.forEach((peer) => {
+                    if (peer.userId && peer.userId !== socket.id && (!localId || peer.userId !== localId) && peer.userId !== 'me') {
+                        addParticipant(peer.userId)
+                    }
+                })
+            }
+        }
+
+        socket.on(SocketEvents.WEBRTC_JOIN, handleRosterSync)
         socket.on(SocketEvents.WEBRTC_USER_JOINED, handleUserJoined)
         socket.on(SocketEvents.WEBRTC_OFFER, handleOffer)
         socket.on(SocketEvents.WEBRTC_ANSWER, handleAnswer)
@@ -654,6 +703,7 @@ export function useWebRTC(
         socket.on(SocketEvents.SCREEN_CHANGED, handleScreenChanged)
 
         return () => {
+            socket.off(SocketEvents.WEBRTC_JOIN, handleRosterSync)
             socket.off(SocketEvents.WEBRTC_USER_JOINED, handleUserJoined)
             socket.off(SocketEvents.WEBRTC_OFFER, handleOffer)
             socket.off(SocketEvents.WEBRTC_ANSWER, handleAnswer)

@@ -265,13 +265,13 @@ export const organizationController = {
             return sendError(res, 401, 'Unauthorized access')
         }
 
-        const { planId } = req.body
+        const { planId, paymentToken } = req.body
         if (!planId) {
             return sendError(res, 400, 'planId is required')
         }
 
         try {
-            const org = await upgradeOrganizationPlan(organizationId, req.userId, planId)
+            const org = await upgradeOrganizationPlan(organizationId, req.userId, planId, paymentToken)
             return sendSuccess(res, org, `Organization subscription tier upgraded to ${planId.toUpperCase()} successfully`)
         } catch (error: any) {
             return sendError(res, 400, error.message || 'Failed to upgrade plan')

@@ -363,6 +363,7 @@ function App() {
                                     initialMeetingId={currentMeetId || undefined}
                                     autoJoin={true}
                                     isAdminOrOwner={false}
+                                    planTier={guestDetails?.planTier}
                                 />
                             </div>
                         </ErrorBoundary>

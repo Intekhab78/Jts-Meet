@@ -47,7 +47,8 @@ router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
                 isWaitingRoomEnabled: meeting.isWaitingRoomEnabled !== false,
                 isGuestJoinEnabled: (meeting as any).isGuestJoinEnabled !== false,
                 meetingStatus: meeting.status,
-                isHostOnline: meeting.status === 'active'
+                isHostOnline: meeting.status === 'active',
+                planTier: meeting.planTier || 'free'
             }
         })
     } catch (error: any) {
@@ -141,7 +142,8 @@ router.post('/request', rateLimiter(60 * 1000, 60), async (req: Request, res: Re
                 userId: tempGuestId,
                 isPending,
                 meetingTitle: meeting.title,
-                hostName: (meeting.host as any)?.fullName || 'Organizer'
+                hostName: (meeting.host as any)?.fullName || 'Organizer',
+                planTier: meeting.planTier || 'free'
             }
         })
     } catch (error: any) {
