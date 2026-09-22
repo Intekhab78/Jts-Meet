@@ -32,6 +32,7 @@ router.get('/tenants', authenticate, requireSuperAdmin, asyncWrapper(adminContro
 router.patch('/tenants/:orgId/status', authenticate, requireSuperAdmin, asyncWrapper(adminController.updateTenantStatusAction))
 router.patch('/tenants/:orgId/quota', authenticate, requireSuperAdmin, asyncWrapper(adminController.updateTenantQuotaAction))
 router.get('/telemetry', authenticate, requireSuperAdmin, asyncWrapper(adminController.getTelemetryAction))
+router.get('/broadcast/active', asyncWrapper(adminController.getActiveBroadcastNoticeAction))
 router.post('/broadcast', authenticate, requireSuperAdmin, asyncWrapper(adminController.broadcastNoticeAction))
 
 // DYNAMIC SAAS PLAN TIER MANAGEMENT (SUPER ADMIN)

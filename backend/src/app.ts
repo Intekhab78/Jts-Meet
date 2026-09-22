@@ -23,6 +23,8 @@ import aiRoutes from './routes/ai.routes'
 import integrationRoutes from './modules/integration/integration.routes'
 import planRoutes from './modules/plan/plan.routes'
 import clipRoutes from './modules/clip/clip.routes'
+import calendarRoutes from './modules/calendar/calendar.routes'
+import telephonyRoutes from './modules/telephony/telephony.routes'
 import { seedDefaultPlans } from './modules/plan/plan.model'
 import { connectDB } from './config/db'
 import { rateLimiter } from './middleware/rateLimiter'
@@ -79,6 +81,8 @@ app.use('/api/notifications', notificationRoutes)
 app.use('/api/ai', aiRoutes)
 app.use('/api/integrations', integrationRoutes)
 app.use('/api/clips', clipRoutes)
+app.use('/api/calendar', calendarRoutes)
+app.use('/api/telephony', telephonyRoutes)
 
 // Global error handler
 app.use(errorHandler)

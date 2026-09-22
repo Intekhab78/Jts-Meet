@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react'
-import { BACKGROUND_PRESETS, BackgroundPreset } from '../../../services/virtualBackground.service'
+import React, { useRef, useEffect, useState } from 'react'
+import { BACKGROUND_PRESETS, BackgroundPreset, virtualBackgroundService } from '../../../services/virtualBackground.service'
 import { IconSparkles, IconX, IconVideoOff, IconZap, IconPlus, IconCheck, IconInfo } from '../../../components/common/Icons'
 
 interface VirtualBackgroundModalProps {
@@ -42,11 +42,30 @@ export function VirtualBackgroundModal({
 
     if (!isOpen) return null
 
+    const [customWallpaper, setCustomWallpaper] = useState<string | null>(() => virtualBackgroundService.getCustomWallpaper())
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (file) {
+            const reader = new FileReader()
+            reader.onload = (ev) => {
+                const dataUrl = ev.target?.result as string
+                if (dataUrl) {
+                    setCustomWallpaper(dataUrl)
+                }
+            }
+            reader.readAsDataURL(file)
             onUploadCustom(file)
             e.target.value = ''
+        }
+    }
+
+    const handleRemoveCustom = (e: React.MouseEvent) => {
+        e.stopPropagation()
+        virtualBackgroundService.clearCustomWallpaper()
+        setCustomWallpaper(null)
+        if (activePreset === 'custom') {
+            onSelectPreset('none')
         }
     }
 
@@ -274,13 +293,18 @@ export function VirtualBackgroundModal({
                                 gap: 12
                             }}
                         >
-                            {/* Upload Custom Card */}
-                            <button
-                                type="button"
-                                onClick={() => fileInputRef.current?.click()}
+                            {/* Upload / Active Custom Card */}
+                            <div
+                                onClick={() => {
+                                    if (customWallpaper) {
+                                        onSelectPreset('custom')
+                                    } else {
+                                        fileInputRef.current?.click()
+                                    }
+                                }}
                                 style={{
                                     border: activePreset === 'custom' ? '2px solid #818cf8' : '1px dashed rgba(255, 255, 255, 0.2)',
-                                    background: activePreset === 'custom' ? 'rgba(99, 102, 241, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                                    background: activePreset === 'custom' ? 'rgba(99, 102, 241, 0.16)' : 'rgba(255, 255, 255, 0.03)',
                                     borderRadius: '16px',
                                     padding: '10px',
                                     cursor: 'pointer',
@@ -289,30 +313,117 @@ export function VirtualBackgroundModal({
                                     alignItems: 'center',
                                     gap: 8,
                                     position: 'relative',
-                                    transition: 'all 0.18s ease'
+                                    transition: 'all 0.18s ease',
+                                    boxShadow: activePreset === 'custom' ? '0 0 16px rgba(99, 102, 241, 0.35)' : 'none'
                                 }}
                                 onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                                 onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
                             >
-                                <div
-                                    style={{
-                                        width: '100%',
-                                        height: 72,
-                                        borderRadius: '10px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: 4,
-                                        color: '#818cf8'
-                                    }}
-                                >
-                                    <IconPlus size={22} color="#818cf8" />
-                                    <span style={{ fontSize: '0.6875rem', fontWeight: 600 }}>Upload Image</span>
-                                </div>
+                                {customWallpaper ? (
+                                    <div
+                                        style={{
+                                            width: '100%',
+                                            height: 72,
+                                            borderRadius: '10px',
+                                            overflow: 'hidden',
+                                            position: 'relative'
+                                        }}
+                                    >
+                                        <img
+                                            src={customWallpaper}
+                                            alt="Custom wallpaper"
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
+                                        {activePreset === 'custom' && (
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: 4,
+                                                    right: 4,
+                                                    width: 20,
+                                                    height: 20,
+                                                    borderRadius: '50%',
+                                                    background: '#6366f1',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    color: '#fff',
+                                                    boxShadow: '0 2px 6px rgba(0,0,0,0.5)'
+                                                }}
+                                            >
+                                                <IconCheck size={12} strokeWidth={3} />
+                                            </div>
+                                        )}
+                                        {/* Action buttons on hover/overlay */}
+                                        <div
+                                            style={{
+                                                position: 'absolute',
+                                                bottom: 2,
+                                                right: 2,
+                                                display: 'flex',
+                                                gap: 3
+                                            }}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    fileInputRef.current?.click()
+                                                }}
+                                                title="Change custom wallpaper"
+                                                style={{
+                                                    padding: '2px 5px',
+                                                    borderRadius: 4,
+                                                    background: 'rgba(0,0,0,0.7)',
+                                                    border: '1px solid rgba(255,255,255,0.2)',
+                                                    color: '#a5b4fc',
+                                                    fontSize: '0.625rem',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 600
+                                                }}
+                                            >
+                                                Change
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleRemoveCustom}
+                                                title="Remove custom wallpaper"
+                                                style={{
+                                                    padding: '2px 5px',
+                                                    borderRadius: 4,
+                                                    background: 'rgba(239, 68, 68, 0.75)',
+                                                    border: '1px solid rgba(255,255,255,0.2)',
+                                                    color: '#fff',
+                                                    fontSize: '0.625rem',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 600
+                                                }}
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div
+                                        style={{
+                                            width: '100%',
+                                            height: 72,
+                                            borderRadius: '10px',
+                                            background: 'rgba(255, 255, 255, 0.05)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: 4,
+                                            color: '#818cf8'
+                                        }}
+                                    >
+                                        <IconPlus size={22} color="#818cf8" />
+                                        <span style={{ fontSize: '0.6875rem', fontWeight: 600 }}>Upload Image</span>
+                                    </div>
+                                )}
                                 <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#fff', textAlign: 'center' }}>
-                                    Custom
+                                    {customWallpaper ? 'Custom (Saved)' : 'Custom'}
                                 </span>
                                 <input
                                     ref={fileInputRef}
@@ -321,7 +432,7 @@ export function VirtualBackgroundModal({
                                     style={{ display: 'none' }}
                                     onChange={handleFileChange}
                                 />
-                            </button>
+                            </div>
 
                             {/* Standard Presets */}
                             {BACKGROUND_PRESETS.map((preset) => {

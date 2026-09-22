@@ -1,3 +1,5 @@
+import { e2eeService } from './e2ee.service'
+
 export interface PeerHandlers {
     onTrack: (stream: MediaStream) => void
     onICECandidate: (candidate: RTCIceCandidateInit) => void
@@ -35,16 +37,15 @@ export function optimizePeerConnectionForHd(pc: RTCPeerConnection, peerCount: nu
             } else if (peerCount >= 3) {
                 maxBitrate = 1_000_000
                 maxFramerate = 30
-                scaleDown = 1.0
+                scaleDown = 1.2
             }
 
             params.encodings[0].maxBitrate = maxBitrate
             params.encodings[0].maxFramerate = maxFramerate
             params.encodings[0].scaleResolutionDownBy = scaleDown
-            if ('degradationPreference' in params) {
-                (params as any).degradationPreference = peerCount >= 5 ? 'balanced' : 'maintain-resolution'
-            }
-            videoSender.setParameters(params).catch(() => {})
+            videoSender.setParameters(params).catch(e => {
+                console.warn('[WebRTC HD Optimize] setParameters warning:', e)
+            })
         }
     } catch (e) {
         // Fallback gracefully
@@ -83,6 +84,9 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
 
     pc.ontrack = (event) => {
         console.log(`[WebRTC] ontrack received: kind=${event.track.kind} id=${event.track.id} from user ${userId}`)
+        if (event.receiver) {
+            e2eeService.setupReceiverTransform(event.receiver)
+        }
         
         let pStream = (event.streams && event.streams[0]) ? event.streams[0] : peerRemoteStreams.get(userId)
         if (!pStream) {
@@ -109,7 +113,10 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
     if (localStream) {
         localStream.getTracks().forEach((track) => {
             try {
-                pc.addTrack(track, localStream)
+                const sender = pc.addTrack(track, localStream)
+                if (sender) {
+                    e2eeService.setupSenderTransform(sender)
+                }
             } catch (e) {
                 console.warn('addTrack warning:', e)
             }

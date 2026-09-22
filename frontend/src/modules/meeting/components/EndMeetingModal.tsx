@@ -107,23 +107,32 @@ export const EndMeetingModal: React.FC<EndMeetingModalProps> = ({
                     <label style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 8,
+                        gap: 10,
                         fontSize: '0.8125rem',
-                        color: 'var(--color-text-secondary)',
+                        color: 'var(--color-text-primary)',
                         cursor: 'pointer',
-                        padding: '6px 8px',
-                        borderRadius: 'var(--radius-sm, 6px)',
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        marginBottom: 2
+                        padding: '10px 12px',
+                        borderRadius: 'var(--radius-md, 8px)',
+                        background: 'rgba(99, 102, 241, 0.08)',
+                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                        marginBottom: 4,
+                        textAlign: 'left'
                     }}>
                         <input
                             type="checkbox"
                             checked={dispatchEmail}
                             onChange={(e) => setDispatchEmail(e.target.checked)}
-                            style={{ cursor: 'pointer', accentColor: '#6366f1' }}
+                            style={{ cursor: 'pointer', accentColor: '#6366f1', width: 16, height: 16, flexShrink: 0 }}
                         />
-                        <IconMail size={14} color="#a5b4fc" />
-                        <span>Send executive summary email to attendees</span>
+                        <IconMail size={16} color="#818cf8" />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ fontWeight: 600, color: '#e0e7ff', fontSize: '0.8125rem' }}>
+                                Email Attendance Report & Minutes (with CSV)
+                            </span>
+                            <span style={{ fontSize: '0.725rem', color: 'var(--color-text-muted)' }}>
+                                Sends full attendee log and CSV audit file to host & attendees
+                            </span>
+                        </div>
                     </label>
 
                     <button

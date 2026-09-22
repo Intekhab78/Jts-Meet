@@ -9,6 +9,7 @@ import { SocketEvents } from '../../meeting/services/socket.service'
 import { API_BASE } from '../../../config'
 import { IconPhone, IconX } from '../../../components/common/Icons'
 import { UserStatusSelectorPopover } from '../../../components/common/UserStatusSelectorPopover'
+import { UserAvatar } from '../../../components/common/UserAvatar'
 
 const MeetingRoom = React.lazy(() => import('../../meeting/components/MeetingRoom').then(m => ({ default: m.MeetingRoom })))
 const DirectMessagesHub = React.lazy(() => import('../../chat/components/DirectMessagesHub').then(m => ({ default: m.DirectMessagesHub })))
@@ -515,6 +516,13 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
     }, [currentTeamId])
 
     const currentOrg = useMemo(() => organizations.find(org => org._id === currentOrgId), [organizations, currentOrgId])
+
+    useEffect(() => {
+        if (currentOrg?.planTier) {
+            try { localStorage.setItem('jts_active_plan_tier', currentOrg.planTier) } catch (_) {}
+        }
+    }, [currentOrg?.planTier])
+
     const userMemberEntry = useMemo(() => currentOrg?.members?.find((m: any) =>
         (m.userId?._id || m.userId || '').toString() === userId.toString()
     ), [currentOrg, userId])
@@ -536,6 +544,30 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
     const [isRecurringDaily, setIsRecurringDaily] = useState(true)
     const [notifyTeamByEmail, setNotifyTeamByEmail] = useState(true)
     const [scheduleTeamId, setScheduleTeamId] = useState('')
+
+    // Real-Time Platform Broadcast Banner State
+    const [activeBroadcast, setActiveBroadcast] = useState<{ message: string; severity: 'info' | 'warning' | 'critical'; active: boolean } | null>(null)
+    const [dismissedBroadcast, setDismissedBroadcast] = useState(false)
+
+    const fetchBroadcast = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/admin/broadcast/active`)
+            if (res.ok) {
+                const json = await res.json()
+                if (json.data && json.data.active && json.data.message) {
+                    setActiveBroadcast(json.data)
+                } else {
+                    setActiveBroadcast(null)
+                }
+            }
+        } catch (_) {}
+    }
+
+    useEffect(() => {
+        fetchBroadcast()
+        const interval = setInterval(fetchBroadcast, 15000)
+        return () => clearInterval(interval)
+    }, [])
 
     // Fetch user details & meetings from API
     const fetchProfile = async () => {
@@ -677,10 +709,12 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                     setOrganizations(data.data)
                     const savedOrgId = localStorage.getItem('jts_current_org_id')
                     const matched = data.data.find((o: any) => o._id === savedOrgId)
-                    if (matched) {
-                        setCurrentOrgId(matched._id)
-                    } else if (!currentOrgId || !data.data.some((o: any) => o._id === currentOrgId)) {
-                        setCurrentOrgId(data.data[0]._id)
+                    const activeOrg = matched || data.data[0]
+                    if (activeOrg) {
+                        setCurrentOrgId(activeOrg._id)
+                        if (activeOrg.planTier) {
+                            try { localStorage.setItem('jts_active_plan_tier', activeOrg.planTier) } catch (_) {}
+                        }
                     }
                 }
             }
@@ -1346,37 +1380,63 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                                     transition: 'all 0.15s ease'
                                 }}
                             >
-                                <div style={{
-                                    width: 26,
-                                    height: 26,
-                                    borderRadius: '50%',
-                                    background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 700,
-                                    color: '#fff',
-                                    overflow: 'hidden',
-                                    flexShrink: 0
-                                }}>
-                                    {profileImage && !profileImageError ? (
-                                        <img
-                                            src={profileImage}
-                                            alt=""
-                                            onError={() => setProfileImageError(true)}
-                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                        />
-                                    ) : (
-                                        profileName.slice(0, 2).toUpperCase()
-                                    )}
-                                </div>
+                                <UserAvatar src={profileImage} name={profileName} size={26} fontSize="0.72rem" />
                                 <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#fff', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="hidden sm:inline">
                                     {profileName.split(' ')[0]}
                                 </span>
                             </button>
                         </div>
                     </header>
+                )}
+
+                {/* Global Platform Broadcast Alert Banner (Super Admin Broadcast Stream) */}
+                {activeBroadcast && activeBroadcast.active && !dismissedBroadcast && (
+                    <div style={{
+                        background: activeBroadcast.severity === 'critical'
+                            ? 'linear-gradient(135deg, #ef4444 0%, #991b1b 100%)'
+                            : activeBroadcast.severity === 'warning'
+                            ? 'linear-gradient(135deg, #f59e0b 0%, #b45309 100%)'
+                            : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                        color: '#fff',
+                        padding: '10px 20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+                        zIndex: 40,
+                        position: 'relative',
+                        borderBottom: '1px solid rgba(255,255,255,0.2)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+                            <span style={{ fontSize: '1.1rem' }}>
+                                {activeBroadcast.severity === 'critical' ? '🚨' : activeBroadcast.severity === 'warning' ? '⚠️' : '📢'}
+                            </span>
+                            <span style={{ lineHeight: 1.4 }}>{activeBroadcast.message}</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setDismissedBroadcast(true)}
+                            title="Dismiss notification"
+                            style={{
+                                background: 'rgba(255, 255, 255, 0.2)',
+                                border: 'none',
+                                color: '#fff',
+                                borderRadius: '50%',
+                                width: 22,
+                                height: 22,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0
+                            }}
+                        >
+                            <IconX size={12} />
+                        </button>
+                    </div>
                 )}
                 <Suspense fallback={<WorkspaceTabSkeleton />}>
                     {/* MEETING TAB */}
@@ -1388,7 +1448,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                                 initialMeetingId={activeMeetingRoomId || meetingId || undefined}
                                 autoJoin={Boolean(activeMeetingRoomId || meetingId)}
                                 isAdminOrOwner={isOrgAdminOrOwner}
-                                planTier={currentOrg?.planTier || 'free'}
+                                planTier={currentOrg?.planTier || localStorage.getItem('jts_active_plan_tier') || 'free'}
                                 onUpgradePlanRequest={() => setActiveTab('organization')}
                                 onLeave={handleLeaveMeetingRoom}
                             />

@@ -26,3 +26,24 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
         return sendError(res, 401, 'Unauthorized access')
     }
 }
+
+export const optionalAuthenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization
+    let token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
+    if (!token && req.query?.token && typeof req.query.token === 'string') {
+        token = req.query.token
+    }
+
+    if (!token) {
+        return next()
+    }
+
+    try {
+        const payload = jwt.verify(token, JWT_SECRET) as { userId: string }
+        req.userId = payload.userId
+    } catch (_) {
+        // Continue unauthenticated
+    }
+    next()
+}
+

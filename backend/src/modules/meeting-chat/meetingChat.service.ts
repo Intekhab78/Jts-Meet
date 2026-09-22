@@ -6,7 +6,9 @@ export async function createMeetingChat(
     meetingId: string,
     senderId: string,
     message: string,
-    senderNameParam?: string
+    senderNameParam?: string,
+    attachment?: { url: string; fileName: string; fileSize?: number; fileType?: string },
+    messageType?: 'text' | 'file' | 'image'
 ): Promise<IMeetingChat> {
     const meeting = await getMeetingByMeetingId(meetingId)
     if (!meeting || meeting.status === 'ended') {
@@ -36,8 +38,9 @@ export async function createMeetingChat(
     const chat = new MeetingChat({
         meetingId,
         senderId,
-        message: message.trim(),
-        messageType: 'text',
+        message: (message || attachment?.fileName || '').trim(),
+        messageType: messageType || (attachment ? 'file' : 'text'),
+        attachment: attachment || undefined,
         senderName
     })
     await chat.save()

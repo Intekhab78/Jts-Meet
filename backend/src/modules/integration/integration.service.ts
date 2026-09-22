@@ -264,6 +264,34 @@ function formatPayload(type: IntegrationType, eventType: IntegrationEvent, paylo
         })
     }
 
+    if (type === 'teams') {
+        const title = `🎥 JTS Meet Event: ${eventType}`
+        return JSON.stringify({
+            "@type": "MessageCard",
+            "@context": "https://schema.org/extensions",
+            "summary": `JTS Meet: ${eventType}`,
+            "themeColor": "4f52b2",
+            "title": title,
+            "sections": [{
+                "activityTitle": payloadData.title || payloadData.meetingId || 'Live Video Conference',
+                "activitySubtitle": `Host: ${payloadData.hostName || 'Organizer'} • ${new Date().toLocaleTimeString()}`,
+                "facts": [
+                    { "name": "Meeting ID:", "value": String(payloadData.meetingId || 'N/A') },
+                    { "name": "Event Type:", "value": eventType }
+                ]
+            }]
+        })
+    }
+
+    if (type === 'zapier') {
+        return JSON.stringify({
+            event: eventType,
+            source: 'jts-meet',
+            timestamp: new Date().toISOString(),
+            data: payloadData
+        })
+    }
+
     if (type === 'discord') {
         return JSON.stringify({
             username: 'JTS Meet Bot',

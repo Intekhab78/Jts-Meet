@@ -3,6 +3,7 @@ import { Schema, model, Document, Types } from 'mongoose'
 export interface IMeeting extends Document {
     title: string
     meetingId: string
+    customId?: string
     host: Types.ObjectId
     coHosts: Types.ObjectId[]
     participants: Types.ObjectId[]
@@ -18,12 +19,17 @@ export interface IMeeting extends Document {
     recorded?: boolean
     recordingDuration?: number
     recordingSize?: number
+    dialInPin?: string
+    isWebinarMode?: boolean
+    stageSpeakers?: string[]
     status: 'scheduled' | 'active' | 'ended'
     isRecurring?: boolean
     recurrencePattern?: 'daily' | 'weekly' | 'weekdays' | 'monthly' | 'none'
     scheduledDate?: string
     scheduledTime?: string
     planTier?: string
+    screenSharePolicy?: 'everyone' | 'host_only'
+    allowMultiShare?: boolean
     organizationId?: Types.ObjectId | null
     teamId?: Types.ObjectId | null
     notifyByEmail?: boolean
@@ -38,6 +44,7 @@ const MeetingSchema = new Schema<IMeeting>(
     {
         title: { type: String, required: true, trim: true },
         meetingId: { type: String, required: true, unique: true, index: true },
+        customId: { type: String, default: null },
         host: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         coHosts: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         participants: [{ type: Schema.Types.ObjectId, ref: 'User' }],
@@ -53,12 +60,17 @@ const MeetingSchema = new Schema<IMeeting>(
         recorded: { type: Boolean, default: false },
         recordingDuration: { type: Number, default: 0 },
         recordingSize: { type: Number, default: 0 },
+        dialInPin: { type: String, default: null, index: true },
+        isWebinarMode: { type: Boolean, default: false },
+        stageSpeakers: [{ type: String }],
         status: { type: String, enum: ['scheduled', 'active', 'ended'], default: 'scheduled' },
         isRecurring: { type: Boolean, default: false },
         recurrencePattern: { type: String, enum: ['daily', 'weekly', 'weekdays', 'monthly', 'none'], default: 'none' },
         scheduledDate: { type: String, default: '' },
         scheduledTime: { type: String, default: '' },
         planTier: { type: String, default: 'free' },
+        screenSharePolicy: { type: String, enum: ['everyone', 'host_only'], default: 'everyone' },
+        allowMultiShare: { type: Boolean, default: false },
         organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null },
         teamId: { type: Schema.Types.ObjectId, ref: 'Team', default: null },
         notifyByEmail: { type: Boolean, default: true },

@@ -306,5 +306,14 @@ export const adminController = {
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to post broadcast notice')
         }
+    },
+
+    getActiveBroadcastNoticeAction: async (req: any, res: Response) => {
+        try {
+            const result = await getLiveTelemetry()
+            return sendSuccess(res, result.activeBroadcast || null, 'Active broadcast notice retrieved')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to fetch active broadcast notice')
+        }
     }
 }

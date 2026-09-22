@@ -5,6 +5,8 @@ export interface CreateTeamPayload {
     icon?: string
     color?: string
     visibility: 'public' | 'private'
+    teamType?: string
+    starterChannels?: string[]
 }
 
 export interface UpdateTeamPayload {
@@ -13,6 +15,7 @@ export interface UpdateTeamPayload {
     icon?: string
     color?: string
     visibility?: 'public' | 'private'
+    teamType?: string
     status?: 'active' | 'inactive'
 }
 

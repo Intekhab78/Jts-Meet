@@ -156,9 +156,18 @@ export async function getMeetingByMeetingId(meetingId: string): Promise<IMeeting
             const hostId = (meeting.host as any)._id || meeting.host
             if (Types.ObjectId.isValid(hostId)) {
                 const hostOrg = await Organization.findOne({
-                    'members.userId': new Types.ObjectId(hostId),
-                    'members.status': 'active'
-                }).select('planTier').exec()
+                    $or: [
+                        { ownerId: new Types.ObjectId(hostId) },
+                        { 'members.userId': new Types.ObjectId(hostId), 'members.status': 'active' }
+                    ],
+                    planTier: { $in: ['enterprise', 'pro', 'starter'] }
+                }).select('planTier').exec() || await Organization.findOne({
+                    $or: [
+                        { ownerId: new Types.ObjectId(hostId) },
+                        { 'members.userId': new Types.ObjectId(hostId), 'members.status': 'active' }
+                    ]
+                }).select('planTier').sort({ updatedAt: -1 }).exec()
+
                 if (hostOrg?.planTier && hostOrg.planTier !== 'free') {
                     meeting.planTier = hostOrg.planTier
                     Meeting.updateOne({ _id: meeting._id }, { planTier: hostOrg.planTier }).exec().catch(() => {})
@@ -184,9 +193,18 @@ export async function joinMeeting(meetingId: string, userId: string): Promise<IM
         let instantOrgId: Types.ObjectId | null = null
         try {
             const userOrg = await Organization.findOne({
-                'members.userId': userObjectId,
-                'members.status': 'active'
-            }).select('planTier').sort({ createdAt: -1 }).exec()
+                $or: [
+                    { ownerId: userObjectId },
+                    { 'members.userId': userObjectId, 'members.status': 'active' }
+                ],
+                planTier: { $in: ['enterprise', 'pro', 'starter'] }
+            }).select('planTier').exec() || await Organization.findOne({
+                $or: [
+                    { ownerId: userObjectId },
+                    { 'members.userId': userObjectId, 'members.status': 'active' }
+                ]
+            }).select('planTier').sort({ updatedAt: -1 }).exec()
+
             if (userOrg) {
                 instantOrgId = userOrg._id as Types.ObjectId
                 if (userOrg.planTier) {
@@ -204,7 +222,7 @@ export async function joinMeeting(meetingId: string, userId: string): Promise<IM
             waitingRoom: [],
             mutedUsers: [],
             blockedUsers: [],
-            isWaitingRoomEnabled: false,
+            isWaitingRoomEnabled: false, // Ad-hoc instant meetings allow direct link joining
             planTier: instantPlanTier,
             organizationId: instantOrgId,
             status: 'active',
@@ -212,6 +230,24 @@ export async function joinMeeting(meetingId: string, userId: string): Promise<IM
             endedAt: null
         })
         return meeting.save()
+    }
+
+    // If meeting already exists but is on free tier, check if user/host has upgraded plan
+    if (meeting && (!meeting.planTier || meeting.planTier === 'free')) {
+        try {
+            const hostId = meeting.host || userObjectId
+            const userOrg = await Organization.findOne({
+                $or: [
+                    { ownerId: new Types.ObjectId(hostId) },
+                    { 'members.userId': new Types.ObjectId(hostId), 'members.status': 'active' }
+                ],
+                planTier: { $in: ['enterprise', 'pro', 'starter'] }
+            }).select('planTier').exec()
+            if (userOrg?.planTier && userOrg.planTier !== 'free') {
+                meeting.planTier = userOrg.planTier
+                await Meeting.updateOne({ _id: meeting._id }, { planTier: userOrg.planTier }).exec().catch(() => {})
+            }
+        } catch (_) {}
     }
     
     // Check if user is banned/blocked
@@ -221,7 +257,8 @@ export async function joinMeeting(meetingId: string, userId: string): Promise<IM
     }
 
     // Handle waiting room
-    if (meeting.isWaitingRoomEnabled && !meeting.host.equals(userObjectId) && !meeting.coHosts.some((id) => id.equals(userObjectId))) {
+    const isInstantRoom = meetingId.startsWith('room-')
+    if (meeting.isWaitingRoomEnabled && !isInstantRoom && !meeting.host.equals(userObjectId) && !meeting.coHosts.some((id) => id.equals(userObjectId))) {
         const isWaiting = meeting.waitingRoom.some((id) => id.equals(userObjectId))
         const isParticipant = meeting.participants.some((id) => id.equals(userObjectId))
         if (!isWaiting && !isParticipant) {
@@ -232,6 +269,7 @@ export async function joinMeeting(meetingId: string, userId: string): Promise<IM
         if (!isParticipant) {
             meeting.participants.push(userObjectId)
         }
+        meeting.waitingRoom = meeting.waitingRoom.filter((id) => !id.equals(userObjectId))
     }
 
     if (meeting.status === 'scheduled') {

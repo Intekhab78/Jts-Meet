@@ -29,8 +29,9 @@ export async function uploadFileToDisk(fileBuffer: Buffer, filename: string, mim
     const filePath = path.join(uploadsDir, safeFilename)
     await fs.promises.writeFile(filePath, fileBuffer)
 
-    const baseUrl = (BACKEND_API_URL || 'http://localhost:4000').replace(/\/$/, '')
-    const secureUrl = `${baseUrl}/uploads/${safeFilename}`
+    const secureUrl = (BACKEND_API_URL && !BACKEND_API_URL.includes('localhost') && !BACKEND_API_URL.includes('127.0.0.1'))
+        ? `${BACKEND_API_URL.replace(/\/$/, '')}/uploads/${safeFilename}`
+        : `/uploads/${safeFilename}`
 
     return {
         secureUrl,

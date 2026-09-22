@@ -5,7 +5,13 @@ export interface IMeetingChat extends Document {
     senderId: any
     senderName?: string
     message: string
-    messageType: 'text'
+    messageType: 'text' | 'file' | 'image'
+    attachment?: {
+        url: string
+        fileName: string
+        fileSize?: number
+        fileType?: string
+    }
     reactions: { userId: any; emoji: string; createdAt: Date }[]
     createdAt: Date
     updatedAt: Date
@@ -17,8 +23,14 @@ const MeetingChatSchema = new Schema<IMeetingChat>(
         meetingId: { type: String, required: true, index: true },
         senderId: { type: Schema.Types.Mixed, ref: 'User', required: true },
         senderName: { type: String, default: '' },
-        message: { type: String, required: true, trim: true },
-        messageType: { type: String, enum: ['text'], default: 'text' },
+        message: { type: String, default: '', trim: true },
+        messageType: { type: String, enum: ['text', 'file', 'image'], default: 'text' },
+        attachment: {
+            url: { type: String },
+            fileName: { type: String },
+            fileSize: { type: Number },
+            fileType: { type: String }
+        },
         deletedAt: { type: Date, default: null },
         reactions: [
             {

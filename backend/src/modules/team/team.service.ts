@@ -37,6 +37,8 @@ export async function createTeam(userId: string, payload: {
     icon?: string
     color?: string
     visibility: 'public' | 'private'
+    teamType?: string
+    starterChannels?: string[]
 }): Promise<ITeam> {
     return withTransactionOrDirect(async (session) => {
         const organization = await getOrganizationById(payload.organizationId, session)
@@ -55,8 +57,9 @@ export async function createTeam(userId: string, payload: {
             name: payload.name.trim(),
             description: payload.description || '',
             icon: payload.icon || '',
-            color: payload.color || '#3366FF',
+            color: payload.color || '#5b5fc7',
             visibility: payload.visibility,
+            teamType: payload.teamType || 'standard',
             ownerId: new Types.ObjectId(userId),
             createdBy: new Types.ObjectId(userId),
             status: TeamStatuses.ACTIVE,
@@ -72,6 +75,36 @@ export async function createTeam(userId: string, payload: {
 
         const savedTeam = await team.save(session ? { session } : undefined)
         await createGeneralChannel(userId, savedTeam.organizationId.toHexString(), savedTeam._id.toHexString(), session)
+
+        if (Array.isArray(payload.starterChannels) && payload.starterChannels.length > 0) {
+            for (const chName of payload.starterChannels) {
+                const cleanName = String(chName).trim()
+                if (cleanName && cleanName.toLowerCase() !== 'general') {
+                    try {
+                        const newCh = new Channel({
+                            organizationId: organization._id,
+                            teamId: savedTeam._id,
+                            name: cleanName,
+                            description: `${cleanName} channel for ${savedTeam.name}`,
+                            type: payload.visibility === 'public' ? 'public' : 'private',
+                            createdBy: new Types.ObjectId(userId),
+                            ownerId: new Types.ObjectId(userId),
+                            members: [
+                                {
+                                    userId: new Types.ObjectId(userId),
+                                    role: 'owner',
+                                    joinedAt: new Date(),
+                                    invitedBy: new Types.ObjectId(userId)
+                                }
+                            ],
+                            status: 'active',
+                            archived: false
+                        })
+                        await newCh.save(session ? { session } : undefined)
+                    } catch (_) {}
+                }
+            }
+        }
 
         return savedTeam
     })

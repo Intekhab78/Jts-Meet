@@ -16,9 +16,10 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             return
         }
 
+        const baseMeetingId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
         try {
             if (!authSocket.isGuest) {
-                await joinMeeting(payload.meetingId, userId)
+                await joinMeeting(baseMeetingId, userId)
             }
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Failed to join meeting in database' })
@@ -35,6 +36,15 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         if (!isAuthorized) {
             socket.emit('error', { message: 'Not authorized to join meeting' })
             return
+        }
+
+        if (authSocket.meetingId && authSocket.meetingId !== payload.meetingId) {
+            socket.leave(`meeting:${authSocket.meetingId}`)
+            socket.to(`meeting:${authSocket.meetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
+                userId,
+                meetingId: authSocket.meetingId
+            })
+            removePeerSessionBySocket(socket.id)
         }
 
         socket.join(`meeting:${payload.meetingId}`)
@@ -66,14 +76,49 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         })
 
         // Get total participants in the meeting room and existing peer roster (excluding the joining user themselves)
-        const sockets = await io.in(`meeting:${payload.meetingId}`).allSockets()
+        let participantCount = 1
+        try {
+            const sockets = await io.in(`meeting:${payload.meetingId}`).allSockets()
+            participantCount = sockets.size
+        } catch (_) {
+            participantCount = getMeetingPeersInfo(payload.meetingId).length
+        }
         const peers = getMeetingPeersInfo(payload.meetingId).filter((p) => p.userId !== userId)
 
         socket.emit(SocketEvents.WEBRTC_JOIN, { 
             meetingId: payload.meetingId, 
-            participants: sockets.size,
+            participants: participantCount,
             peers 
         })
+
+        // If a host joins the meeting, notify guests in the waiting room lobby
+        if (!authSocket.isGuest && userId) {
+            io.to(`lobby:${baseMeetingId}`).emit('meeting:host-joined', {
+                hostName: effectiveName || 'Organizer',
+                meetingId: baseMeetingId
+            })
+            // Also notify the host of existing waiting guests in the lobby
+            const lobbyRoom = io.sockets.adapter.rooms.get(`lobby:${baseMeetingId}`)
+            if (lobbyRoom && lobbyRoom.size > 0) {
+                const waitingList: any[] = []
+                for (const sId of Array.from(lobbyRoom)) {
+                    const s = io.sockets.sockets.get(sId) as AuthenticatedSocket
+                    if (s && s.isPending) {
+                        waitingList.push({
+                            socketId: s.id,
+                            userId: s.userId,
+                            guestName: s.guestName || 'Guest',
+                            email: s.email || '',
+                            company: s.company || ''
+                        })
+                    }
+                }
+                if (waitingList.length > 0) {
+                    // Emit as raw array — frontend handleWaitingList accepts both shapes
+                    socket.emit('guest:waiting-list', waitingList)
+                }
+            }
+        }
     })
 
     socket.on(SocketEvents.WEBRTC_OFFER, async (payload: { targetUserId: string; meetingId: string; offer: any; displayName?: string; isVideoOff?: boolean; isMuted?: boolean }) => {

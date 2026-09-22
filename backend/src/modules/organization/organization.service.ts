@@ -8,6 +8,7 @@ import { NotificationService } from '../notification/notification.service'
 import { FRONTEND_URL, ADMIN_EMAIL } from '../../config'
 import { getPlanByPlanId } from '../plan/plan.service'
 import { withTransactionOrDirect } from '../../utils/transactionHelper'
+import { UpdateOrganizationPayload } from './organization.validator'
 
 export function getMemberUserId(member: any): string {
     if (!member || !member.userId) return ''
@@ -76,7 +77,7 @@ export async function getOrganizationById(orgId: string, session?: mongoose.Clie
 export async function updateOrganization(
     orgId: string,
     userId: string,
-    payload: Partial<{ name: string; logo: string; description: string; timezone: string; status: 'active' | 'inactive' }>
+    payload: UpdateOrganizationPayload
 ): Promise<IOrganization | null> {
     const org = await getOrganizationById(orgId)
     if (!org) {
@@ -92,6 +93,33 @@ export async function updateOrganization(
     if (payload.description !== undefined) org.description = payload.description
     if (payload.timezone !== undefined) org.timezone = payload.timezone
     if (payload.status !== undefined) org.status = payload.status
+
+    // Enterprise Profile & Localization
+    if (payload.website !== undefined) org.website = payload.website
+    if (payload.supportEmail !== undefined) org.supportEmail = payload.supportEmail
+    if (payload.billingContactEmail !== undefined) org.billingContactEmail = payload.billingContactEmail
+    if (payload.industry !== undefined) org.industry = payload.industry
+    if (payload.companySize !== undefined) org.companySize = payload.companySize
+    if (payload.headquarters !== undefined) org.headquarters = payload.headquarters
+    if (payload.country !== undefined) org.country = payload.country
+    if (payload.locale !== undefined) org.locale = payload.locale
+    if (payload.workingDays !== undefined) org.workingDays = payload.workingDays
+    if (payload.workingHoursStart !== undefined) org.workingHoursStart = payload.workingHoursStart
+    if (payload.workingHoursEnd !== undefined) org.workingHoursEnd = payload.workingHoursEnd
+    if (payload.dateFormat !== undefined) org.dateFormat = payload.dateFormat
+    if (payload.timeFormat !== undefined) org.timeFormat = payload.timeFormat
+
+    // Teams-Grade Policies & Defaults
+    if (payload.lobbyPolicy !== undefined) org.lobbyPolicy = payload.lobbyPolicy
+    if (payload.allowGuestAccess !== undefined) org.allowGuestAccess = Boolean(payload.allowGuestAccess)
+    if (payload.recordingPolicy !== undefined) org.recordingPolicy = payload.recordingPolicy
+    if (payload.e2eeEnabledByDefault !== undefined) org.e2eeEnabledByDefault = Boolean(payload.e2eeEnabledByDefault)
+    if (payload.watermarkingEnabled !== undefined) org.watermarkingEnabled = Boolean(payload.watermarkingEnabled)
+    if (payload.aiSummaryPolicy !== undefined) org.aiSummaryPolicy = payload.aiSummaryPolicy
+    if (payload.cloudRetentionDays !== undefined) org.cloudRetentionDays = Number(payload.cloudRetentionDays)
+    if (payload.fileRetentionDays !== undefined) org.fileRetentionDays = Number(payload.fileRetentionDays)
+    if (payload.allowExternalSharing !== undefined) org.allowExternalSharing = Boolean(payload.allowExternalSharing)
+    if (payload.requireMeetingPasscode !== undefined) org.requireMeetingPasscode = Boolean(payload.requireMeetingPasscode)
 
     return org.save()
 }

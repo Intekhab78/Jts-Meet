@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import type { MeetingChatMessage } from '../hooks/useMeetingChat'
 import { RichChatContent } from './RichChatContent'
+import { API_BASE, normalizeMediaUrl } from '../../../config'
 import {
     IconLock,
     IconMessage,
@@ -23,6 +24,8 @@ interface MeetingChatPanelProps {
     currentUserId?: string
     renamedUsers?: { [key: string]: string }
     participants?: string[]
+    meetingId?: string
+    token?: string
 }
 
 const IconSend = () => (
@@ -81,7 +84,7 @@ function formatTime(dateStr: string): string {
 }
 
 export function MeetingChatPanel({
-    messages, typingUsers, onSendMessage, onTyping, onStopTyping, disabled, onToggleChatReaction, currentUserId, renamedUsers, participants,
+    messages, typingUsers, onSendMessage, onTyping, onStopTyping, disabled, onToggleChatReaction, currentUserId, renamedUsers, participants, meetingId, token
 }: MeetingChatPanelProps) {
     const [message, setMessage] = useState('')
     const [searchQuery, setSearchQuery] = useState('')
@@ -190,7 +193,14 @@ export function MeetingChatPanel({
         return uid
     }
 
-    const [pendingAttachment, setPendingAttachment] = useState<{ name: string; size: number; type: string; dataUrl: string } | null>(null)
+    const [pendingAttachment, setPendingAttachment] = useState<{
+        name: string
+        size: number
+        type: string
+        dataUrl?: string
+        url?: string
+        uploading?: boolean
+    } | null>(null)
     const [isDraggingOver, setIsDraggingOver] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -201,26 +211,73 @@ export function MeetingChatPanel({
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
     }
 
-    const handleProcessFile = (file: File) => {
+    const handleProcessFile = async (file: File) => {
         if (!file) return
-        if (file.size > 25 * 1024 * 1024) {
-            alert('File size exceeds 25 MB limit for in-meeting sharing.')
+        if (file.size > 30 * 1024 * 1024) {
+            alert('File size exceeds 30 MB limit for in-meeting sharing.')
             return
         }
-        const reader = new FileReader()
-        reader.onload = (e) => {
-            const dataUrl = e.target?.result as string
-            if (dataUrl) {
-                const isCode = /\.(js|ts|tsx|jsx|py|html|css|json|java|c|cpp|go|rs|md|sql|sh|yml|yaml)$/i.test(file.name)
+        const isCode = /\.(js|ts|tsx|jsx|py|html|css|json|java|c|cpp|go|rs|md|sql|sh|yml|yaml)$/i.test(file.name)
+        setPendingAttachment({
+            name: file.name,
+            size: file.size,
+            type: isCode ? 'code' : (file.type || 'application/octet-stream'),
+            uploading: true
+        })
+
+        try {
+            const formData = new FormData()
+            formData.append('file', file)
+            const authToken = token || localStorage.getItem('token') || localStorage.getItem('authToken') || ''
+            const headers: Record<string, string> = {}
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`
+            }
+            const uploadUrl = meetingId ? `${API_BASE}/api/meeting/${meetingId}/chat-attachment` : `${API_BASE}/api/meeting/chat-attachment`
+            const res = await fetch(uploadUrl, {
+                method: 'POST',
+                headers,
+                body: formData
+            })
+            const data = await res.json()
+            if (res.ok && data?.success && data?.data?.url) {
+                setPendingAttachment({
+                    name: data.data.fileName || file.name,
+                    size: data.data.fileSize || file.size,
+                    type: isCode ? 'code' : (data.data.fileType || file.type || 'application/octet-stream'),
+                    url: data.data.url,
+                    uploading: false
+                })
+            } else {
+                // Fallback to local dataUrl if upload endpoint had issues
+                const reader = new FileReader()
+                reader.onload = (e) => {
+                    const dataUrl = e.target?.result as string
+                    setPendingAttachment({
+                        name: file.name,
+                        size: file.size,
+                        type: isCode ? 'code' : (file.type || 'application/octet-stream'),
+                        dataUrl,
+                        uploading: false
+                    })
+                }
+                reader.readAsDataURL(file)
+            }
+        } catch (err) {
+            console.error('Failed to upload file, falling back to dataUrl', err)
+            const reader = new FileReader()
+            reader.onload = (e) => {
+                const dataUrl = e.target?.result as string
                 setPendingAttachment({
                     name: file.name,
                     size: file.size,
                     type: isCode ? 'code' : (file.type || 'application/octet-stream'),
-                    dataUrl
+                    dataUrl,
+                    uploading: false
                 })
             }
+            reader.readAsDataURL(file)
         }
-        reader.readAsDataURL(file)
     }
 
     const handleSubmit = (e?: React.FormEvent) => {
@@ -449,79 +506,94 @@ export function MeetingChatPanel({
                     )}
 
                     {/* Rich Attachment Card (PDF, Image, Code, Document) */}
-                    {msg.attachment && (
-                        <div style={{
-                            marginTop: 6,
-                            background: 'rgba(255,255,255,0.04)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: 'var(--radius-md)',
-                            padding: '8px 12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            maxWidth: 320
-                        }}>
+                    {msg.attachment && (() => {
+                        const att = msg.attachment as any
+                        const fileName = att.fileName || att.name || 'attachment'
+                        const fileSize = att.fileSize || att.size || 0
+                        const fileType = att.fileType || att.type || ''
+                        const fileHref = att.url
+                            ? normalizeMediaUrl(att.url)
+                            : att.dataUrl
+                        const isPdf = fileName.toLowerCase().endsWith('.pdf') || fileType.includes('pdf')
+                        const isImg = fileType.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(fileName)
+
+                        return (
                             <div style={{
-                                width: 34,
-                                height: 34,
-                                borderRadius: 'var(--radius-sm)',
-                                background: msg.messageType === 'code' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                                color: msg.messageType === 'code' ? '#c084fc' : '#60a5fa',
+                                marginTop: 6,
+                                background: 'rgba(255,255,255,0.04)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: 'var(--radius-md)',
+                                padding: '8px 12px',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0
+                                gap: 10,
+                                maxWidth: 340
                             }}>
-                                {msg.messageType === 'code' ? (
-                                    <IconMonitor size={18} color="#c084fc" />
-                                ) : msg.attachment.name?.endsWith('.pdf') ? (
-                                    <IconFileText size={18} color="#60a5fa" />
-                                ) : msg.attachment.type?.startsWith('image/') ? (
-                                    <IconSparkles size={18} color="#60a5fa" />
-                                ) : (
-                                    <IconFolder size={18} color="#60a5fa" />
+                                <div style={{
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: msg.messageType === 'code' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                                    color: msg.messageType === 'code' ? '#c084fc' : '#60a5fa',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0
+                                }}>
+                                    {msg.messageType === 'code' ? (
+                                        <IconMonitor size={18} color="#c084fc" />
+                                    ) : isPdf ? (
+                                        <IconFileText size={18} color="#60a5fa" />
+                                    ) : isImg ? (
+                                        <IconSparkles size={18} color="#60a5fa" />
+                                    ) : (
+                                        <IconFolder size={18} color="#60a5fa" />
+                                    )}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{
+                                        fontSize: '0.8125rem',
+                                        fontWeight: 600,
+                                        color: '#fff',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                    }} title={fileName}>
+                                        {fileName}
+                                    </div>
+                                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
+                                        {formatFileSize(fileSize)}
+                                    </div>
+                                </div>
+                                {fileHref && (
+                                    <a
+                                        href={fileHref}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        download={fileName}
+                                        style={{
+                                            background: 'rgba(255,255,255,0.1)',
+                                            border: 'none',
+                                            borderRadius: 'var(--radius-sm)',
+                                            padding: '4px 10px',
+                                            color: '#fff',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            textDecoration: 'none',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4
+                                        }}
+                                        title={`Download ${fileName}`}
+                                    >
+                                        <IconDownload size={12} />
+                                        <span>Download</span>
+                                    </a>
                                 )}
                             </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{
-                                    fontSize: '0.8125rem',
-                                    fontWeight: 600,
-                                    color: '#fff',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                }} title={msg.attachment.name}>
-                                    {msg.attachment.name}
-                                </div>
-                                <div style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
-                                    {formatFileSize(msg.attachment.size)}
-                                </div>
-                            </div>
-                            {msg.attachment.dataUrl && (
-                                <a
-                                    href={msg.attachment.dataUrl}
-                                    download={msg.attachment.name}
-                                    style={{
-                                        background: 'rgba(255,255,255,0.1)',
-                                        border: 'none',
-                                        borderRadius: 'var(--radius-sm)',
-                                        padding: '4px 8px',
-                                        color: '#fff',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                        textDecoration: 'none',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 4
-                                    }}
-                                    title="Download file"
-                                >
-                                    <span>⬇️</span> Download
-                                </a>
-                            )}
-                        </div>
-                    )}
+                        )
+                    })()}
 
                     {/* Reactions List */}
                     {Object.keys(grouped).length > 0 && (
@@ -996,8 +1068,8 @@ export function MeetingChatPanel({
                                     }}>
                                         {pendingAttachment.name}
                                     </span>
-                                    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.6875rem' }}>
-                                        {formatFileSize(pendingAttachment.size)} • Ready to send
+                                    <span style={{ color: pendingAttachment.uploading ? '#60a5fa' : 'var(--color-text-muted)', fontSize: '0.6875rem' }}>
+                                        {pendingAttachment.uploading ? 'Uploading attachment...' : `${formatFileSize(pendingAttachment.size)} • Ready to send`}
                                     </span>
                                 </div>
                             </div>
@@ -1119,7 +1191,7 @@ export function MeetingChatPanel({
                         <button
                             type="button"
                             onClick={() => handleSubmit()}
-                            disabled={disabled || (!message.trim() && !pendingAttachment)}
+                            disabled={disabled || pendingAttachment?.uploading || (!message.trim() && !pendingAttachment)}
                             style={{
                                 padding: '6px 12px',
                                 borderRadius: 'var(--radius-sm)',

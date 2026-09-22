@@ -76,18 +76,98 @@ export class NotificationService {
     }
 
     private static async dispatchPushNotification(payload: NotificationPayload): Promise<void> {
-        // Placeholder for FCM / APNs push notifications
-        console.log(`[Push Notification Mock] Title: "${payload.title}" dispatched to user ${payload.recipientId}`)
+        try {
+            const fcmServerKey = process.env.FCM_SERVER_KEY || ''
+            const pushEndpoint = payload.metadata?.pushSubscription?.endpoint || payload.metadata?.fcmToken
+            if (!fcmServerKey || !pushEndpoint) {
+                return
+            }
+
+            await fetch('https://fcm.googleapis.com/fcm/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `key=${fcmServerKey}`
+                },
+                body: JSON.stringify({
+                    to: pushEndpoint,
+                    notification: {
+                        title: payload.title,
+                        body: payload.body,
+                        icon: '/favicon.ico',
+                        click_action: payload.metadata?.actionUrl || 'https://meet.jtsmiddleeast.com'
+                    },
+                    data: payload.metadata || {}
+                })
+            })
+        } catch (err) {
+            console.warn('[Push Notification] Dispatch failed:', (err as any)?.message || err)
+        }
     }
 
     private static async dispatchSMSNotification(payload: NotificationPayload): Promise<void> {
-        // Placeholder for Twilio / SMS Gateway
-        console.log(`[SMS Gateway Mock] Dispatched alert text: "${payload.body}" to user ${payload.recipientId}`)
+        try {
+            const accountSid = process.env.TWILIO_ACCOUNT_SID || ''
+            const authToken = process.env.TWILIO_AUTH_TOKEN || ''
+            const fromNumber = process.env.TWILIO_PHONE_NUMBER || ''
+            const toNumber = payload.metadata?.phoneNumber || payload.metadata?.toPhone
+
+            if (!accountSid || !authToken || !fromNumber || !toNumber) {
+                return
+            }
+
+            const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`
+            const authHeader = 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64')
+            const params = new URLSearchParams()
+            params.append('From', fromNumber)
+            params.append('To', toNumber)
+            params.append('Body', `[JTS Meet] ${payload.title}: ${payload.body}`)
+
+            await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': authHeader,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: params.toString()
+            })
+        } catch (err) {
+            console.warn('[SMS Gateway] Dispatch failed:', (err as any)?.message || err)
+        }
     }
 
     private static async dispatchWebhookNotification(payload: NotificationPayload): Promise<void> {
-        // Placeholder for Webhooks callbacks
-        console.log(`[Webhook Callback Mock] Sent event type "${payload.type}" payload to user registered endpoints`)
+        try {
+            const webhookUrl = payload.metadata?.webhookUrl || process.env.GLOBAL_WEBHOOK_URL
+            const webhookSecret = process.env.WEBHOOK_SECRET || 'jts-webhook-secret'
+
+            if (!webhookUrl) return
+
+            const bodyString = JSON.stringify({
+                event: payload.type,
+                title: payload.title,
+                body: payload.body,
+                recipientId: payload.recipientId,
+                metadata: payload.metadata,
+                timestamp: new Date().toISOString()
+            })
+
+            const crypto = await import('crypto')
+            const signature = crypto.createHmac('sha256', webhookSecret).update(bodyString).digest('hex')
+
+            await fetch(webhookUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-JTS-Signature': `sha256=${signature}`,
+                    'X-JTS-Event': payload.type
+                },
+                body: bodyString,
+                signal: AbortSignal.timeout(5000)
+            })
+        } catch (err) {
+            console.warn('[Webhook] Dispatch failed:', (err as any)?.message || err)
+        }
     }
 
     // Notification Retrieval & State Modification Actions

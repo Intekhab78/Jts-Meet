@@ -26,6 +26,7 @@ export interface Team {
     icon?: string
     color?: string
     visibility: TeamVisibility
+    teamType?: string
     ownerId: string
     createdBy: string
     status: TeamStatus
@@ -41,6 +42,8 @@ export interface CreateTeamPayload {
     icon?: string
     color?: string
     visibility: TeamVisibility
+    teamType?: string
+    starterChannels?: string[]
 }
 
 export interface UpdateTeamPayload {

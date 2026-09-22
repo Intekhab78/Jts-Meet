@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { normalizeMediaUrl } from '../../../config'
 
 interface RichChatContentProps {
     content: string
@@ -90,7 +91,7 @@ export function RichChatContent({ content }: RichChatContentProps) {
                     }}
                 >
                     <img
-                        src={previewImage}
+                        src={normalizeMediaUrl(previewImage)}
                         alt="Enlarged preview"
                         style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, boxShadow: '0 10px 40px rgba(0,0,0,0.8)' }}
                     />
@@ -101,8 +102,8 @@ export function RichChatContent({ content }: RichChatContentProps) {
 }
 
 function renderInlineMarkdown(text: string, onImageClick: (url: string) => void): React.ReactNode {
-    // Regex for image links or data URLs: http...png|jpg|jpeg|gif|webp or [img](url)
-    const urlOrImgRegex = /(https?:\/\/[^\s]+?\.(?:png|jpg|jpeg|gif|webp)|data:image\/[a-zA-Z]+;base64,[^\s]+)|(https?:\/\/[^\s]+)|(@[a-zA-Z0-9_\-]+)|(`[^`]+`)|(\*\*[^*]+\*\*)/gi
+    // Regex for image links, relative upload paths, or data URLs
+    const urlOrImgRegex = /(https?:\/\/[^\s]+?\.(?:png|jpg|jpeg|gif|webp)|data:image\/[a-zA-Z]+;base64,[^\s]+|\/uploads\/[^\s]+?\.(?:png|jpg|jpeg|gif|webp))|(https?:\/\/[^\s]+|\/uploads\/[^\s]+)|(@[a-zA-Z0-9_\-]+)|(`[^`]+`)|(\*\*[^*]+\*\*)/gi
 
     const segments: React.ReactNode[] = []
     let lastIndex = 0
@@ -113,15 +114,16 @@ function renderInlineMarkdown(text: string, onImageClick: (url: string) => void)
             segments.push(text.substring(lastIndex, match.index))
         }
 
-        const [full, imgUrl, linkUrl, mention, inlineCode, bold] = match
+        const [full, rawImgUrl, rawLinkUrl, mention, inlineCode, bold] = match
 
-        if (imgUrl) {
+        if (rawImgUrl) {
+            const cleanImgUrl = normalizeMediaUrl(rawImgUrl)
             segments.push(
                 <div key={match.index} style={{ margin: '6px 0' }}>
                     <img
-                        src={imgUrl}
+                        src={cleanImgUrl}
                         alt="Attached image"
-                        onClick={() => onImageClick(imgUrl)}
+                        onClick={() => onImageClick(cleanImgUrl)}
                         style={{
                             maxWidth: 220, maxHeight: 180, borderRadius: 6,
                             border: '1px solid var(--color-border)', cursor: 'zoom-in',
@@ -130,16 +132,17 @@ function renderInlineMarkdown(text: string, onImageClick: (url: string) => void)
                     />
                 </div>
             )
-        } else if (linkUrl) {
+        } else if (rawLinkUrl) {
+            const cleanLinkUrl = normalizeMediaUrl(rawLinkUrl)
             segments.push(
                 <a
                     key={match.index}
-                    href={linkUrl}
+                    href={cleanLinkUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ color: 'var(--color-accent)', textDecoration: 'underline', wordBreak: 'break-all' }}
                 >
-                    {linkUrl}
+                    {rawLinkUrl}
                 </a>
             )
         } else if (mention) {

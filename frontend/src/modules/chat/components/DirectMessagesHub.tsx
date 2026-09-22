@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import io, { Socket } from 'socket.io-client'
-import { API_BASE, SOCKET_URL } from '../../../config'
+import { API_BASE, SOCKET_URL, normalizeMediaUrl } from '../../../config'
 import {
     IconMessage,
     IconSearch,
@@ -24,6 +24,7 @@ import {
     IconInfo
 } from '../../../components/common/Icons'
 import { UserPresenceBadge, PresenceStatus } from '../../../components/common/UserPresenceBadge'
+import { UserAvatar } from '../../../components/common/UserAvatar'
 import { AsyncClipRecorderModal } from './AsyncClipRecorderModal'
 
 export interface ChatContact {
@@ -216,9 +217,10 @@ export function DirectMessagesHub({
 
             // Update Recent Chats optimistically
             setRecentChats(prev => {
-                const existingIdx = prev.findIndex(c => c.conversationWith === otherPartyId)
+                const otherIdStr = String(otherPartyId)
+                const existingIdx = prev.findIndex(c => String(c.conversationWith) === otherIdStr)
                 const senderObj = typeof msg.sender === 'object' ? msg.sender : undefined
-                const contactObj = contactsRef.current.find(c => c._id === otherPartyId) || (senderObj ? {
+                const contactObj = contactsRef.current.find(c => String(c._id) === otherIdStr) || (senderObj ? {
                     _id: senderObj._id,
                     fullName: senderObj.fullName,
                     email: '',
@@ -332,7 +334,7 @@ export function DirectMessagesHub({
         }
     }, [token])
 
-    // Load recent chats (Fix: handles { success: true, data: { chats: [...] } } and { data: [...] })
+    // Load recent chats with guaranteed unique conversationWith keys
     const loadRecentChats = async () => {
         try {
             const res = await fetch(`${API_BASE}/api/chat/recent`, {
@@ -347,7 +349,15 @@ export function DirectMessagesHub({
                         : Array.isArray(json)
                             ? json
                             : []
-                setRecentChats(chatsList)
+                const uniqueMap = new Map<string, RecentChat>()
+                for (const item of chatsList) {
+                    if (!item) continue
+                    const id = String(item.conversationWith || item.user?._id || '')
+                    if (id && !uniqueMap.has(id)) {
+                        uniqueMap.set(id, { ...item, conversationWith: id })
+                    }
+                }
+                setRecentChats(Array.from(uniqueMap.values()))
             }
         } catch (err) {
             console.warn('[DM Hub] Failed to load recent chats:', err)
@@ -356,7 +366,7 @@ export function DirectMessagesHub({
         }
     }
 
-    // Load contacts list
+    // Load contacts list with guaranteed unique _id keys
     const loadContacts = async (query = '') => {
         try {
             const res = await fetch(`${API_BASE}/api/chat/contacts?search=${encodeURIComponent(query)}`, {
@@ -366,7 +376,13 @@ export function DirectMessagesHub({
                 const json = await res.json()
                 const data = json.data?.contacts || json.data || json
                 if (Array.isArray(data)) {
-                    setContacts(data)
+                    const uniqueMap = new Map<string, ChatContact>()
+                    for (const c of data) {
+                        if (c && c._id && !uniqueMap.has(String(c._id))) {
+                            uniqueMap.set(String(c._id), { ...c, _id: String(c._id) })
+                        }
+                    }
+                    setContacts(Array.from(uniqueMap.values()))
                 }
             }
         } catch (err) {
@@ -409,14 +425,22 @@ export function DirectMessagesHub({
                 const data = json.data?.messages || json.data || json
                 if (Array.isArray(data)) {
                     const rev = [...data].reverse()
-                    setMessages(rev)
-                    if (rev.length > 0) {
-                        const lastMsg = rev[rev.length - 1]
+                    const uniqueMap = new Map<string, ChatMessage>()
+                    for (const m of rev) {
+                        if (m && m._id && !uniqueMap.has(m._id)) {
+                            uniqueMap.set(m._id, m)
+                        }
+                    }
+                    const uniqueMsgs = Array.from(uniqueMap.values())
+                    setMessages(uniqueMsgs)
+                    if (uniqueMsgs.length > 0) {
+                        const lastMsg = uniqueMsgs[uniqueMsgs.length - 1]
                         setRecentChats(prev => {
-                            const exists = prev.some(c => c.conversationWith === activeContact._id)
+                            const targetId = String(activeContact._id)
+                            const exists = prev.some(c => String(c.conversationWith) === targetId)
                             if (exists) return prev
                             return [{
-                                conversationWith: activeContact._id,
+                                conversationWith: targetId,
                                 latestMessage: lastMsg,
                                 user: activeContact
                             }, ...prev]
@@ -502,9 +526,10 @@ export function DirectMessagesHub({
 
         // Immediately reflect in Recent Chats list
         setRecentChats(prev => {
-            const existingIdx = prev.findIndex(c => c.conversationWith === activeContact._id)
+            const activeId = String(activeContact._id)
+            const existingIdx = prev.findIndex(c => String(c.conversationWith) === activeId)
             const updatedItem: RecentChat = {
-                conversationWith: activeContact._id,
+                conversationWith: activeId,
                 latestMessage: optimisticMsg,
                 user: activeContact
             }
@@ -517,15 +542,7 @@ export function DirectMessagesHub({
         })
 
         try {
-            // Emit via socket for low latency
-            if (socketRef.current && socketRef.current.connected) {
-                socketRef.current.emit('chat:send', {
-                    receiverId: activeContact._id,
-                    message: rawContent
-                })
-            }
-
-            // Also persist via REST endpoint
+            // Persist via REST endpoint (backend automatically broadcasts to recipient socket)
             const res = await fetch(`${API_BASE}/api/chat/send`, {
                 method: 'POST',
                 headers: {
@@ -619,7 +636,7 @@ export function DirectMessagesHub({
                 const json = await res.json()
                 const data = json.data || json
                 const originalName = data.originalName || file.name
-                const secureUrl = data.secureUrl || `${API_BASE}/uploads/${data.fileName || file.name}`
+                const secureUrl = normalizeMediaUrl(data.secureUrl || `${API_BASE}/uploads/${data.fileName || file.name}`)
                 const fileSizeFormatted = formatBytes(data.size || file.size)
                 const fileMessage = `[File: ${originalName} | ${secureUrl} | ${fileSizeFormatted}]`
 
@@ -635,13 +652,12 @@ export function DirectMessagesHub({
                     isSeen: false,
                     reactions: []
                 }
-                setMessages(prev => [...prev, optimisticMsg])
-
-                // Immediately reflect in Recent Chats list
+                       // Immediately reflect in Recent Chats list
                 setRecentChats(prev => {
-                    const existingIdx = prev.findIndex(c => c.conversationWith === activeContact._id)
+                    const activeId = String(activeContact._id)
+                    const existingIdx = prev.findIndex(c => String(c.conversationWith) === activeId)
                     const updatedItem: RecentChat = {
-                        conversationWith: activeContact._id,
+                        conversationWith: activeId,
                         latestMessage: optimisticMsg,
                         user: activeContact
                     }
@@ -652,13 +668,6 @@ export function DirectMessagesHub({
                     }
                     return [updatedItem, ...prev]
                 })
-
-                if (socketRef.current && socketRef.current.connected) {
-                    socketRef.current.emit('chat:send', {
-                        receiverId: activeContact._id,
-                        message: fileMessage
-                    })
-                }
 
                 const postRes = await fetch(`${API_BASE}/api/chat/send`, {
                     method: 'POST',
@@ -732,7 +741,7 @@ export function DirectMessagesHub({
             .then(res => res.json())
             .then(json => {
                 if (!isMounted) return
-                const data = json.data?.messages || json.data || []
+                const data = json.data?.messages || json.data || json
                 if (Array.isArray(data)) {
                     setThreadReplies(data)
                 }
@@ -808,9 +817,10 @@ export function DirectMessagesHub({
 
         // Reflect in Recent Chats
         setRecentChats(prev => {
-            const existingIdx = prev.findIndex(c => c.conversationWith === activeContact._id)
+            const activeId = String(activeContact._id)
+            const existingIdx = prev.findIndex(c => String(c.conversationWith) === activeId)
             const updatedItem: RecentChat = {
-                conversationWith: activeContact._id,
+                conversationWith: activeId,
                 latestMessage: optimisticMsg,
                 user: activeContact
             }
@@ -823,12 +833,6 @@ export function DirectMessagesHub({
         })
 
         try {
-            if (socketRef.current && socketRef.current.connected) {
-                socketRef.current.emit('chat:send', {
-                    receiverId: activeContact._id,
-                    message: clipMessage
-                })
-            }
             const res = await fetch(`${API_BASE}/api/chat/send`, {
                 method: 'POST',
                 headers: {
@@ -967,7 +971,7 @@ export function DirectMessagesHub({
                 list.push({
                     id: msg._id + '_' + match[1],
                     name: match[1],
-                    url: match[2],
+                    url: normalizeMediaUrl(match[2]),
                     size: match[3],
                     senderName: isMe ? 'You' : (activeContact?.fullName || 'Colleague'),
                     isMe,
@@ -1170,7 +1174,7 @@ export function DirectMessagesHub({
                                             <IconPin size={11} color="#6264a7" />
                                             <span>PINNED</span>
                                         </div>
-                                        {pinnedChats.map(chat => renderChatItem(chat, true))}
+                                        {pinnedChats.map((chat, idx) => renderChatItem(chat, true, idx))}
                                     </div>
                                 )}
 
@@ -1188,7 +1192,7 @@ export function DirectMessagesHub({
                                             RECENT
                                         </div>
                                     )}
-                                    {regularChats.map(chat => renderChatItem(chat, false))}
+                                    {regularChats.map((chat, idx) => renderChatItem(chat, false, idx))}
                                 </div>
                             </>
                         )
@@ -1199,12 +1203,12 @@ export function DirectMessagesHub({
                                 No colleagues found.
                             </div>
                         ) : (
-                            contacts.map((c) => {
+                            contacts.map((c, idx) => {
                                 const isSelected = activeContact?._id === c._id
                                 const presence = getResolvedPresence(c._id, c.status, c.customStatus)
                                 return (
                                     <div
-                                        key={c._id}
+                                        key={`dir_user_${c._id}_${idx}`}
                                         onClick={() => {
                                             setActiveContact(c)
                                             setSidebarTab('recent')
@@ -1228,29 +1232,13 @@ export function DirectMessagesHub({
                                             if (!isSelected) e.currentTarget.style.background = 'transparent'
                                         }}
                                     >
-                                        <div style={{ position: 'relative', width: 34, height: 34, flexShrink: 0 }}>
-                                            {c.profileImage ? (
-                                                <img src={c.profileImage} alt={c.fullName} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover' }} />
-                                            ) : (
-                                                <div style={{
-                                                    width: 34,
-                                                    height: 34,
-                                                    borderRadius: '50%',
-                                                    background: 'rgba(255, 255, 255, 0.08)',
-                                                    color: '#fff',
-                                                    fontWeight: 700,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    fontSize: '0.8125rem'
-                                                }}>
-                                                    {c.fullName.slice(0, 1).toUpperCase()}
-                                                </div>
-                                            )}
-                                            <div style={{ position: 'absolute', bottom: -1, right: -1 }}>
-                                                <UserPresenceBadge status={presence.status} size="xs" />
-                                            </div>
-                                        </div>
+                                        <UserAvatar
+                                            src={c.profileImage}
+                                            name={c.fullName}
+                                            size={34}
+                                            presence={presence.status}
+                                            customPresenceStatus={presence.customStatus}
+                                        />
 
                                         <div style={{ minWidth: 0, flex: 1 }}>
                                             <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1290,29 +1278,13 @@ export function DirectMessagesHub({
                                 gap: 12
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                                    <div style={{ position: 'relative', width: 38, height: 38, flexShrink: 0 }}>
-                                        {activeContact.profileImage ? (
-                                            <img src={activeContact.profileImage} alt={activeContact.fullName} style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover' }} />
-                                        ) : (
-                                            <div style={{
-                                                width: 38,
-                                                height: 38,
-                                                borderRadius: '50%',
-                                                background: 'linear-gradient(135deg, #6264a7, #464775)',
-                                                color: '#fff',
-                                                fontWeight: 700,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                fontSize: '0.875rem'
-                                            }}>
-                                                {activeContact.fullName.slice(0, 1).toUpperCase()}
-                                            </div>
-                                        )}
-                                        <div style={{ position: 'absolute', bottom: -1, right: -1 }}>
-                                            <UserPresenceBadge status={getResolvedPresence(activeContact._id, activeContact.status).status} size="sm" />
-                                        </div>
-                                    </div>
+                                    <UserAvatar
+                                        src={activeContact.profileImage}
+                                        name={activeContact.fullName}
+                                        size={38}
+                                        presence={getResolvedPresence(activeContact._id, activeContact.status).status}
+                                        customPresenceStatus={getResolvedPresence(activeContact._id, activeContact.status).customStatus}
+                                    />
 
                                     <div style={{ minWidth: 0 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1522,7 +1494,7 @@ export function DirectMessagesHub({
                                                 const showDateSeparator = !prevMsg || new Date(msg.createdAt).toDateString() !== new Date(prevMsg.createdAt).toDateString()
 
                                                 return (
-                                                    <React.Fragment key={msg._id || idx}>
+                                                    <React.Fragment key={msg._id ? `feed_msg_${msg._id}_${idx}` : `feed_temp_${idx}`}>
                                                         {showDateSeparator && (
                                                             <div style={{
                                                                 display: 'flex',
@@ -2120,29 +2092,14 @@ export function DirectMessagesHub({
                                     padding: 24
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-                                        <div style={{ position: 'relative', width: 64, height: 64 }}>
-                                            {activeContact.profileImage ? (
-                                                <img src={activeContact.profileImage} alt={activeContact.fullName} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }} />
-                                            ) : (
-                                                <div style={{
-                                                    width: 64,
-                                                    height: 64,
-                                                    borderRadius: '50%',
-                                                    background: 'linear-gradient(135deg, #6264a7, #464775)',
-                                                    color: '#fff',
-                                                    fontWeight: 800,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    fontSize: '1.5rem'
-                                                }}>
-                                                    {activeContact.fullName.slice(0, 1).toUpperCase()}
-                                                </div>
-                                            )}
-                                            <div style={{ position: 'absolute', bottom: 0, right: 0 }}>
-                                                <UserPresenceBadge status={getResolvedPresence(activeContact._id, activeContact.status).status} size="md" />
-                                            </div>
-                                        </div>
+                                        <UserAvatar
+                                            src={activeContact.profileImage}
+                                            name={activeContact.fullName}
+                                            size={64}
+                                            fontSize="1.5rem"
+                                            presence={getResolvedPresence(activeContact._id, activeContact.status).status}
+                                            customPresenceStatus={getResolvedPresence(activeContact._id, activeContact.status).customStatus}
+                                        />
                                         <div>
                                             <h3 style={{ margin: '0 0 4px', fontSize: '1.25rem', fontWeight: 800, color: '#fff' }}>
                                                 {activeContact.fullName}
@@ -2363,11 +2320,11 @@ export function DirectMessagesHub({
                                     No colleagues found matching "{newChatSearch}"
                                 </div>
                             ) : (
-                                filteredNewChatContacts.map(c => {
+                                filteredNewChatContacts.map((c, idx) => {
                                     const presence = getResolvedPresence(c._id, c.status, c.customStatus)
                                     return (
                                         <div
-                                            key={c._id}
+                                            key={`modal_user_${c._id}_${idx}`}
                                             onClick={() => {
                                                 setActiveContact(c)
                                                 setShowNewChatModal(false)
@@ -2387,29 +2344,13 @@ export function DirectMessagesHub({
                                             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(98, 100, 167, 0.2)' }}
                                             onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
                                         >
-                                            <div style={{ position: 'relative', width: 36, height: 36, flexShrink: 0 }}>
-                                                {c.profileImage ? (
-                                                    <img src={c.profileImage} alt={c.fullName} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
-                                                ) : (
-                                                    <div style={{
-                                                        width: 36,
-                                                        height: 36,
-                                                        borderRadius: '50%',
-                                                        background: 'linear-gradient(135deg, #6264a7, #464775)',
-                                                        color: '#fff',
-                                                        fontWeight: 700,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        fontSize: '0.875rem'
-                                                    }}>
-                                                        {c.fullName.slice(0, 1).toUpperCase()}
-                                                    </div>
-                                                )}
-                                                <div style={{ position: 'absolute', bottom: -1, right: -1 }}>
-                                                    <UserPresenceBadge status={presence.status} size="xs" />
-                                                </div>
-                                            </div>
+                                            <UserAvatar
+                                                src={c.profileImage}
+                                                name={c.fullName}
+                                                size={36}
+                                                presence={presence.status}
+                                                customPresenceStatus={presence.customStatus}
+                                            />
 
                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                 <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>
@@ -2465,7 +2406,7 @@ export function DirectMessagesHub({
     )
 
     // Render helper for recent/pinned chat item in left sidebar
-    function renderChatItem(chat: RecentChat, isPinned: boolean) {
+    function renderChatItem(chat: RecentChat, isPinned: boolean, idx: number = 0) {
         const contact = chat.user || {
             _id: chat.conversationWith,
             fullName: 'Colleague',
@@ -2479,7 +2420,7 @@ export function DirectMessagesHub({
 
         return (
             <div
-                key={chat.conversationWith}
+                key={`chat_row_${String(chat.conversationWith)}_${isPinned ? 'pinned' : 'reg'}_${idx}`}
                 onClick={() => setActiveContact(contact)}
                 style={{
                     display: 'flex',
@@ -2507,33 +2448,13 @@ export function DirectMessagesHub({
                 }}
             >
                 {/* Avatar with Presence Badge */}
-                <div style={{ position: 'relative', width: 36, height: 36, flexShrink: 0 }}>
-                    {contact.profileImage ? (
-                        <img
-                            src={contact.profileImage}
-                            alt={contact.fullName}
-                            style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }}
-                        />
-                    ) : (
-                        <div style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: '50%',
-                            background: 'linear-gradient(135deg, #6264a7, #464775)',
-                            color: '#fff',
-                            fontWeight: 700,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.8125rem'
-                        }}>
-                            {contact.fullName.slice(0, 1).toUpperCase()}
-                        </div>
-                    )}
-                    <div style={{ position: 'absolute', bottom: -1, right: -1 }}>
-                        <UserPresenceBadge status={presence.status} size="xs" />
-                    </div>
-                </div>
+                <UserAvatar
+                    src={contact.profileImage}
+                    name={contact.fullName}
+                    size={36}
+                    presence={presence.status}
+                    customPresenceStatus={presence.customStatus}
+                />
 
                 {/* Name & Snippet */}
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -2849,7 +2770,8 @@ export function DirectMessagesHub({
         const match = msgContent.match(/\[File:\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\]/)
         if (!match) return <div style={{ whiteSpace: 'pre-wrap' }}>{msgContent}</div>
 
-        const [, fileName, fileUrl, fileSize] = match
+        const [, fileName, rawFileUrl, fileSize] = match
+        const fileUrl = normalizeMediaUrl(rawFileUrl)
         const fileExt = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() || 'FILE' : 'FILE'
 
         return (

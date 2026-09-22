@@ -18,7 +18,7 @@ router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
         if (!meeting) {
             // Support instant / ad-hoc meeting rooms (e.g. room-xxxx)
             if (meetingId.startsWith('room-') || meetingId.length >= 4) {
-                const isWaitingRoom = adHocRoomSettings[meetingId]?.isWaitingRoomEnabled !== false
+                const isWaitingRoom = adHocRoomSettings[meetingId]?.isWaitingRoomEnabled === true
                 res.json({
                     success: true,
                     data: {
@@ -73,7 +73,7 @@ router.post('/request', rateLimiter(60 * 1000, 60), async (req: Request, res: Re
         if (!meeting) {
             // Allow ad-hoc / instant rooms without database records
             if (meetingId.startsWith('room-') || meetingId.length >= 4) {
-                const isWaitingRoom = adHocRoomSettings[meetingId]?.isWaitingRoomEnabled !== false
+                const isWaitingRoom = adHocRoomSettings[meetingId]?.isWaitingRoomEnabled === true
                 const tempGuestId = `guest_${Math.random().toString(36).substring(2, 11)}`
                 const token = jwt.sign(
                     {
@@ -117,8 +117,10 @@ router.post('/request', rateLimiter(60 * 1000, 60), async (req: Request, res: Re
         // Generate temporary guest ID
         const tempGuestId = `guest_${Math.random().toString(36).substring(2, 11)}`
 
-        // Check if waiting room is enabled. Default is true!
-        const isPending = meeting.isWaitingRoomEnabled !== false
+        // Check if waiting room is enabled. Instant meetings allow direct link joining by default
+        const isPending = meeting.meetingId?.startsWith('room-') 
+            ? meeting.isWaitingRoomEnabled === true 
+            : meeting.isWaitingRoomEnabled !== false
 
         // Sign JWT
         const token = jwt.sign(

@@ -45,6 +45,7 @@ export const SocketEvents = {
     MEETING_CAPTION: 'meeting:caption',
     MEETING_NOTES_UPDATE: 'meeting:notes:update',
     MEETING_END_ALL: 'meeting:end-all',
+    MEETING_END: 'meeting:end',
     MEETING_REACTION: 'meeting:reaction',
     MEETING_WATERMARK_TOGGLE: 'meeting:toggle-watermark',
     MEETING_COHOST_PROMOTE: 'meeting:cohost-promote',

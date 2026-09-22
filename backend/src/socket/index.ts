@@ -19,6 +19,8 @@ import jwt from 'jsonwebtoken'
 import { JWT_SECRET } from '../config'
 import { getMeetingSocketId } from '../modules/webrtc/peer.manager'
 import { RedisService } from '../services/redis.service'
+import { Types } from 'mongoose'
+import { Meeting } from '../modules/meeting/meeting.model'
 import { User } from '../models/user.model'
 import { Message } from '../modules/chat/chat.model'
 
@@ -67,17 +69,40 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
     }
 
     // Server-to-server guest approval/denial handlers
-    io.on("internal:guest:approve-cluster", (socketId: string) => {
+    io.on("internal:guest:approve-cluster", async (socketId: string) => {
         const guestSocket = io.sockets.sockets.get(socketId) as AuthenticatedSocket
         if (guestSocket) {
             guestSocket.isPending = false
             guestSocket.leave(`lobby:${guestSocket.meetingId}`)
             
+            // Register meeting and WebRTC handlers on approved guest socket
+            registerMeetingHandlers(io, guestSocket)
+            registerMeetingChatHandlers(io, guestSocket)
+            registerWebRTCHandlers(io, guestSocket)
+            registerWhiteboardHandlers(io, guestSocket)
+            registerPollHandlers(io, guestSocket)
+            registerBreakoutHandlers(io, guestSocket)
+            registerMeetingQAHandlers(io, guestSocket)
+
+            // Persist approved participant in MongoDB Meeting document
+            try {
+                const baseMeetId = guestSocket.meetingId?.includes('__sub_') ? guestSocket.meetingId.split('__sub_')[0] : guestSocket.meetingId
+                if (guestSocket.userId && Types.ObjectId.isValid(guestSocket.userId)) {
+                    await Meeting.updateOne(
+                        { meetingId: baseMeetId },
+                        {
+                            $addToSet: { participants: new Types.ObjectId(guestSocket.userId) },
+                            $pull: { waitingRoom: new Types.ObjectId(guestSocket.userId) }
+                        }
+                    ).exec()
+                }
+            } catch (e) {}
+
             // Generate a NEW guest token with isPending: false to prevent pending limbo on reconnect
             const token = jwt.sign(
                 {
                     userId: guestSocket.userId,
-                    isGuest: true,
+                    isGuest: guestSocket.isGuest || false,
                     guestName: guestSocket.guestName,
                     meetingId: guestSocket.meetingId,
                     isPending: false
@@ -112,7 +137,18 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         }
 
         const userId = authSocket.userId
-        await socket.join(`user:${userId}`)
+        socket.join(`user:${userId}`)
+
+        // Register all handlers SYNCHRONOUSLY so client events like webrtc:join are never dropped during async operations
+        registerMeetingHandlers(io, socket)
+        registerMeetingChatHandlers(io, socket)
+        registerChannelChatHandlers(io, socket)
+        registerWebRTCHandlers(io, socket)
+        registerDirectCallHandlers(io, socket)
+        registerWhiteboardHandlers(io, socket)
+        registerPollHandlers(io, socket)
+        registerBreakoutHandlers(io, socket)
+        registerMeetingQAHandlers(io, socket)
 
         // Handle Guest Flow
         if (authSocket.isGuest) {
@@ -145,15 +181,6 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
                 return
             }
 
-            // Approved/public guest: Register meeting, chat and WebRTC handlers
-            registerMeetingHandlers(io, socket)
-            registerMeetingChatHandlers(io, socket)
-            registerWebRTCHandlers(io, socket)
-            registerWhiteboardHandlers(io, socket)
-            registerPollHandlers(io, socket)
-            registerBreakoutHandlers(io, socket)
-            registerMeetingQAHandlers(io, socket)
-
             socket.on(SocketEvents.DISCONNECT, () => {
                 // Approved guest disconnect cleanup
             })
@@ -171,7 +198,7 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         }
 
         setUserOnline(userId, socket.id)
-        await markUserOnline(userId)
+        markUserOnline(userId).catch(() => {})
         io.emit(SocketEvents.USER_ONLINE, { userId })
         
         // Sync existing presences with newly connected socket
@@ -323,16 +350,6 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
                 console.error('Failed to remove reaction via socket:', error)
             }
         })
-
-        registerMeetingHandlers(io, socket)
-        registerMeetingChatHandlers(io, socket)
-        registerChannelChatHandlers(io, socket)
-        registerWebRTCHandlers(io, socket)
-        registerDirectCallHandlers(io, socket)
-        registerWhiteboardHandlers(io, socket)
-        registerPollHandlers(io, socket)
-        registerBreakoutHandlers(io, socket)
-        registerMeetingQAHandlers(io, socket)
 
         socket.on(SocketEvents.DISCONNECT, async () => {
             const hasRemainingSockets = removeUserSocket(userId, socket.id)

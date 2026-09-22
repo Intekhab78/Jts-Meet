@@ -4,10 +4,14 @@ import { useSocketContext } from '../context/SocketContext'
 import { SocketEvents } from '../services/socket.service'
 
 export interface ChatAttachment {
-    name: string
-    size: number
-    type: string
+    name?: string
+    size?: number
+    type?: string
     dataUrl?: string
+    fileName?: string
+    fileSize?: number
+    fileType?: string
+    url?: string
 }
 
 export interface MeetingChatMessage {
@@ -38,6 +42,17 @@ export function useMeetingChat() {
             if (!socket || !meetingId || (!message.trim() && !attachment)) {
                 return
             }
+            const normalizedAttachment = attachment ? {
+                ...attachment,
+                fileName: attachment.fileName || attachment.name || 'file',
+                fileSize: attachment.fileSize || attachment.size || 0,
+                fileType: attachment.fileType || attachment.type || 'application/octet-stream',
+                url: attachment.url || attachment.dataUrl || '',
+                name: attachment.name || attachment.fileName || 'file',
+                size: attachment.size || attachment.fileSize || 0,
+                type: attachment.type || attachment.fileType || 'application/octet-stream'
+            } : undefined
+
             const isPrivate = !!recipientId && recipientId !== 'everyone'
             const tempId = `temp-${Date.now()}`
             const localMsg: MeetingChatMessage = {
@@ -47,9 +62,9 @@ export function useMeetingChat() {
                 recipientId: isPrivate ? recipientId : undefined,
                 recipientName: isPrivate ? recipientName : undefined,
                 isPrivate,
-                message: message.trim() || (attachment ? `Shared a file: ${attachment.name}` : ''),
+                message: message.trim() || (normalizedAttachment ? `Shared a file: ${normalizedAttachment.name}` : ''),
                 messageType,
-                attachment,
+                attachment: normalizedAttachment,
                 status: 'sent',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
@@ -59,7 +74,7 @@ export function useMeetingChat() {
                 meetingId,
                 message: localMsg.message,
                 messageType,
-                attachment,
+                attachment: normalizedAttachment,
                 recipientId: isPrivate ? recipientId : undefined,
                 recipientName: isPrivate ? recipientName : undefined
             })

@@ -4,8 +4,62 @@
  */
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
+const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash-8b']
+
+async function callGeminiApi(prompt: string, options: { jsonResponse?: boolean; temperature?: number; maxTokens?: number } = {}): Promise<string> {
+    if (!GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY is not configured')
+    }
+
+    let lastError: any = null
+
+    // Try primary and fallback models in sequence
+    for (const model of FALLBACK_MODELS) {
+        try {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`
+            const bodyPayload: any = {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: options.temperature !== undefined ? options.temperature : 0.3
+                }
+            }
+
+            if (options.jsonResponse) {
+                bodyPayload.generationConfig.response_mime_type = 'application/json'
+            }
+            if (options.maxTokens) {
+                bodyPayload.generationConfig.maxOutputTokens = options.maxTokens
+            }
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bodyPayload)
+            })
+
+            if (!response.ok) {
+                const errText = await response.text()
+                console.warn(`[Gemini] Model ${model} returned ${response.status}: ${errText}`)
+                lastError = new Error(`Gemini ${model} error (${response.status})`)
+                continue // Try next model
+            }
+
+            const data: any = await response.json()
+            const parts = data?.candidates?.[0]?.content?.parts || []
+            const textPart = parts.find((p: any) => p.text && !p.thought) || parts[0]
+            const text = textPart?.text || ''
+
+            if (text) {
+                return text
+            }
+        } catch (err) {
+            lastError = err
+        }
+    }
+
+    throw lastError || new Error('All Gemini model endpoints failed')
+}
 
 export interface GenerateSummaryParams {
     title: string
@@ -67,28 +121,7 @@ Generate a structured JSON output with this EXACT JSON schema:
 }`
 
     try {
-        const response = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                    response_mime_type: 'application/json',
-                    temperature: 0.3
-                }
-            })
-        })
-
-        if (!response.ok) {
-            const errText = await response.text()
-            console.error('Gemini API Error:', response.status, errText)
-            throw new Error(`Gemini API responded with status ${response.status}`)
-        }
-
-        const data: any = await response.json()
-        const parts = data?.candidates?.[0]?.content?.parts || []
-        const textPart = parts.find((p: any) => p.text && !p.thought) || parts[0]
-        const text = textPart?.text || ''
+        const text = await callGeminiApi(prompt, { jsonResponse: true, temperature: 0.3 })
 
         // Clean json output in case model wrapped it with ```json ... ```
         const cleanedText = text.replace(/```json/gi, '').replace(/```/g, '').trim()
@@ -143,20 +176,8 @@ ${params.meetingContext ? `Context regarding recent meetings: ${params.meetingCo
 Question: ${params.prompt}`
 
     try {
-        const response = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-            })
-        })
-
-        if (!response.ok) {
-            throw new Error(`Gemini API returned ${response.status}`)
-        }
-
-        const data: any = await response.json()
-        return data?.candidates?.[0]?.content?.parts?.[0]?.text || 'I am your JTS AI Companion. How can I assist with your meetings today?'
+        const text = await callGeminiApi(prompt, { temperature: 0.5 })
+        return text || 'I am your JTS AI Companion. How can I assist with your meetings today?'
     } catch (err: any) {
         console.error('Gemini askMeetingAssistant error:', err)
         return 'JTS AI Companion is currently operating in offline mode. Please verify your connection or try again.'
@@ -190,22 +211,11 @@ export async function translateCaptionText(text: string, targetLang: string): Pr
     if (GEMINI_API_KEY) {
         try {
             const prompt = `Translate the following spoken sentence into ${targetLangName}. Return ONLY the direct translation without any explanation, quotes, or notes.\n\n"${cleanText}"`
-            const response = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.1, maxOutputTokens: 100 }
-                })
-            })
-
-            if (response.ok) {
-                const data: any = await response.json()
-                const translated = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.replace(/^["']|["']$/g, '')
-                if (translated) {
-                    translationCache.set(cacheKey, translated)
-                    return translated
-                }
+            const translated = await callGeminiApi(prompt, { temperature: 0.1, maxTokens: 100 })
+            const cleaned = translated?.trim()?.replace(/^["']|["']$/g, '')
+            if (cleaned) {
+                translationCache.set(cacheKey, cleaned)
+                return cleaned
             }
         } catch (err) {
             // fallback
@@ -251,23 +261,12 @@ Return JSON with format:
   "bullets": ["bullet 1", "bullet 2", "bullet 3"],
   "keyTakeaway": "..."
 }`
-            const response = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
-                })
-            })
-            if (response.ok) {
-                const data: any = await response.json()
-                const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text
-                const parsed = JSON.parse(rawText)
-                if (Array.isArray(parsed.bullets) && parsed.bullets.length > 0) {
-                    return {
-                        bullets: parsed.bullets.slice(0, 3),
-                        keyTakeaway: parsed.keyTakeaway || 'Team discussed ongoing tasks and aligned on current priorities.'
-                    }
+            const rawText = await callGeminiApi(prompt, { jsonResponse: true, temperature: 0.2 })
+            const parsed = JSON.parse(rawText.replace(/```json/gi, '').replace(/```/g, '').trim())
+            if (Array.isArray(parsed.bullets) && parsed.bullets.length > 0) {
+                return {
+                    bullets: parsed.bullets.slice(0, 3),
+                    keyTakeaway: parsed.keyTakeaway || 'Team discussed ongoing tasks and aligned on current priorities.'
                 }
             }
         } catch (_) {}
@@ -343,26 +342,14 @@ Return ONLY valid JSON in this exact format:
 
 Make it professional, specific to the meeting title, and actionable.`
 
-            const response = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { responseMimeType: 'application/json', temperature: 0.4 }
-                })
-            })
-
-            if (response.ok) {
-                const data: any = await response.json()
-                const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text
-                const parsed = JSON.parse(rawText)
-                if (Array.isArray(parsed.agendaItems) && parsed.agendaItems.length > 0) {
-                    return {
-                        agendaItems: parsed.agendaItems,
-                        preReadMaterials: Array.isArray(parsed.preReadMaterials) ? parsed.preReadMaterials : [],
-                        meetingGoal: parsed.meetingGoal || '',
-                        tipsForHost: Array.isArray(parsed.tipsForHost) ? parsed.tipsForHost : []
-                    }
+            const rawText = await callGeminiApi(prompt, { jsonResponse: true, temperature: 0.4 })
+            const parsed = JSON.parse(rawText.replace(/```json/gi, '').replace(/```/g, '').trim())
+            if (Array.isArray(parsed.agendaItems) && parsed.agendaItems.length > 0) {
+                return {
+                    agendaItems: parsed.agendaItems,
+                    preReadMaterials: Array.isArray(parsed.preReadMaterials) ? parsed.preReadMaterials : [],
+                    meetingGoal: parsed.meetingGoal || '',
+                    tipsForHost: Array.isArray(parsed.tipsForHost) ? parsed.tipsForHost : []
                 }
             }
         } catch (_) {}

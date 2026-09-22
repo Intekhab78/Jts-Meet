@@ -21,6 +21,10 @@ import { MeetingNotesPanel } from './MeetingNotesPanel'
 import { LayoutSwitcherModal, MeetingLayoutMode } from './LayoutSwitcherModal'
 import { VirtualBackgroundModal } from './VirtualBackgroundModal'
 import { virtualBackgroundService } from '../../../services/virtualBackground.service'
+import { E2EESecurityModal } from './E2EESecurityModal'
+import { e2eeService } from '../services/e2ee.service'
+import { DialInModal } from './DialInModal'
+import { WebinarAttendeeView } from './WebinarAttendeeView'
 import { ScreenAnnotationOverlay } from './ScreenAnnotationOverlay'
 import { RemoteControlOverlay } from './RemoteControlOverlay'
 import { MeetingQAPanel } from './MeetingQAPanel'
@@ -235,26 +239,45 @@ interface VideoTileProps {
     isMutedProp?: boolean
 }
 
-function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrimary = false, isHandRaised = false, isHost = false, isGuest = false, isVideoOffProp, isBlurred = false, isStudioLighting = false, isHdBoost = true, watermarkText, isCompact = false, isActiveSpeaker = false, isMutedProp }: VideoTileProps) {
+const VideoTile = React.memo(function VideoTile({
+    stream,
+    label,
+    muted = false,
+    isScreenShare = false,
+    isPrimary = false,
+    isHandRaised = false,
+    isHost = false,
+    isGuest = false,
+    isVideoOffProp,
+    isBlurred = false,
+    isStudioLighting = false,
+    isHdBoost = true,
+    watermarkText,
+    isCompact = false,
+    isActiveSpeaker = false,
+    isMutedProp
+}: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
+    const audioRef = useRef<HTMLAudioElement>(null)
     const isLocalUser = label.toLowerCase().includes('you') || label === 'me'
     const [isMuted, setIsMuted] = useState(false)
     const [isVideoOffInternal, setIsVideoOffInternal] = useState(false)
+
+    // Check live track status without treating temporary WebRTC jitter track.muted as camera-off
     const hasLiveVideoTrack = !!stream &&
         stream.getVideoTracks().length > 0 &&
-        stream.getVideoTracks()[0].readyState === 'live' &&
-        !stream.getVideoTracks()[0].muted &&
+        stream.getVideoTracks()[0].readyState !== 'ended' &&
+        stream.getVideoTracks()[0].enabled !== false &&
         !(stream.getVideoTracks()[0] as any).isDummy
 
-    const isVideoOff = isVideoOffProp === true ||
+    const isVideoOff = isScreenShare ? (!stream || stream.getVideoTracks().length === 0) : (isVideoOffProp === true ||
         (!isLocalUser && !hasLiveVideoTrack) ||
-        (isLocalUser && (!stream || stream.getVideoTracks().length === 0 || isVideoOffInternal))
+        (isLocalUser && (!stream || stream.getVideoTracks().length === 0 || isVideoOffInternal)))
 
-    const [isSpeaking, setIsSpeaking] = useState(false)
-    const activeSpeakerSpeaking = isActiveSpeaker || isSpeaking
     const effectiveMuted = isMutedProp !== undefined ? isMutedProp : isMuted
     const currentVideoTrackId = stream?.getVideoTracks()[0]?.id
 
+    // Stable video stream assignment to prevent unneeded srcObject resets
     useEffect(() => {
         const el = videoRef.current
         if (!el) return
@@ -287,10 +310,29 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                 })
             }
         } else {
-            el.srcObject = null
+            if (el.srcObject) {
+                el.srcObject = null
+            }
         }
     }, [stream, currentVideoTrackId])
 
+    // Dedicated audio stream binding
+    useEffect(() => {
+        const el = audioRef.current
+        if (!el) return
+        if (!muted && stream) {
+            if (el.srcObject !== stream) {
+                el.srcObject = stream
+            }
+            el.play().catch(() => { })
+        } else {
+            if (el.srcObject) {
+                el.srcObject = null
+            }
+        }
+    }, [stream, muted])
+
+    // Track status monitor (avoids checking vTrack.muted to prevent speech-induced flickers)
     useEffect(() => {
         if (!stream) {
             setIsVideoOffInternal(true)
@@ -304,18 +346,15 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
 
             const vTrack = videoTracks[0]
             const isDummy = vTrack ? !!(vTrack as any).isDummy : false
-            const isTrackMuted = vTrack ? vTrack.muted : false
 
-            // Video is considered actively rendering if track is present, enabled, live, not muted, and not dummy
-            const videoActive = !!vTrack &&
-                vTrack.enabled &&
-                vTrack.readyState === 'live' &&
-                !isTrackMuted &&
-                !isDummy
+            // Video is considered actively rendering if track is present, enabled, not ended, and not dummy
+            const videoActive = isScreenShare
+                ? !!vTrack && vTrack.readyState !== 'ended'
+                : (!!vTrack && vTrack.enabled && vTrack.readyState !== 'ended' && !isDummy)
 
             const audioActive = audioTracks.length > 0 &&
                 audioTracks[0].enabled &&
-                !audioTracks[0].muted
+                audioTracks[0].readyState !== 'ended'
 
             setIsVideoOffInternal(!videoActive)
             setIsMuted(!audioActive)
@@ -342,22 +381,18 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
         window.addEventListener('focus', handleWindowActive)
         document.addEventListener('visibilitychange', handleWindowActive)
 
-        // Listen to WebRTC track level mute/unmute/ended events
+        // Listen to WebRTC track ended / unmute events (avoid mute event which triggers on network jitter)
         const vTracks = stream.getVideoTracks()
         vTracks.forEach(t => {
-            t.addEventListener('mute', checkTracks)
             t.addEventListener('unmute', handleUnmute)
             t.addEventListener('ended', checkTracks)
         })
 
         const aTracks = stream.getAudioTracks()
         aTracks.forEach(t => {
-            t.addEventListener('mute', checkTracks)
-            t.addEventListener('unmute', checkTracks)
             t.addEventListener('ended', checkTracks)
         })
 
-        // Also listen to video element events to handle chromium resolution change (when stream resumes/stops)
         const videoEl = videoRef.current
         if (videoEl) {
             videoEl.addEventListener('resize', checkTracks)
@@ -366,89 +401,32 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                 checkTracks()
             })
             videoEl.addEventListener('play', checkTracks)
-            videoEl.addEventListener('pause', () => {
-                if (stream && document.visibilityState === 'visible') {
-                    videoEl.play().catch(() => { })
-                }
-                checkTracks()
-            })
             videoEl.addEventListener('playing', checkTracks)
         }
 
-        const timer = setInterval(checkTracks, 1000)
-
-        // Modern Web Audio AnalyserNode for high-performance speaking detection without deprecation
-        let audioCtx: AudioContext | null = null
-        let source: MediaStreamAudioSourceNode | null = null
-        let analyser: AnalyserNode | null = null
-        let animId: number | null = null
-
-        const startAnalyser = () => {
-            const audioTracks = stream.getAudioTracks()
-            if (audioTracks.length === 0 || !audioTracks[0].enabled) {
-                setIsSpeaking(false)
-                return
-            }
-
-            try {
-                const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext
-                audioCtx = new AudioCtxClass()
-                source = audioCtx.createMediaStreamSource(stream)
-                analyser = audioCtx.createAnalyser()
-                analyser.fftSize = 256
-                analyser.smoothingTimeConstant = 0.5
-                source.connect(analyser)
-
-                const dataArray = new Uint8Array(analyser.frequencyBinCount)
-                const checkAudio = () => {
-                    if (!analyser) return
-                    analyser.getByteFrequencyData(dataArray)
-                    let sum = 0
-                    for (let i = 0; i < dataArray.length; i++) {
-                        sum += dataArray[i]
-                    }
-                    const avg = sum / dataArray.length
-                    setIsSpeaking(avg > 12)
-                    animId = requestAnimationFrame(checkAudio)
-                }
-                checkAudio()
-            } catch (err) {
-                // Ignore audio ctx issues
-            }
-        }
-
-        startAnalyser()
+        const timer = setInterval(checkTracks, 2000)
 
         return () => {
             clearInterval(timer)
             window.removeEventListener('focus', handleWindowActive)
             document.removeEventListener('visibilitychange', handleWindowActive)
             vTracks.forEach(t => {
-                t.removeEventListener('mute', checkTracks)
                 t.removeEventListener('unmute', handleUnmute)
                 t.removeEventListener('ended', checkTracks)
             })
             aTracks.forEach(t => {
-                t.removeEventListener('mute', checkTracks)
-                t.removeEventListener('unmute', checkTracks)
                 t.removeEventListener('ended', checkTracks)
             })
             if (videoEl) {
                 videoEl.removeEventListener('resize', checkTracks)
                 videoEl.removeEventListener('loadedmetadata', checkTracks)
                 videoEl.removeEventListener('play', checkTracks)
-                videoEl.removeEventListener('pause', checkTracks)
                 videoEl.removeEventListener('playing', checkTracks)
             }
-            if (animId) cancelAnimationFrame(animId)
-            if (analyser) analyser.disconnect()
-            if (source) source.disconnect()
-            if (audioCtx) audioCtx.close().catch(() => { })
         }
-    }, [stream])
+    }, [stream, isScreenShare])
 
     const cleanLabel = isLocalUser ? 'You' : label
-    const formattedLabel = cleanLabel + (isHost ? ' (Host)' : '') + (isGuest ? ' (Guest)' : '')
 
     // Connection quality indicator based on name hash (90% Good, 10% Poor to look highly realistic)
     const isGoodConnection = (name: string) => {
@@ -460,7 +438,7 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
 
     return (
         <div
-            className={`video-tile ${activeSpeakerSpeaking ? 'speaking' : ''}`}
+            className="video-inner-container"
             style={{
                 width: '100%',
                 height: '100%',
@@ -494,26 +472,15 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
             {/* Dedicated Remote Audio element to guarantee voice works even if video stalls */}
             {!muted && stream && (
                 <audio
-                    ref={(el) => {
-                        if (el && el.srcObject !== stream) {
-                            el.srcObject = stream
-                            el.play().catch(() => { })
-                        }
-                    }}
+                    ref={audioRef}
                     autoPlay
                     playsInline
                 />
             )}
 
-            {/* Video Feed with Smooth Fade Transitions */}
+            {/* Video Feed with Smooth Fade Transitions and hardware acceleration */}
             <video
-                ref={(el) => {
-                    (videoRef as any).current = el
-                    if (el && stream && el.srcObject !== stream) {
-                        el.srcObject = stream
-                        el.play().catch(() => {})
-                    }
-                }}
+                ref={videoRef}
                 autoPlay
                 muted={true}
                 playsInline
@@ -521,18 +488,18 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     width: '100%',
                     height: '100%',
                     objectFit: isScreenShare ? 'contain' : 'cover',
-                    display: 'block',
+                    display: isVideoOff ? 'none' : 'block',
                     position: 'absolute',
                     inset: 0,
                     transform: isLocalUser && !isScreenShare ? 'scaleX(-1)' : 'none',
-                    opacity: isVideoOff ? 0 : 1,
                     filter: [
                         isStudioLighting ? 'brightness(1.14) contrast(1.06) saturate(1.05)' : '',
                         isHdBoost ? 'contrast(1.05) saturate(1.06) brightness(1.02)' : ''
                     ].filter(Boolean).join(' ') || 'none',
-                    transition: 'opacity 0.3s ease-in-out, filter 0.3s ease',
                     pointerEvents: isVideoOff ? 'none' : 'auto',
-                    zIndex: 1
+                    zIndex: 1,
+                    backfaceVisibility: 'hidden',
+                    WebkitBackfaceVisibility: 'hidden'
                 }}
             />
 
@@ -543,14 +510,12 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                     background: 'var(--color-surface-2)',
                     width: '100%',
                     height: '100%',
-                    display: 'flex',
+                    display: isVideoOff ? 'flex' : 'none',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
                     position: 'absolute',
                     inset: 0,
-                    opacity: isVideoOff ? 1 : 0,
-                    transition: 'opacity 0.3s ease-in-out',
                     pointerEvents: isVideoOff ? 'auto' : 'none',
                     zIndex: 2,
                     padding: isCompact ? '6px' : '12px',
@@ -660,7 +625,7 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
                                 SCREEN
                             </span>
                         )}
-                        {activeSpeakerSpeaking && (
+                        {isActiveSpeaker && (
                             <span style={{ display: 'inline-flex', gap: 2, alignItems: 'flex-end', height: 12, paddingBottom: 1 }} title="Speaking">
                                 <span style={{ width: 2.5, height: 6, background: '#3b82f6', borderRadius: 1, animation: 'audioWave 0.6s infinite alternate' }} />
                                 <span style={{ width: 2.5, height: 11, background: '#3b82f6', borderRadius: 1, animation: 'audioWave 0.8s 0.2s infinite alternate' }} />
@@ -775,7 +740,7 @@ function VideoTile({ stream, label, muted = false, isScreenShare = false, isPrim
             )}
         </div>
     )
-}
+})
 
 interface ParticipantsPanelProps {
     participants: string[]
@@ -1484,11 +1449,14 @@ interface SettingsPanelProps {
     onToggleGuestJoin: (enabled: boolean) => void
     isWaitingRoomEnabled: boolean
     onToggleWaitingRoom: (enabled: boolean) => void
+    screenSharePolicy?: 'everyone' | 'host_only'
+    onToggleScreenSharePolicy?: (policy: 'everyone' | 'host_only') => void
 }
 
 function SettingsPanel({
     localStream, onClose, addToast, isHost,
-    isGuestJoinEnabled, onToggleGuestJoin, isWaitingRoomEnabled, onToggleWaitingRoom
+    isGuestJoinEnabled, onToggleGuestJoin, isWaitingRoomEnabled, onToggleWaitingRoom,
+    screenSharePolicy = 'everyone', onToggleScreenSharePolicy
 }: SettingsPanelProps) {
     const [activeTab, setActiveTab] = useState<'audio' | 'video' | 'background' | 'accessibility' | 'shortcuts' | 'theme' | 'host'>('audio')
     const [micTesting, setMicTesting] = useState(false)
@@ -1928,6 +1896,18 @@ function SettingsPanel({
                                         type="checkbox"
                                         checked={isWaitingRoomEnabled}
                                         onChange={(e) => onToggleWaitingRoom(e.target.checked)}
+                                    />
+                                </label>
+
+                                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600 }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                        <span>Participant Screen Sharing</span>
+                                        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>Allow attendees to present their screen</span>
+                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        checked={screenSharePolicy !== 'host_only'}
+                                        onChange={(e) => onToggleScreenSharePolicy?.(e.target.checked ? 'everyone' : 'host_only')}
                                     />
                                 </label>
                             </div>
@@ -2781,26 +2761,94 @@ export function MeetingRoom({
     }, [token, initialToken, localUserId])
 
     const [meetingInfo, setMeetingInfo] = useState<any>(null)
+    const [screenSharePolicy, setScreenSharePolicy] = useState<'everyone' | 'host_only'>('everyone')
+    const [currentBreakoutSubRoomId, setCurrentBreakoutSubRoomId] = useState<string | null>(null)
+    const [toasts, setToasts] = useState<{ id: string, message: string, type: 'info' | 'success' | 'warning' }[]>([])
+
+    const addToast = useCallback((message: string, type: 'info' | 'success' | 'warning' = 'info') => {
+        const id = String(Math.random())
+        setToasts(prev => [...prev, { id, message, type }])
+        setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== id))
+        }, 4000)
+    }, [])
+
+    useEffect(() => {
+        if (meetingInfo?.screenSharePolicy) {
+            setScreenSharePolicy(meetingInfo.screenSharePolicy)
+        }
+    }, [meetingInfo?.screenSharePolicy])
+
+    // Live organization plan tier for logged-in users
+    const [fetchedOrgPlanTier, setFetchedOrgPlanTier] = useState<string>(() => {
+        try {
+            return localStorage.getItem('jts_active_plan_tier') || ''
+        } catch (_) {
+            return ''
+        }
+    })
+
+    // Fetch user's active organization plan if logged in
+    useEffect(() => {
+        const activeToken = token || initialToken || localStorage.getItem('jts_token') || localStorage.getItem('token') || ''
+        if (!activeToken || isGuest) return
+
+        let isMounted = true
+        fetch(`${API_BASE}/api/organization/mine`, {
+            headers: { 'Authorization': `Bearer ${activeToken}` }
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (isMounted && data?.data && data.data.length > 0) {
+                    const savedOrgId = localStorage.getItem('jts_current_org_id')
+                    const matched = data.data.find((o: any) => o._id === savedOrgId) || data.data[0]
+                    if (matched?.planTier) {
+                        setFetchedOrgPlanTier(matched.planTier.toLowerCase())
+                        try { localStorage.setItem('jts_active_plan_tier', matched.planTier) } catch (_) {}
+                    }
+                }
+            })
+            .catch(err => console.warn('[MeetingRoom] Failed to fetch organization plan tier:', err))
+
+        return () => { isMounted = false }
+    }, [token, initialToken, isGuest])
 
     // Workspace Plan Tier Entitlements
     // Priority:
-    // 1. Authoritative: Meeting's plan tier set by the meeting host / organization
-    // 2. Host's specific plan tier
-    // 3. Explicit prop passed to MeetingRoom (e.g. from guest or host router)
-    // 4. Saved local tier for logged-in host
+    // 1. Authoritative: Meeting's plan tier set by the meeting host / organization (if paid)
+    // 2. Host's specific plan tier (if paid)
+    // 3. Explicit prop passed to MeetingRoom (if paid)
+    // 4. Live fetched organization tier for logged-in user (if paid)
+    // 5. Cached local tier in localStorage (if paid)
     const currentPlanTier = useMemo(() => {
-        if (meetingInfo?.planTier) return meetingInfo.planTier.toLowerCase()
-        if (meetingInfo?.host?.planTier) return meetingInfo.host.planTier.toLowerCase()
-        if (planTier) return planTier.toLowerCase()
+        if (meetingInfo?.planTier && meetingInfo.planTier.toLowerCase() !== 'free') {
+            return meetingInfo.planTier.toLowerCase()
+        }
+        if (meetingInfo?.host?.planTier && meetingInfo.host.planTier.toLowerCase() !== 'free') {
+            return meetingInfo.host.planTier.toLowerCase()
+        }
+        if (planTier && planTier.toLowerCase() !== 'free') {
+            return planTier.toLowerCase()
+        }
+        if (fetchedOrgPlanTier && fetchedOrgPlanTier.toLowerCase() !== 'free') {
+            return fetchedOrgPlanTier.toLowerCase()
+        }
         try {
             const saved = localStorage.getItem('jts_active_plan_tier')
-            if (saved) return saved.toLowerCase()
+            if (saved && saved.toLowerCase() !== 'free') return saved.toLowerCase()
         } catch (_) {}
+
+        if (meetingInfo?.planTier) return meetingInfo.planTier.toLowerCase()
+        if (planTier) return planTier.toLowerCase()
         return 'free'
-    }, [planTier, meetingInfo])
+    }, [planTier, meetingInfo, fetchedOrgPlanTier])
 
     const canAccessRecording = useMemo(() => {
         return ['starter', 'pro', 'enterprise'].includes(currentPlanTier)
+    }, [currentPlanTier])
+
+    const canAccessCloudRecording = useMemo(() => {
+        return ['enterprise'].includes(currentPlanTier)
     }, [currentPlanTier])
 
     const canAccessAI = useMemo(() => {
@@ -2809,6 +2857,26 @@ export function MeetingRoom({
 
     const canAccessRTMP = useMemo(() => {
         return ['enterprise', 'pro'].includes(currentPlanTier)
+    }, [currentPlanTier])
+
+    const canAccessBreakout = useMemo(() => {
+        return ['starter', 'pro', 'enterprise'].includes(currentPlanTier)
+    }, [currentPlanTier])
+
+    const canAccessDialIn = useMemo(() => {
+        return ['enterprise'].includes(currentPlanTier)
+    }, [currentPlanTier])
+
+    const canAccessE2EE = useMemo(() => {
+        return ['enterprise', 'pro'].includes(currentPlanTier)
+    }, [currentPlanTier])
+
+    const canAccessWebinar = useMemo(() => {
+        return ['enterprise'].includes(currentPlanTier)
+    }, [currentPlanTier])
+
+    const canAccessAttendance = useMemo(() => {
+        return ['starter', 'pro', 'enterprise'].includes(currentPlanTier)
     }, [currentPlanTier])
 
     const [upgradeModalFeature, setUpgradeModalFeature] = useState<{
@@ -2843,24 +2911,13 @@ export function MeetingRoom({
 
     const [isRecording, setIsRecording] = useState(false)
     const [isRemoteRecording, setIsRemoteRecording] = useState(false)
+    const [isCloudRecording, setIsCloudRecording] = useState(false)
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const recordedChunksRef = useRef<Blob[]>([])
     const recordingStreamRef = useRef<MediaStream | null>(null)
 
     const { socket, connectSocket, connected } = useSocketContext()
-    useEffect(() => {
-        if (!socket) return
-
-        const handleRecordToggle = (data: { userId: string; isRecording: boolean }) => {
-            setIsRemoteRecording(data.isRecording)
-            addToast(`Meeting recording has been ${data.isRecording ? 'started' : 'stopped'} by another participant.`, 'info')
-        }
-
-        socket.on('meeting:record-toggle', handleRecordToggle)
-        return () => {
-            socket.off('meeting:record-toggle', handleRecordToggle)
-        }
-    }, [socket])
+    const canManageRef = useRef(false)
 
     const { meetingId, setMeetingId, joined, setJoined, participants: rawParticipants } = useMeetingContext()
     const myUserId = useMemo(() => {
@@ -2893,6 +2950,10 @@ export function MeetingRoom({
             stopScreenShare()
             return
         }
+        if (screenSharePolicy === 'host_only' && !canManageRef.current) {
+            addToast('Host has restricted screen sharing to Host only.', 'warning')
+            return
+        }
         const activeRemoteSharer = screenSharingUserIds.find(id => id !== 'me')
         if (activeRemoteSharer) {
             setTakeoverPresenterId(activeRemoteSharer)
@@ -2900,7 +2961,83 @@ export function MeetingRoom({
         } else {
             startScreenShare()
         }
-    }, [screenSharingUserId, screenSharingUserIds, startScreenShare, stopScreenShare])
+    }, [screenSharingUserId, screenSharingUserIds, startScreenShare, stopScreenShare, screenSharePolicy, addToast])
+
+    useEffect(() => {
+        if (!socket) return
+
+        const handleRecordToggle = (data: { userId: string; isRecording: boolean }) => {
+            setIsRemoteRecording(data.isRecording)
+            addToast(`Meeting recording has been ${data.isRecording ? 'started' : 'stopped'} by another participant.`, 'info')
+        }
+
+        const handleScreenSharePolicyChanged = (data: { meetingId: string; policy: 'everyone' | 'host_only' }) => {
+            setScreenSharePolicy(data.policy)
+            if (data.policy === 'host_only' && !canManageRef.current) {
+                if (screenSharingUserId === 'me' || screenSharingUserIds.includes('me')) {
+                    stopScreenShare()
+                    addToast('Host has locked screen sharing to Host only. Your screen share was stopped.', 'warning')
+                } else {
+                    addToast('Host has restricted screen sharing to Host only.', 'info')
+                }
+            } else if (data.policy === 'everyone') {
+                addToast('Screen sharing is now enabled for all participants.', 'info')
+            }
+        }
+
+        const handleCloudRecordStatus = (data: { isCloudRecording: boolean; recordingUrl?: string; initiatedBy?: string }) => {
+            setIsCloudRecording(data.isCloudRecording)
+            if (data.isCloudRecording) {
+                addToast(`Headless Cloud Recording started by ${data.initiatedBy || 'Host'} on server.`, 'success')
+            } else {
+                addToast('Headless Cloud Recording stopped and finalized on server.', 'info')
+            }
+        }
+
+        const handlePstnJoined = (data: { meetingId: string; caller: string }) => {
+            soundEffects.playJoinChime()
+            addToast(`📞 Phone caller ${data.caller} joined the audio bridge.`, 'info')
+        }
+
+        const handleWebinarMode = (data: { isWebinarMode: boolean }) => {
+            setIsWebinarMode(data.isWebinarMode)
+            addToast(data.isWebinarMode ? 'Webinar Stage Mode activated by Host.' : 'Interactive Grid Mode restored.', 'info')
+        }
+
+        const handleSpeakerPromoted = (data: { userId: string; promotedBy?: string }) => {
+            const myId = localUserId
+            if (data.userId === myId || data.userId === socket.id) {
+                setIsPromotedToSpeaker(true)
+                soundEffects.playJoinChime()
+                addToast('You have been promoted to live Stage Speaker by the Host!', 'success')
+            }
+        }
+
+        const handleSpeakerDemoted = (data: { userId: string }) => {
+            const myId = localUserId
+            if (data.userId === myId || data.userId === socket.id) {
+                setIsPromotedToSpeaker(false)
+                addToast('You have returned to audience view-only mode.', 'info')
+            }
+        }
+
+        socket.on('meeting:record-toggle', handleRecordToggle)
+        socket.on('meeting:screen-share-permission-changed', handleScreenSharePolicyChanged)
+        socket.on('meeting:cloud-recording-status', handleCloudRecordStatus)
+        socket.on('meeting:pstn:joined', handlePstnJoined)
+        socket.on('webinar:mode-changed', handleWebinarMode)
+        socket.on('webinar:speaker-promoted', handleSpeakerPromoted)
+        socket.on('webinar:speaker-demoted', handleSpeakerDemoted)
+        return () => {
+            socket.off('meeting:record-toggle', handleRecordToggle)
+            socket.off('meeting:screen-share-permission-changed', handleScreenSharePolicyChanged)
+            socket.off('meeting:cloud-recording-status', handleCloudRecordStatus)
+            socket.off('meeting:pstn:joined', handlePstnJoined)
+            socket.off('webinar:mode-changed', handleWebinarMode)
+            socket.off('webinar:speaker-promoted', handleSpeakerPromoted)
+            socket.off('webinar:speaker-demoted', handleSpeakerDemoted)
+        }
+    }, [socket, screenSharingUserId, screenSharingUserIds, stopScreenShare, addToast])
 
     // Remote Desktop Control Engine State
     const [activeControllerId, setActiveControllerId] = useState<string | null>(null)
@@ -3195,6 +3332,48 @@ export function MeetingRoom({
     const spaceDownRef = useRef(false)
     const pushToTalkHudTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+    const toggleCloudRecording = useCallback(async () => {
+        const activeId = meetingId || meetingInput.trim()
+        if (!activeId) return
+        try {
+            if (!isCloudRecording) {
+                const token = localStorage.getItem('token')
+                const res = await fetch(`${API_BASE}/api/meeting/${activeId}/cloud-record/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    }
+                })
+                const json = await res.json()
+                if (json.success) {
+                    setIsCloudRecording(true)
+                    addToast('Server-Side Cloud Recording started successfully.', 'success')
+                } else {
+                    addToast(json.message || 'Failed to start cloud recording', 'warning')
+                }
+            } else {
+                const token = localStorage.getItem('token')
+                const res = await fetch(`${API_BASE}/api/meeting/${activeId}/cloud-record/stop`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    }
+                })
+                const json = await res.json()
+                if (json.success) {
+                    setIsCloudRecording(false)
+                    addToast('Server-Side Cloud Recording stopped and finalized.', 'success')
+                } else {
+                    addToast(json.message || 'Failed to stop cloud recording', 'warning')
+                }
+            }
+        } catch (err: any) {
+            addToast(`Cloud recording error: ${err.message}`, 'warning')
+        }
+    }, [meetingId, meetingInput, isCloudRecording, addToast])
+
     // Ensure Push-To-Talk HUD auto-hides after exactly 1 second
     useEffect(() => {
         if (!showPushToTalkHud) return
@@ -3488,8 +3667,6 @@ export function MeetingRoom({
     const joinTimeMapRef = useRef<Record<string, number>>({})
     const [showAttendanceModal, setShowAttendanceModal] = useState(false)
 
-    const [toasts, setToasts] = useState<{ id: string, message: string, type: 'info' | 'success' | 'warning' }[]>([])
-
     // RTMP Live Streaming States
     const [showLiveStreamModal, setShowLiveStreamModal] = useState(false)
     const [isLiveStreaming, setIsLiveStreaming] = useState(false)
@@ -3547,6 +3724,11 @@ export function MeetingRoom({
     const [virtualBgPreset, setVirtualBgPreset] = useState<string>('none')
     const [showVirtualBgModal, setShowVirtualBgModal] = useState<boolean>(false)
     const [isApplyingVirtualBg, setIsApplyingVirtualBg] = useState<boolean>(false)
+    const [showE2EEModal, setShowE2EEModal] = useState<boolean>(false)
+    const [isE2EEActive, setIsE2EEActive] = useState<boolean>(() => e2eeService.isEnabled())
+    const [showDialInModal, setShowDialInModal] = useState<boolean>(false)
+    const [isWebinarMode, setIsWebinarMode] = useState<boolean>(() => new URLSearchParams(window.location.search).get('webinar') === 'true')
+    const [isPromotedToSpeaker, setIsPromotedToSpeaker] = useState<boolean>(false)
     const rawCameraTrackRef = useRef<MediaStreamTrack | null>(null)
     const [activeLocalStream, setActiveLocalStream] = useState<MediaStream | null>(null)
     const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = useState(true)
@@ -3614,6 +3796,10 @@ export function MeetingRoom({
     }, [socket])
 
     // Socket guest admission waiting room listeners
+    // Split into two effects:
+    //   Effect A — stable listener registration: only tears down when socket changes, NOT on meetingId change.
+    //              This prevents missing 'guest:waiting-list' responses that arrive during the meetingId state update.
+    //   Effect B — polling: re-emits 'guest:get-waiting' whenever the active room changes or host joins.
     useEffect(() => {
         if (!socket) return
 
@@ -3630,16 +3816,21 @@ export function MeetingRoom({
             setWaitingGuests(prev => prev.filter(g => g.socketId !== socketId))
         }
 
-        const handleWaitingList = (guests: any[]) => {
-            if (Array.isArray(guests)) {
-                setWaitingGuests(guests)
+        // Accept both raw-array and { waitingList: [...] } object forms from backend
+        const handleWaitingList = (payload: any) => {
+            if (Array.isArray(payload)) {
+                setWaitingGuests(payload)
+            } else if (payload && Array.isArray(payload.waitingList)) {
+                setWaitingGuests(payload.waitingList)
             }
         }
 
-        const handleWaitingRoomToggle = ({ isWaitingRoomEnabled }: { isWaitingRoomEnabled: boolean }) => {
-            setIsWaitingRoomActive(isWaitingRoomEnabled)
-            addToast(`Waiting Room has been turned ${isWaitingRoomEnabled ? 'ON' : 'OFF'} by Host`, 'info')
-            if (!isWaitingRoomEnabled) {
+        // Backend emits { meetingId, enabled } — NOT { isWaitingRoomEnabled }
+        const handleWaitingRoomToggle = (data: any) => {
+            const isEnabled = data?.enabled ?? data?.isWaitingRoomEnabled ?? true
+            setIsWaitingRoomActive(isEnabled)
+            addToast(`Waiting Room has been turned ${isEnabled ? 'ON' : 'OFF'} by Host`, 'info')
+            if (!isEnabled) {
                 setWaitingGuests([])
             }
         }
@@ -3649,18 +3840,23 @@ export function MeetingRoom({
         socket.on('guest:waiting-list', handleWaitingList)
         socket.on('meeting:waiting-room-toggle', handleWaitingRoomToggle)
 
-        const activeRoom = meetingId || meetingInput.trim()
-        if (activeRoom) {
-            socket.emit('guest:get-waiting', { meetingId: activeRoom })
-        }
-
         return () => {
             socket.off('guest:new-waiting', handleNewWaiting)
             socket.off('guest:left-waiting', handleLeftWaiting)
             socket.off('guest:waiting-list', handleWaitingList)
             socket.off('meeting:waiting-room-toggle', handleWaitingRoomToggle)
         }
-    }, [socket, meetingId, meetingInput])
+    }, [socket])
+
+    // Effect B — emit 'guest:get-waiting' whenever the active room or join state changes.
+    // Separated from listener registration so that listener teardown never races with server responses.
+    useEffect(() => {
+        if (!socket) return
+        const activeRoom = meetingId || meetingInput.trim()
+        if (activeRoom) {
+            socket.emit('guest:get-waiting', { meetingId: activeRoom })
+        }
+    }, [socket, meetingId, meetingInput, joined])
 
     // Socket co-host promotion and granular permission listeners
     useEffect(() => {
@@ -3782,10 +3978,10 @@ export function MeetingRoom({
 
             if (loudestUser) {
                 if (silenceTimer) clearTimeout(silenceTimer)
-                setActiveSpeaker(loudestUser)
+                setActiveSpeaker(prev => (prev === loudestUser ? prev : loudestUser))
                 silenceTimer = setTimeout(() => {
                     setActiveSpeaker(null)
-                }, 1200)
+                }, 1500)
             }
         }, 400)
 
@@ -3800,14 +3996,6 @@ export function MeetingRoom({
             audioContext.close().catch(() => { })
         }
     }, [localStream, remoteStreams, isMuted])
-
-    const addToast = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
-        const id = String(Math.random())
-        setToasts(prev => [...prev, { id, message, type }])
-        setTimeout(() => {
-            setToasts(prev => prev.filter(t => t.id !== id))
-        }, 4000)
-    }
 
     const fetchMeetingParticipants = async (meetId: string) => {
         if (!meetId) return
@@ -3942,11 +4130,16 @@ export function MeetingRoom({
                 endsAt: payload.endsAt || null
             })
             const myId = parseJwt(token)?.userId || 'me'
-            const myRoom = payload.rooms?.find((r: any) => r.participantIds?.includes(myId) || r.participantIds?.includes(socket.id))
+            const myRoom = payload.rooms?.find((r: any) => r.participantIds?.includes(myId) || r.participantIds?.includes(socket.id) || r.participantIds?.includes(localUserId))
+            const activeMain = meetingId || meetingInput.trim()
             if (myRoom) {
-                addToast(`You were assigned to ${myRoom.name}`, 'info')
+                setCurrentBreakoutSubRoomId(myRoom.id)
+                addToast(`Moving to ${myRoom.name}...`, 'info')
+                const subRoomId = `${activeMain}__sub_${myRoom.id}`
+                connectToMeeting(subRoomId, myDisplayName, true)
             } else {
-                addToast('Breakout rooms have started!', 'info')
+                setCurrentBreakoutSubRoomId(null)
+                addToast('Breakout rooms started. You remain in the main room.', 'info')
             }
         }
 
@@ -3957,7 +4150,10 @@ export function MeetingRoom({
 
         const handleBreakoutEnded = () => {
             setActiveBreakoutSession(null)
-            addToast('Breakout session ended. Returned to main room.', 'info')
+            setCurrentBreakoutSubRoomId(null)
+            const activeMain = meetingId || meetingInput.trim()
+            addToast('Breakout session ended. Returning to main room...', 'info')
+            connectToMeeting(activeMain, myDisplayName, false)
         }
 
         socket.on('meeting:reaction', handleReaction)
@@ -4473,10 +4669,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
     const handleUploadCustomWallpaper = (file: File) => {
         const reader = new FileReader()
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             const dataUrl = e.target?.result as string
             if (dataUrl) {
-                virtualBackgroundService.setCustomWallpaper(dataUrl)
+                await virtualBackgroundService.setCustomWallpaper(dataUrl)
                 handleSelectVirtualBackground('custom')
             }
         }
@@ -4715,6 +4911,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         } catch (e) { }
 
         sessionStorage.setItem('jts_active_meeting_id', id)
+        sessionStorage.setItem('jts_meeting_joined', 'true')
         localStorage.setItem('jts_last_meeting_id', id)
         window.history.replaceState(null, '', `/#meeting?id=${encodeURIComponent(id)}`)
 
@@ -4815,6 +5012,14 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
     const togglePanel = (panel: ActivePanel) => {
         setActivePanel((prev) => (prev === panel ? null : panel))
+        // Re-poll waiting guests whenever participants panel is opened so the host
+        // always sees an up-to-date list even if they missed a 'guest:new-waiting' event.
+        if (panel === 'participants' && socket) {
+            const activeRoom = meetingId || meetingInput.trim()
+            if (activeRoom) {
+                socket.emit('guest:get-waiting', { meetingId: activeRoom })
+            }
+        }
     }
 
     const remoteEntries = Object.entries(remoteStreams)
@@ -4847,6 +5052,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
     const isCoHost = coHostIds.includes(localUserId)
     const canManageParticipants = isLocalHost || isCoHost || isAdminOrOwner
+    canManageRef.current = canManageParticipants
+
     const canRecord = canManageParticipants || recordingAllowedUserIds.includes(localUserId)
     const canUseWhiteboard = canManageParticipants || showWhiteboard || whiteboardAllowedUserIds.includes(localUserId)
 
@@ -4898,6 +5105,26 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             enabled: nextState
         })
         addToast(`Watermark ${nextState ? 'enabled' : 'disabled'} for all participants`, 'success')
+    }
+
+    const handleToggleScreenSharePolicy = async (newPolicy: 'everyone' | 'host_only') => {
+        if (!isLocalHost && !canManageParticipants) return
+        setScreenSharePolicy(newPolicy)
+        const activeRoom = meetingId || meetingInput.trim()
+        socket?.emit('meeting:set-screen-share-permission', { meetingId: activeRoom, policy: newPolicy })
+        try {
+            await fetch(`${API_BASE}/api/meeting/screen-share-permission`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ meetingId: activeRoom, policy: newPolicy })
+            })
+        } catch (e) {
+            console.error('Failed to persist screen share permission', e)
+        }
+        addToast(`Screen sharing restricted to ${newPolicy === 'host_only' ? 'Host only' : 'Everyone'}`, 'success')
     }
 
     // Guest Waiting Room Admission Handlers
@@ -4979,7 +5206,17 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         const onEndAllEvent = () => {
             setMeetingInput('')
             addToast('The host has ended this meeting for everyone', 'warning')
+            try {
+                sessionStorage.removeItem('jts_active_meeting_id')
+                sessionStorage.removeItem('jts_meeting_joined')
+                localStorage.removeItem('jts_last_meeting_id')
+                localStorage.removeItem('jts_guest_token')
+            } catch (e) {}
             handleExitMeeting()
+            if (isGuest || !token) {
+                window.location.hash = ''
+                window.location.href = '/'
+            }
         }
 
         const onWatermarkToggleEvent = (data: { enabled: boolean }) => {
@@ -4996,6 +5233,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         socket.on('meeting:mute-all', onMuteAllEvent)
         socket.on('meeting:lock-toggle', onLockToggleEvent)
         socket.on('meeting:end-all', onEndAllEvent)
+        socket.on('meeting:end', onEndAllEvent)
+        socket.on(SocketEvents.MEETING_END, onEndAllEvent)
+        socket.on(SocketEvents.MEETING_END_ALL, onEndAllEvent)
         socket.on(SocketEvents.MEETING_WATERMARK_TOGGLE, onWatermarkToggleEvent)
         socket.on(SocketEvents.MEETING_REACTION, onReactionEvent)
 
@@ -5015,12 +5255,15 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             socket.off('meeting:mute-all', onMuteAllEvent)
             socket.off('meeting:lock-toggle', onLockToggleEvent)
             socket.off('meeting:end-all', onEndAllEvent)
+            socket.off('meeting:end', onEndAllEvent)
+            socket.off(SocketEvents.MEETING_END, onEndAllEvent)
+            socket.off(SocketEvents.MEETING_END_ALL, onEndAllEvent)
             socket.off(SocketEvents.MEETING_WATERMARK_TOGGLE, onWatermarkToggleEvent)
             socket.off(SocketEvents.MEETING_REACTION, onReactionEvent)
             socket.off(SocketEvents.STAGE_STATUS_CHANGE, onStageStatusChange)
             socket.off(SocketEvents.STAGE_STATE_SYNC, onStageStateSync)
         }
-    }, [socket, isLocalHost, leaveMeeting])
+    }, [socket, isLocalHost, isGuest, token, handleExitMeeting])
 
     /* ── Pre-join lobby ── */
     if (!joined) {
@@ -5261,11 +5504,11 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     margin: isSingleTile ? 'auto' : undefined,
                     position: 'relative',
                     borderRadius: isCompact ? 'var(--radius-md)' : 'var(--radius-xl)',
-                    border: isUserSpeaking ? '1.5px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
-                    boxShadow: isUserSpeaking ? '0 0 10px rgba(59, 130, 246, 0.35)' : 'var(--shadow-sm)',
+                    border: `2px solid ${isUserSpeaking ? '#3b82f6' : 'rgba(255,255,255,0.08)'}`,
+                    boxShadow: isUserSpeaking ? '0 0 12px rgba(59, 130, 246, 0.45)' : 'var(--shadow-sm)',
                     overflow: 'hidden',
                     background: 'var(--color-surface-2)',
-                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                    transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
                     cursor: 'pointer'
                 }}
             >
@@ -5569,10 +5812,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     <div style={{ width: 1, height: 16, background: 'var(--color-border)' }} className="hidden sm:block" />
 
                     {/* Recording Badge */}
-                    {(isRecording || isRemoteRecording) && (
+                    {(isRecording || isRemoteRecording || isCloudRecording) && (
                         <span className="badge badge-danger anim-fade-in" style={{ display: 'inline-flex', gap: 6, padding: '4px 10px', fontSize: '0.6875rem' }}>
                             <span className="badge-dot danger pulse" style={{ width: 6, height: 6 }} />
-                            REC
+                            {isCloudRecording ? 'CLOUD REC' : 'REC'}
                         </span>
                     )}
                 </div>
@@ -5586,6 +5829,94 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     }}>
                         {meetingId || meetingInput}
                     </span>
+                    <button
+                        onClick={() => {
+                            if (!canAccessE2EE) {
+                                setUpgradeModalFeature({
+                                    title: 'End-to-End Encryption (E2EE)',
+                                    requiredPlan: 'Enterprise Plan',
+                                    icon: <IconShield size={20} color="#34d399" />,
+                                    description: 'Zero-knowledge WebRTC SFrame E2EE with cryptographic key verification is an Enterprise tier security feature.'
+                                })
+                                return
+                            }
+                            setShowE2EEModal(true)
+                        }}
+                        title={isE2EEActive ? "End-to-End Encrypted (AES-GCM-128)" : "E2EE Security Settings"}
+                        style={{
+                            padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700,
+                            borderRadius: 'var(--radius-sm)', display: 'inline-flex', alignItems: 'center', gap: 5,
+                            background: isE2EEActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                            color: isE2EEActive ? '#34d399' : '#94a3b8',
+                            border: `1px solid ${isE2EEActive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                            cursor: 'pointer', transition: 'all 0.15s ease'
+                        }}
+                    >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                        </svg>
+                        <span>{isE2EEActive ? 'E2EE' : 'Standard'}</span>
+                        {!canAccessE2EE && (
+                            <span style={{
+                                fontSize: '0.5625rem',
+                                fontWeight: 800,
+                                background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+                                color: '#fff',
+                                padding: '1px 4px',
+                                borderRadius: 3,
+                                letterSpacing: '0.02em',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 2
+                            }}>
+                                <IconLock size={8} /> ENT
+                            </span>
+                        )}
+                    </button>
+                    {/* Phone Audio Dial-In Button */}
+                    <button
+                        onClick={() => {
+                            if (!canAccessDialIn) {
+                                setUpgradeModalFeature({
+                                    title: 'Phone Audio Dial-In (PSTN)',
+                                    requiredPlan: 'Enterprise Plan',
+                                    icon: <IconRocket size={20} color="#38bdf8" />,
+                                    description: 'Connecting to meetings via global phone dial-in and toll-free telephone bridges requires an Enterprise plan.'
+                                })
+                                return
+                            }
+                            setShowDialInModal(true)
+                        }}
+                        title="Join by Phone (Dial-In & PIN)"
+                        style={{
+                            padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700,
+                            borderRadius: 'var(--radius-sm)', display: 'inline-flex', alignItems: 'center', gap: 5,
+                            background: 'rgba(14, 165, 233, 0.12)', color: '#38bdf8',
+                            border: '1px solid rgba(14, 165, 233, 0.3)',
+                            cursor: 'pointer', transition: 'all 0.15s ease'
+                        }}
+                    >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                        </svg>
+                        <span>Dial-In</span>
+                        {!canAccessDialIn && (
+                            <span style={{
+                                fontSize: '0.5625rem',
+                                fontWeight: 800,
+                                background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+                                color: '#fff',
+                                padding: '1px 4px',
+                                borderRadius: 3,
+                                letterSpacing: '0.02em',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 2
+                            }}>
+                                <IconLock size={8} /> ENT
+                            </span>
+                        )}
+                    </button>
                     {!isGuest && (
                         <button
                             onClick={() => setIsInviteOpen(true)}
@@ -5783,6 +6114,35 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 </div>
             </header>
 
+            {/* Webinar View-Only Mode for Attendees */}
+            {isWebinarMode && !canManageParticipants && !isLocalHost && !isPromotedToSpeaker ? (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 9999 }}>
+                    <WebinarAttendeeView
+                        meetingId={meetingId || meetingInput.trim()}
+                        meetingTitle={meetingInfo?.title}
+                        stageStream={screenSharingUserId ? (screenSharingUserId === 'me' ? localStream : remoteStreams[screenSharingUserId]) : (activeSpeaker ? remoteStreams[activeSpeaker] : Object.values(remoteStreams)[0] || localStream)}
+                        stageSpeakerName={screenSharingUserId ? getUserDisplayName(screenSharingUserId) : (activeSpeaker ? getUserDisplayName(activeSpeaker) : myDisplayName)}
+                        isScreenShare={Boolean(screenSharingUserId)}
+                        socket={socket}
+                        myUserId={localUserId || 'me'}
+                        myDisplayName={myDisplayName}
+                        isPromotedToSpeaker={isPromotedToSpeaker}
+                        onLeave={() => leaveMeeting()}
+                        onOpenQA={() => setActivePanel('qa')}
+                        onOpenPolls={() => setShowPolls(true)}
+                        onOpenChat={() => {
+                            if (activePanel === 'chat') {
+                                setActivePanel(null)
+                            } else {
+                                setActivePanel('chat')
+                                setUnreadChatCount(0)
+                            }
+                        }}
+                        unreadChatCount={unreadChatCount}
+                    />
+                </div>
+            ) : null}
+
             {/* Ambient Free Tier Warning Pill (Compact floating Zoom/Meet style) */}
             {isLowTimeWarning && !isWarningDismissed && (
                 <div style={{
@@ -5928,9 +6288,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                         position: 'relative',
                                         borderRadius: 'var(--radius-xl)',
                                         overflow: 'hidden',
-                                        border: activeSpeaker === primaryUser ? '1.5px solid #3b82f6' : '1px solid var(--color-border)',
-                                        boxShadow: activeSpeaker === primaryUser ? '0 0 10px rgba(59, 130, 246, 0.35)' : 'var(--shadow-sm)',
-                                        transition: 'border-color 0.3s ease'
+                                        border: `2px solid ${activeSpeaker === primaryUser ? '#3b82f6' : 'rgba(255,255,255,0.08)'}`,
+                                        boxShadow: activeSpeaker === primaryUser ? '0 0 12px rgba(59, 130, 246, 0.45)' : 'var(--shadow-sm)',
+                                        transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
                                     }}>
                                         <VideoTile
                                             stream={primaryStream}
@@ -6376,6 +6736,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     currentUserId={parseJwt(token)?.userId || 'me'}
                                     renamedUsers={renamedUsers}
                                     participants={participants}
+                                    meetingId={meetingId || meetingInput.trim()}
+                                    token={token}
                                 />
                             </div>
                         </div>
@@ -6463,6 +6825,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                     addToast('Network error updating setting', 'warning')
                                 }
                             }}
+                            screenSharePolicy={screenSharePolicy}
+                            onToggleScreenSharePolicy={handleToggleScreenSharePolicy}
                         />
                     )}
                 </div>
@@ -6549,8 +6913,31 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     <button
                         onClick={handleToggleScreenShare}
                         disabled={!connected || !joined}
-                        style={{ width: windowWidth < 640 ? 38 : 44, height: windowWidth < 640 ? 38 : 44, borderRadius: '50%', border: 'none', background: (screenSharingUserId === 'me' || screenSharingUserIds.includes('me')) ? 'var(--color-accent)' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                        title={(screenSharingUserId === 'me' || screenSharingUserIds.includes('me')) ? "Stop sharing screen" : "Share screen"}
+                        style={{
+                            width: windowWidth < 640 ? 38 : 44,
+                            height: windowWidth < 640 ? 38 : 44,
+                            borderRadius: '50%',
+                            border: 'none',
+                            background: (screenSharingUserId === 'me' || screenSharingUserIds.includes('me'))
+                                ? 'var(--color-accent)'
+                                : (screenSharePolicy === 'host_only' && !canManageParticipants && !isLocalHost)
+                                    ? 'rgba(255,255,255,0.03)'
+                                    : 'rgba(255,255,255,0.08)',
+                            color: (screenSharePolicy === 'host_only' && !canManageParticipants && !isLocalHost)
+                                ? 'var(--color-text-muted)'
+                                : '#fff',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                            opacity: (screenSharePolicy === 'host_only' && !canManageParticipants && !isLocalHost) ? 0.6 : 1
+                        }}
+                        title={(screenSharingUserId === 'me' || screenSharingUserIds.includes('me'))
+                            ? "Stop sharing screen"
+                            : (screenSharePolicy === 'host_only' && !canManageParticipants && !isLocalHost)
+                                ? "Screen sharing restricted to Host only"
+                                : "Share screen"}
                     >
                         <IconMonitor />
                     </button>
@@ -6835,6 +7222,63 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             </button>
                         )}
 
+                        {/* Server-Side Headless Cloud Recording */}
+                        <button
+                            onClick={() => {
+                                setShowMoreMenu(false)
+                                if (!canAccessCloudRecording) {
+                                    setUpgradeModalFeature({
+                                        title: 'Cloud Server Recording',
+                                        requiredPlan: 'Enterprise Tier',
+                                        icon: <IconVideo size={20} color="#f43f5e" />,
+                                        description: 'Headless 1080p automated server-side recording with secure cloud storage and shareable links requires the Enterprise tier.'
+                                    })
+                                    return
+                                }
+                                toggleCloudRecording()
+                            }}
+                            disabled={!connected || !joined}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                                background: 'transparent', border: 'none', borderRadius: '10px',
+                                color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: isCloudRecording ? 'rgba(244, 63, 94, 0.25)' : 'rgba(14, 165, 233, 0.12)',
+                                color: isCloudRecording ? '#f43f5e' : '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
+                                    <circle cx="12" cy="13" r="2.5" fill={isCloudRecording ? 'currentColor' : 'none'} />
+                                </svg>
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left', opacity: canAccessCloudRecording ? 1 : 0.85 }}>
+                                {isCloudRecording ? 'Stop Cloud Recording' : 'Cloud Recording (Server)'}
+                            </span>
+                            {isCloudRecording && <span style={{ fontSize: '0.65rem', background: '#f43f5e', color: '#fff', padding: '2px 6px', borderRadius: 10, fontWeight: 700 }}>CLOUD REC</span>}
+                            {!canAccessCloudRecording && (
+                                <span style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 800,
+                                    background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+                                    color: '#fff',
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    letterSpacing: '0.04em',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3
+                                }}>
+                                    <IconLock size={9} /> ENTERPRISE
+                                </span>
+                            )}
+                        </button>
+
                         {/* Whiteboard */}
                         {canUseWhiteboard && (
                             <button
@@ -6896,6 +7340,15 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             <button
                                 onClick={() => {
                                     setShowMoreMenu(false)
+                                    if (!canAccessBreakout) {
+                                        setUpgradeModalFeature({
+                                            title: 'Breakout Rooms',
+                                            requiredPlan: 'Starter or Enterprise',
+                                            icon: <IconCrown size={20} color="#60a5fa" />,
+                                            description: 'Splitting meeting attendees into focused interactive sub-rooms and workshops requires a Starter or Enterprise plan.'
+                                        })
+                                        return
+                                    }
                                     setIsBreakoutModalOpen(true)
                                 }}
                                 style={{
@@ -6914,10 +7367,26 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 }}>
                                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
                                 </div>
-                                <span style={{ flex: 1, textAlign: 'left' }}>Breakout Rooms</span>
+                                <span style={{ flex: 1, textAlign: 'left', opacity: canAccessBreakout ? 1 : 0.85 }}>Breakout Rooms</span>
                                 {activeBreakoutSession?.isActive && (
                                     <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#c084fc', background: 'rgba(168,85,247,0.2)', padding: '2px 6px', borderRadius: '6px' }}>
                                         ACTIVE
+                                    </span>
+                                )}
+                                {!canAccessBreakout && (
+                                    <span style={{
+                                        fontSize: '0.625rem',
+                                        fontWeight: 800,
+                                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                        color: '#000',
+                                        padding: '1px 6px',
+                                        borderRadius: 4,
+                                        letterSpacing: '0.04em',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 3
+                                    }}>
+                                        <IconLock size={9} /> PRO
                                     </span>
                                 )}
                             </button>
@@ -7094,6 +7563,15 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         <button
                             onClick={() => {
                                 setShowMoreMenu(false)
+                                if (!canAccessAI) {
+                                    setUpgradeModalFeature({
+                                        title: 'AI Catch Me Up (Recap)',
+                                        requiredPlan: 'Starter or Enterprise',
+                                        icon: <IconSparkles size={20} color="#c084fc" />,
+                                        description: 'AI-generated recap for late joiners summarizing discussions, key takeaways, and action items requires a Starter or Enterprise plan.'
+                                    })
+                                    return
+                                }
                                 setShowCatchUpModal(true)
                             }}
                             style={{
@@ -7112,8 +7590,25 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             }}>
                                 <IconSparkles size={15} />
                             </div>
-                            <span style={{ flex: 1, textAlign: 'left' }}>Catch Me Up (Recap)</span>
-                            <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#d8b4fe', background: 'rgba(168,85,247,0.2)', padding: '2px 6px', borderRadius: '6px' }}>AI</span>
+                            <span style={{ flex: 1, textAlign: 'left', opacity: canAccessAI ? 1 : 0.85 }}>Catch Me Up (Recap)</span>
+                            {!canAccessAI ? (
+                                <span style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 800,
+                                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                    color: '#000',
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    letterSpacing: '0.04em',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3
+                                }}>
+                                    <IconLock size={9} /> PRO
+                                </span>
+                            ) : (
+                                <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#d8b4fe', background: 'rgba(168,85,247,0.2)', padding: '2px 6px', borderRadius: '6px' }}>AI</span>
+                            )}
                         </button>
 
                         {/* Shared Files */}
@@ -7363,6 +7858,15 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         <button
                             onClick={() => {
                                 setShowMoreMenu(false)
+                                if (!canAccessAttendance) {
+                                    setUpgradeModalFeature({
+                                        title: 'Attendance & Participation Report',
+                                        requiredPlan: 'Starter or Enterprise',
+                                        icon: <IconFileText size={20} color="#818cf8" />,
+                                        description: 'Participant attendance tracking, check-in logs, and engagement audit reports require a Starter or Enterprise plan.'
+                                    })
+                                    return
+                                }
                                 setShowAttendanceModal(true)
                             }}
                             style={{
@@ -7381,18 +7885,35 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             }}>
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
                             </div>
-                            <span style={{ flex: 1, textAlign: 'left' }}>Attendance &amp; Participation</span>
-                            <span style={{
-                                fontSize: '0.625rem',
-                                fontWeight: 800,
-                                background: 'rgba(99, 102, 241, 0.2)',
-                                color: '#818cf8',
-                                padding: '1px 6px',
-                                borderRadius: 4,
-                                letterSpacing: '0.02em'
-                            }}>
-                                REPORT
-                            </span>
+                            <span style={{ flex: 1, textAlign: 'left', opacity: canAccessAttendance ? 1 : 0.85 }}>Attendance &amp; Participation</span>
+                            {!canAccessAttendance ? (
+                                <span style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 800,
+                                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                    color: '#000',
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    letterSpacing: '0.04em',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3
+                                }}>
+                                    <IconLock size={9} /> PRO
+                                </span>
+                            ) : (
+                                <span style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 800,
+                                    background: 'rgba(99, 102, 241, 0.2)',
+                                    color: '#818cf8',
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    letterSpacing: '0.02em'
+                                }}>
+                                    REPORT
+                                </span>
+                            )}
                         </button>
 
                         {/* Visual Effects & Virtual Backgrounds */}
@@ -7424,6 +7945,175 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 </span>
                             )}
                         </button>
+
+                        {/* End-to-End Encryption */}
+                        <button
+                            onClick={() => {
+                                setShowMoreMenu(false)
+                                if (!canAccessE2EE) {
+                                    setUpgradeModalFeature({
+                                        title: 'Hardware SFrame E2EE Security',
+                                        requiredPlan: 'Enterprise Tier',
+                                        icon: <IconShield size={20} color="#34d399" />,
+                                        description: 'End-to-End Encryption (E2EE) with zero-knowledge cryptographic key verification requires the Enterprise tier.'
+                                    })
+                                    return
+                                }
+                                setShowE2EEModal(true)
+                            }}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                                background: 'transparent', border: 'none', borderRadius: '10px',
+                                color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(16, 185, 129, 0.12)',
+                                color: '#34d399', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left', opacity: canAccessE2EE ? 1 : 0.85 }}>End-to-End Encryption</span>
+                            {!canAccessE2EE ? (
+                                <span style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 800,
+                                    background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+                                    color: '#fff',
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    letterSpacing: '0.04em',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3
+                                }}>
+                                    <IconLock size={9} /> ENTERPRISE
+                                </span>
+                            ) : (
+                                <span style={{ fontSize: '0.6875rem', color: isE2EEActive ? '#34d399' : '#94a3b8', fontWeight: 700, background: isE2EEActive ? 'rgba(16,185,129,0.18)' : 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4 }}>
+                                    {isE2EEActive ? 'SECURED' : 'CONFIGURE'}
+                                </span>
+                            )}
+                        </button>
+
+                        {/* Phone Audio Dial-In (PSTN) */}
+                        <button
+                            onClick={() => {
+                                setShowMoreMenu(false)
+                                if (!canAccessDialIn) {
+                                    setUpgradeModalFeature({
+                                        title: 'Phone Audio Dial-In (PSTN)',
+                                        requiredPlan: 'Enterprise Tier',
+                                        icon: <IconRocket size={20} color="#38bdf8" />,
+                                        description: 'PSTN phone bridges with toll-free and international dial-in numbers require an Enterprise subscription.'
+                                    })
+                                    return
+                                }
+                                setShowDialInModal(true)
+                            }}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                                background: 'transparent', border: 'none', borderRadius: '10px',
+                                color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(14, 165, 233, 0.12)',
+                                color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left', opacity: canAccessDialIn ? 1 : 0.85 }}>Phone Audio Dial-In</span>
+                            {!canAccessDialIn ? (
+                                <span style={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 800,
+                                    background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+                                    color: '#fff',
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    letterSpacing: '0.04em',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3
+                                }}>
+                                    <IconLock size={9} /> ENTERPRISE
+                                </span>
+                            ) : (
+                                <span style={{ fontSize: '0.6875rem', color: '#38bdf8', fontWeight: 700, background: 'rgba(14,165,233,0.18)', padding: '2px 6px', borderRadius: 4 }}>
+                                    PSTN
+                                </span>
+                            )}
+                        </button>
+
+                        {/* Webinar Mode Toggle */}
+                        {canManageParticipants && (
+                            <button
+                                onClick={() => {
+                                    setShowMoreMenu(false)
+                                    if (!canAccessWebinar) {
+                                        setUpgradeModalFeature({
+                                            title: 'Webinar Stage Broadcast Mode',
+                                            requiredPlan: 'Enterprise Tier',
+                                            icon: <IconRocket size={20} color="#fb7185" />,
+                                            description: 'Large-scale 500+ viewer broadcast mode with stage management and moderated attendee controls requires an Enterprise tier plan.'
+                                        })
+                                        return
+                                    }
+                                    const next = !isWebinarMode
+                                    setIsWebinarMode(next)
+                                    socket?.emit('webinar:toggle-mode', {
+                                        meetingId: meetingId || meetingInput.trim(),
+                                        enabled: next
+                                    })
+                                }}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                                    background: 'transparent', border: 'none', borderRadius: '10px',
+                                    color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                    transition: 'background 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                            >
+                                <div style={{
+                                    width: 28, height: 28, borderRadius: 7,
+                                    background: isWebinarMode ? 'rgba(244, 63, 94, 0.25)' : 'rgba(244, 63, 94, 0.12)',
+                                    color: '#fb7185', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                }}>
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+                                </div>
+                                <span style={{ flex: 1, textAlign: 'left', opacity: canAccessWebinar ? 1 : 0.85 }}>Webinar Stage Mode</span>
+                                {!canAccessWebinar ? (
+                                    <span style={{
+                                        fontSize: '0.625rem',
+                                        fontWeight: 800,
+                                        background: 'linear-gradient(135deg, #a855f7, #6366f1)',
+                                        color: '#fff',
+                                        padding: '1px 6px',
+                                        borderRadius: 4,
+                                        letterSpacing: '0.04em',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 3
+                                    }}>
+                                        <IconLock size={9} /> ENTERPRISE
+                                    </span>
+                                ) : (
+                                    <span style={{ fontSize: '0.6875rem', color: isWebinarMode ? '#fb7185' : '#94a3b8', fontWeight: 700, background: isWebinarMode ? 'rgba(244,63,94,0.18)' : 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4 }}>
+                                        {isWebinarMode ? 'ACTIVE' : 'OFF'}
+                                    </span>
+                                )}
+                            </button>
+                        )}
 
                         <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
 
@@ -7548,7 +8238,57 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 onEndForAll={(sendSummaryEmail) => {
                     setShowEndMeetingModal(false)
                     if (sendSummaryEmail) {
-                        fetch(`${API_BASE}/api/meeting/${meetingId || meetingInput.trim()}/dispatch-summary-email`, {
+                        const targetMeetingId = meetingId || meetingInput.trim()
+                        const records = Object.values(attendanceRecordsRef.current)
+                        const now = Date.now()
+                        const formattedAttendees = records.length > 0 ? records.map(r => {
+                            const durationSec = r.status === 'Active' && joinTimeMapRef.current[r.userId]
+                                ? Math.max(1, Math.round((now - joinTimeMapRef.current[r.userId]) / 1000))
+                                : (r.durationSeconds || 0)
+                            const minutes = Math.floor(durationSec / 60)
+                            const seconds = durationSec % 60
+                            const durationFormatted = `${minutes}m ${seconds}s`
+                            return {
+                                name: r.name,
+                                userId: r.userId,
+                                role: r.role,
+                                status: r.status,
+                                joinTime: r.joinTime,
+                                leaveTime: r.leaveTime || 'Meeting Concluded',
+                                duration: durationFormatted
+                            }
+                        }) : [
+                            {
+                                name: `${myDisplayName} (Host)`,
+                                role: 'Host',
+                                status: 'Active',
+                                joinTime: new Date(now).toLocaleTimeString(),
+                                leaveTime: 'Meeting Concluded',
+                                duration: timerStr
+                            },
+                            ...participants.map(p => ({
+                                name: getUserDisplayName(p),
+                                role: coHostIds.includes(p) ? 'Co-Host' : 'Participant',
+                                status: 'Active',
+                                joinTime: new Date(now).toLocaleTimeString(),
+                                leaveTime: 'Meeting Concluded',
+                                duration: timerStr
+                            }))
+                        ]
+
+                        // Generate CSV Content
+                        const header = ['Participant Name', 'Role', 'Status', 'Join Time', 'Leave Time', 'Duration'].join(',')
+                        const rows = formattedAttendees.map(a => [
+                            `"${(a.name || '').replace(/"/g, '""')}"`,
+                            `"${(a.role || 'Participant').replace(/"/g, '""')}"`,
+                            `"${(a.status || 'Attended').replace(/"/g, '""')}"`,
+                            `"${(a.joinTime || '').replace(/"/g, '""')}"`,
+                            `"${(a.leaveTime || '').replace(/"/g, '""')}"`,
+                            `"${(a.duration || timerStr).replace(/"/g, '""')}"`
+                        ].join(','))
+                        const csvContent = '\uFEFF' + [header, ...rows].join('\r\n')
+
+                        fetch(`${API_BASE}/api/meeting/${targetMeetingId}/dispatch-summary-email`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -7556,13 +8296,11 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             },
                             body: JSON.stringify({
                                 duration: timerStr,
-                                attendees: [
-                                    { name: `${myDisplayName} (Host)` },
-                                    ...participants.map(p => ({ name: getUserDisplayName(p) }))
-                                ]
+                                attendees: formattedAttendees,
+                                csvContent
                             })
                         }).catch(e => console.error('[dispatchSummaryEmail] error:', e))
-                        addToast('Executive summary email queued for dispatch!', 'success')
+                        addToast('Attendance report with CSV file queued for dispatch!', 'success')
                     }
                     setMeetingInput('')
                     socket?.emit('meeting:end-all', { meetingId: meetingId || meetingInput.trim() })
@@ -7847,6 +8585,24 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 isApplying={isApplyingVirtualBg}
             />
 
+            {/* End-to-End Encryption Security Modal */}
+            <E2EESecurityModal
+                isOpen={showE2EEModal}
+                onClose={() => {
+                    setShowE2EEModal(false)
+                    setIsE2EEActive(e2eeService.isEnabled())
+                }}
+                meetingId={meetingId || meetingInput.trim()}
+            />
+
+            {/* PSTN / Phone Dial-In Modal */}
+            <DialInModal
+                isOpen={showDialInModal}
+                onClose={() => setShowDialInModal(false)}
+                meetingId={meetingId || meetingInput.trim()}
+                meetingTitle={meetingInfo?.title}
+            />
+
             {/* Breakout Rooms Management Modal */}
             <BreakoutRoomsModal
                 isOpen={isBreakoutModalOpen}
@@ -7886,7 +8642,71 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     boxShadow: '0 8px 32px rgba(88, 28, 135, 0.5)'
                 }}>
                     <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#a855f7', animation: 'jts-pulse 1.5s infinite' }} />
-                    <span>Breakout Rooms Active &bull; {activeBreakoutSession.rooms.length} Rooms</span>
+                    <span>
+                        {currentBreakoutSubRoomId
+                            ? `In Breakout: ${activeBreakoutSession.rooms.find(r => r.id === currentBreakoutSubRoomId)?.name || 'Sub-Room'}`
+                            : `Main Session (${activeBreakoutSession.rooms.length} Breakout Rooms Active)`
+                        }
+                    </span>
+
+                    {currentBreakoutSubRoomId ? (
+                        <button
+                            onClick={() => {
+                                const activeMain = meetingId || meetingInput.trim()
+                                setCurrentBreakoutSubRoomId(null)
+                                addToast('Returning to main room...', 'info')
+                                connectToMeeting(activeMain, myDisplayName, false)
+                            }}
+                            style={{
+                                background: 'rgba(255,255,255,0.15)',
+                                border: '1px solid rgba(255,255,255,0.25)',
+                                color: '#fff',
+                                borderRadius: 20,
+                                padding: '3px 12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                            }}
+                            title="Leave breakout room and return to main room"
+                        >
+                            Return to Main
+                        </button>
+                    ) : (
+                        (() => {
+                            const myId = parseJwt(token)?.userId || 'me'
+                            const assignedRoom = activeBreakoutSession.rooms.find((r: any) =>
+                                r.participantIds?.includes(myId) || r.participantIds?.includes(socket?.id) || r.participantIds?.includes(localUserId)
+                            )
+                            if (assignedRoom) {
+                                return (
+                                    <button
+                                        onClick={() => {
+                                            const activeMain = meetingId || meetingInput.trim()
+                                            setCurrentBreakoutSubRoomId(assignedRoom.id)
+                                            addToast(`Joining ${assignedRoom.name}...`, 'info')
+                                            const subRoomId = `${activeMain}__sub_${assignedRoom.id}`
+                                            connectToMeeting(subRoomId, myDisplayName, true)
+                                        }}
+                                        style={{
+                                            background: '#c084fc',
+                                            border: 'none',
+                                            color: '#3b0764',
+                                            borderRadius: 20,
+                                            padding: '3px 12px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 700,
+                                            cursor: 'pointer'
+                                        }}
+                                        title={`Join your assigned room: ${assignedRoom.name}`}
+                                    >
+                                        Join {assignedRoom.name}
+                                    </button>
+                                )
+                            }
+                            return null
+                        })()
+                    )}
+
                     {(canManageParticipants || isLocalHost) && (
                         <button
                             onClick={() => setIsBreakoutModalOpen(true)}

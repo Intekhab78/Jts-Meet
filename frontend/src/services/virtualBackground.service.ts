@@ -113,6 +113,63 @@ class VirtualBackgroundService {
                 img.src = preset.url
             }
         })
+
+        try {
+            const savedCustom = localStorage.getItem('jts_custom_bg_wallpaper')
+            if (savedCustom) {
+                this.customImageUrl = savedCustom
+                const customImg = new Image()
+                customImg.onload = () => {
+                    this.imageCache.set('custom', customImg)
+                }
+                customImg.src = savedCustom
+            }
+        } catch (_) {}
+    }
+
+    /**
+     * Store and activate a custom user uploaded wallpaper
+     */
+    public setCustomWallpaper(dataUrl: string): Promise<boolean> {
+        this.customImageUrl = dataUrl
+        try {
+            localStorage.setItem('jts_custom_bg_wallpaper', dataUrl)
+        } catch (_) {}
+
+        return new Promise((resolve) => {
+            const img = new Image()
+            img.onload = () => {
+                this.imageCache.set('custom', img)
+                resolve(true)
+            }
+            img.onerror = () => {
+                console.warn('[VirtualBg] Failed to load custom image data')
+                resolve(false)
+            }
+            img.src = dataUrl
+        })
+    }
+
+    public getCustomWallpaper(): string | null {
+        if (!this.customImageUrl && typeof window !== 'undefined') {
+            try {
+                this.customImageUrl = localStorage.getItem('jts_custom_bg_wallpaper')
+                if (this.customImageUrl && !this.imageCache.has('custom')) {
+                    const img = new Image()
+                    img.onload = () => this.imageCache.set('custom', img)
+                    img.src = this.customImageUrl
+                }
+            } catch (_) {}
+        }
+        return this.customImageUrl
+    }
+
+    public clearCustomWallpaper(): void {
+        this.customImageUrl = null
+        this.imageCache.delete('custom')
+        try {
+            localStorage.removeItem('jts_custom_bg_wallpaper')
+        } catch (_) {}
     }
 
     /**
@@ -179,18 +236,6 @@ class VirtualBackgroundService {
             script.onerror = (e) => reject(e)
             document.head.appendChild(script)
         })
-    }
-
-    /**
-     * Set a custom image uploaded by the user
-     */
-    public setCustomWallpaper(dataUrl: string) {
-        this.customImageUrl = dataUrl
-        const img = new Image()
-        img.onload = () => {
-            this.imageCache.set('custom', img)
-        }
-        img.src = dataUrl
     }
 
     /**

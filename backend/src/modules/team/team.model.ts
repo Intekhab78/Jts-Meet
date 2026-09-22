@@ -15,6 +15,7 @@ export interface ITeam extends Document {
     icon?: string
     color?: string
     visibility: TeamVisibilityType
+    teamType?: string
     ownerId: Types.ObjectId
     createdBy: Types.ObjectId
     status: TeamStatusType
@@ -42,6 +43,7 @@ const TeamSchema = new Schema<ITeam>(
         icon: { type: String, default: '' },
         color: { type: String, default: '#3366FF' },
         visibility: { type: String, enum: ['public', 'private'], default: 'private' },
+        teamType: { type: String, default: 'standard' },
         ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         status: { type: String, enum: ['active', 'inactive'], default: 'active' },

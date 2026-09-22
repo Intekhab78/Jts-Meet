@@ -11,6 +11,7 @@ import { CreateTeamModal } from '../team/CreateTeamModal'
 import type { Team } from '../team/team.types'
 import type { Channel } from '../channel/channel.types'
 import { IntegrationsTab } from '../admin/components/IntegrationsTab'
+import { OrganizationProfileTab } from './OrganizationProfileTab'
 import { API_BASE } from '../../config'
 import {
     IconAlertTriangle,
@@ -98,6 +99,9 @@ export function OrganizationSettingsPage({
             if (res.ok && data.success) {
                 setSuccessMessage(`Workspace subscription upgraded to ${planId.toUpperCase()} successfully!`)
                 setShowUpgradeModal(false)
+                try {
+                    localStorage.setItem('jts_active_plan_tier', planId)
+                } catch (_) {}
                 loadOrganization(organization._id)
             } else {
                 setError(data.message || 'Failed to upgrade plan')
@@ -128,6 +132,11 @@ export function OrganizationSettingsPage({
                 setFormName(org.name || '')
                 setFormTimezone(org.timezone || 'Asia/Kolkata')
                 setFormDescription(org.description || '')
+                if (org.planTier) {
+                    try {
+                        localStorage.setItem('jts_active_plan_tier', org.planTier)
+                    } catch (_) {}
+                }
             }
             setLoading(false)
 
@@ -1084,114 +1093,15 @@ export function OrganizationSettingsPage({
 
                     {/* TAB 5: PROFILE & SETTINGS */}
                     {activeSubTab === 'settings' && (
-                        <div className="glass-card" style={{ padding: '18px 20px', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                            <div>
-                                <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff', margin: 0 }}>Organization Profile Settings</h3>
-                                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
-                                    Update your company name, primary timezone, and public description.
-                                </p>
-                            </div>
-
-                            <form onSubmit={handleUpdateOrganization} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Organization Name</label>
-                                        <input
-                                            type="text"
-                                            value={formName}
-                                            onChange={(e) => setFormName(e.target.value)}
-                                            required
-                                            style={{
-                                                background: 'rgba(255,255,255,0.03)',
-                                                border: '1px solid rgba(255,255,255,0.1)',
-                                                borderRadius: 8,
-                                                padding: '8px 12px',
-                                                fontSize: '0.8125rem',
-                                                color: '#fff',
-                                                outline: 'none'
-                                            }}
-                                        />
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Default Timezone</label>
-                                        <input
-                                            type="text"
-                                            value={formTimezone}
-                                            onChange={(e) => setFormTimezone(e.target.value)}
-                                            placeholder="e.g. Asia/Dubai, UTC, America/New_York"
-                                            style={{
-                                                background: 'rgba(255,255,255,0.03)',
-                                                border: '1px solid rgba(255,255,255,0.1)',
-                                                borderRadius: 8,
-                                                padding: '8px 12px',
-                                                fontSize: '0.8125rem',
-                                                color: '#fff',
-                                                outline: 'none'
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Organization Description</label>
-                                    <textarea
-                                        value={formDescription}
-                                        onChange={(e) => setFormDescription(e.target.value)}
-                                        rows={3}
-                                        placeholder="Brief summary of organization goals and activity..."
-                                        style={{
-                                            background: 'rgba(255,255,255,0.03)',
-                                            border: '1px solid rgba(255,255,255,0.1)',
-                                            borderRadius: 8,
-                                            padding: '8px 12px',
-                                            fontSize: '0.8125rem',
-                                            color: '#fff',
-                                            resize: 'none',
-                                            outline: 'none'
-                                        }}
-                                    />
-                                </div>
-
-                                <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 8, marginTop: 4 }}>
-                                    <button
-                                        type="submit"
-                                        disabled={saving}
-                                        className="btn btn-primary"
-                                        style={{
-                                            height: 34,
-                                            padding: '0 20px',
-                                            fontSize: '0.8125rem',
-                                            fontWeight: 600,
-                                            borderRadius: 8,
-                                            cursor: 'pointer',
-                                            background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
-                                            border: 'none',
-                                            color: '#fff'
-                                        }}
-                                    >
-                                        {saving ? 'Saving...' : 'Save Changes'}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setActiveSubTab('members')}
-                                        className="btn btn-secondary"
-                                        style={{
-                                            height: 34,
-                                            padding: '0 16px',
-                                            fontSize: '0.8125rem',
-                                            fontWeight: 600,
-                                            borderRadius: 8,
-                                            cursor: 'pointer',
-                                            background: 'rgba(255, 255, 255, 0.05)',
-                                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                                            color: '#fff'
-                                        }}
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
+                        <OrganizationProfileTab
+                            organization={organization}
+                            token={token}
+                            onOrganizationUpdated={(updated) => {
+                                setOrganization(updated)
+                                setSuccessMessage('Organization profile & enterprise policies updated successfully!')
+                                setTimeout(() => setSuccessMessage(''), 3500)
+                            }}
+                        />
                     )}
 
                     {/* TAB: ENTERPRISE INTEGRATIONS & WEBHOOKS */}

@@ -12,6 +12,29 @@ export interface UpdateOrganizationPayload {
     description?: string
     timezone?: string
     status?: 'active' | 'inactive'
+    website?: string
+    supportEmail?: string
+    billingContactEmail?: string
+    industry?: string
+    companySize?: string
+    headquarters?: string
+    country?: string
+    locale?: string
+    workingDays?: string[]
+    workingHoursStart?: string
+    workingHoursEnd?: string
+    dateFormat?: string
+    timeFormat?: string
+    lobbyPolicy?: string
+    allowGuestAccess?: boolean
+    recordingPolicy?: string
+    e2eeEnabledByDefault?: boolean
+    watermarkingEnabled?: boolean
+    aiSummaryPolicy?: string
+    cloudRetentionDays?: number
+    fileRetentionDays?: number
+    allowExternalSharing?: boolean
+    requireMeetingPasscode?: boolean
 }
 
 export interface InviteMemberPayload {

@@ -289,8 +289,12 @@ export interface PostMeetingEmailParams {
     date: string
     summaryBullets?: string[]
     actionItems?: string[]
-    attendees?: Array<{ name: string; email?: string; duration?: string }>
+    attendees?: Array<{ name: string; email?: string; duration?: string; role?: string; joinTime?: string; leaveTime?: string; status?: string }>
     recordingUrl?: string
+    csvAttachment?: {
+        filename?: string
+        content: string
+    }
 }
 
 export async function sendPostMeetingSummaryEmail(params: PostMeetingEmailParams): Promise<void> {
@@ -316,23 +320,39 @@ export async function sendPostMeetingSummaryEmail(params: PostMeetingEmailParams
 
     const attendeesHtml = (params.attendees && params.attendees.length > 0)
         ? `<div style="margin: 20px 0;">
-            <h4 style="margin: 0 0 10px 0; color: #1e293b; font-size: 14px;">👥 Attendees (${params.attendees.length})</h4>
+            <h4 style="margin: 0 0 10px 0; color: #1e293b; font-size: 14px;">👥 Attendance Sheet (${params.attendees.length} Attendees)</h4>
             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                 <thead>
                     <tr style="background: #f1f5f9; text-align: left;">
                         <th style="padding: 8px 12px; border-radius: 6px 0 0 6px; color: #475569;">Name</th>
-                        <th style="padding: 8px 12px; color: #475569;">Duration</th>
+                        <th style="padding: 8px 12px; color: #475569;">Role</th>
+                        <th style="padding: 8px 12px; color: #475569;">Status</th>
+                        <th style="padding: 8px 12px; color: #475569;">Join Time</th>
+                        <th style="padding: 8px 12px; border-radius: 0 6px 6px 0; color: #475569;">Duration</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${params.attendees.map(a => `
                         <tr style="border-bottom: 1px solid #f1f5f9;">
                             <td style="padding: 8px 12px; font-weight: 600; color: #1e293b;">${a.name}</td>
+                            <td style="padding: 8px 12px; color: #64748b;">${a.role || 'Participant'}</td>
+                            <td style="padding: 8px 12px; color: #64748b;">${a.status || 'Attended'}</td>
+                            <td style="padding: 8px 12px; color: #64748b;">${a.joinTime || '-'}</td>
                             <td style="padding: 8px 12px; color: #64748b;">${a.duration || params.duration}</td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
+           </div>`
+        : ''
+
+    const csvAttachmentNotice = params.csvAttachment && params.csvAttachment.content
+        ? `<div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px 16px; margin: 18px 0; display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 18px;">📎</span>
+            <div>
+                <strong style="color: #166534; font-size: 13px; display: block;">Attendance CSV Report Attached</strong>
+                <span style="color: #15803d; font-size: 12px;">Full CSV audit file (<code>${params.csvAttachment.filename || `Attendance-${params.meetingId}.csv`}</code>) is attached to this email.</span>
+            </div>
            </div>`
         : ''
 
@@ -342,7 +362,7 @@ export async function sendPostMeetingSummaryEmail(params: PostMeetingEmailParams
                 <h2 style="color: #4f46e5; margin: 0; font-size: 22px; font-weight: 800;">JTS-Meet</h2>
                 <div style="margin-top: 6px;">
                     <span style="font-size: 11px; font-weight: 700; color: #6366f1; background: #e0e7ff; padding: 3px 8px; border-radius: 12px;">
-                        POST-MEETING EXECUTIVE SUMMARY
+                        POST-MEETING ATTENDANCE & SUMMARY REPORT
                     </span>
                 </div>
             </div>
@@ -353,10 +373,11 @@ export async function sendPostMeetingSummaryEmail(params: PostMeetingEmailParams
 
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 18px;">
                 <p style="margin: 0 0 6px 0; font-size: 13px;"><strong>Date:</strong> ${params.date}</p>
-                <p style="margin: 0 0 6px 0; font-size: 13px;"><strong>Duration:</strong> ${params.duration}</p>
+                <p style="margin: 0 0 6px 0; font-size: 13px;"><strong>Total Duration:</strong> ${params.duration}</p>
                 <p style="margin: 0; font-size: 13px;"><strong>Meeting ID:</strong> ${params.meetingId}</p>
             </div>
 
+            ${csvAttachmentNotice}
             ${summaryHtml}
             ${actionItemsHtml}
             ${attendeesHtml}
@@ -375,13 +396,26 @@ export async function sendPostMeetingSummaryEmail(params: PostMeetingEmailParams
         </div>
     `
 
+    const mailOptions: any = {
+        from: EMAIL_FROM,
+        to: params.to.join(','),
+        subject: `📊 Attendance Report & Summary: ${params.meetingTitle} (${params.date})`,
+        html
+    }
+
+    if (params.csvAttachment && params.csvAttachment.content) {
+        mailOptions.attachments = [
+            {
+                filename: params.csvAttachment.filename || `Attendance-${params.meetingId}.csv`,
+                content: params.csvAttachment.content,
+                contentType: 'text/csv'
+            }
+        ]
+    }
+
     try {
-        await transporter.sendMail({
-            from: EMAIL_FROM,
-            to: params.to.join(','),
-            subject: `📋 Executive Minutes: ${params.meetingTitle} (${params.date})`,
-            html
-        })
+        await transporter.sendMail(mailOptions)
+        console.log(`[sendPostMeetingSummaryEmail] Sent attendance summary email with CSV to ${params.to.join(', ')}`)
     } catch (err) {
         console.error('[sendPostMeetingSummaryEmail] Error dispatching post-meeting email:', err)
     }

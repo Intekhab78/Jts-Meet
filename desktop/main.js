@@ -1,6 +1,12 @@
 const { app, BrowserWindow, ipcMain, screen, Menu, desktopCapturer, session } = require('electron')
 const path = require('path')
+const fs = require('fs')
 const { spawn } = require('child_process')
+
+// Disable Chromium background throttling so screen share and WebRTC never pause when another OS window is clicked
+app.commandLine.appendSwitch('disable-background-timer-throttling')
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
 
 let mainWindow = null
 let inputProcess = null
@@ -32,32 +38,37 @@ function setupDisplayMediaHandler(sess) {
 }
 
 
+function getInputExecutablePath() {
+    const devPath = path.join(__dirname, 'jts-input-injector.exe')
+    if (fs.existsSync(devPath)) return devPath
+    if (process.resourcesPath) {
+        const resPath = path.join(process.resourcesPath, 'jts-input-injector.exe')
+        if (fs.existsSync(resPath)) return resPath
+    }
+    return devPath
+}
+
 function initInputProcess() {
     if (process.platform !== 'win32') return
+    const exePath = getInputExecutablePath()
     try {
-        inputProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], {
+        inputProcess = spawn(exePath, [], {
             stdio: ['pipe', 'ignore', 'ignore'],
             windowsHide: true
         })
         inputProcess.on('error', (err) => {
-            console.error('[Desktop] Input process error:', err?.message || err)
+            console.error('[Desktop] Input injector process error:', err?.message || err)
             inputProcess = null
         })
         inputProcess.on('exit', () => {
             inputProcess = null
         })
-        // Initialize Win32 Types once on the persistent stream
-        const initScript = `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -TypeDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' -Name Win32Mouse -Namespace Win32
-`
-        inputProcess.stdin.write(initScript + '\r\n')
     } catch (e) {
-        console.error('[Desktop] Failed to spawn input process:', e)
+        console.error('[Desktop] Failed to spawn input injector process:', e)
     }
 }
 
-// Native Windows Input Simulator using persistent stdin streaming
+// Native Windows Input Simulator using compiled high-performance Win32 Injector
 function simulateWindowsInput(action, x, y, button, key, deltaY) {
     if (process.platform !== 'win32') return
     if (!inputProcess || !inputProcess.stdin || inputProcess.stdin.destroyed) {
@@ -71,29 +82,29 @@ function simulateWindowsInput(action, x, y, button, key, deltaY) {
     try {
         if (action === 'move') {
             const now = Date.now()
-            if (now - lastMoveTime < 16) return // Cap cursor move to ~60Hz
+            if (now - lastMoveTime < 12) return // Smooth 80Hz cursor tracking
             lastMoveTime = now
-            inputProcess.stdin.write(`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safeX}, ${safeY})\r\n`)
+            inputProcess.stdin.write(`MOVE ${safeX} ${safeY}\n`)
         } else if (action === 'click') {
-            const flag = button === 2 ? 0x18 : 0x06
-            inputProcess.stdin.write(`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safeX}, ${safeY}); [Win32.Win32Mouse]::mouse_event(${flag}, 0, 0, 0, 0)\r\n`)
+            const btn = button === 2 ? 2 : (button === 1 ? 1 : 0)
+            inputProcess.stdin.write(`CLICK ${safeX} ${safeY} ${btn}\n`)
         } else if (action === 'down') {
-            const flag = button === 2 ? 0x08 : 0x02
-            inputProcess.stdin.write(`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safeX}, ${safeY}); [Win32.Win32Mouse]::mouse_event(${flag}, 0, 0, 0, 0)\r\n`)
+            const btn = button === 2 ? 2 : (button === 1 ? 1 : 0)
+            inputProcess.stdin.write(`DOWN ${safeX} ${safeY} ${btn}\n`)
         } else if (action === 'up') {
-            const flag = button === 2 ? 0x10 : 0x04
-            inputProcess.stdin.write(`[Win32.Win32Mouse]::mouse_event(${flag}, 0, 0, 0, 0)\r\n`)
+            const btn = button === 2 ? 2 : (button === 1 ? 1 : 0)
+            inputProcess.stdin.write(`UP ${safeX} ${safeY} ${btn}\n`)
         } else if (action === 'dblclick') {
-            inputProcess.stdin.write(`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safeX}, ${safeY}); [Win32.Win32Mouse]::mouse_event(0x06, 0, 0, 0, 0); Start-Sleep -Milliseconds 50; [Win32.Win32Mouse]::mouse_event(0x06, 0, 0, 0, 0)\r\n`)
+            inputProcess.stdin.write(`DBLCLICK ${safeX} ${safeY}\n`)
         } else if (action === 'contextmenu') {
-            inputProcess.stdin.write(`[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safeX}, ${safeY}); [Win32.Win32Mouse]::mouse_event(0x18, 0, 0, 0, 0)\r\n`)
+            inputProcess.stdin.write(`CONTEXTMENU ${safeX} ${safeY}\n`)
         } else if (action === 'scroll') {
             const scrollAmount = Math.round((Number.isFinite(deltaY) ? deltaY : 0) * -1)
-            inputProcess.stdin.write(`[Win32.Win32Mouse]::mouse_event(0x0800, 0, 0, ${scrollAmount}, 0)\r\n`)
+            inputProcess.stdin.write(`SCROLL ${scrollAmount}\n`)
         } else if (action === 'key' && key) {
-            const safeKey = String(key).slice(0, 50).replace(/([+^%~{}()[\]])/g, '{$1}')
-            const keyB64 = Buffer.from(safeKey, 'utf8').toString('base64')
-            inputProcess.stdin.write(`try { [System.Windows.Forms.SendKeys]::SendWait([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${keyB64}"))) } catch {}\r\n`)
+            inputProcess.stdin.write(`KEY down ${key}\n`)
+        } else if (action === 'keyup' && key) {
+            inputProcess.stdin.write(`KEY up ${key}\n`)
         }
     } catch (err) {
         console.error('[Desktop] Failed to write to input stream:', err)
@@ -117,7 +128,8 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
-            sandbox: false
+            sandbox: false,
+            backgroundThrottling: false
         }
     })
 
@@ -250,8 +262,12 @@ ipcMain.on('remote-control:input', (event, data) => {
 
         if (data.type === 'mouse') {
             simulateWindowsInput(data.action, targetX, targetY, data.button, null, data.deltaY)
-        } else if (data.type === 'key' && data.key && data.action === 'down') {
-            simulateWindowsInput('key', targetX, targetY, null, data.key)
+        } else if (data.type === 'key' && data.key) {
+            if (data.action === 'up') {
+                simulateWindowsInput('keyup', targetX, targetY, null, data.key)
+            } else {
+                simulateWindowsInput('key', targetX, targetY, null, data.key)
+            }
         }
     } catch (err) {
         console.error('[Desktop] Input simulation error:', err?.message || err)

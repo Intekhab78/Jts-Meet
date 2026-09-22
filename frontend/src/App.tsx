@@ -120,7 +120,7 @@ function App() {
 
             if (savedGuestToken && isRefreshed && (!activeMeetingInSession || activeMeetingInSession === meetId)) {
                 const decoded = parseJwt(savedGuestToken)
-                if (decoded && !decoded.isPending) {
+                if (decoded && (!decoded.isPending || meetId?.startsWith('room-'))) {
                     return 'app'
                 }
                 if (decoded && decoded.isPending) {
@@ -233,7 +233,7 @@ function App() {
                 const activeMeetingInSession = sessionStorage.getItem('jts_active_meeting_id')
                 if (savedGuest && isRefreshed && (!activeMeetingInSession || activeMeetingInSession === currentMeetId)) {
                     const decodedGuest = parseJwt(savedGuest)
-                    if (decodedGuest && !decodedGuest.isPending) {
+                    if (decodedGuest && (!decodedGuest.isPending || currentMeetId?.startsWith('room-'))) {
                         setView('app')
                         return
                     }
@@ -364,6 +364,7 @@ function App() {
                                     autoJoin={true}
                                     isAdminOrOwner={false}
                                     planTier={guestDetails?.planTier}
+                                    onLeave={handleLogout}
                                 />
                             </div>
                         </ErrorBoundary>

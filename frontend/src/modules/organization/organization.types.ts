@@ -29,6 +29,34 @@ export interface Organization {
     planTier?: string
     maxSeats?: number
     maxStorageGb?: number
+
+    // Enterprise Profile & Localization
+    website?: string
+    supportEmail?: string
+    billingContactEmail?: string
+    industry?: string
+    companySize?: string
+    headquarters?: string
+    country?: string
+    locale?: string
+    workingDays?: string[]
+    workingHoursStart?: string
+    workingHoursEnd?: string
+    dateFormat?: string
+    timeFormat?: string
+
+    // Teams-Grade Policies & Defaults
+    lobbyPolicy?: string
+    allowGuestAccess?: boolean
+    recordingPolicy?: string
+    e2eeEnabledByDefault?: boolean
+    watermarkingEnabled?: boolean
+    aiSummaryPolicy?: string
+    cloudRetentionDays?: number
+    fileRetentionDays?: number
+    allowExternalSharing?: boolean
+    requireMeetingPasscode?: boolean
+
     createdAt: string
     updatedAt: string
 }
@@ -47,6 +75,33 @@ export interface UpdateOrganizationPayload {
     description?: string
     timezone?: string
     status?: OrganizationStatus
+
+    // Enterprise Profile & Localization
+    website?: string
+    supportEmail?: string
+    billingContactEmail?: string
+    industry?: string
+    companySize?: string
+    headquarters?: string
+    country?: string
+    locale?: string
+    workingDays?: string[]
+    workingHoursStart?: string
+    workingHoursEnd?: string
+    dateFormat?: string
+    timeFormat?: string
+
+    // Teams-Grade Policies & Defaults
+    lobbyPolicy?: string
+    allowGuestAccess?: boolean
+    recordingPolicy?: string
+    e2eeEnabledByDefault?: boolean
+    watermarkingEnabled?: boolean
+    aiSummaryPolicy?: string
+    cloudRetentionDays?: number
+    fileRetentionDays?: number
+    allowExternalSharing?: boolean
+    requireMeetingPasscode?: boolean
 }
 
 export interface InviteMemberPayload {

@@ -22,6 +22,6 @@ export const FRONTEND_URL = process.env.FRONTEND_URL || (isProductionPlatform ? 
 export const AZURE_CLIENT_ID = process.env.AZURE_CLIENT_ID || ''
 export const AZURE_CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET || ''
 export const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID || 'common'
-export const BACKEND_API_URL = process.env.BACKEND_API_URL || (isProductionPlatform ? 'https://meet.jtsonline.shop' : 'http://localhost:4000')
+export const BACKEND_API_URL = process.env.BACKEND_API_URL || (isProductionPlatform ? 'https://meet.jtsmiddleeast.com' : 'http://localhost:4000')
 export const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@jtsmeet.com'
 

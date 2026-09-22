@@ -18,7 +18,7 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
             const senderDisplayName = authSocket.guestName || (socket.handshake.query?.displayName as string) || undefined
             let chatObj: any
             try {
-                const chat = await createMeetingChat(payload.meetingId, userId, payload.message, senderDisplayName)
+                const chat = await createMeetingChat(payload.meetingId, userId, payload.message, senderDisplayName, payload.attachment, payload.messageType as any)
                 chatObj = (chat as any).toObject ? (chat as any).toObject() : { ...chat }
             } catch (e) {
                 chatObj = {

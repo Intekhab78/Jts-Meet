@@ -62,6 +62,47 @@ export function ScheduledMeetingsPage({
 
     // AI Agenda Generator modal state
     const [showAgendaModal, setShowAgendaModal] = useState(false)
+    const [showCalendarSyncModal, setShowCalendarSyncModal] = useState(false)
+
+    const myUserId = useMemo(() => {
+        try {
+            const token = localStorage.getItem('jts_token') || ''
+            if (token) {
+                const decoded: any = JSON.parse(atob(token.split('.')[1]))
+                return decoded.userId || decoded.id || decoded.sub || ''
+            }
+        } catch (_) {}
+        return ''
+    }, [])
+
+    const liveFeedUrl = `${API_BASE}/api/calendar/feed/${myUserId || 'all'}.ics`
+
+    const handleCopyLiveCalendarFeed = () => {
+        navigator.clipboard.writeText(liveFeedUrl).then(() => {
+            showToast('🔗 Live 2-Way Calendar Feed (.ics) copied! Paste into Google/Outlook "Add from URL".')
+        }).catch(() => {
+            showToast(`Feed URL: ${liveFeedUrl}`)
+        })
+    }
+
+    const handleSyncGoogleCalendar = (item: ScheduledMeeting) => {
+        const link = `${window.location.origin}/meet/${item.id}`
+        const startUtc = item.date ? `${item.date.replace(/-/g, '')}T${(item.time || '10:00').replace(/:/g, '')}00Z` : ''
+        const title = encodeURIComponent(item.title)
+        const details = encodeURIComponent(`Join JTS-Meet Conference:\n${link}\nMeeting ID: ${item.id}`)
+        const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&location=${encodeURIComponent(link)}${startUtc ? `&dates=${startUtc}/${startUtc}` : ''}`
+        window.open(gCalUrl, '_blank', 'noopener,noreferrer')
+        showToast(`Opening Google Calendar for "${item.title}"...`)
+    }
+
+    const handleSyncOutlookCalendar = (item: ScheduledMeeting) => {
+        const link = `${window.location.origin}/meet/${item.id}`
+        const title = encodeURIComponent(item.title)
+        const details = encodeURIComponent(`Join JTS-Meet Conference:\n${link}\nMeeting ID: ${item.id}`)
+        const outlookUrl = `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=${title}&body=${details}&location=${encodeURIComponent(link)}`
+        window.open(outlookUrl, '_blank', 'noopener,noreferrer')
+        showToast(`Opening Outlook Calendar for "${item.title}"...`)
+    }
 
     // Form fields
     const [formTitle, setFormTitle] = useState('')
@@ -390,6 +431,16 @@ export function ScheduledMeetingsPage({
                     >
                         <IconZap size={14} color="#f59e0b" />
                         <span>Meet Now</span>
+                    </button>
+
+                    <button
+                        onClick={() => setShowCalendarSyncModal(true)}
+                        className="btn btn-secondary"
+                        style={{ padding: '8px 14px', fontSize: '0.8125rem', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.35)', color: '#a5b4fc' }}
+                        title="2-Way Sync with Google Calendar & Outlook"
+                    >
+                        <IconCalendar size={14} color="#818cf8" />
+                        <span>Calendar 2-Way Sync</span>
                     </button>
 
                     <button
@@ -735,10 +786,30 @@ export function ScheduledMeetingsPage({
                                         </button>
 
                                         <button
+                                            onClick={() => handleSyncGoogleCalendar(item)}
+                                            className="btn btn-secondary"
+                                            style={{ padding: '7px 10px', fontSize: '0.775rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 5, color: '#38bdf8' }}
+                                            title="Sync directly to Google Calendar"
+                                        >
+                                            <IconCalendar size={13} color="#38bdf8" />
+                                            <span>Google</span>
+                                        </button>
+
+                                        <button
+                                            onClick={() => handleSyncOutlookCalendar(item)}
+                                            className="btn btn-secondary"
+                                            style={{ padding: '7px 10px', fontSize: '0.775rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 5, color: '#818cf8' }}
+                                            title="Sync directly to Microsoft Outlook Calendar"
+                                        >
+                                            <IconCalendar size={13} color="#818cf8" />
+                                            <span>Outlook</span>
+                                        </button>
+
+                                        <button
                                             onClick={() => handleDownloadICS(item)}
                                             className="btn btn-secondary"
                                             style={{ padding: '7px 10px', fontSize: '0.775rem', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                                            title="Add to Outlook / Google Calendar (.ics)"
+                                            title="Download iCalendar file (.ics)"
                                         >
                                             <IconDownload size={13} />
                                             <span>.ICS</span>
@@ -1052,6 +1123,127 @@ export function ScheduledMeetingsPage({
                     }
                 }}
             />
+
+            {/* 2-Way Calendar Synchronization Modal */}
+            {showCalendarSyncModal && createPortal(
+                <div
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 10005,
+                        background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(12px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+                    }}
+                    onClick={(e) => { if (e.target === e.currentTarget) setShowCalendarSyncModal(false) }}
+                >
+                    <div
+                        className="glass-card"
+                        style={{
+                            width: '100%', maxWidth: 580, background: 'rgba(15, 18, 28, 0.98)',
+                            border: '1px solid rgba(255,255,255,0.12)', borderRadius: 20,
+                            padding: 24, boxShadow: '0 25px 60px rgba(0,0,0,0.8)', display: 'flex',
+                            flexDirection: 'column', gap: 18, animation: 'jts-slide-up 0.2s ease-out'
+                        }}
+                    >
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(99, 102, 241, 0.18)', border: '1px solid rgba(99, 102, 241, 0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <IconCalendar size={20} color="#818cf8" />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
+                                        2-Way Calendar Synchronization
+                                    </h3>
+                                    <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                        Auto-sync your JTS Meet conferences with Google Calendar, Outlook, and Apple Calendar
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowCalendarSyncModal(false)}
+                                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4 }}
+                            >
+                                <IconX size={18} />
+                            </button>
+                        </div>
+
+                        {/* Live Feed Box */}
+                        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#e2e8f0' }}>
+                                    🔗 Live 2-Way Calendar Feed (.ics)
+                                </span>
+                                <span style={{ fontSize: '0.6875rem', color: '#34d399', fontWeight: 700, background: 'rgba(52, 211, 153, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
+                                    AUTO-REFRESHING
+                                </span>
+                            </div>
+                            <p style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                                Subscribe to this URL in Google Calendar or Microsoft Outlook to continuously sync all your scheduled meetings automatically.
+                            </p>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <input
+                                    type="text"
+                                    readOnly
+                                    value={liveFeedUrl}
+                                    style={{
+                                        flex: 1, background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)',
+                                        borderRadius: 8, padding: '8px 12px', fontSize: '0.75rem', color: '#a5b4fc', outline: 'none'
+                                    }}
+                                />
+                                <button
+                                    onClick={handleCopyLiveCalendarFeed}
+                                    className="btn btn-primary"
+                                    style={{ padding: '8px 14px', fontSize: '0.75rem', borderRadius: 8, fontWeight: 700 }}
+                                >
+                                    Copy URL
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Quick Setup Instructions */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                How to Connect:
+                            </span>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 12 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                        <IconCalendar size={14} color="#38bdf8" />
+                                        <strong style={{ fontSize: '0.78rem', color: '#fff' }}>Google Calendar</strong>
+                                    </div>
+                                    <p style={{ margin: 0, fontSize: '0.72rem', color: '#94a3b8', lineHeight: 1.35 }}>
+                                        1. Open Google Calendar.<br />
+                                        2. Click <strong>+</strong> next to "Other calendars".<br />
+                                        3. Select <strong>"From URL"</strong> and paste this link.
+                                    </p>
+                                </div>
+                                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 12 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                        <IconCalendar size={14} color="#818cf8" />
+                                        <strong style={{ fontSize: '0.78rem', color: '#fff' }}>Microsoft Outlook</strong>
+                                    </div>
+                                    <p style={{ margin: 0, fontSize: '0.72rem', color: '#94a3b8', lineHeight: 1.35 }}>
+                                        1. Open Outlook Calendar.<br />
+                                        2. Click <strong>"Add Calendar"</strong>.<br />
+                                        3. Choose <strong>"Subscribe from web"</strong> and paste.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer Close */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                            <button
+                                onClick={() => setShowCalendarSyncModal(false)}
+                                className="btn btn-secondary"
+                                style={{ padding: '8px 18px', borderRadius: 10, fontSize: '0.8rem' }}
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     )
 }

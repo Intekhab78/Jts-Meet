@@ -35,6 +35,16 @@ export const chatController = {
             parentMessageId: req.body.parentMessageId
         })
 
+        const io = req.app.get('io') || (global as any).io
+        if (io) {
+            io.to(`user:${req.body.receiverId}`).emit(SocketEvents.CHAT_RECEIVE, message)
+            io.to(`user:${userId}`).emit(SocketEvents.CHAT_DELIVERED, {
+                messageId: message._id,
+                receiverId: req.body.receiverId,
+                delivered: true
+            })
+        }
+
         return sendSuccess(res, message, 'Message sent')
     },
 

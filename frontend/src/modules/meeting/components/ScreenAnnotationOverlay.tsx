@@ -51,6 +51,9 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
     const [color, setColor] = useState<string>('#EF4444')
     const [size] = useState<number>(3)
     const [strokes, setStrokes] = useState<Stroke[]>([])
+    const [allowAttendeeDrawing, setAllowAttendeeDrawing] = useState(true)
+    const [attendeeDrawingActive, setAttendeeDrawingActive] = useState(false)
+    const canDraw = (isPresenter && isActive) || (!isPresenter && allowAttendeeDrawing && attendeeDrawingActive)
     const isDrawing = useRef(false)
     const currentStroke = useRef<Stroke | null>(null)
     const laserTrail = useRef<LaserPoint[]>([])
@@ -194,16 +197,25 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
             }
         }
 
+        const handleRemotePermissionChanged = (payload: { meetingId: string; allowed: boolean }) => {
+            setAllowAttendeeDrawing(payload.allowed)
+            if (!payload.allowed) {
+                setAttendeeDrawingActive(false)
+            }
+        }
+
         socket.on('screen:annotation:stroke-start', handleRemoteStrokeStart)
         socket.on('screen:annotation:stroke-point', handleRemoteStrokePoint)
         socket.on('screen:annotation:laser', handleRemoteLaser)
         socket.on('screen:annotation:clear', handleRemoteClear)
+        socket.on('screen:annotation:permission-changed', handleRemotePermissionChanged)
 
         return () => {
             socket.off('screen:annotation:stroke-start', handleRemoteStrokeStart)
             socket.off('screen:annotation:stroke-point', handleRemoteStrokePoint)
             socket.off('screen:annotation:laser', handleRemoteLaser)
             socket.off('screen:annotation:clear', handleRemoteClear)
+            socket.off('screen:annotation:permission-changed', handleRemotePermissionChanged)
         }
     }, [socket])
 
@@ -262,7 +274,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
     }
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!isPresenter || !isActive) return
+        if (!canDraw) return
         const pos = getNormalizedPos(e)
 
         if (tool === 'laser') {
@@ -291,7 +303,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
     }
 
     const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!isPresenter || !isActive) return
+        if (!canDraw) return
         const pos = getNormalizedPos(e)
 
         if (tool === 'laser') {
@@ -327,7 +339,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
     }
 
     const handlePointerUp = () => {
-        if (!isPresenter) return
+        if (!canDraw) return
         if (isDrawing.current && currentStroke.current && socket && meetingId) {
             socket.emit('screen:annotation:stroke-end', {
                 meetingId,
@@ -336,6 +348,14 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
         }
         isDrawing.current = false
         currentStroke.current = null
+    }
+
+    const handleToggleAttendeePermission = () => {
+        const next = !allowAttendeeDrawing
+        setAllowAttendeeDrawing(next)
+        if (socket && meetingId) {
+            socket.emit('screen:annotation:toggle-permission', { meetingId, allowed: next })
+        }
     }
 
     const handleClear = () => {
@@ -371,10 +391,45 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
             width: '100%',
             height: '100%',
             zIndex: 40,
-            pointerEvents: isPresenter && isActive ? 'auto' : 'none',
+            pointerEvents: canDraw ? 'auto' : 'none',
             userSelect: 'none',
             overflow: 'hidden'
         }}>
+            {/* Attendee "Annotate on Screen" entry pill (When allowed by presenter) */}
+            {!isPresenter && allowAttendeeDrawing && !attendeeDrawingActive && (
+                <button
+                    type="button"
+                    onClick={() => setAttendeeDrawingActive(true)}
+                    style={{
+                        position: 'absolute',
+                        top: 16,
+                        left: 16,
+                        pointerEvents: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '7px 14px',
+                        borderRadius: '9999px',
+                        background: 'rgba(15, 23, 42, 0.92)',
+                        backdropFilter: 'blur(12px)',
+                        border: '1px solid rgba(99, 102, 241, 0.5)',
+                        color: '#a5b4fc',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                        transition: 'all 0.2s ease',
+                        zIndex: 100
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.25)'; e.currentTarget.style.color = '#fff' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(15, 23, 42, 0.92)'; e.currentTarget.style.color = '#a5b4fc' }}
+                    title="Start drawing on presenter's screen"
+                >
+                    <IconEdit size={14} color="#818cf8" />
+                    <span>Annotate on Screen</span>
+                </button>
+            )}
+
             {/* Canvas Overlay for live strokes & laser trail */}
             <canvas
                 ref={canvasRef}
@@ -384,7 +439,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                     left: 0,
                     width: '100%',
                     height: '100%',
-                    cursor: (isPresenter && isActive) ? (tool === 'laser' ? 'pointer' : 'crosshair') : 'default',
+                    cursor: canDraw ? (tool === 'laser' ? 'pointer' : 'crosshair') : 'default',
                     touchAction: 'none'
                 }}
                 onPointerDown={handlePointerDown}
@@ -393,8 +448,8 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                 onPointerLeave={handlePointerUp}
             />
 
-            {/* Floating Annotation Toolbar Pill (ONLY rendered for Presenter when active) */}
-            {isPresenter && isActive && (
+            {/* Floating Annotation Toolbar Pill (Rendered when canDraw is true) */}
+            {canDraw && (
                 <div style={{
                     position: 'absolute',
                     top: 16,
@@ -563,8 +618,62 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                         <IconTrash size={14} />
                     </button>
 
+                    {/* Presenter: Allow Attendees Drawing Toggle */}
+                    {isPresenter && (
+                        <>
+                            <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
+                            <button
+                                type="button"
+                                onClick={handleToggleAttendeePermission}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 5,
+                                    padding: '4px 10px',
+                                    borderRadius: '9999px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    background: allowAttendeeDrawing ? 'rgba(52, 211, 153, 0.18)' : 'rgba(239, 68, 68, 0.18)',
+                                    border: allowAttendeeDrawing ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)',
+                                    color: allowAttendeeDrawing ? '#34d399' : '#f87171',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.18s ease'
+                                }}
+                                title={allowAttendeeDrawing ? "Click to lock annotations (Presenter only)" : "Click to allow attendees to draw on screen"}
+                            >
+                                <span>👥</span>
+                                <span>{allowAttendeeDrawing ? 'Attendees: ON' : 'Attendees: OFF'}</span>
+                            </button>
+                        </>
+                    )}
+
+                    {/* Attendee: Exit Drawing Mode */}
+                    {!isPresenter && (
+                        <button
+                            type="button"
+                            onClick={() => setAttendeeDrawingActive(false)}
+                            style={{
+                                background: 'rgba(255, 255, 255, 0.08)',
+                                border: '1px solid rgba(255, 255, 255, 0.15)',
+                                color: '#e2e8f0',
+                                cursor: 'pointer',
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                padding: '4px 10px',
+                                borderRadius: '9999px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                transition: 'all 0.2s ease'
+                            }}
+                            title="Exit drawing mode"
+                        >
+                            <span>Done Drawing</span>
+                        </button>
+                    )}
+
                     {/* Close Annotation Mode */}
-                    {onClose && (
+                    {onClose && isPresenter && (
                         <button
                             type="button"
                             onClick={onClose}

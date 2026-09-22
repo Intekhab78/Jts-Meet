@@ -13,6 +13,16 @@ export const CAPTION_LANGUAGES = [
     { code: 'ar', label: 'Arabic (العربية)' }
 ]
 
+const LANG_VOICE_MAP: Record<string, string> = {
+    hi: 'hi-IN',
+    es: 'es-ES',
+    fr: 'fr-FR',
+    de: 'de-DE',
+    ja: 'ja-JP',
+    ar: 'ar-SA',
+    en: 'en-US'
+}
+
 interface CaptionEntry {
     speaker: string
     text: string
@@ -49,6 +59,21 @@ export function MeetingCaptionsBanner({
     })
     const [translatedText, setTranslatedText] = useState<string>('')
     const [isTranslating, setIsTranslating] = useState<boolean>(false)
+    const [isVoiceDubbingEnabled, setIsVoiceDubbingEnabled] = useState<boolean>(() => {
+        try {
+            return localStorage.getItem('jts_voice_dubbing') === 'true'
+        } catch {
+            return false
+        }
+    })
+    const [voiceDubbingVolume, setVoiceDubbingVolume] = useState<number>(() => {
+        try {
+            const val = localStorage.getItem('jts_voice_dubbing_vol')
+            return val ? parseFloat(val) : 0.9
+        } catch {
+            return 0.9
+        }
+    })
 
     const transcriptRef = useRef<CaptionEntry[]>([])
     const recognitionRef = useRef<any>(null)
@@ -168,6 +193,48 @@ export function MeetingCaptionsBanner({
             localStorage.setItem('jts_caption_lang', lang)
         } catch (_) {}
     }
+
+    const handleToggleVoiceDubbing = () => {
+        const next = !isVoiceDubbingEnabled
+        setIsVoiceDubbingEnabled(next)
+        try {
+            localStorage.setItem('jts_voice_dubbing', String(next))
+        } catch (_) {}
+        if (!next && 'speechSynthesis' in window) {
+            window.speechSynthesis.cancel()
+        }
+    }
+
+    // Real-time AI Voice Dubbing (TTS Spoken Audio for translated captions)
+    useEffect(() => {
+        if (!isVoiceDubbingEnabled || !translatedText.trim() || targetLanguage === 'original') return
+        if (!('speechSynthesis' in window)) return
+
+        // Prevent echo if the current speaker is local user
+        const isSelf = currentSpeaker.toLowerCase() === 'you' || 
+                       (speakerNameRef.current && currentSpeaker.toLowerCase() === speakerNameRef.current.toLowerCase())
+        if (isSelf) return
+
+        try {
+            window.speechSynthesis.cancel() // cancel earlier speech to prevent lag
+            const utterance = new SpeechSynthesisUtterance(translatedText)
+            utterance.lang = LANG_VOICE_MAP[targetLanguage] || 'en-US'
+            utterance.volume = voiceDubbingVolume
+            utterance.rate = 1.05 // natural conversational pace
+            window.speechSynthesis.speak(utterance)
+        } catch (err) {
+            console.warn('[AI Voice Dubbing] Error:', err)
+        }
+    }, [translatedText, isVoiceDubbingEnabled, voiceDubbingVolume, targetLanguage, currentSpeaker])
+
+    // Cleanup speech synthesis on unmount or disabling captions
+    useEffect(() => {
+        return () => {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel()
+            }
+        }
+    }, [])
 
     // Local Speech Recognition (stable lifecycle)
     useEffect(() => {
@@ -356,6 +423,35 @@ export function MeetingCaptionsBanner({
                         ))}
                     </select>
                 </div>
+
+                {/* AI Voice Dubbing Toggle Button */}
+                {targetLanguage !== 'original' && (
+                    <>
+                        <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)' }} />
+                        <button
+                            type="button"
+                            onClick={handleToggleVoiceDubbing}
+                            title={isVoiceDubbingEnabled ? "Disable AI Voice Dubbing" : "Enable AI Voice Dubbing (Spoken TTS Audio)"}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                background: isVoiceDubbingEnabled ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                                border: isVoiceDubbingEnabled ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.18)',
+                                color: isVoiceDubbingEnabled ? '#38bdf8' : '#94a3b8',
+                                cursor: 'pointer',
+                                transition: 'all 0.18s ease'
+                            }}
+                        >
+                            <span>🔊</span>
+                            <span>{isVoiceDubbingEnabled ? 'Voice Dub ON' : 'Voice Dub OFF'}</span>
+                        </button>
+                    </>
+                )}
             </div>
         )
     }
@@ -393,33 +489,60 @@ export function MeetingCaptionsBanner({
                     )}
                 </div>
 
-                {/* Translation Language Selector */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: '0.6875rem', color: '#94a3b8', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <IconGlobe size={13} color="#38bdf8" />
-                        <span>TRANSLATE:</span>
-                    </span>
-                    <select
-                        value={targetLanguage}
-                        onChange={(e) => handleLanguageChange(e.target.value)}
-                        style={{
-                            background: 'rgba(255, 255, 255, 0.08)',
-                            border: '1px solid rgba(255, 255, 255, 0.18)',
-                            borderRadius: 6,
-                            color: '#fff',
-                            fontSize: '0.72rem',
-                            fontWeight: 600,
-                            padding: '1px 6px',
-                            outline: 'none',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        {CAPTION_LANGUAGES.map(l => (
-                            <option key={l.code} value={l.code} style={{ background: '#18181b', color: '#fff' }}>
-                                {l.label}
-                            </option>
-                        ))}
-                    </select>
+                {/* Translation & Dubbing Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ fontSize: '0.6875rem', color: '#94a3b8', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <IconGlobe size={13} color="#38bdf8" />
+                            <span>TRANSLATE:</span>
+                        </span>
+                        <select
+                            value={targetLanguage}
+                            onChange={(e) => handleLanguageChange(e.target.value)}
+                            style={{
+                                background: 'rgba(255, 255, 255, 0.08)',
+                                border: '1px solid rgba(255, 255, 255, 0.18)',
+                                borderRadius: 6,
+                                color: '#fff',
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                padding: '1px 6px',
+                                outline: 'none',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            {CAPTION_LANGUAGES.map(l => (
+                                <option key={l.code} value={l.code} style={{ background: '#18181b', color: '#fff' }}>
+                                    {l.label}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {targetLanguage !== 'original' && (
+                        <button
+                            type="button"
+                            onClick={handleToggleVoiceDubbing}
+                            title={isVoiceDubbingEnabled ? "Disable AI Voice Dubbing" : "Enable AI Voice Dubbing (Spoken TTS Audio)"}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                background: isVoiceDubbingEnabled ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                                border: isVoiceDubbingEnabled ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.18)',
+                                color: isVoiceDubbingEnabled ? '#38bdf8' : '#94a3b8',
+                                cursor: 'pointer',
+                                transition: 'all 0.18s ease'
+                            }}
+                        >
+                            <span>🔊</span>
+                            <span>{isVoiceDubbingEnabled ? 'Dubbing ON' : 'Dubbing OFF'}</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -442,9 +565,29 @@ export function MeetingCaptionsBanner({
                     lineHeight: 1.4,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 6
+                    justifyContent: 'space-between',
+                    gap: 8
                 }}>
                     <span>{translatedText || (isTranslating ? 'Translating...' : displayText)}</span>
+                    {isVoiceDubbingEnabled && (
+                        <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            fontSize: '0.625rem',
+                            color: '#38bdf8',
+                            background: 'rgba(56, 189, 248, 0.15)',
+                            border: '1px solid rgba(56, 189, 248, 0.3)',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            fontWeight: 800,
+                            flexShrink: 0
+                        }}>
+                            AI Voice Dub
+                        </span>
+                    )}
                 </div>
             )}
         </div>

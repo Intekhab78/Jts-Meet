@@ -23,6 +23,7 @@ import {
 import { validateCreateMeeting, validateMeetingAction } from './meeting.validator'
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { User } from '../../models/user.model'
+import { cloudRecordingWorker } from '../../workers/cloudRecording.worker'
 import { Organization } from '../organization/organization.model'
 import { NotificationService } from '../notification/notification.service'
 import { sendMeetingInvitationEmail, sendPostMeetingSummaryEmail } from '../../services/email.service'
@@ -569,7 +570,7 @@ export const meetingController = {
 
     dispatchSummaryEmail: async (req: AuthRequest, res: Response) => {
         const meetingId = req.params.meetingId as string
-        const { emails, summaryBullets, actionItems, duration, attendees } = req.body
+        const { emails, summaryBullets, actionItems, duration, attendees, csvContent } = req.body
 
         try {
             const filter = Types.ObjectId.isValid(meetingId)
@@ -582,19 +583,56 @@ export const meetingController = {
             }
 
             let targetEmails: string[] = Array.isArray(emails) ? emails.filter(Boolean) : []
-            if (targetEmails.length === 0 && meeting.host) {
+            if (meeting.host) {
                 const hostUser = await User.findById(meeting.host).select('email')
-                if (hostUser?.email) {
+                if (hostUser?.email && !targetEmails.includes(hostUser.email)) {
                     targetEmails.push(hostUser.email)
                 }
+            }
+
+            // Also include current user's email if available
+            if (req.userId && Types.ObjectId.isValid(req.userId)) {
+                const currentUser = await User.findById(req.userId).select('email')
+                if (currentUser?.email && !targetEmails.includes(currentUser.email)) {
+                    targetEmails.push(currentUser.email)
+                }
+            }
+
+            // Include any attendee email addresses if present
+            if (Array.isArray(attendees)) {
+                attendees.forEach((a: any) => {
+                    if (a?.email && typeof a.email === 'string' && a.email.includes('@') && !targetEmails.includes(a.email)) {
+                        targetEmails.push(a.email)
+                    }
+                })
+            }
+
+            // Fallback to ADMIN_EMAIL if targetEmails still empty
+            if (targetEmails.length === 0 && process.env.ADMIN_EMAIL) {
+                targetEmails.push(process.env.ADMIN_EMAIL)
             }
 
             if (targetEmails.length === 0) {
                 return sendError(res, 400, 'No recipient email addresses available')
             }
 
-            const baseUrl = FRONTEND_URL || 'http://localhost:5173'
+            const baseUrl = FRONTEND_URL || 'http://localhost:3000'
             const fullRecordingUrl = meeting.recordingUrl ? `${baseUrl}${meeting.recordingUrl}` : undefined
+
+            // Generate CSV content if not provided directly
+            let effectiveCsv = csvContent
+            if (!effectiveCsv && Array.isArray(attendees) && attendees.length > 0) {
+                const header = 'Participant Name,Role,Status,Join Time,Leave Time,Duration'
+                const rows = attendees.map((a: any) => [
+                    `"${(a.name || '').replace(/"/g, '""')}"`,
+                    `"${(a.role || 'Participant').replace(/"/g, '""')}"`,
+                    `"${(a.status || 'Attended').replace(/"/g, '""')}"`,
+                    `"${(a.joinTime || '').replace(/"/g, '""')}"`,
+                    `"${(a.leaveTime || '').replace(/"/g, '""')}"`,
+                    `"${(a.duration || duration || '').replace(/"/g, '""')}"`
+                ].join(','))
+                effectiveCsv = '\uFEFF' + [header, ...rows].join('\r\n')
+            }
 
             await sendPostMeetingSummaryEmail({
                 to: targetEmails,
@@ -607,13 +645,97 @@ export const meetingController = {
                 summaryBullets: summaryBullets || [],
                 actionItems: actionItems || [],
                 attendees: attendees || [],
-                recordingUrl: fullRecordingUrl
+                recordingUrl: fullRecordingUrl,
+                csvAttachment: effectiveCsv ? {
+                    filename: `Attendance-${meeting.meetingId}.csv`,
+                    content: effectiveCsv
+                } : undefined
             })
 
-            return sendSuccess(res, { dispatchedTo: targetEmails }, 'Post-meeting executive summary dispatched successfully')
+            return sendSuccess(res, { dispatchedTo: targetEmails }, 'Post-meeting attendance & summary report dispatched successfully')
         } catch (error: any) {
             console.error('[dispatchSummaryEmail] Error:', error)
             return sendError(res, 500, error.message || 'Failed to dispatch post-meeting email')
         }
+    },
+
+    uploadChatAttachment: async (req: AuthRequest & { file?: Express.Multer.File }, res: Response) => {
+        const file = req.file
+        if (!file) {
+            return sendError(res, 400, 'No file provided')
+        }
+
+        try {
+            const fileUrl = `/uploads/chat/${file.filename}`
+            return sendSuccess(res, {
+                url: fileUrl,
+                fileName: file.originalname,
+                fileSize: file.size,
+                fileType: file.mimetype
+            }, 'Chat attachment uploaded successfully')
+        } catch (error: any) {
+            console.error('[uploadChatAttachment] Error:', error)
+            return sendError(res, 500, error.message || 'Failed to upload chat attachment')
+        }
+    },
+
+    setScreenSharePermission: async (req: AuthRequest, res: Response) => {
+        const { meetingId, policy } = req.body as { meetingId: string; policy: 'everyone' | 'host_only' }
+        if (!meetingId || !policy) {
+            return sendError(res, 400, 'Meeting ID and policy are required')
+        }
+
+        try {
+            const meeting = await Meeting.findOne({ meetingId })
+            if (!meeting) {
+                return sendError(res, 404, 'Meeting not found')
+            }
+
+            meeting.screenSharePolicy = policy
+            await meeting.save()
+            return sendSuccess(res, { meetingId, policy }, 'Screen share policy updated successfully')
+        } catch (error: any) {
+            console.error('[setScreenSharePermission] Error:', error)
+            return sendError(res, 500, error.message || 'Failed to update screen share permission')
+        }
+    },
+
+    startCloudRecording: async (req: AuthRequest, res: Response) => {
+        const meetingId = String(req.params.meetingId || req.body.meetingId || '')
+        if (!meetingId) {
+            return sendError(res, 400, 'Meeting ID is required')
+        }
+        try {
+            const hostUser = req.userId ? await User.findById(req.userId).select('fullName') : null
+            const hostName = hostUser?.fullName || 'Meeting Host'
+            const result = await cloudRecordingWorker.startRecording(meetingId, hostName)
+            return sendSuccess(res, result, result.message)
+        } catch (error: any) {
+            console.error('[startCloudRecording] Error:', error)
+            return sendError(res, 500, error.message || 'Failed to start cloud recording')
+        }
+    },
+
+    stopCloudRecording: async (req: AuthRequest, res: Response) => {
+        const meetingId = String(req.params.meetingId || req.body.meetingId || '')
+        if (!meetingId) {
+            return sendError(res, 400, 'Meeting ID is required')
+        }
+        try {
+            const result = await cloudRecordingWorker.stopRecording(meetingId)
+            return sendSuccess(res, result, result.message)
+        } catch (error: any) {
+            console.error('[stopCloudRecording] Error:', error)
+            return sendError(res, 500, error.message || 'Failed to stop cloud recording')
+        }
+    },
+
+    getCloudRecordingStatus: async (req: AuthRequest, res: Response) => {
+        const meetingId = String(req.params.meetingId || '')
+        if (!meetingId) {
+            return sendError(res, 400, 'Meeting ID is required')
+        }
+        const status = cloudRecordingWorker.getStatus(meetingId)
+        return sendSuccess(res, status)
     }
 }

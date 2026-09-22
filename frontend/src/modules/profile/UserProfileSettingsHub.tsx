@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { API_BASE } from '../../config'
+import { API_BASE, normalizeMediaUrl } from '../../config'
+import { UserAvatar } from '../../components/common/UserAvatar'
 import { soundEffects } from '../../utils/soundEffects'
 import {
     IconSettings,
@@ -62,6 +63,18 @@ export function UserProfileSettingsHub({
     const [avatarUrl, setAvatarUrl] = useState<string>(initialProfileImage || '')
     const [avatarError, setAvatarError] = useState(false)
     const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
+
+    useEffect(() => {
+        if (profileName) setFullName(profileName)
+    }, [profileName])
+
+    useEffect(() => {
+        if (initialProfileImage !== undefined) {
+            setAvatarUrl(initialProfileImage || '')
+            setAvatarError(false)
+        }
+    }, [initialProfileImage])
+
     const [userStatus, setUserStatus] = useState<string>(() => localStorage.getItem('jts_user_status') || 'available')
     const [statusMessage, setStatusMessage] = useState<string>(() => localStorage.getItem('jts_status_message') || '')
     const [profileSuccessMsg, setProfileSuccessMsg] = useState('')
@@ -239,8 +252,10 @@ export function UserProfileSettingsHub({
             })
             const data = await res.json()
             if (data.success && (data.data.secureUrl || data.data._id)) {
-                const newAvatar = data.data.secureUrl || `${API_BASE}/api/file/${data.data._id}/download`
-                setAvatarUrl(newAvatar)
+                const uploadedUrl = data.data.secureUrl || `/api/file/${data.data._id}/view`
+                const normalizedAvatar = normalizeMediaUrl(uploadedUrl)
+                setAvatarUrl(normalizedAvatar)
+                setAvatarError(false)
 
                 // Update server profile immediately
                 await fetch(`${API_BASE}/api/auth/profile`, {
@@ -249,10 +264,10 @@ export function UserProfileSettingsHub({
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
-                    body: JSON.stringify({ profileImage: newAvatar })
+                    body: JSON.stringify({ profileImage: uploadedUrl })
                 })
 
-                if (onProfileUpdated) onProfileUpdated({ profileImage: newAvatar })
+                if (onProfileUpdated) onProfileUpdated({ profileImage: uploadedUrl })
                 setProfileSuccessMsg('Profile photo updated successfully!')
                 setTimeout(() => setProfileSuccessMsg(''), 4000)
             } else {
@@ -264,6 +279,25 @@ export function UserProfileSettingsHub({
             setIsUploadingAvatar(false)
             if (avatarInputRef.current) avatarInputRef.current.value = ''
         }
+    }
+
+    // Avatar Remove Handler
+    const handleRemovePhoto = async () => {
+        setAvatarUrl('')
+        setAvatarError(false)
+        try {
+            await fetch(`${API_BASE}/api/auth/profile`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ profileImage: '' })
+            })
+            if (onProfileUpdated) onProfileUpdated({ profileImage: '' })
+            setProfileSuccessMsg('Profile photo removed')
+            setTimeout(() => setProfileSuccessMsg(''), 3000)
+        } catch (_) {}
     }
 
     // Save Profile & Status
@@ -427,26 +461,13 @@ export function UserProfileSettingsHub({
 
                         {/* Avatar Image + Upload button */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-                            <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
-                                {avatarUrl && !avatarError ? (
-                                    <img
-                                        src={avatarUrl}
-                                        alt={fullName}
-                                        onError={() => setAvatarError(true)}
-                                        style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(99, 102, 241, 0.4)', boxShadow: '0 4px 14px rgba(0,0,0,0.4)' }}
-                                    />
-                                ) : (
-                                    <div style={{
-                                        width: 72, height: 72, borderRadius: '50%',
-                                        background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
-                                        color: '#fff', display: 'flex', alignItems: 'center',
-                                        justifyContent: 'center', fontSize: '1.8rem', fontWeight: 800,
-                                        boxShadow: '0 4px 16px rgba(99, 102, 241, 0.3)'
-                                    }}>
-                                        {(fullName || profileName || 'U').slice(0, 2).toUpperCase()}
-                                    </div>
-                                )}
-                            </div>
+                            <UserAvatar
+                                src={avatarUrl}
+                                name={fullName || profileName}
+                                size={72}
+                                fontSize="1.8rem"
+                                border="2px solid rgba(99, 102, 241, 0.4)"
+                            />
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 <input
@@ -469,7 +490,7 @@ export function UserProfileSettingsHub({
                                 {avatarUrl && (
                                     <button
                                         type="button"
-                                        onClick={() => setAvatarUrl('')}
+                                        onClick={handleRemovePhoto}
                                         style={{ background: 'transparent', border: 'none', color: '#f87171', fontSize: '0.7rem', cursor: 'pointer', textAlign: 'left', padding: 0 }}
                                     >
                                         Remove Photo

@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose'
 
-export type IntegrationType = 'slack' | 'discord' | 'webhook' | 'googledrive'
+export type IntegrationType = 'slack' | 'discord' | 'webhook' | 'googledrive' | 'teams' | 'zapier'
 export type IntegrationEvent = 'meeting.started' | 'meeting.ended' | 'recording.ready' | 'participant.joined' | 'participant.left'
 export type IntegrationStatus = 'active' | 'failed' | 'paused'
 
@@ -50,7 +50,7 @@ const IntegrationSchema = new Schema<IIntegration>({
     name: { type: String, required: true },
     type: {
         type: String,
-        enum: ['slack', 'discord', 'webhook', 'googledrive'],
+        enum: ['slack', 'discord', 'webhook', 'googledrive', 'teams', 'zapier'],
         required: true
     },
     url: { type: String, required: true },

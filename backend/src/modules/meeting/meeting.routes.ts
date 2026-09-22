@@ -27,12 +27,40 @@ const uploadRecording = multer({
     limits: { fileSize: 500 * 1024 * 1024 } // 500MB
 })
 
+const chatAttachmentsDir = path.join(process.cwd(), 'uploads', 'chat')
+if (!fs.existsSync(chatAttachmentsDir)) {
+    fs.mkdirSync(chatAttachmentsDir, { recursive: true })
+}
+
+const chatStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, chatAttachmentsDir)
+    },
+    filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname) || ''
+        const base = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30)
+        const uniqueName = `chat-${Date.now()}-${base}${ext}`
+        cb(null, uniqueName)
+    }
+})
+
+const uploadChatAttachment = multer({
+    storage: chatStorage,
+    limits: { fileSize: 30 * 1024 * 1024 } // 30MB
+})
+
 const router = Router()
 
 router.post('/create', authenticate, asyncWrapper(meetingController.createMeeting))
 router.get('/mine', authenticate, asyncWrapper(meetingController.getMyMeetings))
 router.get('/:meetingId', authenticate, asyncWrapper(meetingController.getMeeting))
+router.post('/chat-attachment', authenticate, uploadChatAttachment.single('file'), asyncWrapper(meetingController.uploadChatAttachment))
+router.post('/:meetingId/chat-attachment', authenticate, uploadChatAttachment.single('file'), asyncWrapper(meetingController.uploadChatAttachment))
+router.post('/screen-share-permission', authenticate, asyncWrapper(meetingController.setScreenSharePermission))
 router.post('/:meetingId/recording', authenticate, uploadRecording.single('recording'), asyncWrapper(meetingController.uploadRecording))
+router.post('/:meetingId/cloud-record/start', authenticate, asyncWrapper(meetingController.startCloudRecording))
+router.post('/:meetingId/cloud-record/stop', authenticate, asyncWrapper(meetingController.stopCloudRecording))
+router.get('/:meetingId/cloud-record/status', authenticate, asyncWrapper(meetingController.getCloudRecordingStatus))
 router.post('/:meetingId/dispatch-summary-email', authenticate, asyncWrapper(meetingController.dispatchSummaryEmail))
 router.post('/join', authenticate, asyncWrapper(meetingController.joinMeeting))
 router.post('/leave', authenticate, asyncWrapper(meetingController.leaveMeeting))

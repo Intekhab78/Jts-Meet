@@ -56,7 +56,7 @@ export const fileController = {
         const userId = req.userId
         const fileId = Array.isArray(req.params.fileId) ? req.params.fileId[0] : req.params.fileId
 
-        if (!userId || !fileId) {
+        if (!fileId) {
             return sendError(res, 400, 'Invalid request')
         }
 
@@ -65,10 +65,13 @@ export const fileController = {
             return sendError(res, 404, 'File not found')
         }
 
-        // IDOR Access Authorization Guard
-        const isOwner = metadata.uploadedBy?.toString() === userId
-        const isPublicContext = metadata.contextType === 'profile'
+        // IDOR Access Authorization Guard: profile context or image assets allow public metadata read
+        const isOwner = userId && metadata.uploadedBy?.toString() === userId
+        const isPublicContext = metadata.contextType === 'profile' || metadata.mimeType?.startsWith('image/')
         if (!isOwner && !isPublicContext && metadata.organizationId) {
+            if (!userId) {
+                return sendError(res, 401, 'Unauthorized access')
+            }
             const org = await Organization.findById(metadata.organizationId).select('members ownerId')
             const isMember = org?.ownerId?.toString() === userId || org?.members?.some((m: any) => m.userId?.toString() === userId)
             if (!isMember) {
@@ -83,7 +86,7 @@ export const fileController = {
         const userId = req.userId
         const fileId = Array.isArray(req.params.fileId) ? req.params.fileId[0] : req.params.fileId
 
-        if (!userId || !fileId) {
+        if (!fileId) {
             return sendError(res, 400, 'Invalid request')
         }
 
@@ -92,10 +95,13 @@ export const fileController = {
             return sendError(res, 404, 'File not found')
         }
 
-        // IDOR Access Authorization Guard
-        const isOwner = metadata.uploadedBy?.toString() === userId
-        const isPublicContext = metadata.contextType === 'profile'
+        // IDOR Access Authorization Guard: profile context or image assets allow public inline viewing
+        const isOwner = userId && metadata.uploadedBy?.toString() === userId
+        const isPublicContext = metadata.contextType === 'profile' || metadata.mimeType?.startsWith('image/')
         if (!isOwner && !isPublicContext && metadata.organizationId) {
+            if (!userId) {
+                return sendError(res, 401, 'Unauthorized access')
+            }
             const org = await Organization.findById(metadata.organizationId).select('members ownerId')
             const isMember = org?.ownerId?.toString() === userId || org?.members?.some((m: any) => m.userId?.toString() === userId)
             if (!isMember) {
@@ -107,6 +113,13 @@ export const fileController = {
             const uploadsDir = path.join(process.cwd(), 'uploads')
             const filePath = path.join(uploadsDir, metadata.storageKey)
             if (fs.existsSync(filePath)) {
+                const isImage = metadata.mimeType?.startsWith('image/')
+                const isView = req.path.includes('/view') || req.query.view === 'true' || isImage
+                if (isView) {
+                    res.setHeader('Content-Type', metadata.mimeType || 'image/jpeg')
+                    res.setHeader('Content-Disposition', `inline; filename="${metadata.originalName}"`)
+                    return res.sendFile(filePath)
+                }
                 return res.download(filePath, metadata.originalName)
             }
         }

@@ -30,7 +30,7 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
 
     // Modal state
     const [showAddModal, setShowAddModal] = useState(false)
-    const [modalType, setModalType] = useState<'slack' | 'discord' | 'webhook' | 'googledrive'>('slack')
+    const [modalType, setModalType] = useState<'slack' | 'teams' | 'discord' | 'googledrive' | 'zapier' | 'webhook'>('slack')
     const [formName, setFormName] = useState('')
     const [formUrl, setFormUrl] = useState('')
     const [formSecret, setFormSecret] = useState('')
@@ -165,17 +165,23 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
         }
     }
 
-    const openAddModalForType = (type: 'slack' | 'discord' | 'webhook' | 'googledrive') => {
+    const openAddModalForType = (type: 'slack' | 'teams' | 'discord' | 'googledrive' | 'zapier' | 'webhook') => {
         setModalType(type)
         if (type === 'slack') {
             setFormName('Slack Team Alerts')
             setFormUrl('https://hooks.slack.com/services/...')
+        } else if (type === 'teams') {
+            setFormName('Microsoft Teams Channel Bot')
+            setFormUrl('https://outlook.office.com/webhook/...')
         } else if (type === 'discord') {
             setFormName('Discord Announcements')
             setFormUrl('https://discord.com/api/webhooks/...')
         } else if (type === 'googledrive') {
             setFormName('Google Drive Cloud Sync')
             setFormUrl('https://script.google.com/macros/s/...')
+        } else if (type === 'zapier') {
+            setFormName('Zapier / Make Automation')
+            setFormUrl('https://hooks.zapier.com/hooks/catch/...')
         } else {
             setFormName('Custom Enterprise Webhook')
             setFormUrl('https://api.yourcompany.com/webhooks/jts-meet')
@@ -256,7 +262,7 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                 <h3 style={{ margin: '0 0 14px', fontSize: '1.05rem', fontWeight: 700, color: '#e2e8f0' }}>
                     Available Connectors & Services
                 </h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
                     {/* Slack */}
                     <div style={{
                         background: 'rgba(255, 255, 255, 0.03)',
@@ -301,6 +307,56 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                             }}
                         >
                             + Connect Slack
+                        </button>
+                    </div>
+
+                    {/* Microsoft Teams */}
+                    <div style={{
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: 14,
+                        padding: 20,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: 16
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                            <div style={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: 10,
+                                background: 'linear-gradient(135deg, #4f52b2 0%, #6264A7 100%)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#fff',
+                                fontWeight: 800,
+                                fontSize: '1.2rem'
+                            }}>
+                                T
+                            </div>
+                            <div>
+                                <h4 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#fff', fontWeight: 700 }}>Microsoft Teams Webhook</h4>
+                                <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                                    Post conference cards, bot alerts, and recording notifications directly into MS Teams.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => openAddModalForType('teams')}
+                            style={{
+                                padding: '8px 14px',
+                                background: 'rgba(98, 100, 167, 0.18)',
+                                border: '1px solid rgba(98, 100, 167, 0.35)',
+                                borderRadius: 8,
+                                color: '#c4b5fd',
+                                fontSize: '0.82rem',
+                                fontWeight: 600,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            + Connect MS Teams
                         </button>
                     </div>
 
@@ -398,6 +454,53 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                         </button>
                     </div>
 
+                    {/* Zapier / Make Automation */}
+                    <div style={{
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: 14,
+                        padding: 20,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: 16
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                            <div style={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: 10,
+                                background: 'linear-gradient(135deg, #FF4A00 0%, #EA580C 100%)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}>
+                                <IconZap size={22} color="#fff" />
+                            </div>
+                            <div>
+                                <h4 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#fff', fontWeight: 700 }}>Zapier & Automation</h4>
+                                <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                                    Automate workflows with 5,000+ apps including Notion, Salesforce, HubSpot & Asana.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => openAddModalForType('zapier')}
+                            style={{
+                                padding: '8px 14px',
+                                background: 'rgba(249, 115, 22, 0.15)',
+                                border: '1px solid rgba(249, 115, 22, 0.35)',
+                                borderRadius: 8,
+                                color: '#fdba74',
+                                fontSize: '0.82rem',
+                                fontWeight: 600,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            + Connect Zapier / Make
+                        </button>
+                    </div>
+
                     {/* Custom REST Webhook */}
                     <div style={{
                         background: 'rgba(255, 255, 255, 0.03)',
@@ -424,7 +527,7 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                             <div>
                                 <h4 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#fff', fontWeight: 700 }}>Custom REST Webhook</h4>
                                 <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.4 }}>
-                                    Send JSON payloads with HMAC-SHA256 signatures to Zapier, Make, or custom servers.
+                                    Send JSON payloads with HMAC-SHA256 signatures to custom server endpoints.
                                 </p>
                             </div>
                         </div>
@@ -524,14 +627,29 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                                                 width: 32,
                                                 height: 32,
                                                 borderRadius: 8,
-                                                background: item.type === 'slack' ? '#4A154B' : item.type === 'discord' ? '#5865F2' : item.type === 'googledrive' ? '#10b981' : '#6366f1',
+                                                background: item.type === 'slack' 
+                                                    ? '#4A154B' 
+                                                    : item.type === 'teams'
+                                                    ? '#4f52b2'
+                                                    : item.type === 'discord' 
+                                                    ? '#5865F2' 
+                                                    : item.type === 'googledrive' 
+                                                    ? '#10b981' 
+                                                    : item.type === 'zapier'
+                                                    ? '#EA580C'
+                                                    : '#6366f1',
                                                 display: 'flex',
                                                 alignItems: 'center',
-                                                justifyContent: 'center'
+                                                justifyContent: 'center',
+                                                fontWeight: 800,
+                                                color: '#fff',
+                                                fontSize: '0.85rem'
                                             }}>
-                                                {item.type === 'googledrive' ? (
+                                                {item.type === 'teams' ? (
+                                                    <span>T</span>
+                                                ) : item.type === 'googledrive' ? (
                                                     <IconFolder size={16} color="#fff" />
-                                                ) : item.type === 'webhook' ? (
+                                                ) : item.type === 'webhook' || item.type === 'zapier' ? (
                                                     <IconZap size={16} color="#fff" />
                                                 ) : (
                                                     <IconMessage size={16} color="#fff" />
@@ -759,7 +877,14 @@ export function IntegrationsTab({ token, currentOrgId }: IntegrationsTabProps) {
                     }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
                             <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>
-                                Configure {modalType === 'slack' ? 'Slack' : modalType === 'discord' ? 'Discord' : modalType === 'googledrive' ? 'Google Drive' : 'Custom Webhook'}
+                                Configure {
+                                    modalType === 'slack' ? 'Slack Incoming Webhook' :
+                                    modalType === 'teams' ? 'Microsoft Teams Webhook' :
+                                    modalType === 'discord' ? 'Discord Webhook' :
+                                    modalType === 'googledrive' ? 'Google Drive Cloud Sync' :
+                                    modalType === 'zapier' ? 'Zapier / Make Automation' :
+                                    'Custom REST Webhook'
+                                }
                             </h3>
                             <button
                                 onClick={() => setShowAddModal(false)}
