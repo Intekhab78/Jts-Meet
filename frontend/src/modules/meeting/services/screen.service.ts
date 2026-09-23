@@ -80,14 +80,19 @@ export async function getScreenShareStream(): Promise<MediaStream> {
     }
 
     // ── Standard browser path ────────────────────────────────────────────────
-    return navigator.mediaDevices.getDisplayMedia({
+    const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-            frameRate: { ideal: 30 }
+            width: { ideal: 1920, max: 2560 },
+            height: { ideal: 1080, max: 1440 },
+            frameRate: { ideal: 30, max: 60 }
         },
         audio: true
     })
+    const vTrack = stream.getVideoTracks()[0]
+    if (vTrack && 'contentHint' in vTrack) {
+        vTrack.contentHint = 'detail'
+    }
+    return stream
 }
 
 export function stopScreenShareStream(stream: MediaStream): void {

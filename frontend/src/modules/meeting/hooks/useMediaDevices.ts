@@ -80,13 +80,13 @@ export function useMediaDevices(): UseMediaDevicesResult {
         const audioConstraints: any = {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: false,
+            autoGainControl: true,
             channelCount: 1,
             sampleRate: 48000,
             googEchoCancellation: true,
             googEchoCancellation2: true,
             googDAEchoCancellation: true,
-            googAutoGainControl: false,
+            googAutoGainControl: true,
             googNoiseSuppression: true,
             googNoiseSuppression2: true,
             googHighpassFilter: true,
@@ -128,8 +128,7 @@ export function useMediaDevices(): UseMediaDevicesResult {
                                     return
                                 }
                                 const rawAudio = audioOnlyStream.getAudioTracks()[0]
-                                const cleanAudio = rawAudio ? noiseCancellationService.processAudioTrack(rawAudio, 'high') : rawAudio
-                                const cleanOnlyStream = new MediaStream([cleanAudio])
+                                const cleanOnlyStream = new MediaStream(rawAudio ? [rawAudio] : [])
                                 localStreamRef.current = cleanOnlyStream
                                 cameraStreamRef.current = audioOnlyStream
                                 setCameraStream(audioOnlyStream)
@@ -162,9 +161,8 @@ export function useMediaDevices(): UseMediaDevicesResult {
 
             const rawAudioTrack = stream.getAudioTracks()[0]
             if (rawAudioTrack) {
-                const cleanAudioTrack = noiseCancellationService.processAudioTrack(rawAudioTrack, 'high')
                 const videoTracks = stream.getVideoTracks()
-                const cleanStream = new MediaStream([cleanAudioTrack, ...videoTracks])
+                const cleanStream = new MediaStream([rawAudioTrack, ...videoTracks])
                 localStreamRef.current = cleanStream
                 cameraStreamRef.current = stream
                 setCameraStream(stream)
@@ -218,11 +216,11 @@ export function useMediaDevices(): UseMediaDevicesResult {
                     sampleRate: 48000,
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: false,
+                    autoGainControl: true,
                     googEchoCancellation: true,
                     googEchoCancellation2: true,
                     googDAEchoCancellation: true,
-                    googAutoGainControl: false,
+                    googAutoGainControl: true,
                     googNoiseSuppression: true,
                     googNoiseSuppression2: true,
                     googHighpassFilter: true,
@@ -233,16 +231,15 @@ export function useMediaDevices(): UseMediaDevicesResult {
             })
             const rawTrack = stream.getAudioTracks()[0]
             if (rawTrack && localStreamRef.current) {
-                const cleanTrack = noiseCancellationService.processAudioTrack(rawTrack, 'high')
                 const oldTrack = localStreamRef.current.getAudioTracks()[0]
                 if (oldTrack) {
                     localStreamRef.current.removeTrack(oldTrack)
                     try { oldTrack.stop() } catch {}
                 }
-                localStreamRef.current.addTrack(cleanTrack)
+                localStreamRef.current.addTrack(rawTrack)
                 const newStream = new MediaStream(localStreamRef.current.getTracks())
                 setLocalStream(newStream)
-                if (onTrackSwapped) onTrackSwapped(cleanTrack)
+                if (onTrackSwapped) onTrackSwapped(rawTrack)
                 window.dispatchEvent(new CustomEvent('jts:device-swapped', { detail: { stream: newStream } }))
             }
         } catch (err) {

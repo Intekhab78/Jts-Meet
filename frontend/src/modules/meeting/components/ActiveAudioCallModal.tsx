@@ -49,6 +49,70 @@ interface ActiveAudioCallModalProps {
     onUpgradeToVideo?: () => void
 }
 
+/**
+ * PersistentDirectCallAudio
+ * Guarantees continuous remote audio playback for 1-on-1 calls.
+ * Unlocks playback across browser autoplay restrictions via user gestures.
+ */
+const PersistentDirectCallAudio = React.memo(function PersistentDirectCallAudio({
+    peerId,
+    stream
+}: {
+    peerId: string
+    stream: MediaStream
+}) {
+    const audioRef = useRef<HTMLAudioElement>(null)
+
+    useEffect(() => {
+        const el = audioRef.current
+        if (!el || !stream) return
+
+        if (el.srcObject !== stream) {
+            el.srcObject = stream
+        }
+
+        const tryPlay = () => {
+            if (!el) return
+            const playPromise = el.play()
+            if (playPromise !== undefined) {
+                playPromise.catch((err) => {
+                    console.warn(`[DirectCallAudio] Autoplay blocked for peer ${peerId}, awaiting user gesture:`, err)
+                    const unlock = () => {
+                        el.play().catch(() => {})
+                        window.removeEventListener('click', unlock)
+                        window.removeEventListener('keydown', unlock)
+                        window.removeEventListener('touchstart', unlock)
+                    }
+                    window.addEventListener('click', unlock, { once: true })
+                    window.addEventListener('keydown', unlock, { once: true })
+                    window.addEventListener('touchstart', unlock, { once: true })
+                })
+            }
+        }
+
+        tryPlay()
+
+        const onTrackChange = () => tryPlay()
+        stream.addEventListener('addtrack', onTrackChange)
+        stream.addEventListener('removetrack', onTrackChange)
+
+        return () => {
+            stream.removeEventListener('addtrack', onTrackChange)
+            stream.removeEventListener('removetrack', onTrackChange)
+        }
+    }, [stream, peerId])
+
+    return (
+        <audio
+            ref={audioRef}
+            autoPlay
+            playsInline
+            data-direct-peer-id={peerId}
+            style={{ position: 'fixed', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+        />
+    )
+})
+
 export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: ActiveAudioCallModalProps) {
     const {
         localStream,
@@ -286,42 +350,34 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
         !isRemoteCameraOff
     )
 
-    // ─────────────────────────────────────────────────────────────
-    // 1. MINIMIZED FLOATING WINDOW (Allows multitasking in Teams chat/files)
-    // ─────────────────────────────────────────────────────────────
-    if (isMinimized) {
-        return (
-            <div
-                style={{
-                    position: 'fixed',
-                    bottom: 24,
-                    right: 24,
-                    zIndex: 99999,
-                    background: '#12141e',
-                    border: '1px solid rgba(98, 100, 167, 0.45)',
-                    borderRadius: 16,
-                    overflow: 'hidden',
-                    boxShadow: '0 16px 40px rgba(0,0,0,0.8), 0 0 24px rgba(98,100,167,0.3)',
-                    color: '#fff',
-                    animation: 'fadeIn 0.2s ease-out',
-                    width: isVideoOrScreen ? 280 : 'auto',
-                    minWidth: isVideoOrScreen ? 280 : 310
-                }}
-            >
-                {/* Remote Audio output */}
-                {remoteStreamList.map((stream, idx) => (
-                    <audio
-                        key={idx}
-                        ref={(el) => {
-                            if (el && el.srcObject !== stream) {
-                                el.srcObject = stream
-                                el.play().catch(() => {})
-                            }
-                        }}
-                        autoPlay
-                        playsInline
-                    />
-                ))}
+    return (
+        <>
+            {/* Persistent 1-on-1 Remote Audio Playback with Autoplay Gesture Unlock */}
+            {Object.entries(remoteStreams).map(([peerId, stream]) => (
+                <PersistentDirectCallAudio key={peerId} peerId={peerId} stream={stream} />
+            ))}
+
+            {isMinimized ? (
+                /* ─────────────────────────────────────────────────────────────
+                   1. MINIMIZED FLOATING WINDOW (Allows multitasking in Teams chat/files)
+                   ───────────────────────────────────────────────────────────── */
+                <div
+                    style={{
+                        position: 'fixed',
+                        bottom: 24,
+                        right: 24,
+                        zIndex: 99999,
+                        background: '#12141e',
+                        border: '1px solid rgba(98, 100, 167, 0.45)',
+                        borderRadius: 16,
+                        overflow: 'hidden',
+                        boxShadow: '0 16px 40px rgba(0,0,0,0.8), 0 0 24px rgba(98,100,167,0.3)',
+                        color: '#fff',
+                        animation: 'fadeIn 0.2s ease-out',
+                        width: isVideoOrScreen ? 280 : 'auto',
+                        minWidth: isVideoOrScreen ? 280 : 310
+                    }}
+                >
 
                 {isVideoOrScreen && (
                     <div style={{ position: 'relative', width: '100%', height: 160, background: '#0a0b10', overflow: 'hidden' }}>
@@ -447,14 +503,10 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                     </div>
                 </div>
             </div>
-        )
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // 2. DEDICATED 1-ON-1 TEAMS VIDEO CALL STAGE (No complex conference meeting clutter!)
-    // ─────────────────────────────────────────────────────────────
-    if (isVideoOrScreen) {
-        return (
+            ) : isVideoOrScreen ? (
+            /* ─────────────────────────────────────────────────────────────
+               2. DEDICATED 1-ON-1 TEAMS VIDEO CALL STAGE (No complex conference meeting clutter!)
+               ───────────────────────────────────────────────────────────── */
             <div
                 style={{
                     position: 'fixed',
@@ -466,20 +518,6 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                     overflow: 'hidden'
                 }}
             >
-                {/* AutoPlay all incoming audio streams */}
-                {remoteStreamList.map((stream, idx) => (
-                    <audio
-                        key={idx}
-                        ref={(el) => {
-                            if (el && el.srcObject !== stream) {
-                                el.srcObject = stream
-                                el.play().catch(e => console.warn('[DirectCall] Audio play error:', e))
-                            }
-                        }}
-                        autoPlay
-                        playsInline
-                    />
-                ))}
 
                 {/* Top Glassmorphic Header */}
                 <div
@@ -1085,28 +1123,11 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                     </button>
                 </div>
             </div>
-        )
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // 3. DEDICATED 1-ON-1 TEAMS AUDIO CALL STAGE
-    // ─────────────────────────────────────────────────────────────
-    return (
-        <div className="modal-overlay" style={{ zIndex: 99999, backdropFilter: 'blur(16px)', background: 'rgba(5, 6, 12, 0.88)' }}>
-            {/* AutoPlay all incoming audio streams */}
-            {remoteStreamList.map((stream, idx) => (
-                <audio
-                    key={idx}
-                    ref={(el) => {
-                        if (el && el.srcObject !== stream) {
-                            el.srcObject = stream
-                            el.play().catch(e => console.warn('[ActiveCall] Audio play error:', e))
-                        }
-                    }}
-                    autoPlay
-                    playsInline
-                />
-            ))}
+            ) : (
+            /* ─────────────────────────────────────────────────────────────
+               3. DEDICATED 1-ON-1 TEAMS AUDIO CALL STAGE
+               ───────────────────────────────────────────────────────────── */
+            <div className="modal-overlay" style={{ zIndex: 99999, backdropFilter: 'blur(16px)', background: 'rgba(5, 6, 12, 0.88)' }}>
 
             <div
                 className="modal-container anim-scale-in"
@@ -1337,5 +1358,7 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                 </div>
             </div>
         </div>
+            )}
+        </>
     )
 }

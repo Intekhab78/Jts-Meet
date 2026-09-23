@@ -15,7 +15,7 @@ import { MeetingWhiteboard } from './MeetingWhiteboard'
 import { MeetingPollsModal } from './MeetingPollsModal'
 import { MeetingCaptionsBanner } from './MeetingCaptionsBanner'
 import { MeetingSummaryModal } from './MeetingSummaryModal'
-import { playJoinChime, playLeaveChime, playKnockChime } from '../services/chime.service'
+import { playKnockChime } from '../services/chime.service'
 import { EndMeetingModal } from './EndMeetingModal'
 import { MeetingNotesPanel } from './MeetingNotesPanel'
 import { LayoutSwitcherModal, MeetingLayoutMode } from './LayoutSwitcherModal'
@@ -217,6 +217,60 @@ function getFirstName(label: string): string {
 }
 
 /* ──────────────────────────────────────────────────────────
+   PersistentAudioTile: Guarantees continuous remote audio playback
+   independent of UI tiles, pagination, layout modes, or minimization.
+   Includes gesture unlock to defeat browser autoplay blocks.
+────────────────────────────────────────────────────────── */
+const PersistentAudioTile = React.memo(function PersistentAudioTile({
+    peerId,
+    stream,
+    isMuted
+}: {
+    peerId: string
+    stream: MediaStream
+    isMuted: boolean
+}) {
+    const audioRef = useRef<HTMLAudioElement>(null)
+
+    useEffect(() => {
+        const el = audioRef.current
+        if (!el) return
+        if (stream && !isMuted) {
+            if (el.srcObject !== stream) {
+                el.srcObject = stream
+            }
+            const playPromise = el.play()
+            if (playPromise !== undefined) {
+                playPromise.catch(() => {
+                    const unlock = () => {
+                        el.play().catch(() => {})
+                        window.removeEventListener('click', unlock)
+                        window.removeEventListener('keydown', unlock)
+                        window.removeEventListener('touchstart', unlock)
+                    }
+                    window.addEventListener('click', unlock, { once: true })
+                    window.addEventListener('keydown', unlock, { once: true })
+                    window.addEventListener('touchstart', unlock, { once: true })
+                })
+            }
+        } else {
+            if (el.srcObject) {
+                el.srcObject = null
+            }
+        }
+    }, [stream, isMuted])
+
+    return (
+        <audio
+            ref={audioRef}
+            autoPlay
+            playsInline
+            data-peer-id={peerId}
+        />
+    )
+})
+
+/* ──────────────────────────────────────────────────────────
    VideoTile component
 ────────────────────────────────────────────────────────── */
 interface VideoTileProps {
@@ -257,7 +311,6 @@ const VideoTile = React.memo(function VideoTile({
     isMutedProp
 }: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
-    const audioRef = useRef<HTMLAudioElement>(null)
     const isLocalUser = label.toLowerCase().includes('you') || label === 'me'
     const [isMuted, setIsMuted] = useState(false)
     const [isVideoOffInternal, setIsVideoOffInternal] = useState(false)
@@ -313,23 +366,9 @@ const VideoTile = React.memo(function VideoTile({
                 el.srcObject = null
             }
         }
-    }, [stream, currentVideoTrackId, isVideoOff])
+    }, [stream, currentVideoTrackId, isVideoOff, isScreenShare])
 
-    // Dedicated audio stream binding
-    useEffect(() => {
-        const el = audioRef.current
-        if (!el) return
-        if (!muted && !isLocalUser && stream) {
-            if (el.srcObject !== stream) {
-                el.srcObject = stream
-            }
-            el.play().catch(() => { })
-        } else {
-            if (el.srcObject) {
-                el.srcObject = null
-            }
-        }
-    }, [stream, muted, isLocalUser])
+
 
     // Track status monitor (avoids checking vTrack.muted to prevent speech-induced flickers)
     useEffect(() => {
@@ -468,14 +507,7 @@ const VideoTile = React.memo(function VideoTile({
                 </div>
             )}
 
-            {/* Dedicated Remote Audio element to guarantee voice works even if video stalls */}
-            {!muted && !isLocalUser && stream && (
-                <audio
-                    ref={audioRef}
-                    autoPlay
-                    playsInline
-                />
-            )}
+
 
             {/* Video Feed with Smooth Fade Transitions and hardware acceleration */}
             <video
@@ -3033,7 +3065,6 @@ export function MeetingRoom({
         }
 
         const handlePstnJoined = (data: { meetingId: string; caller: string }) => {
-            soundEffects.playJoinChime()
             addToast(`📞 Phone caller ${data.caller} joined the audio bridge.`, 'info')
         }
 
@@ -3046,7 +3077,6 @@ export function MeetingRoom({
             const myId = localUserId
             if (data.userId === myId || data.userId === socket.id) {
                 setIsPromotedToSpeaker(true)
-                soundEffects.playJoinChime()
                 addToast('You have been promoted to live Stage Speaker by the Host!', 'success')
             }
         }
@@ -4263,7 +4293,6 @@ export function MeetingRoom({
                 const joinedUser = participants.find(p => !prev.includes(p))
                 if (joinedUser) {
                     const cleanName = getUserDisplayName(joinedUser)
-                    playJoinChime()
                     addToast(`${cleanName} joined the meeting`, 'success')
 
                     // Record attendance entry
@@ -4282,7 +4311,6 @@ export function MeetingRoom({
                 const leftUser = prev.find(p => !participants.includes(p))
                 if (leftUser) {
                     const cleanName = getUserDisplayName(leftUser)
-                    playLeaveChime()
                     addToast(`${cleanName} left the meeting`, 'info')
 
                     // Record attendance exit & duration
@@ -5407,7 +5435,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     const primaryUser = fullScreenUserId || screenSharingUserId || pinnedUserId || (activeSpeaker && activeSpeaker !== 'me' ? activeSpeaker : (participants.length > 0 ? participants[0] : 'me'))
 
     // Stream to display in the main enlarged slot
-    const primaryStream = primaryUser === 'me' ? (activeLocalStream || localStream) : remoteStreams[primaryUser]
+    const isLocalSharing = screenSharingUserId === 'me' || screenSharingUserIds.includes('me')
+    const primaryStream = primaryUser === 'me' ? (isLocalSharing ? localStream : (activeLocalStream || localStream)) : remoteStreams[primaryUser]
 
     // Presenter details
     const presenterName = primaryUser === 'me' ? 'You' : getUserDisplayName(primaryUser)
@@ -5589,7 +5618,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     // Render a single participant video tile with standard controls, click (pin) and double click (full screen)
     const renderMeetingTile = (userId: string, isEnlarged: boolean, isCompact: boolean = false) => {
         const displayName = getUserDisplayName(userId)
-        const stream = userId === 'me' ? (activeLocalStream || localStream) : remoteStreams[userId]
+        const isUserSharingScreen = userId === 'me' ? (screenSharingUserId === 'me' || screenSharingUserIds.includes('me')) : (screenSharingUserId === userId || screenSharingUserIds.includes(userId))
+        const stream = userId === 'me' ? (isUserSharingScreen ? localStream : (activeLocalStream || localStream)) : remoteStreams[userId]
         const isMutedUser = userId === 'me' ? isMuted : (remoteMuteStates[userId] !== undefined ? remoteMuteStates[userId] : !stream?.getAudioTracks()[0]?.enabled)
         const isUserHandRaised = userId === 'me' ? handRaised : handsRaisedMap[userId]
         const isUserSpeaking = activeSpeaker === userId
@@ -6224,6 +6254,21 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     </div>
                 </div>
             </header>
+
+            {/* Global Persistent Remote Audio Bridge: Guarantees continuous voice for all remote users */}
+            <div style={{ display: 'none' }} aria-hidden="true">
+                {Object.entries(remoteStreams).map(([peerId, rStream]) => {
+                    if (!rStream || peerId === 'me' || peerId === localUserId) return null
+                    return (
+                        <PersistentAudioTile
+                            key={`global-audio-${peerId}`}
+                            peerId={peerId}
+                            stream={rStream}
+                            isMuted={remoteMuteStates[peerId] === true}
+                        />
+                    )
+                })}
+            </div>
 
             {/* Webinar View-Only Mode for Attendees */}
             {isWebinarMode && !canManageParticipants && !isLocalHost && !isPromotedToSpeaker ? (

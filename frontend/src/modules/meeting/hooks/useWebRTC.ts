@@ -205,17 +205,58 @@ export function useWebRTC(
         [socket]
     )
 
+    const triggerIceRestart = useCallback(async (targetUserId: string) => {
+        const pc = peerConnectionsRef.current[targetUserId]
+        const activeMeetingId = meetingId || sessionStorage.getItem('jts_active_meeting_id') || ''
+        if (!pc || !socket || !activeMeetingId) return
+        try {
+            console.log(`[WebRTC] Initiating ICE restart for user ${targetUserId}`)
+            setIsReconnecting(true)
+            setNetworkStatus('reconnecting')
+            const offer = await pc.createOffer({ iceRestart: true, voiceActivityDetection: true } as any)
+            const activePeers = Object.keys(peerConnectionsRef.current).length + 1
+            const hdSdp = enhanceSdpForHdVideo(offer.sdp, activePeers)
+            const hdOffer = { type: offer.type, sdp: hdSdp }
+            await pc.setLocalDescription(hdOffer)
+            const isSharing = !!screenTrackRef.current
+            optimizePeerConnectionForHd(pc, activePeers, isSharing)
+            socket.emit(SocketEvents.WEBRTC_OFFER, {
+                targetUserId,
+                meetingId: activeMeetingId,
+                offer: hdOffer,
+                displayName: localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || undefined
+            })
+        } catch (err) {
+            console.warn('[WebRTC] ICE restart failed for user', targetUserId, err)
+        }
+    }, [meetingId, socket])
+
+    const screenTrackRef = useRef<MediaStreamTrack | null>(null)
+
     const replaceTrackOnPeers = useCallback(
         (newTrack: MediaStreamTrack | null, kindOverride?: 'video' | 'audio') => {
             const kind = newTrack ? newTrack.kind : (kindOverride || 'video')
-            Object.values(peerConnectionsRef.current).forEach((pc) => {
-                const tc = pc.getTransceivers().find(t => (t.sender && t.sender.track && t.sender.track.kind === kind) || (t.receiver && t.receiver.track && t.receiver.track.kind === kind))
+            const isScreen = !!screenTrackRef.current && newTrack === screenTrackRef.current
+            const peerCount = Object.keys(peerConnectionsRef.current).length + 1
+
+            Object.entries(peerConnectionsRef.current).forEach(([targetUserId, pc]) => {
+                // Find matching transceiver for this kind (audio or video)
+                const tc = pc.getTransceivers().find(t => 
+                    (t.receiver?.track?.kind === kind) ||
+                    (t.sender?.track && t.sender.track.kind === kind) ||
+                    (!t.sender?.track && kind === 'video')
+                )
+
                 if (tc) {
                     if (tc.direction !== 'sendrecv' && tc.direction !== 'sendonly') {
                         tc.direction = 'sendrecv'
                     }
                     if (tc.sender) {
-                        tc.sender.replaceTrack(newTrack).catch(err => {
+                        tc.sender.replaceTrack(newTrack).then(() => {
+                            if (kind === 'video') {
+                                optimizePeerConnectionForHd(pc, peerCount, isScreen)
+                            }
+                        }).catch(err => {
                             console.warn('Failed to replace track on transceiver:', err)
                         })
                         return
@@ -224,22 +265,26 @@ export function useWebRTC(
 
                 const sender = pc.getSenders().find((s) => (s.track && s.track.kind === kind) || (!s.track && kind === 'video'))
                 if (sender) {
-                    sender.replaceTrack(newTrack).catch(err => {
+                    sender.replaceTrack(newTrack).then(() => {
+                        if (kind === 'video') {
+                            optimizePeerConnectionForHd(pc, peerCount, isScreen)
+                        }
+                    }).catch(err => {
                         console.warn('Failed to replace track on peer:', err)
                     })
                 } else if (newTrack && localStreamRef.current) {
                     try {
                         pc.addTrack(newTrack, localStreamRef.current)
+                        // Trigger renegotiation so the remote peer receives the newly added track
+                        triggerIceRestart(targetUserId)
                     } catch (err) {
                         console.warn('Failed to add track to peer:', err)
                     }
                 }
             })
         },
-        []
+        [triggerIceRestart]
     )
-
-    const screenTrackRef = useRef<MediaStreamTrack | null>(null)
 
     const stopScreenShare = useCallback(async () => {
         if (screenTrackRef.current) {
@@ -253,34 +298,17 @@ export function useWebRTC(
             // Find active live camera track from cameraStream or localStream
             let cameraTrack = cameraStream?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy) || null
 
-            // If camera track was not live, re-acquire fresh camera video track seamlessly
-            if (!cameraTrack) {
-                try {
-                    const freshCam = await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            width: { ideal: 1920, min: 1280 },
-                            height: { ideal: 1080, min: 720 },
-                            frameRate: { ideal: 30, max: 60 },
-                            aspectRatio: { ideal: 1.7777777778 }
-                        }
-                    })
-                    cameraTrack = freshCam.getVideoTracks()[0] || null
-                } catch (e) {
-                    console.warn('[ScreenShare] Could not re-acquire camera stream on screen stop:', e)
-                }
-            }
-
             const audioTracks = (cameraStream || localStreamRef.current)?.getAudioTracks().filter(t => t.readyState === 'live') || []
             const tracks: MediaStreamTrack[] = []
-            if (cameraTrack) tracks.push(cameraTrack)
+            if (cameraTrack && cameraTrack.readyState === 'live') {
+                tracks.push(cameraTrack)
+            }
             tracks.push(...audioTracks)
 
             const restoredStream = new MediaStream(tracks)
             replaceLocalStream(restoredStream)
 
-            if (cameraTrack) {
-                replaceTrackOnPeers(cameraTrack)
-            }
+            replaceTrackOnPeers(cameraTrack, 'video')
 
             if (socket && meetingId) {
                 socket.emit(SocketEvents.SCREEN_STOP, { meetingId })
@@ -308,6 +336,9 @@ export function useWebRTC(
             if (!screenTrack) {
                 throw new Error('No screen track captured')
             }
+            if ('contentHint' in screenTrack) {
+                screenTrack.contentHint = 'detail'
+            }
             screenTrackRef.current = screenTrack
 
             // Preserve active microphone audio tracks so the user is never muted or disconnected
@@ -317,7 +348,7 @@ export function useWebRTC(
             const combinedStream = new MediaStream([screenTrack, ...audioTracks])
 
             replaceLocalStream(combinedStream)
-            replaceTrackOnPeers(screenTrack)
+            replaceTrackOnPeers(screenTrack, 'video')
             setScreenSharingUserId('me')
             setScreenSharingUserIds(prev => prev.includes('me') ? prev : [...prev, 'me'])
             socket.emit(SocketEvents.SCREEN_START, { meetingId })
@@ -378,30 +409,6 @@ export function useWebRTC(
         }
     }, [localStream, replaceTrackOnPeers, socket, meetingId])
 
-    const triggerIceRestart = useCallback(async (targetUserId: string) => {
-        const pc = peerConnectionsRef.current[targetUserId]
-        const activeMeetingId = meetingId || sessionStorage.getItem('jts_active_meeting_id') || ''
-        if (!pc || !socket || !activeMeetingId) return
-        try {
-            console.log(`[WebRTC] Initiating ICE restart for user ${targetUserId}`)
-            setIsReconnecting(true)
-            setNetworkStatus('reconnecting')
-            const offer = await pc.createOffer({ iceRestart: true, voiceActivityDetection: true } as any)
-            const activePeers = Object.keys(peerConnectionsRef.current).length + 1
-            const hdSdp = enhanceSdpForHdVideo(offer.sdp, activePeers)
-            const hdOffer = { type: offer.type, sdp: hdSdp }
-            await pc.setLocalDescription(hdOffer)
-            optimizePeerConnectionForHd(pc, activePeers)
-            socket.emit(SocketEvents.WEBRTC_OFFER, {
-                targetUserId,
-                meetingId: activeMeetingId,
-                offer: hdOffer,
-                displayName: localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || undefined
-            })
-        } catch (err) {
-            console.warn('[WebRTC] ICE restart failed for user', targetUserId, err)
-        }
-    }, [meetingId, socket])
 
     // Window online/offline automatic resilience handlers
     useEffect(() => {
@@ -718,6 +725,13 @@ export function useWebRTC(
         const handleScreenStart = (payload: { userId: string; meetingId: string; }) => {
             setScreenSharingUserIds(prev => prev.includes(payload.userId) ? prev : [...prev, payload.userId])
             setScreenSharingUserId(payload.userId)
+            // Trigger fresh MediaStream reference so React components re-mount/play the screen video
+            setRemoteStreams(prev => {
+                if (prev[payload.userId]) {
+                    return { ...prev, [payload.userId]: new MediaStream(prev[payload.userId].getTracks()) }
+                }
+                return prev
+            })
         }
 
         const handleScreenStop = (payload: { userId: string; meetingId: string; }) => {
@@ -725,6 +739,12 @@ export function useWebRTC(
                 const remaining = prev.filter(id => id !== payload.userId)
                 setScreenSharingUserId(curr => (curr === payload.userId ? (remaining.length > 0 ? remaining[remaining.length - 1] : null) : curr))
                 return remaining
+            })
+            setRemoteStreams(prev => {
+                if (prev[payload.userId]) {
+                    return { ...prev, [payload.userId]: new MediaStream(prev[payload.userId].getTracks()) }
+                }
+                return prev
             })
         }
 
@@ -739,14 +759,24 @@ export function useWebRTC(
                     return remaining
                 })
             }
+            setRemoteStreams(prev => {
+                if (prev[payload.userId]) {
+                    return { ...prev, [payload.userId]: new MediaStream(prev[payload.userId].getTracks()) }
+                }
+                return prev
+            })
         }
 
-        const handleRosterSync = (payload: { meetingId: string; participants: number; peers?: Array<{ userId: string; displayName?: string; isVideoOff?: boolean; isMuted?: boolean }> }) => {
+        const handleRosterSync = (payload: { meetingId: string; participants: number; peers?: Array<{ userId: string; displayName?: string; isVideoOff?: boolean; isMuted?: boolean; isScreenSharing?: boolean }> }) => {
             if (Array.isArray(payload?.peers)) {
                 const localId = getLocalUserId()
                 payload.peers.forEach((peer) => {
                     if (peer.userId && peer.userId !== socket.id && (!localId || peer.userId !== localId) && peer.userId !== 'me') {
                         addParticipant(peer.userId)
+                        if (peer.isScreenSharing) {
+                            setScreenSharingUserIds(prev => prev.includes(peer.userId) ? prev : [...prev, peer.userId])
+                            setScreenSharingUserId(peer.userId)
+                        }
                     }
                 })
             }

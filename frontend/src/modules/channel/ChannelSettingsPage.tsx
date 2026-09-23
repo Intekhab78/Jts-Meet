@@ -1262,13 +1262,12 @@ export function ChannelSettingsPage({
                                         ))}
                                     </div>
 
-                                    {/* REAL METRICS INFO (Zero hardcoded formulas!) */}
+                                    {/* Active online members status badge */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: '0.7rem', color: 'var(--color-text-muted)', padding: '4px 0' }}>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconUsers size={11} /> {members.length} members</span>
-                                        <span>•</span>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} /> {realOnlineCount} online</span>
-                                        <span>•</span>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><IconFileText size={11} /> {files.length} files</span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px rgba(34, 197, 94, 0.6)' }} />
+                                            <span style={{ color: '#e4e4e7', fontWeight: 600 }}>{realOnlineCount}</span> online
+                                        </span>
                                     </div>
                                 </div>
 

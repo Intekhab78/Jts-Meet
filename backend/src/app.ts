@@ -25,6 +25,7 @@ import planRoutes from './modules/plan/plan.routes'
 import clipRoutes from './modules/clip/clip.routes'
 import calendarRoutes from './modules/calendar/calendar.routes'
 import telephonyRoutes from './modules/telephony/telephony.routes'
+import webrtcRoutes from './modules/webrtc/webrtc.routes'
 import { seedDefaultPlans } from './modules/plan/plan.model'
 import { connectDB } from './config/db'
 import { rateLimiter } from './middleware/rateLimiter'
@@ -83,6 +84,7 @@ app.use('/api/integrations', integrationRoutes)
 app.use('/api/clips', clipRoutes)
 app.use('/api/calendar', calendarRoutes)
 app.use('/api/telephony', telephonyRoutes)
+app.use('/api/webrtc', webrtcRoutes)
 
 // Global error handler
 app.use(errorHandler)

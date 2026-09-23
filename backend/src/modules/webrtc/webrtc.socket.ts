@@ -206,6 +206,7 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             return
         }
 
+        updatePeerSession(userId, { isScreenSharing: true })
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_START, { userId, meetingId: payload.meetingId })
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_CHANGED, { userId, meetingId: payload.meetingId, active: true })
     })
@@ -216,6 +217,7 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             return
         }
 
+        updatePeerSession(userId, { isScreenSharing: false })
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_STOP, { userId, meetingId: payload.meetingId })
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_CHANGED, { userId, meetingId: payload.meetingId, active: false })
     })
