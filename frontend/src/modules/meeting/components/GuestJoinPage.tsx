@@ -98,23 +98,41 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
             })
             streamRef.current = null
         }
+        if (videoRef.current) {
+            videoRef.current.srcObject = null
+        }
         if (!cameraOn && !micOn) {
             setStream(null)
-            if (videoRef.current) {
-                videoRef.current.srcObject = null
-            }
             return
         }
         try {
             const constraints: MediaStreamConstraints = {
                 video: cameraOn ? (videoDeviceId ? { deviceId: { exact: videoDeviceId } } : true) : false,
-                audio: micOn ? (audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true) : false
+                audio: micOn ? {
+                    deviceId: audioDeviceId ? { exact: audioDeviceId } : undefined,
+                    channelCount: 1,
+                    sampleRate: 48000,
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: false,
+                    googEchoCancellation: true,
+                    googEchoCancellation2: true,
+                    googAutoGainControl: false,
+                    googNoiseSuppression: true,
+                    googNoiseSuppression2: true,
+                    googHighpassFilter: true,
+                    googTypingNoiseDetection: true,
+                    googAudioMirroring: false
+                } as any : false
             }
             const media = await navigator.mediaDevices.getUserMedia(constraints)
             streamRef.current = media
             setStream(media)
             if (videoRef.current) {
                 videoRef.current.srcObject = cameraOn ? media : null
+                if (cameraOn) {
+                    videoRef.current.play().catch(() => {})
+                }
             }
             // Update the device lists now that permission is active
             getDevices()
@@ -183,10 +201,26 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                     localStorage.setItem('jts_guest_name', guestName.trim())
                     sessionStorage.setItem('jts_active_meeting_id', meetingId)
                     sessionStorage.setItem('jts_meeting_joined', 'true')
+                    if (!cameraOn) {
+                        sessionStorage.setItem('jts_initial_camera_off', 'true')
+                    } else {
+                        sessionStorage.removeItem('jts_initial_camera_off')
+                    }
                 } catch (e) {}
-                // Stop local preview so it doesn't conflict with main WebRTC connection
+                // Stop local preview completely so webcam LED turns off before joining room
+                if (streamRef.current) {
+                    streamRef.current.getTracks().forEach(t => {
+                        try { t.stop() } catch {}
+                    })
+                    streamRef.current = null
+                }
                 if (stream) {
-                    stream.getTracks().forEach(t => t.stop())
+                    stream.getTracks().forEach(t => {
+                        try { t.stop() } catch {}
+                    })
+                }
+                if (videoRef.current) {
+                    videoRef.current.srcObject = null
                 }
                 onGuestRequestSuccess(token, userId, isPending, {
                     guestName: guestName.trim(),
@@ -403,7 +437,17 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                         {/* Controls */}
                         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
                             <button
-                                onClick={() => setCameraOn(!cameraOn)}
+                                onClick={() => {
+                                    const next = !cameraOn
+                                    setCameraOn(next)
+                                    try {
+                                        if (!next) {
+                                            sessionStorage.setItem('jts_initial_camera_off', 'true')
+                                        } else {
+                                            sessionStorage.removeItem('jts_initial_camera_off')
+                                        }
+                                    } catch (_) {}
+                                }}
                                 className={`btn ${cameraOn ? 'btn-ghost' : 'btn-primary'}`}
                                 style={{
                                     borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,

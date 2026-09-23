@@ -20,7 +20,10 @@ export function useSocket(): UseSocketResult {
 
         const client = io(SOCKET_URL, {
             auth: { token },
-            transports: ['websocket']
+            transports: ['polling', 'websocket'],
+            reconnection: true,
+            reconnectionAttempts: 10,
+            reconnectionDelay: 1000
         })
 
         client.on('connect', () => setConnected(true))

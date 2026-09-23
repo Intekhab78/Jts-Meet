@@ -10,6 +10,7 @@ import { API_BASE } from '../../../config'
 import { IconPhone, IconX } from '../../../components/common/Icons'
 import { UserStatusSelectorPopover } from '../../../components/common/UserStatusSelectorPopover'
 import { UserAvatar } from '../../../components/common/UserAvatar'
+import { pushNotificationService } from '../../../services/pushNotification.service'
 
 const MeetingRoom = React.lazy(() => import('../../meeting/components/MeetingRoom').then(m => ({ default: m.MeetingRoom })))
 const DirectMessagesHub = React.lazy(() => import('../../chat/components/DirectMessagesHub').then(m => ({ default: m.DirectMessagesHub })))
@@ -133,6 +134,48 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
     outgoingCallRef.current = outgoingCall
     const activeAudioCallRef = React.useRef<ActiveCallData | null>(null)
     activeAudioCallRef.current = activeAudioCall
+    const [showNotificationPrompt, setShowNotificationPrompt] = useState<boolean>(false)
+
+    // Register Web Push Service Worker and prompt for notifications
+    useEffect(() => {
+        if (pushNotificationService.isSupported()) {
+            pushNotificationService.registerServiceWorker()
+
+            if (Notification.permission === 'granted') {
+                pushNotificationService.subscribeUser(token).catch(() => {})
+            } else if (Notification.permission === 'default') {
+                const dismissed = localStorage.getItem('jts_push_prompt_dismissed') === 'true'
+                if (!dismissed) {
+                    const timer = setTimeout(() => setShowNotificationPrompt(true), 4000)
+                    return () => clearTimeout(timer)
+                }
+            }
+        }
+    }, [token])
+
+    // Pending call to auto-accept once socket is connected (when tab is opened via push notification)
+    const [pendingPushCall, setPendingPushCall] = useState<IncomingCallData | null>(() => {
+        try {
+            const searchParams = new URLSearchParams(window.location.search)
+            const callMeetingId = searchParams.get('callMeetingId')
+            const autoAccept = searchParams.get('autoAccept') === 'true'
+            if (callMeetingId && autoAccept) {
+                const callerId = searchParams.get('callerId') || ''
+                const callerName = searchParams.get('callerName') || 'Colleague'
+                const callerAvatar = searchParams.get('callerAvatar') || ''
+                const callType = (searchParams.get('callType') as any) || 'video'
+                window.history.replaceState(null, '', window.location.pathname + '#chat')
+                return {
+                    meetingId: callMeetingId,
+                    callerId,
+                    callerName,
+                    callerAvatar,
+                    callType
+                }
+            }
+        } catch {}
+        return null
+    })
 
     // Sync activeAudioCall with sessionStorage for refresh restoration
     useEffect(() => {
@@ -265,10 +308,29 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                 meetingId: data.meetingId,
                 callType: data.callType || 'video'
             })
+
+            // Electron desktop app: Flash taskbar & restore window
+            if ((window as any).electronAPI?.notifyIncomingCall) {
+                (window as any).electronAPI.notifyIncomingCall(data)
+            }
+
+            // Show interactive system notification with [Accept] & [Decline] if tab is in background
+            if (document.hidden) {
+                pushNotificationService.showIncomingCallNotification(data)
+            }
         }
 
-        const handleCallCancelled = () => {
+        const handleCallCancelled = (data?: any) => {
+            console.log('[AppWorkspace] Direct call cancelled or terminated:', data)
+            if ((window as any).electronAPI?.dismissIncomingCallAlert) {
+                (window as any).electronAPI.dismissIncomingCallAlert()
+            }
+            if (pendingScreenStreamRef.current) {
+                pendingScreenStreamRef.current.getTracks().forEach(t => { try { t.stop() } catch {} })
+                pendingScreenStreamRef.current = null
+            }
             setIncomingCall(null)
+            setOutgoingCall(null)
             if (activeAudioCallRef.current) {
                 leaveMeeting()
                 stopMedia()
@@ -296,7 +358,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
 
             setActiveAudioCall({
                 meetingId: activeMeetingId,
-                peerId: target?.targetUserId || '',
+                peerId: target?.targetUserId || data?.calleeId || '',
                 peerName: target?.targetName || 'Colleague',
                 peerAvatar: target?.targetAvatar,
                 callType
@@ -323,12 +385,17 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
 
         const handleCallRejected = (data: any) => {
             console.log('[AppWorkspace] Outgoing call was declined by peer:', data)
+            if ((window as any).electronAPI?.dismissIncomingCallAlert) {
+                (window as any).electronAPI.dismissIncomingCallAlert()
+            }
             if (pendingScreenStreamRef.current) {
                 pendingScreenStreamRef.current.getTracks().forEach(t => {
                     try { t.stop() } catch {}
                 })
                 pendingScreenStreamRef.current = null
             }
+            leaveMeeting()
+            stopMedia()
             setOutgoingCall(prev => prev ? { ...prev, status: 'declined' } : null)
             setTimeout(() => {
                 setOutgoingCall(null)
@@ -341,11 +408,22 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
             }
         }
 
+        const handleDirectCallPeerLeft = (data: any) => {
+            if (activeAudioCallRef.current) {
+                const currentPeerId = activeAudioCallRef.current.peerId
+                if (!data?.userId || data.userId === currentPeerId) {
+                    console.log('[AppWorkspace] Peer left active direct call:', data)
+                    handleCallCancelled(data)
+                }
+            }
+        }
+
         socket.on(SocketEvents.CALL_INCOMING, handleIncomingCall)
         socket.on(SocketEvents.CALL_CANCELLED, handleCallCancelled)
         socket.on(SocketEvents.CALL_ACCEPTED, handleCallAccepted)
         socket.on(SocketEvents.CALL_REJECTED, handleCallRejected)
         socket.on('call:initiated', handleCallInitiated)
+        socket.on(SocketEvents.WEBRTC_USER_LEFT, handleDirectCallPeerLeft)
 
         return () => {
             socket.off(SocketEvents.CALL_INCOMING, handleIncomingCall)
@@ -353,10 +431,17 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
             socket.off(SocketEvents.CALL_ACCEPTED, handleCallAccepted)
             socket.off(SocketEvents.CALL_REJECTED, handleCallRejected)
             socket.off('call:initiated', handleCallInitiated)
+            socket.off(SocketEvents.WEBRTC_USER_LEFT, handleDirectCallPeerLeft)
         }
     }, [socket, profileName, connectToMeeting, leaveMeeting, requestMedia, stopMedia, startScreenShare])
 
-    const handleAcceptCall = async (call: IncomingCallData) => {
+    const handleAcceptCall = useCallback(async (call: IncomingCallData) => {
+        if ((window as any).electronAPI?.dismissIncomingCallAlert) {
+            (window as any).electronAPI.dismissIncomingCallAlert()
+        }
+        if ((window as any).electronAPI?.focusApp) {
+            (window as any).electronAPI.focusApp()
+        }
         if (socket) {
             socket.emit(SocketEvents.CALL_ACCEPTED, {
                 callerId: call.callerId,
@@ -392,13 +477,50 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         } catch (err) {
             console.error('[AppWorkspace] Failed to connect call media:', err)
         }
-    }
+    }, [socket, requestMedia, connectToMeeting, profileName])
+
+    // Listen for Service Worker postMessage (when 'Accept' is clicked in push notification while tab was already open)
+    useEffect(() => {
+        const handleSwMessage = (event: MessageEvent) => {
+            if (event.data?.type === 'JTS_PUSH_ACCEPT_CALL') {
+                const callData = event.data.data
+                console.log('[AppWorkspace] Received JTS_PUSH_ACCEPT_CALL from SW:', callData)
+                if (callData?.meetingId) {
+                    handleAcceptCall({
+                        meetingId: callData.meetingId,
+                        callerId: callData.callerId || '',
+                        callerName: callData.callerName || 'Colleague',
+                        callerAvatar: callData.callerAvatar,
+                        callType: callData.callType || 'video'
+                    })
+                }
+            }
+        }
+        navigator.serviceWorker?.addEventListener('message', handleSwMessage)
+        return () => {
+            navigator.serviceWorker?.removeEventListener('message', handleSwMessage)
+        }
+    }, [handleAcceptCall])
+
+    // Connect pending call from push notification once socket is connected (when tab is launched fresh from push click)
+    useEffect(() => {
+        if (pendingPushCall && socket && connected) {
+            console.log('[AppWorkspace] Auto-accepting pending push call:', pendingPushCall)
+            const call = pendingPushCall
+            setPendingPushCall(null)
+            handleAcceptCall(call)
+        }
+    }, [pendingPushCall, socket, connected, handleAcceptCall])
 
     const handleDeclineCall = (call: IncomingCallData) => {
+        if ((window as any).electronAPI?.dismissIncomingCallAlert) {
+            (window as any).electronAPI.dismissIncomingCallAlert()
+        }
         if (socket) {
             socket.emit(SocketEvents.CALL_REJECTED, {
                 callerId: call.callerId,
-                meetingId: call.meetingId
+                meetingId: call.meetingId,
+                reason: 'declined'
             })
         }
         setIncomingCall(null)
@@ -417,10 +539,18 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                 meetingId: outgoingCall.meetingId
             })
         }
+        leaveMeeting()
+        stopMedia()
         setOutgoingCall(null)
     }
 
     const handleEndActiveAudioCall = () => {
+        if (pendingScreenStreamRef.current) {
+            pendingScreenStreamRef.current.getTracks().forEach(t => {
+                try { t.stop() } catch {}
+            })
+            pendingScreenStreamRef.current = null
+        }
         if (activeAudioCall && socket) {
             socket.emit(SocketEvents.CALL_CANCELLED, {
                 targetUserId: activeAudioCall.peerId,
@@ -1680,6 +1810,70 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                     }
                 }}
             />
+
+            {/* Background Incoming Call Push Notifications Permission Toast */}
+            {showNotificationPrompt && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 24,
+                    right: 24,
+                    zIndex: 9999,
+                    background: '#13151f',
+                    border: '1px solid rgba(59, 130, 246, 0.4)',
+                    borderRadius: 14,
+                    padding: '16px 20px',
+                    boxShadow: '0 16px 40px rgba(0,0,0,0.7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    maxWidth: 420,
+                    animation: 'fadeIn 0.3s ease-out'
+                }}>
+                    <div style={{ fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🔔</div>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#fff' }}>Enable Call Alerts</div>
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 2, lineHeight: 1.4 }}>
+                            Receive incoming video and audio call alerts even when your browser tab is closed.
+                        </div>
+                    </div>
+                    <button
+                        onClick={async () => {
+                            setShowNotificationPrompt(false)
+                            await pushNotificationService.subscribeUser(token)
+                        }}
+                        style={{
+                            background: '#3b82f6',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: 8,
+                            padding: '8px 14px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                        }}
+                    >
+                        Enable
+                    </button>
+                    <button
+                        onClick={() => {
+                            setShowNotificationPrompt(false)
+                            localStorage.setItem('jts_push_prompt_dismissed', 'true')
+                        }}
+                        style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#64748b',
+                            cursor: 'pointer',
+                            padding: 4,
+                            display: 'flex',
+                            alignItems: 'center'
+                        }}
+                    >
+                        <IconX size={16} />
+                    </button>
+                </div>
+            )}
         </div>
     )
 }

@@ -4,8 +4,8 @@
  */
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
-const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash-8b']
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash'
+const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-flash-latest']
 
 async function callGeminiApi(prompt: string, options: { jsonResponse?: boolean; temperature?: number; maxTokens?: number } = {}): Promise<string> {
     if (!GEMINI_API_KEY) {

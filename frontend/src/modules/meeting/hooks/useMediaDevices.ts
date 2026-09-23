@@ -57,6 +57,13 @@ export function useMediaDevices(): UseMediaDevicesResult {
         const hasLiveAudio = currentTracks.some((t) => t.kind === 'audio' && t.readyState === 'live')
         const hasLiveVideo = currentTracks.some((t) => t.kind === 'video' && t.readyState === 'live')
         if (audioOnly && hasLiveAudio) {
+            if (hasLiveVideo && localStreamRef.current) {
+                localStreamRef.current.getVideoTracks().forEach(t => {
+                    try { t.stop() } catch {}
+                    localStreamRef.current?.removeTrack(t)
+                })
+                setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
+            }
             return
         }
         if (!audioOnly && hasLiveAudio && hasLiveVideo) {
@@ -73,12 +80,18 @@ export function useMediaDevices(): UseMediaDevicesResult {
         const audioConstraints: any = {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true,
+            autoGainControl: false,
+            channelCount: 1,
+            sampleRate: 48000,
             googEchoCancellation: true,
-            googAutoGainControl: true,
+            googEchoCancellation2: true,
+            googDAEchoCancellation: true,
+            googAutoGainControl: false,
             googNoiseSuppression: true,
+            googNoiseSuppression2: true,
             googHighpassFilter: true,
-            googTypingNoiseDetection: true
+            googTypingNoiseDetection: true,
+            googAudioMirroring: false
         }
 
         let stream: MediaStream | null = null
@@ -115,15 +128,12 @@ export function useMediaDevices(): UseMediaDevicesResult {
                                     return
                                 }
                                 const rawAudio = audioOnlyStream.getAudioTracks()[0]
-                                if (rawAudio) {
-                                    const clean = noiseCancellationService.processAudioTrack(rawAudio, 'high')
-                                    audioOnlyStream.removeTrack(rawAudio)
-                                    audioOnlyStream.addTrack(clean)
-                                }
-                                localStreamRef.current = audioOnlyStream
+                                const cleanAudio = rawAudio ? noiseCancellationService.processAudioTrack(rawAudio, 'high') : rawAudio
+                                const cleanOnlyStream = new MediaStream([cleanAudio])
+                                localStreamRef.current = cleanOnlyStream
                                 cameraStreamRef.current = audioOnlyStream
                                 setCameraStream(audioOnlyStream)
-                                setLocalStream(audioOnlyStream)
+                                setLocalStream(cleanOnlyStream)
                                 setMediaError('Camera unavailable. Connected with microphone only.')
                                 setMediaLoading(false)
                                 return
@@ -150,18 +160,21 @@ export function useMediaDevices(): UseMediaDevicesResult {
 
             if (!stream) throw new Error('No stream obtained')
 
-            // Apply AI Voice Isolation DSP pipeline to raw microphone track
             const rawAudioTrack = stream.getAudioTracks()[0]
             if (rawAudioTrack) {
                 const cleanAudioTrack = noiseCancellationService.processAudioTrack(rawAudioTrack, 'high')
-                stream.removeTrack(rawAudioTrack)
-                stream.addTrack(cleanAudioTrack)
+                const videoTracks = stream.getVideoTracks()
+                const cleanStream = new MediaStream([cleanAudioTrack, ...videoTracks])
+                localStreamRef.current = cleanStream
+                cameraStreamRef.current = stream
+                setCameraStream(stream)
+                setLocalStream(cleanStream)
+            } else {
+                localStreamRef.current = stream
+                cameraStreamRef.current = stream
+                setCameraStream(stream)
+                setLocalStream(stream)
             }
-
-            localStreamRef.current = stream
-            cameraStreamRef.current = stream
-            setCameraStream(stream)
-            setLocalStream(stream)
         } catch (error: any) {
             if (!isRequestActiveRef.current) return
             console.warn('Media stream setup error:', error)
@@ -201,14 +214,20 @@ export function useMediaDevices(): UseMediaDevicesResult {
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     deviceId: { exact: deviceId },
+                    channelCount: 1,
+                    sampleRate: 48000,
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: true,
+                    autoGainControl: false,
                     googEchoCancellation: true,
-                    googAutoGainControl: true,
+                    googEchoCancellation2: true,
+                    googDAEchoCancellation: true,
+                    googAutoGainControl: false,
                     googNoiseSuppression: true,
+                    googNoiseSuppression2: true,
                     googHighpassFilter: true,
-                    googTypingNoiseDetection: true
+                    googTypingNoiseDetection: true,
+                    googAudioMirroring: false
                 } as any,
                 video: false
             })
@@ -221,9 +240,10 @@ export function useMediaDevices(): UseMediaDevicesResult {
                     try { oldTrack.stop() } catch {}
                 }
                 localStreamRef.current.addTrack(cleanTrack)
-                setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
+                const newStream = new MediaStream(localStreamRef.current.getTracks())
+                setLocalStream(newStream)
                 if (onTrackSwapped) onTrackSwapped(cleanTrack)
-                window.dispatchEvent(new CustomEvent('jts:device-swapped', { detail: { stream: localStreamRef.current } }))
+                window.dispatchEvent(new CustomEvent('jts:device-swapped', { detail: { stream: newStream } }))
             }
         } catch (err) {
             console.error('[MediaDevices] Failed to switch audio device:', err)
@@ -280,11 +300,22 @@ export function useMediaDevices(): UseMediaDevicesResult {
                     console.log('[MediaDevices] Active track disconnected. Hot-swapping to available default devices...')
                     try {
                         const freshMedia = await navigator.mediaDevices.getUserMedia({
-                            audio: audioTracks.length > 0 ? {
+                            audio: audioTracks.length > 0 ? ({
+                                channelCount: 1,
+                                sampleRate: 48000,
                                 echoCancellation: true,
                                 noiseSuppression: true,
-                                autoGainControl: true
-                            } : false,
+                                autoGainControl: false,
+                                googEchoCancellation: true,
+                                googEchoCancellation2: true,
+                                googDAEchoCancellation: true,
+                                googAutoGainControl: false,
+                                googNoiseSuppression: true,
+                                googNoiseSuppression2: true,
+                                googHighpassFilter: true,
+                                googTypingNoiseDetection: true,
+                                googAudioMirroring: false
+                            } as any) : false,
                             video: (videoTracks.length > 0 && !videoEnded) ? {
                                 width: { ideal: 1920, min: 1280 },
                                 height: { ideal: 1080, min: 720 },
@@ -294,8 +325,8 @@ export function useMediaDevices(): UseMediaDevicesResult {
 
                         const newTracks: MediaStreamTrack[] = []
                         if (freshMedia.getAudioTracks()[0]) {
-                            const cleanAudio = noiseCancellationService.processAudioTrack(freshMedia.getAudioTracks()[0], 'high')
-                            newTracks.push(cleanAudio)
+                            const clean = noiseCancellationService.processAudioTrack(freshMedia.getAudioTracks()[0], 'high')
+                            newTracks.push(clean)
                         } else if (audioTracks.find(t => t.readyState === 'live')) {
                             newTracks.push(audioTracks.find(t => t.readyState === 'live')!)
                         }

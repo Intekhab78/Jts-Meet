@@ -507,6 +507,11 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                     meeting.status = 'ended'
                 }
                 await meeting.save()
+                dispatchWebhookEvent(meeting.organizationId?.toString(), 'meeting.ended', {
+                    meetingId: payload.meetingId,
+                    title: meeting.title,
+                    endedAt: meeting.endedAt || new Date()
+                }).catch(() => {})
             }
             // Broadcast meeting end to all participants in this room and subrooms
             io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_END, {

@@ -65,6 +65,8 @@ export function playLeaveChime() {
     } catch (e) {}
 }
 
+let activeRingtoneNodes: Array<{ osc: OscillatorNode; gain: GainNode }> = []
+
 export function startRingtone() {
     stopRingtone()
 
@@ -88,8 +90,14 @@ export function startRingtone() {
                 osc.connect(gain)
                 gain.connect(ctx.destination)
 
+                activeRingtoneNodes.push({ osc, gain })
+
                 osc.start(now + idx * 0.1)
                 osc.stop(now + idx * 0.1 + 0.4)
+
+                osc.onended = () => {
+                    activeRingtoneNodes = activeRingtoneNodes.filter(n => n.osc !== osc)
+                }
             })
         } catch (e) {}
     }
@@ -103,9 +111,19 @@ export function stopRingtone() {
         clearInterval(ringtoneInterval)
         ringtoneInterval = null
     }
+    activeRingtoneNodes.forEach(({ osc, gain }) => {
+        try {
+            gain.gain.setValueAtTime(0, audioCtx ? audioCtx.currentTime : 0)
+            gain.disconnect()
+            osc.stop()
+            osc.disconnect()
+        } catch (_) {}
+    })
+    activeRingtoneNodes = []
 }
 
 let outgoingInterval: any = null
+let activeOutgoingNodes: Array<{ osc: OscillatorNode; gain: GainNode }> = []
 
 export function startOutgoingRingback() {
     stopOutgoingRingback()
@@ -134,10 +152,18 @@ export function startOutgoingRingback() {
             osc2.connect(gain)
             gain.connect(ctx.destination)
 
+            activeOutgoingNodes.push({ osc: osc1, gain })
+            activeOutgoingNodes.push({ osc: osc2, gain })
+
             osc1.start(now)
             osc2.start(now)
             osc1.stop(now + 1.65)
             osc2.stop(now + 1.65)
+
+            const cleanupNodes = () => {
+                activeOutgoingNodes = activeOutgoingNodes.filter(n => n.osc !== osc1 && n.osc !== osc2)
+            }
+            osc1.onended = cleanupNodes
         } catch (e) {}
     }
 
@@ -150,6 +176,15 @@ export function stopOutgoingRingback() {
         clearInterval(outgoingInterval)
         outgoingInterval = null
     }
+    activeOutgoingNodes.forEach(({ osc, gain }) => {
+        try {
+            gain.gain.setValueAtTime(0, audioCtx ? audioCtx.currentTime : 0)
+            gain.disconnect()
+            osc.stop()
+            osc.disconnect()
+        } catch (_) {}
+    })
+    activeOutgoingNodes = []
 }
 
 export function playKnockChime() {

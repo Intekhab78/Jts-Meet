@@ -12,7 +12,68 @@ function getTargetBitrateForPeers(peerCount: number): { as: number; tias: number
 }
 
 function enhanceSdpForHdVideo(sdp?: string, _peerCount: number = 1): string {
-    return sdp || ''
+    if (!sdp) return ''
+    let enhanced = sdp
+
+    // Google Meet Audio Architecture:
+    // 1. usedtx=1: Discontinuous Transmission (completely silences audio when not speaking — kills fan, wind, room noise)
+    // 2. stereo=0, sprop-stereo=0: Forces clean mono speech (eliminates stereo laptop microphone fan whistle and phase cancellation)
+    // 3. useinbandfec=1: In-band forward error correction for glitch-free voice
+    // 4. cbr=0: Variable speech bit allocation
+    // 5. maxaveragebitrate=32000: Google Meet voice optimization standard
+    try {
+        const lines = enhanced.split('\r\n')
+        let opusPt: string | null = null
+
+        for (const line of lines) {
+            if (line.startsWith('a=rtpmap:') && line.toLowerCase().includes('opus/48000')) {
+                const match = line.match(/^a=rtpmap:(\d+)\s+opus\/48000/i)
+                if (match) {
+                    opusPt = match[1]
+                    break
+                }
+            }
+        }
+
+        if (opusPt) {
+            let fmtpFound = false
+            const updatedLines = lines.map(line => {
+                if (line.startsWith(`a=fmtp:${opusPt}`)) {
+                    fmtpFound = true
+                    const baseParams = line.replace(`a=fmtp:${opusPt} `, '')
+                    const paramsMap: Record<string, string> = {}
+                    baseParams.split(';').forEach(kv => {
+                        const [k, v] = kv.split('=')
+                        if (k) paramsMap[k.trim()] = v !== undefined ? v.trim() : ''
+                    })
+                    paramsMap['minptime'] = '10'
+                    paramsMap['useinbandfec'] = '1'
+                    paramsMap['stereo'] = '0'
+                    paramsMap['sprop-stereo'] = '0'
+                    paramsMap['usedtx'] = '1'
+                    paramsMap['dtx'] = '1'
+                    paramsMap['cbr'] = '0'
+                    paramsMap['maxaveragebitrate'] = '28000'
+
+                    const newParams = Object.entries(paramsMap).map(([k, v]) => `${k}=${v}`).join(';')
+                    return `a=fmtp:${opusPt} ${newParams}`
+                }
+                return line
+            })
+
+            if (!fmtpFound) {
+                const insertIndex = updatedLines.findIndex(l => l.startsWith(`a=rtpmap:${opusPt}`))
+                if (insertIndex !== -1) {
+                    updatedLines.splice(insertIndex + 1, 0, `a=fmtp:${opusPt} minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;usedtx=1;dtx=1;cbr=0;maxaveragebitrate=28000`)
+                }
+            }
+            enhanced = updatedLines.join('\r\n')
+        }
+    } catch (e) {
+        console.warn('Error enhancing SDP for audio:', e)
+    }
+
+    return enhanced
 }
 
 interface UseWebRTCResult {
@@ -131,8 +192,8 @@ export function useWebRTC(
 
             const vTrack = localStreamRef.current?.getVideoTracks()[0]
             const aTrack = localStreamRef.current?.getAudioTracks()[0]
-            const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled) : false
-            const isLocalAudioMuted = aTrack ? (!aTrack.enabled || aTrack.muted) : false
+            const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled || vTrack.readyState === 'ended') : true
+            const isLocalAudioMuted = aTrack ? (!aTrack.enabled || aTrack.muted || aTrack.readyState === 'ended') : false
 
             socket.emit(SocketEvents.WEBRTC_JOIN, { 
                 meetingId: targetMeetingId,
@@ -145,9 +206,8 @@ export function useWebRTC(
     )
 
     const replaceTrackOnPeers = useCallback(
-        (newTrack: MediaStreamTrack | null) => {
-            if (!newTrack) return
-            const kind = newTrack.kind
+        (newTrack: MediaStreamTrack | null, kindOverride?: 'video' | 'audio') => {
+            const kind = newTrack ? newTrack.kind : (kindOverride || 'video')
             Object.values(peerConnectionsRef.current).forEach((pc) => {
                 const tc = pc.getTransceivers().find(t => (t.sender && t.sender.track && t.sender.track.kind === kind) || (t.receiver && t.receiver.track && t.receiver.track.kind === kind))
                 if (tc) {
@@ -162,12 +222,12 @@ export function useWebRTC(
                     }
                 }
 
-                const sender = pc.getSenders().find((s) => s.track && s.track.kind === kind)
+                const sender = pc.getSenders().find((s) => (s.track && s.track.kind === kind) || (!s.track && kind === 'video'))
                 if (sender) {
                     sender.replaceTrack(newTrack).catch(err => {
                         console.warn('Failed to replace track on peer:', err)
                     })
-                } else if (localStreamRef.current) {
+                } else if (newTrack && localStreamRef.current) {
                     try {
                         pc.addTrack(newTrack, localStreamRef.current)
                     } catch (err) {
@@ -326,7 +386,7 @@ export function useWebRTC(
             console.log(`[WebRTC] Initiating ICE restart for user ${targetUserId}`)
             setIsReconnecting(true)
             setNetworkStatus('reconnecting')
-            const offer = await pc.createOffer({ iceRestart: true })
+            const offer = await pc.createOffer({ iceRestart: true, voiceActivityDetection: true } as any)
             const activePeers = Object.keys(peerConnectionsRef.current).length + 1
             const hdSdp = enhanceSdpForHdVideo(offer.sdp, activePeers)
             const hdOffer = { type: offer.type, sdp: hdSdp }
@@ -460,7 +520,7 @@ export function useWebRTC(
             peerConnectionsRef.current[payload.userId] = pc
             rebalanceMeshBitrate()
 
-            pc.createOffer().then((offer) => {
+            pc.createOffer({ voiceActivityDetection: true } as any).then((offer) => {
                 const hdSdp = enhanceSdpForHdVideo(offer.sdp, currentPeerCount)
                 const hdOffer = { type: offer.type, sdp: hdSdp }
                 return pc.setLocalDescription(hdOffer).then(() => {
@@ -481,8 +541,8 @@ export function useWebRTC(
 
                     const vTrack = localStreamRef.current?.getVideoTracks()[0]
                     const aTrack = localStreamRef.current?.getAudioTracks()[0]
-                    const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled) : false
-                    const isLocalAudioMuted = aTrack ? (!aTrack.enabled || aTrack.muted) : false
+                    const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled || vTrack.readyState === 'ended') : true
+                    const isLocalAudioMuted = aTrack ? (!aTrack.enabled || aTrack.muted || aTrack.readyState === 'ended') : false
 
                     socket.emit(SocketEvents.WEBRTC_OFFER, {
                         targetUserId: payload.userId,
@@ -562,7 +622,7 @@ export function useWebRTC(
 
             try {
                 await pc.setRemoteDescription(new RTCSessionDescription(payload.offer))
-                const answer = await pc.createAnswer()
+                const answer = await pc.createAnswer({ voiceActivityDetection: true } as any)
                 const hdSdp = enhanceSdpForHdVideo(answer.sdp, currentPeerCount)
                 const hdAnswer = { type: answer.type, sdp: hdSdp }
                 await pc.setLocalDescription(hdAnswer)
@@ -585,8 +645,8 @@ export function useWebRTC(
 
                 const vTrack = localStreamRef.current?.getVideoTracks()[0]
                 const aTrack = localStreamRef.current?.getAudioTracks()[0]
-                const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled) : false
-                const isLocalAudioMuted = aTrack ? (!aTrack.enabled || aTrack.muted) : false
+                const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled || vTrack.readyState === 'ended') : true
+                const isLocalAudioMuted = aTrack ? (!aTrack.enabled || aTrack.muted || aTrack.readyState === 'ended') : false
 
                 socket.emit(SocketEvents.WEBRTC_ANSWER, {
                     targetUserId: payload.fromUserId,

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, Menu, desktopCapturer, session } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, Menu, desktopCapturer, session, Notification } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
@@ -12,6 +12,7 @@ let mainWindow = null
 let inputProcess = null
 let lastMoveTime = 0
 let selectedScreenSourceId = null
+let activeCallNotification = null
 
 function setupDisplayMediaHandler(sess) {
     if (!sess || typeof sess.setDisplayMediaRequestHandler !== 'function') return
@@ -140,16 +141,28 @@ function createWindow() {
     setupDisplayMediaHandler(session.defaultSession)
 
 
+    // ─── Auto-approve Media (Microphone & Camera) and Screen permissions in Electron session
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        const allowed = ['media', 'mediaKeySystem', 'notifications', 'pointerLock', 'fullscreen', 'display-capture']
+        callback(allowed.includes(permission))
+    })
+    session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+        const allowed = ['media', 'mediaKeySystem', 'notifications', 'pointerLock', 'fullscreen', 'display-capture']
+        return allowed.includes(permission)
+    })
+
     // Determine target URL:
-    // 1. If packaged (.exe production release): loads live cloud frontend https://meet.jtsmiddleeast.com
-    // 2. If development: loads http://localhost:3000 with fallback to production
+    // 1. If explicit FRONTEND_URL is set in environment, use that
+    // 2. If dev flag passed or localhost is available, prioritize http://localhost:3000
+    // 3. Fallback to production https://meet.jtsmiddleeast.com
     const isPackaged = app.isPackaged
     const isDev = process.argv.includes('--dev') || (!isPackaged && process.env.NODE_ENV !== 'production')
-    const primaryUrl = isDev ? 'http://localhost:3000' : (process.env.FRONTEND_URL || 'https://meet.jtsmiddleeast.com')
+    const primaryUrl = process.env.FRONTEND_URL || (isDev ? 'http://localhost:3000' : 'http://localhost:3000')
     const fallbackUrl = 'https://meet.jtsmiddleeast.com'
 
     mainWindow.loadURL(primaryUrl).catch(() => {
         if (primaryUrl !== fallbackUrl) {
+            console.log('[Desktop] Primary URL unavailable, loading fallback:', fallbackUrl)
             mainWindow.loadURL(fallbackUrl).catch(() => {
                 showOfflineScreen()
             })
@@ -272,6 +285,79 @@ ipcMain.on('remote-control:input', (event, data) => {
     } catch (err) {
         console.error('[Desktop] Input simulation error:', err?.message || err)
     }
+})
+
+// ─── IPC: Incoming Call Native Desktop Alert & Taskbar Flash ─────────────────
+ipcMain.on('incoming-call:alert', (_event, callData) => {
+    try {
+        if (mainWindow) {
+            mainWindow.flashFrame(true)
+            if (mainWindow.isMinimized()) {
+                mainWindow.restore()
+            }
+            mainWindow.showInactive()
+        }
+
+        // Native Windows 10/11 Toast Notification
+        if (Notification.isSupported()) {
+            if (activeCallNotification) {
+                try { activeCallNotification.close() } catch {}
+            }
+
+            const isAudio = callData?.callType === 'audio'
+            const notifTitle = isAudio ? '📞 Incoming Audio Call' : '📹 Incoming Video Call'
+            const notifBody = `${callData?.callerName || 'A colleague'} is calling you on JTS Meet... Click to answer.`
+
+            activeCallNotification = new Notification({
+                title: notifTitle,
+                body: notifBody,
+                icon: path.join(__dirname, '../frontend/public/favicon.ico'),
+                urgency: 'critical',
+                timeoutType: 'never'
+            })
+
+            activeCallNotification.on('click', () => {
+                if (mainWindow) {
+                    mainWindow.flashFrame(false)
+                    if (mainWindow.isMinimized()) mainWindow.restore()
+                    mainWindow.show()
+                    mainWindow.focus()
+                }
+                activeCallNotification = null
+            })
+
+            activeCallNotification.show()
+        }
+    } catch (err) {
+        console.warn('[Desktop] Error showing incoming call alert:', err)
+    }
+})
+
+ipcMain.on('incoming-call:dismiss', () => {
+    try {
+        if (activeCallNotification) {
+            activeCallNotification.close()
+            activeCallNotification = null
+        }
+        if (mainWindow) {
+            mainWindow.flashFrame(false)
+        }
+    } catch {}
+})
+
+ipcMain.on('app:focus', () => {
+    try {
+        if (activeCallNotification) {
+            activeCallNotification.close()
+            activeCallNotification = null
+        }
+        if (mainWindow) {
+            mainWindow.flashFrame(false)
+            if (mainWindow.isMinimized()) mainWindow.restore()
+            mainWindow.show()
+            mainWindow.focus()
+        }
+    } catch {}
 })
 
 app.whenReady().then(() => {

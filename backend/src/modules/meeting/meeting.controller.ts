@@ -30,6 +30,7 @@ import { sendMeetingInvitationEmail, sendPostMeetingSummaryEmail } from '../../s
 import { Team } from '../team/team.model'
 import { FRONTEND_URL } from '../../config'
 import { parseCursorQuery, executeCursorQuery } from '../../utils/paginationHelper'
+import { dispatchWebhookEvent } from '../integration/integration.service'
 
 export const meetingController = {
     createMeeting: async (req: AuthRequest, res: Response) => {
@@ -121,6 +122,13 @@ export const meetingController = {
             if (!meeting) {
                 return sendError(res, 404, 'Meeting not found')
             }
+
+            // Dispatch webhook event for meeting.ended
+            dispatchWebhookEvent(meeting.organizationId?.toString(), 'meeting.ended', {
+                meetingId: req.body.meetingId,
+                title: meeting.title,
+                endedAt: meeting.endedAt || new Date()
+            }).catch(() => {})
 
             return sendSuccess(res, meeting, 'Meeting ended')
         } catch (error: any) {
@@ -429,6 +437,15 @@ export const meetingController = {
             const origin = req.headers.origin || FRONTEND_URL || 'http://localhost:3000'
             const inviteUrl = `${origin}/meet/${meetingId}`
 
+            // Dispatch webhook event for meeting.started
+            dispatchWebhookEvent(meeting.organizationId?.toString(), 'meeting.started', {
+                meetingId,
+                title: meeting.title,
+                hostName,
+                startedAt: meeting.startedAt || new Date(),
+                inviteUrl
+            }).catch(() => {})
+
             let teamName: string | undefined
             const participantsToNotify = new Set<string>()
 
@@ -453,6 +470,12 @@ export const meetingController = {
                         participantsToNotify.add(pStr)
                     }
                 })
+            }
+
+            // 3. If someone other than the host is starting/rejoining, notify the host
+            const hostIdStr = meeting.host ? (meeting.host._id || meeting.host).toString() : ''
+            if (hostIdStr && hostIdStr !== userId && Types.ObjectId.isValid(hostIdStr)) {
+                participantsToNotify.add(hostIdStr)
             }
 
             const userIdsList = Array.from(participantsToNotify).filter(id => Types.ObjectId.isValid(id)).map(id => new Types.ObjectId(id))

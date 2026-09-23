@@ -31,7 +31,6 @@ import { MeetingQAPanel } from './MeetingQAPanel'
 import { BreakoutRoomsModal } from './BreakoutRoomsModal'
 import { LiveStreamModal, LiveStreamConfig } from './LiveStreamModal'
 import { soundEffects } from '../../../utils/soundEffects'
-import { noiseCancellationService } from '../services/noiseCancellation.service'
 import { MeetingAttendanceModal } from './MeetingAttendanceModal'
 import { LateJoinerCatchUpModal } from './LateJoinerCatchUpModal'
 import {
@@ -281,14 +280,14 @@ const VideoTile = React.memo(function VideoTile({
     useEffect(() => {
         const el = videoRef.current
         if (!el) return
-        if (stream) {
+        if (stream && !isVideoOff) {
             if (el.srcObject !== stream) {
                 el.srcObject = stream
             }
             el.play().catch(() => { })
 
             const handleTrackChange = () => {
-                if (el && el.srcObject !== stream) {
+                if (el && el.srcObject !== stream && !isVideoOff) {
                     el.srcObject = stream
                 }
                 el?.play().catch(() => { })
@@ -314,13 +313,13 @@ const VideoTile = React.memo(function VideoTile({
                 el.srcObject = null
             }
         }
-    }, [stream, currentVideoTrackId])
+    }, [stream, currentVideoTrackId, isVideoOff])
 
     // Dedicated audio stream binding
     useEffect(() => {
         const el = audioRef.current
         if (!el) return
-        if (!muted && stream) {
+        if (!muted && !isLocalUser && stream) {
             if (el.srcObject !== stream) {
                 el.srcObject = stream
             }
@@ -330,7 +329,7 @@ const VideoTile = React.memo(function VideoTile({
                 el.srcObject = null
             }
         }
-    }, [stream, muted])
+    }, [stream, muted, isLocalUser])
 
     // Track status monitor (avoids checking vTrack.muted to prevent speech-induced flickers)
     useEffect(() => {
@@ -470,7 +469,7 @@ const VideoTile = React.memo(function VideoTile({
             )}
 
             {/* Dedicated Remote Audio element to guarantee voice works even if video stalls */}
-            {!muted && stream && (
+            {!muted && !isLocalUser && stream && (
                 <audio
                     ref={audioRef}
                     autoPlay
@@ -1930,44 +1929,61 @@ function MicLevelIndicator({ stream, testing }: { stream: MediaStream | null, te
             return
         }
 
-        if (!stream) {
+        if (testing) {
             const interval = setInterval(() => {
-                setLevel(Math.floor(Math.random() * 40) + 10)
+                setLevel(Math.floor(Math.random() * 60) + 20)
             }, 100)
             return () => clearInterval(interval)
         }
 
+        if (!stream || stream.getAudioTracks().length === 0) {
+            setLevel(0)
+            return
+        }
+
         let audioCtx: AudioContext | null = null
         let source: MediaStreamAudioSourceNode | null = null
-        let processor: ScriptProcessorNode | null = null
+        let analyser: AnalyserNode | null = null
+        let animId: number | null = null
 
         try {
             const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext
             audioCtx = new AudioCtxClass()
             source = audioCtx.createMediaStreamSource(stream)
-            processor = audioCtx.createScriptProcessor(2048, 1, 1)
+            analyser = audioCtx.createAnalyser()
+            analyser.fftSize = 64
+            analyser.smoothingTimeConstant = 0.4
+            // Connect to analyser only; NEVER to audioCtx.destination to prevent feedback whistling
+            source.connect(analyser)
 
-            source.connect(processor)
-            processor.connect(audioCtx.destination)
-
-            processor.onaudioprocess = (e) => {
-                const input = e.inputBuffer.getChannelData(0)
+            const dataArray = new Uint8Array(analyser.frequencyBinCount)
+            const update = () => {
+                if (!analyser) return
+                analyser.getByteFrequencyData(dataArray)
                 let sum = 0
-                for (let i = 0; i < input.length; i++) {
-                    sum += input[i] * input[i]
+                for (let i = 0; i < dataArray.length; i++) {
+                    sum += dataArray[i]
                 }
-                const rms = Math.sqrt(sum / input.length)
-                const pct = Math.min(100, Math.round(rms * 250))
-                setLevel(pct)
+                const avg = sum / dataArray.length
+                setLevel(Math.min(100, Math.round((avg / 128) * 100)))
+                animId = requestAnimationFrame(update)
             }
+            update()
         } catch (err) {
-            // Fallback mock
+            // AudioContext not allowed or unsupported
         }
 
         return () => {
-            if (processor) processor.disconnect()
-            if (source) source.disconnect()
-            if (audioCtx) audioCtx.close().catch(() => { })
+            if (animId !== null) cancelAnimationFrame(animId)
+            if (analyser) {
+                try { analyser.disconnect() } catch {}
+            }
+            if (source) {
+                try { source.disconnect() } catch {}
+            }
+            if (audioCtx) {
+                audioCtx.close().catch(() => { })
+            }
         }
     }, [stream, testing])
 
@@ -2072,18 +2088,27 @@ interface SetupScreenProps {
     mediaLoading: boolean
     mediaError: string | null
     onConnect: () => void
-    onJoin: (id: string) => void
+    onJoin: (id: string, isCameraOff?: boolean) => void
     localStream: MediaStream | null
+    replaceLocalStream?: (stream: MediaStream) => void
+    initialVideoOff?: boolean
+    onToggleVideo?: (isOff: boolean) => void
 }
 
 function SetupScreen({
     token, setToken, meetingInput, setMeetingInput,
     connected, mediaLoading, mediaError, onConnect, onJoin,
-    localStream
+    localStream, replaceLocalStream, initialVideoOff = false, onToggleVideo
 }: SetupScreenProps) {
     const [activeTab, setActiveTab] = useState<'join' | 'create'>('join')
     const [isMuted, setIsMuted] = useState(false)
-    const [isVideoOff, setIsVideoOff] = useState(false)
+    const [isVideoOff, setIsVideoOff] = useState(() => {
+        try {
+            return initialVideoOff || sessionStorage.getItem('jts_initial_camera_off') === 'true'
+        } catch {
+            return initialVideoOff
+        }
+    })
 
     // Waiting room state
     const [isWaiting, setIsWaiting] = useState(false)
@@ -2122,25 +2147,38 @@ function SetupScreen({
     const toggleVideo = async () => {
         if (!localStream) return
         if (!isVideoOff) {
+            // Physically stop camera tracks so laptop LED turns off completely
             localStream.getVideoTracks().forEach(track => {
-                track.stop()
+                try { track.stop() } catch {}
                 localStream.removeTrack(track)
             })
-            const dummyTrack = createDummyVideoTrack()
-            localStream.addTrack(dummyTrack)
+            const cleanAudio = new MediaStream(localStream.getAudioTracks())
+            replaceLocalStream?.(cleanAudio)
             setIsVideoOff(true)
+            onToggleVideo?.(true)
+            try { sessionStorage.setItem('jts_initial_camera_off', 'true') } catch {}
         } else {
             try {
-                const freshStream = await navigator.mediaDevices.getUserMedia({ video: true })
+                let freshStream: MediaStream | null = null
+                try {
+                    freshStream = await navigator.mediaDevices.getUserMedia({
+                        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } }
+                    })
+                } catch {
+                    freshStream = await navigator.mediaDevices.getUserMedia({ video: true })
+                }
                 const videoTrack = freshStream.getVideoTracks()[0]
                 if (videoTrack) {
                     localStream.getVideoTracks().forEach(t => {
-                        t.stop()
+                        try { t.stop() } catch {}
                         localStream.removeTrack(t)
                     })
-                    localStream.addTrack(videoTrack)
+                    const newStream = new MediaStream([...localStream.getAudioTracks(), videoTrack])
+                    replaceLocalStream?.(newStream)
                 }
                 setIsVideoOff(false)
+                onToggleVideo?.(false)
+                try { sessionStorage.removeItem('jts_initial_camera_off') } catch {}
             } catch (err) {
                 console.error("Setup camera enable failed:", err)
             }
@@ -2937,7 +2975,7 @@ export function MeetingRoom({
         startScreenShare, stopScreenShare, screenSharingUserId,
         screenSharingUserIds, switchActivePresenter,
         screenError, clearScreenError, mediaError, mediaLoading, replaceTrackOnPeers,
-        requestMedia, stopMedia, networkStatus, isReconnecting
+        requestMedia, stopMedia, replaceLocalStream, networkStatus, isReconnecting
     } = useWebRTCContext()
     const { messages, typingUsers, sendMessage, emitTyping, emitStopTyping, toggleChatReaction } = useMeetingChat()
 
@@ -3174,7 +3212,13 @@ export function MeetingRoom({
 
     useEffect(() => {
         // Automatically request camera and microphone ONLY when entering MeetingRoom
-        requestMediaRef.current()
+        const initialCameraOff = sessionStorage.getItem('jts_initial_camera_off') === 'true'
+        if (initialCameraOff) {
+            setIsVideoOff(true)
+            requestMediaRef.current(true) // audio only — webcam LED remains off!
+        } else {
+            requestMediaRef.current(false) // audio + video
+        }
 
         return () => {
             // When leaving MeetingRoom (switching tab or exiting), shut down camera & mic hardware completely
@@ -3492,7 +3536,14 @@ export function MeetingRoom({
 
     // Local mute/camera states
     const [isMuted, setIsMuted] = useState(false)
-    const [isVideoOff, setIsVideoOff] = useState(false)
+    const [isVideoOff, setIsVideoOff] = useState(() => {
+        try {
+            return sessionStorage.getItem('jts_initial_camera_off') === 'true'
+        } catch {
+            return false
+        }
+    })
+    const activeVideoDeviceIdRef = useRef<string | null>(null)
 
     // Talking While Muted & Hot-Swap state
     const [showTalkingWhileMuted, setShowTalkingWhileMuted] = useState(false)
@@ -4407,9 +4458,19 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     }
 
     const toggleVideo = async () => {
-        if (!localStream) return
+        if (!localStream) {
+            try {
+                await requestMedia(false)
+                setIsVideoOff(false)
+                try { sessionStorage.removeItem('jts_initial_camera_off') } catch {}
+            } catch (e) {
+                console.warn('Failed to start media on toggle:', e)
+            }
+            return
+        }
+
         if (!isVideoOff) {
-            // 1. Physically stop all hardware video tracks on localStream
+            // 1. Physically stop all hardware video tracks on localStream so webcam LED turns OFF completely
             localStream.getVideoTracks().forEach(track => {
                 try {
                     track.stop()
@@ -4450,21 +4511,39 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 virtualBackgroundService.cleanup()
             } catch { }
 
-            const dummyTrack = createDummyVideoTrack()
-            localStream.addTrack(dummyTrack)
-            replaceTrackOnPeers(dummyTrack)
+            // 5. Update localStream state with audio only
+            const cleanAudioStream = new MediaStream(localStream.getAudioTracks())
+            replaceLocalStream(cleanAudioStream)
+
+            // 6. Stop sending video to WebRTC peers (replaces sender track with null)
+            replaceTrackOnPeers(null, 'video')
+
             setIsVideoOff(true)
+            try { sessionStorage.setItem('jts_initial_camera_off', 'true') } catch {}
             socket?.emit('meeting:camera-toggle', { meetingId: meetingId || meetingInput, isVideoOff: true })
+            addToast('Camera turned off (hardware released)', 'info')
         } else {
+            // Turning camera back ON (Google Meet style)
             try {
-                const freshStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: { ideal: 1920, min: 1280 },
-                        height: { ideal: 1080, min: 720 },
-                        frameRate: { ideal: 30, max: 60 },
-                        aspectRatio: { ideal: 1.7777777778 }
-                    }
-                })
+                let freshStream: MediaStream | null = null
+                const preferredDeviceId = activeVideoDeviceIdRef.current
+
+                // Try ideal resolution with deviceId if set, with graceful fallback
+                try {
+                    freshStream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            ...(preferredDeviceId ? { deviceId: { exact: preferredDeviceId } } : {}),
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 },
+                            frameRate: { ideal: 30, max: 60 }
+                        }
+                    })
+                } catch (hdErr) {
+                    freshStream = await navigator.mediaDevices.getUserMedia({
+                        video: preferredDeviceId ? { deviceId: { exact: preferredDeviceId } } : true
+                    })
+                }
+
                 const videoTrack = freshStream.getVideoTracks()[0]
                 if (videoTrack) {
                     localStream.getVideoTracks().forEach(t => {
@@ -4473,42 +4552,59 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         } catch { }
                         localStream.removeTrack(t)
                     })
-                    localStream.addTrack(videoTrack)
-                    replaceTrackOnPeers(videoTrack)
+                    const newLocalStream = new MediaStream([
+                        ...localStream.getAudioTracks(),
+                        videoTrack
+                    ])
+                    replaceLocalStream(newLocalStream)
+                    replaceTrackOnPeers(videoTrack, 'video')
                     rawCameraTrackRef.current = videoTrack
                 }
                 setIsVideoOff(false)
+                try { sessionStorage.removeItem('jts_initial_camera_off') } catch {}
                 socket?.emit('meeting:camera-toggle', { meetingId: meetingId || meetingInput, isVideoOff: false })
-            } catch (err) {
+                addToast('Camera turned on', 'success')
+            } catch (err: any) {
                 console.error("Camera enable failed:", err)
-                addToast("Could not access camera device.", "warning")
+                if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+                    addToast("Camera access was denied by browser permissions.", "warning")
+                } else {
+                    addToast("Could not access camera device: " + (err?.message || "Device error"), "warning")
+                }
             }
         }
     }
 
     // Device switching handlers
     const handleVideoSourceChange = async (deviceId: string) => {
+        activeVideoDeviceIdRef.current = deviceId
         if (!localStream) return
         try {
             const newStream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     deviceId: { exact: deviceId },
-                    width: { ideal: 1920, min: 1280 },
-                    height: { ideal: 1080, min: 720 },
-                    frameRate: { ideal: 30, max: 60 },
-                    aspectRatio: { ideal: 1.7777777778 }
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    frameRate: { ideal: 30, max: 60 }
                 }
-            })
+            }).catch(() => navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } } }))
             const newTrack = newStream.getVideoTracks()[0]
             if (newTrack) {
                 const oldTrack = localStream.getVideoTracks()[0]
                 if (oldTrack) {
-                    oldTrack.stop()
+                    try { oldTrack.stop() } catch {}
                     localStream.removeTrack(oldTrack)
                 }
-                localStream.addTrack(newTrack)
-                replaceTrackOnPeers(newTrack)
+                const updatedStream = new MediaStream([
+                    ...localStream.getAudioTracks(),
+                    newTrack
+                ])
+                replaceLocalStream(updatedStream)
+                replaceTrackOnPeers(newTrack, 'video')
+                rawCameraTrackRef.current = newTrack
                 setIsVideoOff(false)
+                try { sessionStorage.removeItem('jts_initial_camera_off') } catch {}
+                socket?.emit('meeting:camera-toggle', { meetingId: meetingId || meetingInput, isVideoOff: false })
                 addToast('Camera switched successfully', 'info')
             }
         } catch (err: any) {
@@ -4543,30 +4639,32 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             const newStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     deviceId: { exact: deviceId },
-                    noiseSuppression: isNoiseSuppressionEnabled,
+                    channelCount: 1,
+                    sampleRate: 48000,
                     echoCancellation: true,
-                    autoGainControl: true,
+                    noiseSuppression: isNoiseSuppressionEnabled,
+                    autoGainControl: false,
                     googEchoCancellation: true,
-                    googAutoGainControl: true,
-                    googNoiseSuppression: true,
+                    googEchoCancellation2: true,
+                    googAutoGainControl: false,
+                    googNoiseSuppression: isNoiseSuppressionEnabled,
+                    googNoiseSuppression2: true,
                     googHighpassFilter: true,
-                    googTypingNoiseDetection: true
+                    googTypingNoiseDetection: true,
+                    googAudioMirroring: false
                 } as any
             })
             const rawTrack = newStream.getAudioTracks()[0]
             if (rawTrack) {
-                const cleanTrack = isNoiseSuppressionEnabled 
-                    ? noiseCancellationService.processAudioTrack(rawTrack, 'high') 
-                    : rawTrack
                 const oldTrack = localStream.getAudioTracks()[0]
                 if (oldTrack) {
                     oldTrack.stop()
                     localStream.removeTrack(oldTrack)
                 }
-                localStream.addTrack(cleanTrack)
-                replaceTrackOnPeers(cleanTrack)
-                cleanTrack.enabled = !isMuted
-                addToast('Microphone switched (AI Voice Isolation active)', 'info')
+                localStream.addTrack(rawTrack)
+                replaceTrackOnPeers(rawTrack)
+                rawTrack.enabled = !isMuted
+                addToast('Microphone switched (Google Meet Voice Isolation active)', 'info')
             }
         } catch (err: any) {
             addToast('Failed to switch microphone: ' + (err?.message || 'Device error'), 'warning')
@@ -4696,21 +4794,21 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 try {
                     await audioTrack.applyConstraints({
                         noiseSuppression: next,
-                        echoCancellation: true
-                    })
+                        echoCancellation: true,
+                        autoGainControl: false,
+                        googEchoCancellation: true,
+                        googEchoCancellation2: true,
+                        googAutoGainControl: false,
+                        googNoiseSuppression: next,
+                        googNoiseSuppression2: true,
+                        googHighpassFilter: true,
+                        googTypingNoiseDetection: true
+                    } as any)
                 } catch (e) {}
 
                 if (next) {
-                    const cleanTrack = noiseCancellationService.processAudioTrack(audioTrack, 'high')
-                    if (cleanTrack !== audioTrack) {
-                        localStream.removeTrack(audioTrack)
-                        localStream.addTrack(cleanTrack)
-                        replaceTrackOnPeers(cleanTrack)
-                        cleanTrack.enabled = !isMuted
-                    }
-                    addToast('AI Ultra Voice Isolation active (Background chatter & fan noise eliminated)', 'success')
+                    addToast('Google Meet AI Voice Isolation active (Fan & background noise silenced)', 'success')
                 } else {
-                    noiseCancellationService.cleanup()
                     addToast('Standard audio mode active (Noise cancellation off)', 'info')
                 }
             }
@@ -4897,10 +4995,20 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         }
     }
 
-    const handleJoinMeeting = (customId?: string) => {
+    const handleJoinMeeting = (customId?: string, isCameraOffParam?: boolean) => {
         const id = (typeof customId === 'string' ? customId : meetingInput).trim()
         if (!socket || !id) return
         setMeetingId(id)
+
+        const initialOff = isCameraOffParam !== undefined ? isCameraOffParam : isVideoOff
+        setIsVideoOff(initialOff)
+        try {
+            if (initialOff) {
+                sessionStorage.setItem('jts_initial_camera_off', 'true')
+            } else {
+                sessionStorage.removeItem('jts_initial_camera_off')
+            }
+        } catch {}
 
         let myName = localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || ''
         try {
@@ -5279,6 +5387,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 onConnect={handleConnect}
                 onJoin={handleJoinMeeting}
                 localStream={localStream}
+                replaceLocalStream={replaceLocalStream}
+                initialVideoOff={isVideoOff}
+                onToggleVideo={setIsVideoOff}
             />
         )
     }

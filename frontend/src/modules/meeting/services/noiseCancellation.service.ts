@@ -66,19 +66,19 @@ class NoiseCancellationService {
             const source = ctx.createMediaStreamSource(sourceStream)
             this.sourceNode = source
 
-            // 1. High-Pass Filter Stage 1: Cuts ceiling fan wind buffeting & table vibrations (<140Hz)
+            // 1. High-Pass Filter Stage 1: Cuts ceiling fan wind buffeting, air draft & table vibrations (<150Hz)
             const highpass1 = ctx.createBiquadFilter()
             highpass1.type = 'highpass'
-            highpass1.frequency.setValueAtTime(mode === 'high' ? 140 : 100, ctx.currentTime)
-            highpass1.Q.setValueAtTime(0.7, ctx.currentTime)
+            highpass1.frequency.setValueAtTime(mode === 'high' ? 150 : 110, ctx.currentTime)
+            highpass1.Q.setValueAtTime(0.8, ctx.currentTime)
 
-            // 2. High-Pass Filter Stage 2: Steep low-end rumble attenuation
+            // 2. High-Pass Filter Stage 2: Steep low-end rumble attenuation (AC, motor hum)
             const highpass2 = ctx.createBiquadFilter()
             highpass2.type = 'highpass'
-            highpass2.frequency.setValueAtTime(mode === 'high' ? 120 : 80, ctx.currentTime)
-            highpass2.Q.setValueAtTime(0.7, ctx.currentTime)
+            highpass2.frequency.setValueAtTime(mode === 'high' ? 135 : 90, ctx.currentTime)
+            highpass2.Q.setValueAtTime(0.8, ctx.currentTime)
 
-            // 3. Electrical Hum Notch Filters (50Hz, 100Hz & 60Hz)
+            // 3. Electrical Hum Notch Filters (50Hz, 100Hz, 60Hz & 120Hz harmonics)
             const hum50Hz = ctx.createBiquadFilter()
             hum50Hz.type = 'notch'
             hum50Hz.frequency.setValueAtTime(50, ctx.currentTime)
@@ -94,41 +94,47 @@ class NoiseCancellationService {
             hum60Hz.frequency.setValueAtTime(60, ctx.currentTime)
             hum60Hz.Q.setValueAtTime(5.0, ctx.currentTime)
 
-            // 4. Keyboard Clack & Sharp Click Notch (3200Hz)
+            // 4. Keyboard Clack & Sharp Click Notch (3200Hz typing clatter suppression)
             const clickNotch = ctx.createBiquadFilter()
             clickNotch.type = 'peaking'
             clickNotch.frequency.setValueAtTime(3200, ctx.currentTime)
-            clickNotch.gain.setValueAtTime(mode === 'high' ? -6 : -3, ctx.currentTime)
-            clickNotch.Q.setValueAtTime(2.0, ctx.currentTime)
+            clickNotch.gain.setValueAtTime(mode === 'high' ? -8 : -4, ctx.currentTime)
+            clickNotch.Q.setValueAtTime(2.5, ctx.currentTime)
 
-            // 5. Anti-Hiss / Anti-Sarsanhat Filter: Cuts microphone preamp white noise, fan hiss & static (>5.6kHz)
-            // Human vocal speech formants max out around 4.5-5.2kHz; cutting above 5.6kHz eliminates background hiss completely.
+            // 5. Acoustic Howling / Feedback Whistle ("piii" whistle) Notch Filter (2800Hz - 3400Hz)
+            const whistleNotch = ctx.createBiquadFilter()
+            whistleNotch.type = 'notch'
+            whistleNotch.frequency.setValueAtTime(2850, ctx.currentTime)
+            whistleNotch.Q.setValueAtTime(4.0, ctx.currentTime)
+
+            // 6. Anti-Hiss / Anti-Sarsanhat Filter: Cuts microphone preamp white noise & fan air whistling (>5.2kHz)
+            // Human speech intelligibility formants max out around 4.2kHz; cutting above 5.2kHz completely silences "see/sheeee" noise.
             const lowpass1 = ctx.createBiquadFilter()
             lowpass1.type = 'lowpass'
-            lowpass1.frequency.setValueAtTime(mode === 'high' ? 5600 : 7200, ctx.currentTime)
+            lowpass1.frequency.setValueAtTime(mode === 'high' ? 5200 : 6800, ctx.currentTime)
             lowpass1.Q.setValueAtTime(0.7, ctx.currentTime)
 
             const lowpass2 = ctx.createBiquadFilter()
             lowpass2.type = 'lowpass'
-            lowpass2.frequency.setValueAtTime(mode === 'high' ? 6500 : 8500, ctx.currentTime)
+            lowpass2.frequency.setValueAtTime(mode === 'high' ? 5800 : 7800, ctx.currentTime)
             lowpass2.Q.setValueAtTime(0.7, ctx.currentTime)
 
-            // 6. Human Vocal Clarity Formant Boost (2.0kHz presence for crisp voice intelligibility)
+            // 7. Human Vocal Clarity Formant Boost (1.8kHz presence for crisp voice intelligibility)
             const voiceBoost = ctx.createBiquadFilter()
             voiceBoost.type = 'peaking'
-            voiceBoost.frequency.setValueAtTime(2000, ctx.currentTime)
-            voiceBoost.gain.setValueAtTime(2.0, ctx.currentTime)
+            voiceBoost.frequency.setValueAtTime(1800, ctx.currentTime)
+            voiceBoost.gain.setValueAtTime(2.2, ctx.currentTime)
             voiceBoost.Q.setValueAtTime(1.2, ctx.currentTime)
 
-            // 7. Vocal Compressor (Gentle 2.5:1 ratio — avoids pumping room noise floor / breathing artifacts)
+            // 8. Vocal Compressor (Gentle 2.2:1 ratio — avoids pumping room noise floor / breathing artifacts)
             const compressor = ctx.createDynamicsCompressor()
             compressor.threshold.setValueAtTime(mode === 'high' ? -24 : -20, ctx.currentTime)
             compressor.knee.setValueAtTime(10, ctx.currentTime)
-            compressor.ratio.setValueAtTime(mode === 'high' ? 2.5 : 2.0, ctx.currentTime)
+            compressor.ratio.setValueAtTime(mode === 'high' ? 2.2 : 2.0, ctx.currentTime)
             compressor.attack.setValueAtTime(0.008, ctx.currentTime)
-            compressor.release.setValueAtTime(0.2, ctx.currentTime)
+            compressor.release.setValueAtTime(0.18, ctx.currentTime)
 
-            // 8. Voice Activity Detection (VAD) Gate Gain (Silences background noise when not talking)
+            // 9. Voice Activity Detection (VAD) Gate Gain (Silences background noise to dead silence when not talking)
             const gateGain = ctx.createGain()
             gateGain.gain.setValueAtTime(1.0, ctx.currentTime)
             this.gateGainNode = gateGain
@@ -149,7 +155,8 @@ class NoiseCancellationService {
             hum50Hz.connect(hum100Hz)
             hum100Hz.connect(hum60Hz)
             hum60Hz.connect(clickNotch)
-            clickNotch.connect(lowpass1)
+            clickNotch.connect(whistleNotch)
+            whistleNotch.connect(lowpass1)
             lowpass1.connect(lowpass2)
             lowpass2.connect(voiceBoost)
 
@@ -202,6 +209,13 @@ class NoiseCancellationService {
         const checkVAD = () => {
             if (!this.isRunning || !this.analyserNode || !this.gateGainNode || !this.audioCtx) return
 
+            // Keep hardware microphone mute state and Web Audio cleanTrack.enabled synchronized
+            if (this.originalTrack && this.processedTrack) {
+                if (this.originalTrack.enabled !== this.processedTrack.enabled) {
+                    this.originalTrack.enabled = this.processedTrack.enabled
+                }
+            }
+
             this.analyserNode.getByteFrequencyData(dataArray)
 
             // Focus energy check on human vocal formant bins (350Hz to 3200Hz)
@@ -242,10 +256,10 @@ class NoiseCancellationService {
             } else {
                 silenceFrames++
                 if (silenceFrames > holdFrames) {
-                    // Silence / Fan / Static: Suppress down to near zero (0.001 = -60dB attenuation)
+                    // Silence / Fan / Static / Breathing: Suppress down to near zero (0.0001 = -80dB silence)
                     this.gateGainNode.gain.cancelScheduledValues(now)
                     this.gateGainNode.gain.setValueAtTime(this.gateGainNode.gain.value, now)
-                    this.gateGainNode.gain.linearRampToValueAtTime(0.001, now + 0.04)
+                    this.gateGainNode.gain.linearRampToValueAtTime(0.0001, now + 0.04)
                 }
             }
         }

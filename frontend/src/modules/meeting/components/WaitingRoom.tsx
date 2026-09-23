@@ -56,6 +56,13 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
             } catch (e) {}
             // Stop preview stream before moving into room
             stopMediaStream()
+            try {
+                if (!isCameraOn) {
+                    sessionStorage.setItem('jts_initial_camera_off', 'true')
+                } else {
+                    sessionStorage.removeItem('jts_initial_camera_off')
+                }
+            } catch (_) {}
             socket.disconnect()
             onApproved(approvedToken)
         })
@@ -94,12 +101,16 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                 video: videoDeviceId ? { deviceId: { exact: videoDeviceId } } : true,
                 audio: {
                     ...(audioDeviceId ? { deviceId: { exact: audioDeviceId } } : {}),
+                    channelCount: 1,
+                    sampleRate: 48000,
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: true,
+                    autoGainControl: false,
                     googEchoCancellation: true,
-                    googAutoGainControl: true,
+                    googEchoCancellation2: true,
+                    googAutoGainControl: false,
                     googNoiseSuppression: true,
+                    googNoiseSuppression2: true,
                     googHighpassFilter: true,
                     googTypingNoiseDetection: true
                 }
@@ -167,6 +178,9 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                 videoRef.current.srcObject = null
             }
             setIsCameraOn(false)
+            try {
+                sessionStorage.setItem('jts_initial_camera_off', 'true')
+            } catch (_) {}
         } else {
             try {
                 const freshStream = await navigator.mediaDevices.getUserMedia({
@@ -185,6 +199,9 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
                     }
                 }
                 setIsCameraOn(true)
+                try {
+                    sessionStorage.removeItem('jts_initial_camera_off')
+                } catch (_) {}
             } catch (err) {
                 console.warn('Failed to restart camera in waiting room:', err)
             }

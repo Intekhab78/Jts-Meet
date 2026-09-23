@@ -16,6 +16,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
 
     // Tell main process which sourceId the user picked — then call getDisplayMedia()
-    setScreenSource: (sourceId) => ipcRenderer.send('set-screen-source', sourceId)
+    setScreenSource: (sourceId) => ipcRenderer.send('set-screen-source', sourceId),
+
+    // ─── Incoming Call Alert & Focus ───────────────────────────────────────────
+    notifyIncomingCall: (callData) => ipcRenderer.send('incoming-call:alert', callData),
+    dismissIncomingCallAlert: () => ipcRenderer.send('incoming-call:dismiss'),
+    focusApp: () => ipcRenderer.send('app:focus')
 })
 

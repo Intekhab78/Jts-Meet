@@ -19,9 +19,10 @@ interface WebRTCContextValue {
     clearScreenError: () => void
     mediaError: string | null
     mediaLoading: boolean
-    replaceTrackOnPeers: (newTrack: MediaStreamTrack | null) => void
+    replaceTrackOnPeers: (newTrack: MediaStreamTrack | null, kindOverride?: 'video' | 'audio') => void
     requestMedia: (audioOnly?: boolean) => Promise<void>
     stopMedia: () => void
+    replaceLocalStream: (stream: MediaStream) => void
     networkStatus: 'online' | 'offline' | 'reconnecting'
     isReconnecting: boolean
     switchAudioDevice: (deviceId: string, onTrackSwapped?: (track: MediaStreamTrack) => void) => Promise<void>
@@ -79,6 +80,7 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
             replaceTrackOnPeers,
             requestMedia,
             stopMedia,
+            replaceLocalStream,
             networkStatus,
             isReconnecting,
             switchAudioDevice,

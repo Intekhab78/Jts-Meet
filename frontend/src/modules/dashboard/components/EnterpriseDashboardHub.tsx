@@ -530,7 +530,17 @@ export function EnterpriseDashboardHub({
                         </button>
 
                         <button
-                            onClick={() => onStartMeeting(upNextMeeting.id)}
+                            onClick={() => {
+                                if (token && upNextMeeting?.id) {
+                                    fetch(`${API_BASE}/api/meeting/${upNextMeeting.id}/start-notify`, {
+                                        method: 'POST',
+                                        headers: {
+                                            'Authorization': `Bearer ${token}`
+                                        }
+                                    }).catch(() => {})
+                                }
+                                onStartMeeting(upNextMeeting.id)
+                            }}
                             className="btn btn-primary"
                             style={{
                                 padding: '9px 20px',
