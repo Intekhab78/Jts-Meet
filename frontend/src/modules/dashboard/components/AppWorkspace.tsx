@@ -594,10 +594,30 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         setDirectDialTarget('')
     }
 
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+        try {
+            return localStorage.getItem('jts_sidebar_collapsed') === 'true'
+        } catch (_) {
+            return false
+        }
+    })
     const [sidebarExpanded, setSidebarExpanded] = useState(false)
     const [isHovered, setIsHovered] = useState(false)
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-    const showFullSidebar = !joined || sidebarExpanded || isHovered
+
+    const toggleSidebarCollapse = () => {
+        setIsSidebarCollapsed(prev => {
+            const next = !prev
+            try {
+                localStorage.setItem('jts_sidebar_collapsed', String(next))
+            } catch (_) {}
+            return next
+        })
+    }
+
+    const showFullSidebar = joined
+        ? (sidebarExpanded || isHovered)
+        : !isSidebarCollapsed
 
     const [windowWidth, setWindowWidth] = useState(window.innerWidth)
     useEffect(() => {
@@ -1066,7 +1086,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
             <aside
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
-                className="transition-transform duration-300 ease-in-out z-[1000]"
+                className="z-[1000]"
                 style={{
                     position: windowWidth < 768 ? 'fixed' : 'static',
                     transform: (windowWidth >= 768 || mobileMenuOpen) ? 'translateX(0)' : 'translateX(-100%)',
@@ -1075,32 +1095,134 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                     borderRight: '1px solid var(--color-border)',
                     display: 'flex',
                     flexDirection: 'column',
-                    padding: (mobileMenuOpen || showFullSidebar) ? '24px 16px' : '24px 8px',
+                    padding: (mobileMenuOpen || showFullSidebar) ? '22px 16px' : '22px 8px',
                     flexShrink: 0,
                     alignItems: (mobileMenuOpen || showFullSidebar) ? 'stretch' : 'center',
-                    overflow: 'hidden',
+                    overflowX: 'hidden',
+                    overflowY: 'auto',
                     top: 0,
                     bottom: 0,
-                    left: 0
+                    left: 0,
+                    transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.25s ease, transform 0.3s ease-in-out'
                 }}
             >
-                {/* Brand */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28, paddingLeft: (mobileMenuOpen || showFullSidebar) ? 8 : 0, justifyContent: (mobileMenuOpen || showFullSidebar) ? 'flex-start' : 'center' }}>
-                    <div style={{
-                        width: 32, height: 32, background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                        borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: 'var(--shadow-glow-accent)', color: '#fff', flexShrink: 0
-                    }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                        </svg>
+                {/* Brand & Collapse / Expand Toggle */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    marginBottom: (mobileMenuOpen || showFullSidebar) ? 24 : 14,
+                    paddingLeft: (mobileMenuOpen || showFullSidebar) ? 4 : 0,
+                    paddingRight: (mobileMenuOpen || showFullSidebar) ? 4 : 0,
+                    justifyContent: (mobileMenuOpen || showFullSidebar) ? 'space-between' : 'center',
+                    width: '100%'
+                }}>
+                    <div
+                        onClick={() => { if (!showFullSidebar) toggleSidebarCollapse() }}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            cursor: !showFullSidebar ? 'pointer' : 'default'
+                        }}
+                        title={!showFullSidebar ? "Click to expand sidebar" : undefined}
+                    >
+                        <div style={{
+                            width: 32, height: 32, background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                            borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            boxShadow: 'var(--shadow-glow-accent)', color: '#fff', flexShrink: 0
+                        }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                            </svg>
+                        </div>
+                        {(mobileMenuOpen || showFullSidebar) && (
+                            <span style={{ fontSize: '1.125rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)', whiteSpace: 'nowrap' }}>
+                                JTS<span className="gradient-text">Meet</span>
+                            </span>
+                        )}
                     </div>
+
+                    {/* Collapse Button (Shown when expanded) */}
                     {(mobileMenuOpen || showFullSidebar) && (
-                        <span style={{ fontSize: '1.125rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)', whiteSpace: 'nowrap' }}>
-                            JTS<span className="gradient-text">Meet</span>
-                        </span>
+                        <button
+                            type="button"
+                            onClick={toggleSidebarCollapse}
+                            title="Collapse sidebar (Shrink)"
+                            aria-label="Collapse sidebar"
+                            style={{
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                borderRadius: 8,
+                                color: 'var(--color-text-secondary)',
+                                width: 28,
+                                height: 28,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                transition: 'all 0.18s ease',
+                                flexShrink: 0
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)'
+                                e.currentTarget.style.color = '#fff'
+                                e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.4)'
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                                e.currentTarget.style.color = 'var(--color-text-secondary)'
+                                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                            }}
+                        >
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                <line x1="9" y1="3" x2="9" y2="21" />
+                                <path d="m14 9-3 3 3 3" />
+                            </svg>
+                        </button>
                     )}
                 </div>
+
+                {/* Expand Button (Shown below logo when collapsed) */}
+                {!(mobileMenuOpen || showFullSidebar) && (
+                    <button
+                        type="button"
+                        onClick={toggleSidebarCollapse}
+                        title="Expand sidebar"
+                        aria-label="Expand sidebar"
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: 8,
+                            color: 'var(--color-text-secondary)',
+                            width: 32,
+                            height: 28,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            marginBottom: 18,
+                            transition: 'all 0.18s ease',
+                            flexShrink: 0
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)'
+                            e.currentTarget.style.color = '#fff'
+                            e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.4)'
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                            e.currentTarget.style.color = 'var(--color-text-secondary)'
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                        }}
+                    >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <line x1="9" y1="3" x2="9" y2="21" />
+                            <path d="m13 15 3-3-3-3" />
+                        </svg>
+                    </button>
+                )}
 
                 {/* Workspace / Org Switcher Dropdown is now in the top navbar */}
 

@@ -48,28 +48,8 @@ export function getIceServers(): RTCIceServer[] {
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
-        // Cloudflare & Mozilla STUN
-        { urls: 'stun:stun.cloudflare.com:3478' },
-        { urls: 'stun:stun.services.mozilla.com' },
-        // Reliable Free Community TURN Relays (Open Relay Project)
-        // Traversal around Symmetric NAT, Mobile LTE/5G Hotspots, and Strict Firewalls
-        {
-            urls: [
-                'turn:openrelay.metered.ca:80',
-                'turn:openrelay.metered.ca:443',
-                'turn:openrelay.metered.ca:443?transport=tcp'
-            ],
-            username: 'openrelay',
-            credential: 'openrelay'
-        },
-        {
-            urls: [
-                'turns:openrelay.metered.ca:443?transport=tcp',
-                'turns:openrelay.metered.ca:5349?transport=tcp'
-            ],
-            username: 'openrelay',
-            credential: 'openrelay'
-        }
+        // High-Reliability Cloudflare STUN
+        { urls: 'stun:stun.cloudflare.com:3478' }
     ]
 }
 
@@ -135,6 +115,14 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
     pc.oniceconnectionstatechange = () => {
         console.log(`[WebRTC] ICE connection state for user ${userId}:`, pc.iceConnectionState)
         handlers.onIceStateChange?.(pc.iceConnectionState)
+        if (pc.iceConnectionState === 'failed') {
+            try {
+                console.log(`[WebRTC] ICE failed for user ${userId}, attempting restartIce()...`)
+                pc.restartIce()
+            } catch (err) {
+                console.warn('[WebRTC] restartIce error:', err)
+            }
+        }
     }
     pc.onconnectionstatechange = () => {
         console.log(`[WebRTC] Connection state for user ${userId}:`, pc.connectionState)

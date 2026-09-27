@@ -248,13 +248,18 @@ export function useWebRTC(
                 )
 
                 if (tc) {
-                    if (tc.direction !== 'sendrecv' && tc.direction !== 'sendonly') {
+                    const directionChanged = tc.direction !== 'sendrecv' && tc.direction !== 'sendonly'
+                    if (directionChanged) {
                         tc.direction = 'sendrecv'
                     }
+                    const hadNoTrack = !tc.sender?.track
                     if (tc.sender) {
                         tc.sender.replaceTrack(newTrack).then(() => {
                             if (kind === 'video') {
                                 optimizePeerConnectionForHd(pc, peerCount, isScreen)
+                            }
+                            if (directionChanged || hadNoTrack || isScreen) {
+                                triggerIceRestart(targetUserId)
                             }
                         }).catch(err => {
                             console.warn('Failed to replace track on transceiver:', err)
@@ -268,6 +273,9 @@ export function useWebRTC(
                     sender.replaceTrack(newTrack).then(() => {
                         if (kind === 'video') {
                             optimizePeerConnectionForHd(pc, peerCount, isScreen)
+                        }
+                        if (isScreen) {
+                            triggerIceRestart(targetUserId)
                         }
                     }).catch(err => {
                         console.warn('Failed to replace track on peer:', err)
@@ -312,6 +320,11 @@ export function useWebRTC(
 
             if (socket && meetingId) {
                 socket.emit(SocketEvents.SCREEN_STOP, { meetingId })
+                const isCamOff = !cameraTrack || (cameraTrack as any).isDummy || !cameraTrack.enabled
+                socket.emit('meeting:camera-toggle', {
+                    meetingId,
+                    isVideoOff: isCamOff
+                })
             }
         } catch (err) {
             console.warn('[ScreenShare] Error during screen cleanup:', err)
@@ -353,11 +366,22 @@ export function useWebRTC(
             setScreenSharingUserIds(prev => prev.includes('me') ? prev : [...prev, 'me'])
             socket.emit(SocketEvents.SCREEN_START, { meetingId })
 
+            // Notify server and all meeting participants that video is now active
+            socket.emit('meeting:camera-toggle', {
+                meetingId,
+                isVideoOff: false
+            })
+
+            // Trigger ICE restart with each peer so their WebRTC media engines immediately pick up the screen track!
+            Object.keys(peerConnectionsRef.current).forEach((targetUserId) => {
+                triggerIceRestart(targetUserId)
+            })
+
             screenTrack.onended = () => {
                 stopScreenShare()
             }
         } catch (error: any) {
-            // Check if user dismissed or cancelled the browser's screen-share prompt
+            // Check if user dismissed or cancelled the screen-share prompt
             const msg = (error?.message || '').toLowerCase()
             const name = error?.name || ''
             if (
@@ -376,7 +400,7 @@ export function useWebRTC(
                 setScreenError(null)
             }, 4000)
         }
-    }, [cameraStream, meetingId, replaceLocalStream, replaceTrackOnPeers, socket, stopScreenShare])
+    }, [cameraStream, meetingId, replaceLocalStream, replaceTrackOnPeers, socket, stopScreenShare, triggerIceRestart])
 
     const clearScreenError = useCallback(() => {
         setScreenError(null)
@@ -727,11 +751,19 @@ export function useWebRTC(
             setScreenSharingUserId(payload.userId)
             // Trigger fresh MediaStream reference so React components re-mount/play the screen video
             setRemoteStreams(prev => {
-                if (prev[payload.userId]) {
-                    return { ...prev, [payload.userId]: new MediaStream(prev[payload.userId].getTracks()) }
+                const existing = prev[payload.userId] || peerRemoteStreams.get(payload.userId)
+                if (existing) {
+                    return { ...prev, [payload.userId]: new MediaStream(existing.getTracks()) }
                 }
                 return prev
             })
+
+            // If we don't have a video track for this user yet, request ICE restart to renegotiate the video track!
+            const currentStream = peerRemoteStreams.get(payload.userId)
+            if (!currentStream || currentStream.getVideoTracks().length === 0) {
+                console.log(`[WebRTC] Remote user ${payload.userId} started screen share, ensuring ICE restart synchronization...`)
+                triggerIceRestart(payload.userId)
+            }
         }
 
         const handleScreenStop = (payload: { userId: string; meetingId: string; }) => {

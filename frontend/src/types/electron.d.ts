@@ -36,10 +36,14 @@ declare global {
                 id: string
                 name: string
                 thumbnail: string
+                appIcon?: string | null
             }>>
 
             /** Tell main process which sourceId to use for next getDisplayMedia call */
-            setScreenSource?: (sourceId: string) => void
+            setScreenSource?: (sourceId: string) => Promise<boolean> | void
+
+            /** Native clipboard write */
+            writeClipboardText?: (text: string) => void
         }
     }
 }

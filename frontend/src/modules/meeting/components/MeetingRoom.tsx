@@ -6,7 +6,8 @@ import { useWebRTCContext } from '../context/WebRTCContext'
 import { MeetingChatPanel } from './MeetingChatPanel'
 import { useMeetingChat } from '../hooks/useMeetingChat'
 import { SocketEvents } from '../services/socket.service'
-import { isScreenShareSupported } from '../services/screen.service'
+import { isScreenShareSupported, isElectron, captureDesktopSource, setScreenPickerOpener } from '../services/screen.service'
+import { ScreenPickerModal, DesktopCaptureSource } from './ScreenPickerModal'
 import { FileUploader } from '../../file/components/FileUploader'
 import { API_BASE } from '../../../config'
 import { DeviceSettingsModal } from './DeviceSettingsModal'
@@ -31,6 +32,7 @@ import { MeetingQAPanel } from './MeetingQAPanel'
 import { BreakoutRoomsModal } from './BreakoutRoomsModal'
 import { LiveStreamModal, LiveStreamConfig } from './LiveStreamModal'
 import { soundEffects } from '../../../utils/soundEffects'
+import { copyToClipboard } from '../../../utils/clipboard'
 import { MeetingAttendanceModal } from './MeetingAttendanceModal'
 import { LateJoinerCatchUpModal } from './LateJoinerCatchUpModal'
 import {
@@ -235,10 +237,13 @@ const PersistentAudioTile = React.memo(function PersistentAudioTile({
     useEffect(() => {
         const el = audioRef.current
         if (!el) return
-        if (stream && !isMuted) {
+        if (stream) {
             if (el.srcObject !== stream) {
                 el.srcObject = stream
             }
+            // Control audio output via muted flag without tearing down the media stream pipeline
+            el.muted = isMuted
+
             const playPromise = el.play()
             if (playPromise !== undefined) {
                 playPromise.catch(() => {
@@ -252,10 +257,6 @@ const PersistentAudioTile = React.memo(function PersistentAudioTile({
                     window.addEventListener('keydown', unlock, { once: true })
                     window.addEventListener('touchstart', unlock, { once: true })
                 })
-            }
-        } else {
-            if (el.srcObject) {
-                el.srcObject = null
             }
         }
     }, [stream, isMuted])
@@ -2218,7 +2219,7 @@ function SetupScreen({
     }
 
     const handleCopy = () => {
-        navigator.clipboard.writeText(generatedId)
+        copyToClipboard(generatedId)
     }
 
     const handleActionClick = () => {
@@ -3014,6 +3015,47 @@ export function MeetingRoom({
     // Multi-Presenter Takeover Confirmation States
     const [showTakeoverModal, setShowTakeoverModal] = useState(false)
     const [takeoverPresenterId, setTakeoverPresenterId] = useState<string | null>(null)
+    const [showScreenPicker, setShowScreenPicker] = useState(false)
+    const screenPickerCallbackRef = useRef<((source: DesktopCaptureSource, includeAudio: boolean) => void) | null>(null)
+    const screenPickerCancelRef = useRef<(() => void) | null>(null)
+
+    // Register opener so any Electron screen-share trigger pops up the picker dialog
+    useEffect(() => {
+        setScreenPickerOpener((onSelect, onCancel) => {
+            screenPickerCallbackRef.current = onSelect
+            screenPickerCancelRef.current = onCancel
+            setShowScreenPicker(true)
+        })
+        return () => {
+            setScreenPickerOpener(null)
+        }
+    }, [])
+
+    const handleScreenSourceSelected = useCallback(async (source: DesktopCaptureSource, includeAudio: boolean) => {
+        if (screenPickerCallbackRef.current) {
+            screenPickerCallbackRef.current(source, includeAudio)
+            screenPickerCallbackRef.current = null
+            screenPickerCancelRef.current = null
+            return
+        }
+
+        try {
+            const stream = await captureDesktopSource(source.id, includeAudio)
+            await startScreenShare(stream)
+        } catch (err: any) {
+            console.error('[MeetingRoom] Failed to capture selected desktop source:', err)
+            addToast(err?.message || 'Failed to share selected screen or window', 'warning')
+        }
+    }, [startScreenShare, addToast])
+
+    const handleScreenPickerClosed = useCallback(() => {
+        if (screenPickerCancelRef.current) {
+            screenPickerCancelRef.current()
+            screenPickerCancelRef.current = null
+            screenPickerCallbackRef.current = null
+        }
+        setShowScreenPicker(false)
+    }, [])
 
     const handleToggleScreenShare = useCallback(() => {
         if (screenSharingUserId === 'me' || screenSharingUserIds.includes('me')) {
@@ -3029,7 +3071,11 @@ export function MeetingRoom({
             setTakeoverPresenterId(activeRemoteSharer)
             setShowTakeoverModal(true)
         } else {
-            startScreenShare()
+            if (isElectron()) {
+                setShowScreenPicker(true)
+            } else {
+                startScreenShare()
+            }
         }
     }, [screenSharingUserId, screenSharingUserIds, startScreenShare, stopScreenShare, screenSharePolicy, addToast])
 
@@ -3801,6 +3847,95 @@ export function MeetingRoom({
         }
     }, [joined, participants, messages])
     const [transcripts, setTranscripts] = useState<Array<{ speaker: string; text: string; timestamp: Date }>>([])
+
+    // Next-Gen Feature 3: In-Meeting Live Action-Item Detector
+    const [detectedActionItem, setDetectedActionItem] = useState<{ id: string; text: string; speaker: string } | null>(null)
+    const [meetingNotes, setMeetingNotes] = useState<string>('')
+
+    // Next-Gen Feature 4: Talk-Time Analytics & Leaderboard
+    const [talkTimeMap, setTalkTimeMap] = useState<Record<string, number>>({})
+    const [showAnalyticsModal, setShowAnalyticsModal] = useState(false)
+
+    // Next-Gen Feature 5: Dynamic Anti-Leak Floating Watermark (Confidential Mode)
+    const [isConfidentialMode, setIsConfidentialMode] = useState(false)
+    const [watermarkOffset, setWatermarkOffset] = useState({ x: 10, y: 15 })
+
+    // Next-Gen Feature 6: AI Real-Time Voice Dubbing / Live Speech Interpreter
+    const [isVoiceDubbingEnabled, setIsVoiceDubbingEnabled] = useState(false)
+
+    // Next-Gen Feature 7: Post-Meeting Interactive Capsule Hub
+    const [postMeetingCapsule, setPostMeetingCapsule] = useState<{
+        duration: string
+        talkTime: Record<string, number>
+        notes: string
+        title: string
+    } | null>(null)
+
+    // Accumulate speaking time per attendee
+    useEffect(() => {
+        if (!joined) return
+        const timer = setInterval(() => {
+            const speakerKey = activeSpeaker || (isMuted ? null : 'me')
+            if (speakerKey) {
+                setTalkTimeMap(prev => ({
+                    ...prev,
+                    [speakerKey]: (prev[speakerKey] || 0) + 1
+                }))
+            }
+        }, 1000)
+        return () => clearInterval(timer)
+    }, [joined, activeSpeaker, isMuted])
+
+    // Anti-leak watermark drift timer
+    useEffect(() => {
+        if (!isConfidentialMode) return
+        const drift = setInterval(() => {
+            setWatermarkOffset({
+                x: Math.floor(Math.random() * 40) + 5,
+                y: Math.floor(Math.random() * 40) + 5
+            })
+        }, 12000)
+        return () => clearInterval(drift)
+    }, [isConfidentialMode])
+
+    // Live Action Item Intent Detector
+    useEffect(() => {
+        const lastMsg = messages[messages.length - 1]
+        const lastText = lastMsg?.message || transcripts[transcripts.length - 1]?.text || ''
+        const speaker = lastMsg?.senderName || transcripts[transcripts.length - 1]?.speaker || 'Participant'
+
+        if (lastText && lastText.length > 10) {
+            const match = lastText.match(/(?:will|should|need to|please|action|todo|follow up|assign|prepare|schedule)\s+([^.!?\n]+)/i)
+            if (match && match[0] && match[0].trim().length > 6) {
+                setDetectedActionItem({
+                    id: String(Date.now()),
+                    text: match[0].trim(),
+                    speaker
+                })
+            }
+        }
+    }, [messages, transcripts])
+
+    // Real-Time Voice Dubbing Interpreter via SpeechSynthesis
+    useEffect(() => {
+        if (!isVoiceDubbingEnabled || typeof window === 'undefined' || !window.speechSynthesis) return
+        const lastTranscript = transcripts[transcripts.length - 1]
+        if (lastTranscript && lastTranscript.speaker !== myDisplayName && lastTranscript.speaker !== 'me') {
+            try {
+                window.speechSynthesis.cancel()
+                const utter = new SpeechSynthesisUtterance(lastTranscript.text)
+                utter.rate = 1.05
+                window.speechSynthesis.speak(utter)
+            } catch (_) {}
+        }
+    }, [transcripts, isVoiceDubbingEnabled, myDisplayName])
+
+    const handleAddDetectedActionItem = () => {
+        if (!detectedActionItem) return
+        const line = `• [ACTION] ${detectedActionItem.text} (from ${detectedActionItem.speaker})`
+        setMeetingNotes(prev => prev ? `${prev}\n${line}` : line)
+        setDetectedActionItem(null)
+    }
     const [isBlurEnabled, setIsBlurEnabled] = useState(false)
     const [virtualBgPreset, setVirtualBgPreset] = useState<string>('none')
     const [showVirtualBgModal, setShowVirtualBgModal] = useState<boolean>(false)
@@ -5075,10 +5210,18 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             localStorage.removeItem('jts_last_meeting_id')
         } catch (e) { }
         leaveMeeting()
-        if (onLeave) {
+        // If meeting had elapsed, show post-meeting capsule before navigating away
+        if (timerStr && timerStr !== '00:00') {
+            setPostMeetingCapsule({
+                duration: timerStr,
+                talkTime: talkTimeMap,
+                notes: meetingNotes,
+                title: meetingInfo?.title || `Meeting ${meetingId || meetingInput}`
+            })
+        } else if (onLeave) {
             onLeave()
         }
-    }, [leaveMeeting, onLeave])
+    }, [leaveMeeting, onLeave, timerStr, talkTimeMap, meetingNotes, meetingInfo, meetingId, meetingInput])
 
     // Direct autoJoin trigger: Only auto-joins ONCE upon entry, never if user has left!
     useEffect(() => {
@@ -5111,22 +5254,30 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         const hashParts = window.location.hash.split('?')
                         if (hashParts.length > 1) {
                             const params = new URLSearchParams(hashParts[1])
-                            urlMeetingId = params.get('id') || params.get('meetingId') || ''
+                            urlMeetingId = params.get('id') || params.get('meetingId') || params.get('room') || ''
                         }
                     }
                     if (!urlMeetingId) {
                         const searchParams = new URLSearchParams(window.location.search)
-                        urlMeetingId = searchParams.get('id') || searchParams.get('meetingId') || ''
+                        urlMeetingId = searchParams.get('id') || searchParams.get('meetingId') || searchParams.get('room') || ''
                     }
                 } catch (e) { }
             }
+
+            const isAudioOnlyParam = Boolean(
+                sessionStorage.getItem('jts_initial_camera_off') === 'true' ||
+                (typeof window !== 'undefined' && (
+                    new URLSearchParams(window.location.hash.split('?')[1] || '').get('audio') === 'true' ||
+                    new URLSearchParams(window.location.search).get('audio') === 'true'
+                ))
+            )
 
             const activeSessionId = sessionStorage.getItem('jts_active_meeting_id')
             const targetId = urlMeetingId || activeSessionId || (autoJoin ? meetingInput : '')
 
             if (targetId && targetId.trim()) {
                 autoRejoinAttemptedRef.current = true
-                handleJoinMeeting(targetId.trim())
+                handleJoinMeeting(targetId.trim(), isAudioOnlyParam ? true : undefined)
             }
         }
     }, [connected, joined, initialToken, token, mediaLoading, initialMeetingId, autoJoin, meetingInput])
@@ -6238,6 +6389,72 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         <span className={`badge-dot ${connected ? 'success pulse' : 'danger'}`} />
                         {connected ? 'Live' : 'Offline'}
                     </span>
+
+                    {/* CONFIDENTIAL ANTI-LEAK BADGE */}
+                    {isConfidentialMode && (
+                        <div
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                padding: '4px 10px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'rgba(239, 68, 68, 0.2)',
+                                border: '1px solid rgba(239, 68, 68, 0.4)',
+                                color: '#f87171',
+                                fontSize: '0.7rem',
+                                fontWeight: 800,
+                                letterSpacing: '0.04em'
+                            }}
+                            title="Confidential Anti-Leak Watermark Active"
+                        >
+                            <span>🛡️ CONFIDENTIAL</span>
+                        </div>
+                    )}
+
+                    {/* TALK-TIME & ENGAGEMENT ANALYTICS BUTTON */}
+                    <button
+                        type="button"
+                        onClick={() => setShowAnalyticsModal(true)}
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '4px 10px',
+                            borderRadius: 'var(--radius-sm)',
+                            background: 'rgba(99, 102, 241, 0.15)',
+                            border: '1px solid rgba(99, 102, 241, 0.35)',
+                            color: '#a5b4fc',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                        }}
+                        title="View Talk-Time Distribution and Meeting Analytics"
+                    >
+                        <span>📊 Analytics</span>
+                    </button>
+
+                    {/* CATCH ME UP BUTTON */}
+                    <button
+                        type="button"
+                        onClick={() => setShowCatchUpModal(true)}
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '4px 10px',
+                            borderRadius: 'var(--radius-sm)',
+                            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(99, 102, 241, 0.2) 100%)',
+                            border: '1px solid rgba(168, 85, 247, 0.45)',
+                            color: '#e9d5ff',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                        }}
+                        title="Instant AI Recap of ongoing meeting discussions"
+                    >
+                        <span>⚡ Catch Me Up</span>
+                    </button>
                     <div style={{
                         fontSize: '0.8125rem', color: 'var(--color-text-secondary)',
                         display: 'flex', alignItems: 'center', gap: 6,
@@ -6256,7 +6473,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             </header>
 
             {/* Global Persistent Remote Audio Bridge: Guarantees continuous voice for all remote users */}
-            <div style={{ display: 'none' }} aria-hidden="true">
+            <div style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, opacity: 0.001, pointerEvents: 'none' }} aria-hidden="true">
                 {Object.entries(remoteStreams).map(([peerId, rStream]) => {
                     if (!rStream || peerId === 'me' || peerId === localUserId) return null
                     return (
@@ -6541,89 +6758,135 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             </div>
                                         )}
 
-                                        {/* Screen Share Action Controls Container (Top Left - Never overlaps Top Right name/SCREEN badge) */}
-                                        {isScreenShareActive && (
-                                            <div style={{
-                                                position: 'absolute',
-                                                top: 14,
-                                                left: 14,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 8,
-                                                zIndex: 45
-                                            }}>
-                                                {/* Live Annotation & Laser Pointer Trigger (Presenter only) */}
-                                                {screenSharingUserId === 'me' && (
-                                                    <button
-                                                        onClick={() => setIsAnnotationActive(prev => !prev)}
-                                                        style={{
-                                                            background: isAnnotationActive ? 'rgba(139, 92, 246, 0.95)' : 'rgba(10, 11, 15, 0.85)',
-                                                            backdropFilter: 'blur(10px)',
-                                                            WebkitBackdropFilter: 'blur(10px)',
-                                                            border: isAnnotationActive ? '1px solid #c4b5fd' : '1px solid rgba(255,255,255,0.18)',
-                                                            borderRadius: 'var(--radius-full)',
-                                                            padding: '6px 14px',
-                                                            color: '#fff',
-                                                            fontSize: '0.75rem',
-                                                            fontWeight: 700,
-                                                            cursor: 'pointer',
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: 6,
-                                                            boxShadow: isAnnotationActive ? '0 0 16px rgba(139, 92, 246, 0.5)' : 'var(--shadow-md)',
-                                                            transition: 'all 0.2s ease',
-                                                            whiteSpace: 'nowrap'
-                                                        }}
-                                                        title="Toggle interactive drawing & laser pointer on screen"
-                                                    >
-                                                        <IconEdit size={14} />
-                                                        <span>{isAnnotationActive ? 'Drawing Active' : 'Annotate & Laser'}</span>
-                                                    </button>
-                                                )}
+                                        {/* Top-Left Action Toolbar (Unpin Screen & Screen Share Controls in one clean row) */}
+                                        {(pinnedUserId || isScreenShareActive) && (() => {
+                                            const isPrimaryHandRaised = primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser];
+                                            return (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: 14,
+                                                    left: isPrimaryHandRaised ? 125 : 14,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 8,
+                                                    zIndex: 45,
+                                                    maxWidth: 'calc(100% - 180px)',
+                                                    flexWrap: 'wrap'
+                                                }}>
+                                                    {/* Floating Unpin Button */}
+                                                    {pinnedUserId && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPinnedUserId(null)}
+                                                            style={{
+                                                                background: 'rgba(10, 11, 15, 0.85)',
+                                                                backdropFilter: 'blur(10px)',
+                                                                WebkitBackdropFilter: 'blur(10px)',
+                                                                border: '1px solid rgba(255, 255, 255, 0.18)',
+                                                                borderRadius: 'var(--radius-full)',
+                                                                padding: '6px 14px',
+                                                                color: '#fff',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 700,
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 6,
+                                                                boxShadow: 'var(--shadow-md)',
+                                                                transition: 'all 0.2s ease',
+                                                                whiteSpace: 'nowrap'
+                                                            }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.background = 'var(--color-accent)';
+                                                                e.currentTarget.style.borderColor = 'transparent';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.background = 'rgba(10, 11, 15, 0.85)';
+                                                                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+                                                            }}
+                                                            title="Unpin from main stage"
+                                                        >
+                                                            <IconPin size={13} />
+                                                            <span>{isScreenShareActive ? 'Unpin Screen' : 'Unpin'}</span>
+                                                        </button>
+                                                    )}
 
-                                                {/* Remote Control Trigger (For Viewers) */}
-                                                {screenSharingUserId !== 'me' && (
-                                                    <button
-                                                        onClick={activeControllerId === (parseJwt(token)?.userId || 'me') ? handleReleaseRemoteControl : handleRequestRemoteControl}
-                                                        disabled={isRequestingControl}
-                                                        style={{
-                                                            background: activeControllerId === (parseJwt(token)?.userId || 'me')
-                                                                ? 'rgba(59, 130, 246, 0.95)'
-                                                                : isRequestingControl
-                                                                    ? 'rgba(100, 116, 139, 0.8)'
-                                                                    : 'rgba(10, 11, 15, 0.85)',
-                                                            backdropFilter: 'blur(10px)',
-                                                            WebkitBackdropFilter: 'blur(10px)',
-                                                            border: activeControllerId === (parseJwt(token)?.userId || 'me')
-                                                                ? '1px solid #93c5fd'
-                                                                : '1px solid rgba(255,255,255,0.18)',
-                                                            borderRadius: 'var(--radius-full)',
-                                                            padding: '6px 14px',
-                                                            color: '#fff',
-                                                            fontSize: '0.75rem',
-                                                            fontWeight: 700,
-                                                            cursor: isRequestingControl ? 'not-allowed' : 'pointer',
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: 6,
-                                                            boxShadow: activeControllerId === (parseJwt(token)?.userId || 'me') ? '0 0 16px rgba(59, 130, 246, 0.5)' : 'var(--shadow-md)',
-                                                            transition: 'all 0.2s ease',
-                                                            whiteSpace: 'nowrap'
-                                                        }}
-                                                        title={activeControllerId === (parseJwt(token)?.userId || 'me') ? 'Release Remote Control' : 'Request Remote Control of this screen'}
-                                                    >
-                                                        <IconMonitor size={14} />
-                                                        <span>
-                                                            {activeControllerId === (parseJwt(token)?.userId || 'me')
-                                                                ? 'Release Control'
-                                                                : isRequestingControl
-                                                                    ? 'Requesting Control...'
-                                                                    : 'Request Control'}
-                                                        </span>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
+                                                    {/* Live Annotation & Laser Pointer Trigger (Presenter only) */}
+                                                    {isScreenShareActive && screenSharingUserId === 'me' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setIsAnnotationActive(prev => !prev)}
+                                                            style={{
+                                                                background: isAnnotationActive ? 'rgba(139, 92, 246, 0.95)' : 'rgba(10, 11, 15, 0.85)',
+                                                                backdropFilter: 'blur(10px)',
+                                                                WebkitBackdropFilter: 'blur(10px)',
+                                                                border: isAnnotationActive ? '1px solid #c4b5fd' : '1px solid rgba(255,255,255,0.18)',
+                                                                borderRadius: 'var(--radius-full)',
+                                                                padding: '6px 14px',
+                                                                color: '#fff',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 700,
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 6,
+                                                                boxShadow: isAnnotationActive ? '0 0 16px rgba(139, 92, 246, 0.5)' : 'var(--shadow-md)',
+                                                                transition: 'all 0.2s ease',
+                                                                whiteSpace: 'nowrap'
+                                                            }}
+                                                            title="Toggle interactive drawing & laser pointer on screen"
+                                                        >
+                                                            <IconEdit size={14} />
+                                                            <span>{isAnnotationActive ? 'Drawing Active' : 'Annotate & Laser'}</span>
+                                                        </button>
+                                                    )}
+
+                                                    {/* Remote Control Trigger (For Viewers) */}
+                                                    {isScreenShareActive && screenSharingUserId !== 'me' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={activeControllerId === (parseJwt(token)?.userId || 'me') ? handleReleaseRemoteControl : handleRequestRemoteControl}
+                                                            disabled={isRequestingControl}
+                                                            style={{
+                                                                background: activeControllerId === (parseJwt(token)?.userId || 'me')
+                                                                    ? 'rgba(59, 130, 246, 0.95)'
+                                                                    : isRequestingControl
+                                                                        ? 'rgba(100, 116, 139, 0.8)'
+                                                                        : 'rgba(10, 11, 15, 0.85)',
+                                                                backdropFilter: 'blur(10px)',
+                                                                WebkitBackdropFilter: 'blur(10px)',
+                                                                border: activeControllerId === (parseJwt(token)?.userId || 'me')
+                                                                    ? '1px solid #93c5fd'
+                                                                    : '1px solid rgba(255,255,255,0.18)',
+                                                                borderRadius: 'var(--radius-full)',
+                                                                padding: '6px 14px',
+                                                                color: '#fff',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 700,
+                                                                cursor: isRequestingControl ? 'not-allowed' : 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 6,
+                                                                boxShadow: activeControllerId === (parseJwt(token)?.userId || 'me') ? '0 0 16px rgba(59, 130, 246, 0.5)' : 'var(--shadow-md)',
+                                                                transition: 'all 0.2s ease',
+                                                                whiteSpace: 'nowrap'
+                                                            }}
+                                                            title={activeControllerId === (parseJwt(token)?.userId || 'me') ? 'Release Remote Control' : 'Request Remote Control of this screen'}
+                                                        >
+                                                            <IconMonitor size={14} />
+                                                            <span>
+                                                                {activeControllerId === (parseJwt(token)?.userId || 'me')
+                                                                    ? 'Release Control'
+                                                                    : isRequestingControl
+                                                                        ? 'Requesting Control...'
+                                                                        : 'Request Control'}
+                                                            </span>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
+
 
                                         {/* Presenter Incoming Remote Control Request Dialog */}
                                         {incomingControlRequest && screenSharingUserId === 'me' && (
@@ -6739,46 +7002,6 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             </button>
                                         )}
 
-                                        {/* Floating Unpin Button */}
-                                        {pinnedUserId && (() => {
-                                            const isPrimaryHandRaised = primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser];
-                                            return (
-                                                <button
-                                                    onClick={() => setPinnedUserId(null)}
-                                                    style={{
-                                                        position: 'absolute',
-                                                        top: 16,
-                                                        left: isPrimaryHandRaised ? 125 : 16,
-                                                        background: 'rgba(10, 11, 15, 0.75)',
-                                                        backdropFilter: 'blur(8px)',
-                                                        border: '1px solid rgba(255,255,255,0.1)',
-                                                        borderRadius: 'var(--radius-full)',
-                                                        padding: '6px 14px',
-                                                        color: '#fff',
-                                                        fontSize: '0.75rem',
-                                                        fontWeight: 600,
-                                                        cursor: 'pointer',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 6,
-                                                        zIndex: 10,
-                                                        boxShadow: 'var(--shadow-md)',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                        e.currentTarget.style.background = 'var(--color-accent)';
-                                                        e.currentTarget.style.borderColor = 'transparent';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        e.currentTarget.style.background = 'rgba(10, 11, 15, 0.75)';
-                                                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
-                                                    }}
-                                                >
-                                                    <IconPin size={13} />
-                                                    <span>Unpin Screen</span>
-                                                </button>
-                                            );
-                                        })()}
                                     </div>
 
                                     {/* Participants Strip (Right / Bottom) - hidden in fullScreenUserId or Spotlight mode */}
@@ -7767,6 +7990,102 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             )}
                         </button>
 
+                        {/* Next-Gen: Meeting Talk-Time & Analytics */}
+                        <button
+                            onClick={() => {
+                                setShowMoreMenu(false)
+                                setShowAnalyticsModal(true)
+                            }}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                                background: 'transparent', border: 'none', borderRadius: '10px',
+                                color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: 'rgba(99, 102, 241, 0.16)',
+                                color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left' }}>Talk-Time & Analytics</span>
+                            <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.2)', padding: '2px 6px', borderRadius: '6px' }}>NEW</span>
+                        </button>
+
+                        {/* Next-Gen: Confidential Anti-Leak Mode */}
+                        <button
+                            onClick={() => {
+                                setShowMoreMenu(false)
+                                setIsConfidentialMode(prev => !prev)
+                            }}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                                background: 'transparent', border: 'none', borderRadius: '10px',
+                                color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: isConfidentialMode ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                                color: isConfidentialMode ? '#f87171' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <IconShield size={15} />
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left' }}>Confidential Anti-Leak Watermark</span>
+                            <span style={{
+                                fontSize: '0.625rem',
+                                fontWeight: 800,
+                                color: isConfidentialMode ? '#f87171' : '#94a3b8',
+                                background: isConfidentialMode ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.06)',
+                                padding: '2px 6px',
+                                borderRadius: '6px'
+                            }}>
+                                {isConfidentialMode ? 'ACTIVE' : 'OFF'}
+                            </span>
+                        </button>
+
+                        {/* Next-Gen: AI Real-Time Voice Dubbing */}
+                        <button
+                            onClick={() => {
+                                setShowMoreMenu(false)
+                                setIsVoiceDubbingEnabled(prev => !prev)
+                            }}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                                background: 'transparent', border: 'none', borderRadius: '10px',
+                                color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <div style={{
+                                width: 28, height: 28, borderRadius: 7,
+                                background: isVoiceDubbingEnabled ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                                color: isVoiceDubbingEnabled ? '#34d399' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                            </div>
+                            <span style={{ flex: 1, textAlign: 'left' }}>AI Live Voice Dubbing</span>
+                            <span style={{
+                                fontSize: '0.625rem',
+                                fontWeight: 800,
+                                color: isVoiceDubbingEnabled ? '#34d399' : '#94a3b8',
+                                background: isVoiceDubbingEnabled ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.06)',
+                                padding: '2px 6px',
+                                borderRadius: '6px'
+                            }}>
+                                {isVoiceDubbingEnabled ? 'ACTIVE' : 'OFF'}
+                            </span>
+                        </button>
+
                         {/* Shared Files */}
                         {(!isGuest || canManageParticipants) && (
                             <button
@@ -8717,6 +9036,268 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 onClose={() => setShowShortcuts(false)}
             />
 
+            {/* Next-Gen Feature 5: Dynamic Anti-Leak Floating Watermark (Confidential Mode) */}
+            {isConfidentialMode && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    pointerEvents: 'none',
+                    zIndex: 9000,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-around',
+                    alignItems: 'center',
+                    opacity: 0.18,
+                    overflow: 'hidden',
+                    userSelect: 'none'
+                }}>
+                    {[0, 1, 2, 3].map((row) => (
+                        <div
+                            key={row}
+                            style={{
+                                display: 'flex',
+                                gap: 60,
+                                whiteSpace: 'nowrap',
+                                transform: `rotate(-15deg) translate(${watermarkOffset.x}px, ${watermarkOffset.y}px)`,
+                                transition: 'transform 2s ease'
+                            }}
+                        >
+                            {[0, 1, 2].map((col) => (
+                                <span key={col} style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '0.08em' }}>
+                                    🛡️ {myDisplayName || 'Attendee'} • CONFIDENTIAL • {meetingId || 'JTS-MEET'}
+                                </span>
+                            ))}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Next-Gen Feature 3: In-Meeting Live Action-Item Detector Toast */}
+            {detectedActionItem && (
+                <div style={{
+                    position: 'fixed',
+                    top: 70,
+                    right: 24,
+                    zIndex: 9999,
+                    background: 'rgba(15, 17, 26, 0.95)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1px solid rgba(245, 158, 11, 0.45)',
+                    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.6), 0 0 16px rgba(245, 158, 11, 0.25)',
+                    borderRadius: 14,
+                    padding: '10px 14px',
+                    maxWidth: 380,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    animation: 'fadeInDown 0.25s ease'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: '0.9rem' }}>⚡</span>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                Action Item Detected
+                            </span>
+                        </div>
+                        <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>
+                            by {detectedActionItem.speaker}
+                        </span>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#f1f5f9', fontWeight: 500, lineHeight: 1.4 }}>
+                        "{detectedActionItem.text}"
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 2 }}>
+                        <button
+                            onClick={() => setDetectedActionItem(null)}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#94a3b8',
+                                fontSize: '0.72rem',
+                                cursor: 'pointer',
+                                padding: '3px 8px'
+                            }}
+                        >
+                            Dismiss
+                        </button>
+                        <button
+                            onClick={handleAddDetectedActionItem}
+                            style={{
+                                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                border: 'none',
+                                color: '#000',
+                                fontWeight: 800,
+                                fontSize: '0.72rem',
+                                borderRadius: 6,
+                                padding: '4px 12px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            + Add to Notes
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Next-Gen Feature 4: Meeting Talk-Time & Engagement Analytics Modal */}
+            {showAnalyticsModal && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 10000,
+                    background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+                }}>
+                    <div style={{
+                        background: '#13151c', border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: 16, width: '100%', maxWidth: 500, padding: 24,
+                        boxShadow: '0 20px 40px rgba(0,0,0,0.6)'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: '1.2rem' }}>📊</span>
+                                <span style={{ fontWeight: 800, fontSize: '1rem', color: '#fff' }}>Meeting Analytics</span>
+                            </div>
+                            <button
+                                onClick={() => setShowAnalyticsModal(false)}
+                                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                            >
+                                <IconX size={16} />
+                            </button>
+                        </div>
+
+                        <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: 16 }}>
+                            Live breakdown of participant talk-time distribution and collaborative engagement:
+                        </div>
+
+                        {/* Talk Time Leaderboard */}
+                        {(() => {
+                            const totalSeconds = Object.values(talkTimeMap).reduce((a, b) => a + b, 0) || 1
+                            const entries = Object.entries(talkTimeMap)
+                            return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    {entries.length === 0 ? (
+                                        <div style={{ padding: 20, textAlign: 'center', color: '#64748b', fontSize: '0.8rem' }}>
+                                            No speaking activity recorded yet. Start talking to see live talk-time stats!
+                                        </div>
+                                    ) : (
+                                        entries.map(([speaker, secs]) => {
+                                            const pct = Math.round((secs / totalSeconds) * 100)
+                                            const name = speaker === 'me' ? `${myDisplayName} (You)` : getUserDisplayName(speaker)
+                                            return (
+                                                <div key={speaker} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                                                        <span style={{ fontWeight: 700, color: '#e2e8f0' }}>{name}</span>
+                                                        <span style={{ color: '#a5b4fc', fontWeight: 600 }}>{secs}s ({pct}%)</span>
+                                                    </div>
+                                                    <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
+                                                        <div style={{
+                                                            width: `${pct}%`,
+                                                            height: '100%',
+                                                            background: 'linear-gradient(90deg, #6366f1, #a855f7)',
+                                                            borderRadius: 3,
+                                                            transition: 'width 0.3s ease'
+                                                        }} />
+                                                    </div>
+                                                </div>
+                                            )
+                                        })
+                                    )}
+                                </div>
+                            )
+                        })()}
+
+                        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={() => setShowAnalyticsModal(false)}
+                                className="btn btn-primary"
+                                style={{ padding: '6px 16px', borderRadius: 8, fontSize: '0.8rem', fontWeight: 600 }}
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Next-Gen Feature 7: Post-Meeting Interactive Capsule Hub */}
+            {postMeetingCapsule && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 11000,
+                    background: 'rgba(10, 11, 16, 0.95)', backdropFilter: 'blur(16px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+                }}>
+                    <div style={{
+                        background: '#13151c', border: '1px solid rgba(255,255,255,0.12)',
+                        borderRadius: 20, width: '100%', maxWidth: 540, padding: 32,
+                        boxShadow: '0 25px 50px rgba(0,0,0,0.7)',
+                        display: 'flex', flexDirection: 'column', gap: 20
+                    }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '2rem', marginBottom: 8 }}>📦</div>
+                            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', margin: '0 0 6px 0' }}>
+                                Meeting Capsule
+                            </h2>
+                            <div style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
+                                Session completed • Duration: <span style={{ color: '#fff', fontWeight: 700 }}>{postMeetingCapsule.duration}</span>
+                            </div>
+                        </div>
+
+                        {/* Meeting Highlights Summary Card */}
+                        <div style={{
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: 12, padding: '16px 20px',
+                            display: 'flex', flexDirection: 'column', gap: 10
+                        }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                Session Notes & Action Items
+                            </div>
+                            <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', lineHeight: 1.5, maxHeight: 140, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                                {postMeetingCapsule.notes || 'No manual action items logged during this session.'}
+                            </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const content = `# ${postMeetingCapsule.title}\nDuration: ${postMeetingCapsule.duration}\nDate: ${new Date().toLocaleString()}\n\n## Action Items & Notes\n${postMeetingCapsule.notes || 'None logged.'}\n`
+                                    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' })
+                                    const url = URL.createObjectURL(blob)
+                                    const a = document.createElement('a')
+                                    a.href = url
+                                    a.download = `Meeting_Capsule_${Date.now()}.md`
+                                    a.click()
+                                    URL.revokeObjectURL(url)
+                                }}
+                                style={{
+                                    flex: 1, padding: '10px 16px', borderRadius: 10,
+                                    background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
+                                    color: '#fff', fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer'
+                                }}
+                            >
+                                💾 Download Capsule (.md)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPostMeetingCapsule(null)
+                                    if (onLeave) onLeave()
+                                    else window.location.hash = '#'
+                                }}
+                                className="btn btn-primary"
+                                style={{
+                                    flex: 1, padding: '10px 16px', borderRadius: 10,
+                                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                                    border: 'none', color: '#fff', fontWeight: 700, fontSize: '0.8125rem', cursor: 'pointer'
+                                }}
+                            >
+                                Exit to Workspace
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Google Meet Layout Switcher Modal */}
             <LayoutSwitcherModal
                 isOpen={isLayoutModalOpen}
@@ -9337,8 +9918,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             </span>
                             <div style={{ display: 'flex', gap: 10 }}>
                                 <button
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(generateMoMContent())
+                                    onClick={async () => {
+                                        await copyToClipboard(generateMoMContent())
                                         addToast('MoM copied to clipboard!', 'success')
                                     }}
                                     className="btn btn-secondary"
@@ -9553,9 +10134,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             style={{ flex: 1, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', color: '#a5b4fc', fontFamily: 'monospace', fontSize: '0.8125rem', outline: 'none' }}
                                         />
                                         <button
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(meetLink);
-                                                addToast('Meeting link copied to clipboard!', 'success');
+                                            onClick={async () => {
+                                                await copyToClipboard(meetLink)
+                                                addToast('Meeting link copied to clipboard!', 'success')
                                             }}
                                             className="btn btn-secondary"
                                             style={{ padding: '0 16px', fontSize: '0.8125rem', fontWeight: 600 }}
@@ -10055,6 +10636,13 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 </div>,
                 document.body
             )}
+
+            {/* Electron Screen & Application Window Source Picker Modal */}
+            <ScreenPickerModal
+                isOpen={showScreenPicker}
+                onClose={handleScreenPickerClosed}
+                onSelectSource={handleScreenSourceSelected}
+            />
         </div>
     )
 }

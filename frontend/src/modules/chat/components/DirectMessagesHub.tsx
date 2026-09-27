@@ -21,11 +21,15 @@ import {
     IconMonitor,
     IconFolder,
     IconFlag,
-    IconInfo
+    IconInfo,
+    IconEye
 } from '../../../components/common/Icons'
 import { UserPresenceBadge, PresenceStatus } from '../../../components/common/UserPresenceBadge'
 import { UserAvatar } from '../../../components/common/UserAvatar'
 import { AsyncClipRecorderModal } from './AsyncClipRecorderModal'
+import { DocumentPreviewModal, type PreviewDocument } from '../../../components/common/DocumentPreviewModal'
+import { renderFormattedMessage, htmlToMarkdown } from '../../../utils/formatMessage'
+import { getScreenShareStream } from '../../meeting/services/screen.service'
 
 export interface ChatContact {
     _id: string
@@ -106,6 +110,9 @@ export function DirectMessagesHub({
     const [showChatSearch, setShowChatSearch] = useState(false)
     const [chatSearchQuery, setChatSearchQuery] = useState('')
 
+    // Document / File Preview Modal
+    const [previewFile, setPreviewFile] = useState<PreviewDocument | null>(null)
+
     // Pinned chats
     const [pinnedIds, setPinnedIds] = useState<string[]>(() => {
         try {
@@ -120,6 +127,25 @@ export function DirectMessagesHub({
     const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({})
     const typingTimeoutRef = useRef<any>(null)
 
+    // Left Chat Sidebar Collapse Toggle
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+        try {
+            return localStorage.getItem('jts_dm_sidebar_collapsed') === 'true'
+        } catch (_) {
+            return false
+        }
+    })
+
+    const toggleSidebarCollapse = () => {
+        setIsSidebarCollapsed(prev => {
+            const next = !prev
+            try {
+                localStorage.setItem('jts_dm_sidebar_collapsed', String(next))
+            } catch (_) {}
+            return next
+        })
+    }
+
     // Zoom Clips & Thread State
     const [showClipModal, setShowClipModal] = useState(false)
     const [activeThreadParent, setActiveThreadParent] = useState<ChatMessage | null>(null)
@@ -131,6 +157,15 @@ export function DirectMessagesHub({
     // File input ref
     const fileInputRef = useRef<HTMLInputElement>(null)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const composerEditorRef = useRef<HTMLDivElement>(null)
+    const [isEditorEmpty, setIsEditorEmpty] = useState(true)
+    const [activeFormats, setActiveFormats] = useState({
+        bold: false,
+        italic: false,
+        code: false,
+        list: false,
+        quote: false
+    })
 
     const socketRef = useRef<Socket | null>(null)
     const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -492,16 +527,29 @@ export function DirectMessagesHub({
     // Send Message
     const handleSendMessage = async (e?: React.FormEvent) => {
         if (e) e.preventDefault()
-        if (!activeContact || !messageInput.trim() || sendingMessage) return
+        if (!activeContact || sendingMessage) return
 
-        let rawContent = messageInput.trim()
+        let rawContent = ''
+        if (composerEditorRef.current) {
+            rawContent = htmlToMarkdown(composerEditorRef.current.innerHTML)
+        } else if (messageInput) {
+            rawContent = messageInput.trim()
+        }
+
+        if (!rawContent.trim()) return
+
         if (isUrgentMessage) {
             rawContent = `[IMPORTANT] ${rawContent}`
         }
 
+        if (composerEditorRef.current) {
+            composerEditorRef.current.innerHTML = ''
+        }
         setMessageInput('')
+        setIsEditorEmpty(true)
         setIsUrgentMessage(false)
         setShowEmojiPicker(false)
+        setActiveFormats({ bold: false, italic: false, code: false, list: false, quote: false })
         setSendingMessage(true)
 
         // Stop typing immediately
@@ -698,24 +746,191 @@ export function DirectMessagesHub({
         }
     }
 
-    // Insert formatting tag into composer textarea
+    const checkEditorState = () => {
+        const text = composerEditorRef.current?.innerText || ''
+        setIsEditorEmpty(!text.trim())
+    }
+
+    const updateActiveFormats = () => {
+        try {
+            const isBold = document.queryCommandState('bold')
+            const isItalic = document.queryCommandState('italic')
+            const isList = document.queryCommandState('insertUnorderedList')
+
+            let isCode = false
+            let isQuote = false
+            const sel = window.getSelection()
+            if (sel && sel.anchorNode && composerEditorRef.current) {
+                let node: Node | null = sel.anchorNode
+                while (node && node !== composerEditorRef.current) {
+                    if (node.nodeName === 'CODE') isCode = true
+                    if (node.nodeName === 'BLOCKQUOTE') isQuote = true
+                    node = node.parentNode
+                }
+            }
+
+            setActiveFormats({
+                bold: isBold,
+                italic: isItalic,
+                code: isCode,
+                list: isList,
+                quote: isQuote
+            })
+        } catch (_) {}
+    }
+
+    const toggleBold = () => {
+        composerEditorRef.current?.focus()
+        document.execCommand('bold', false)
+        updateActiveFormats()
+        checkEditorState()
+    }
+
+    const toggleItalic = () => {
+        composerEditorRef.current?.focus()
+        document.execCommand('italic', false)
+        updateActiveFormats()
+        checkEditorState()
+    }
+
+    const toggleList = () => {
+        composerEditorRef.current?.focus()
+        document.execCommand('insertUnorderedList', false)
+        updateActiveFormats()
+        checkEditorState()
+    }
+
+    const toggleQuote = () => {
+        const editor = composerEditorRef.current
+        if (!editor) return
+        editor.focus()
+        const sel = window.getSelection()
+        if (!sel || sel.rangeCount === 0) return
+        const range = sel.getRangeAt(0)
+
+        let node: Node | null = sel.anchorNode
+        let quoteParent: HTMLElement | null = null
+        while (node && node !== editor) {
+            if (node.nodeName === 'BLOCKQUOTE') {
+                quoteParent = node as HTMLElement
+                break
+            }
+            node = node.parentNode
+        }
+
+        if (quoteParent) {
+            const parent = quoteParent.parentNode
+            while (quoteParent.firstChild) {
+                parent?.insertBefore(quoteParent.firstChild, quoteParent)
+            }
+            parent?.removeChild(quoteParent)
+        } else {
+            const bq = document.createElement('blockquote')
+            bq.style.borderLeft = '3px solid #6264a7'
+            bq.style.paddingLeft = '8px'
+            bq.style.margin = '4px 0'
+            bq.style.color = '#c7c9ff'
+            try {
+                range.surroundContents(bq)
+            } catch (_) {
+                document.execCommand('formatBlock', false, 'blockquote')
+            }
+        }
+        updateActiveFormats()
+        checkEditorState()
+    }
+
+    const toggleInlineCode = () => {
+        const editor = composerEditorRef.current
+        if (!editor) return
+        editor.focus()
+        const sel = window.getSelection()
+        if (!sel || sel.rangeCount === 0) return
+        const range = sel.getRangeAt(0)
+
+        let node: Node | null = sel.anchorNode
+        let codeParent: HTMLElement | null = null
+        while (node && node !== editor) {
+            if (node.nodeName === 'CODE') {
+                codeParent = node as HTMLElement
+                break
+            }
+            node = node.parentNode
+        }
+
+        if (codeParent) {
+            const parent = codeParent.parentNode
+            while (codeParent.firstChild) {
+                parent?.insertBefore(codeParent.firstChild, codeParent)
+            }
+            parent?.removeChild(codeParent)
+        } else {
+            const selectedText = range.toString()
+            const codeEl = document.createElement('code')
+            codeEl.style.background = 'rgba(255, 255, 255, 0.1)'
+            codeEl.style.color = '#f43f5e'
+            codeEl.style.padding = '1px 5px'
+            codeEl.style.borderRadius = '4px'
+            codeEl.style.fontFamily = 'Consolas, Monaco, monospace'
+            codeEl.style.fontSize = '0.85em'
+            codeEl.textContent = selectedText || ' '
+            range.deleteContents()
+            range.insertNode(codeEl)
+
+            const newRange = document.createRange()
+            newRange.selectNodeContents(codeEl)
+            sel.removeAllRanges()
+            sel.addRange(newRange)
+        }
+        updateActiveFormats()
+        checkEditorState()
+    }
+
+    const handleEditorInput = () => {
+        checkEditorState()
+        updateActiveFormats()
+
+        if (!activeContact || !socketRef.current) return
+        socketRef.current.emit('typing:start', { receiverId: activeContact._id })
+
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+        typingTimeoutRef.current = setTimeout(() => {
+            socketRef.current?.emit('typing:stop', { receiverId: activeContact._id })
+        }, 2000)
+    }
+
+    // Formatting adapter
     const insertFormatting = (syntax: string) => {
-        if (!textareaRef.current) return
-        const textarea = textareaRef.current
-        const start = textarea.selectionStart
-        const end = textarea.selectionEnd
-        const selected = messageInput.substring(start, end)
+        if (syntax === 'bold') toggleBold()
+        else if (syntax === 'italic') toggleItalic()
+        else if (syntax === 'code') toggleInlineCode()
+        else if (syntax === 'bullet') toggleList()
+        else if (syntax === 'quote') toggleQuote()
+    }
 
-        let replacement = ''
-        if (syntax === 'bold') replacement = `**${selected || 'bold text'}**`
-        else if (syntax === 'italic') replacement = `*${selected || 'italic text'}*`
-        else if (syntax === 'code') replacement = `\`${selected || 'code'}\``
-        else if (syntax === 'bullet') replacement = `\n• ${selected || 'list item'}`
-        else if (syntax === 'quote') replacement = `\n> ${selected || 'quoted text'}`
+    const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            handleSendMessage()
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+            e.preventDefault()
+            toggleBold()
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+            e.preventDefault()
+            toggleItalic()
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+            e.preventDefault()
+            toggleInlineCode()
+        }
+    }
 
-        const updated = messageInput.substring(0, start) + replacement + messageInput.substring(end)
-        setMessageInput(updated)
-        textarea.focus()
+    const handleInsertEmoji = (emoji: string) => {
+        const editor = composerEditorRef.current
+        if (!editor) return
+        editor.focus()
+        document.execCommand('insertText', false, emoji)
+        setShowEmojiPicker(false)
+        checkEditorState()
     }
 
     // Scroll thread to bottom
@@ -887,10 +1102,7 @@ export function DirectMessagesHub({
     const handleStartScreenShareCall = async () => {
         if (!activeContact) return
         try {
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: { cursor: 'always' } as any,
-                audio: true
-            })
+            const screenStream = await getScreenShareStream()
             if (onStartCall) {
                 onStartCall(activeContact._id, activeContact.fullName, 'screenshare', activeContact.profileImage, screenStream)
             } else if (onStartMeeting) {
@@ -1004,13 +1216,15 @@ export function DirectMessagesHub({
         <div style={{ display: 'flex', height: '100%', width: '100%', background: '#0a0b10', overflow: 'hidden', fontFamily: 'var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif)' }}>
             {/* LEFT SIDEBAR: MS Teams Style */}
             <div style={{
-                width: 320,
-                minWidth: 280,
-                borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+                width: isSidebarCollapsed ? 0 : 320,
+                minWidth: isSidebarCollapsed ? 0 : 280,
+                borderRight: isSidebarCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
                 background: 'rgba(15, 17, 23, 0.96)',
-                display: 'flex',
+                display: isSidebarCollapsed ? 'none' : 'flex',
                 flexDirection: 'column',
-                flexShrink: 0
+                flexShrink: 0,
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                overflow: 'hidden'
             }}>
                 {/* Header & New Chat Button */}
                 <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
@@ -1036,35 +1250,74 @@ export function DirectMessagesHub({
                             </div>
                         </div>
 
-                        {/* Teams "+ New Chat" Button (Opens Dedicated User Picker Modal) */}
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setNewChatSearch('')
-                                setShowNewChatModal(true)
-                            }}
-                            title="Start new chat"
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 5,
-                                padding: '5px 11px',
-                                borderRadius: 6,
-                                background: '#6264a7',
-                                border: 'none',
-                                color: '#fff',
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                                boxShadow: '0 2px 8px rgba(98, 100, 167, 0.35)'
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.background = '#7375b8' }}
-                            onMouseLeave={e => { e.currentTarget.style.background = '#6264a7' }}
-                        >
-                            <IconPlus size={13} />
-                            <span>New Chat</span>
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {/* Teams "+ New Chat" Button (Opens Dedicated User Picker Modal) */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setNewChatSearch('')
+                                    setShowNewChatModal(true)
+                                }}
+                                title="Start new chat"
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 5,
+                                    padding: '5px 11px',
+                                    borderRadius: 6,
+                                    background: '#6264a7',
+                                    border: 'none',
+                                    color: '#fff',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                    boxShadow: '0 2px 8px rgba(98, 100, 167, 0.35)'
+                                }}
+                                onMouseEnter={e => { e.currentTarget.style.background = '#7375b8' }}
+                                onMouseLeave={e => { e.currentTarget.style.background = '#6264a7' }}
+                            >
+                                <IconPlus size={13} />
+                                <span>New Chat</span>
+                            </button>
+
+                            {/* Collapse Sidebar Button */}
+                            <button
+                                type="button"
+                                onClick={toggleSidebarCollapse}
+                                title="Collapse chat sidebar"
+                                aria-label="Collapse chat sidebar"
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: 6,
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'var(--color-text-muted)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={e => {
+                                    e.currentTarget.style.background = 'rgba(98, 100, 167, 0.3)'
+                                    e.currentTarget.style.color = '#fff'
+                                    e.currentTarget.style.borderColor = 'rgba(98, 100, 167, 0.6)'
+                                }}
+                                onMouseLeave={e => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                                    e.currentTarget.style.color = 'var(--color-text-muted)'
+                                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                                }}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                    <line x1="9" y1="3" x2="9" y2="21" />
+                                    <path d="m14 9-3 3 3 3" />
+                                </svg>
+                            </button>
+                        </div>
                     </div>
 
                     {/* Switcher tabs (Recent vs Directory) */}
@@ -1277,7 +1530,45 @@ export function DirectMessagesHub({
                                 justifyContent: 'space-between',
                                 gap: 12
                             }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                                    {isSidebarCollapsed && (
+                                        <button
+                                            type="button"
+                                            onClick={toggleSidebarCollapse}
+                                            title="Show chat sidebar (Expand)"
+                                            aria-label="Show chat sidebar"
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                width: 30,
+                                                height: 30,
+                                                borderRadius: 7,
+                                                background: 'rgba(98, 100, 167, 0.25)',
+                                                border: '1px solid rgba(98, 100, 167, 0.45)',
+                                                color: '#c7c9ff',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease',
+                                                flexShrink: 0
+                                            }}
+                                            onMouseEnter={e => {
+                                                e.currentTarget.style.background = 'rgba(98, 100, 167, 0.45)'
+                                                e.currentTarget.style.borderColor = '#818cf8'
+                                                e.currentTarget.style.color = '#fff'
+                                            }}
+                                            onMouseLeave={e => {
+                                                e.currentTarget.style.background = 'rgba(98, 100, 167, 0.25)'
+                                                e.currentTarget.style.borderColor = 'rgba(98, 100, 167, 0.45)'
+                                                e.currentTarget.style.color = '#c7c9ff'
+                                            }}
+                                        >
+                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                                <line x1="9" y1="3" x2="9" y2="21" />
+                                                <path d="m13 15 3-3-3-3" />
+                                            </svg>
+                                        </button>
+                                    )}
                                     <UserAvatar
                                         src={activeContact.profileImage}
                                         name={activeContact.fullName}
@@ -1560,41 +1851,71 @@ export function DirectMessagesHub({
                                             }}>
                                                 <button
                                                     type="button"
-                                                    onClick={() => insertFormatting('bold')}
-                                                    title="Bold (**text**)"
-                                                    style={formattingBtnStyle}
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={toggleBold}
+                                                    title="Bold"
+                                                    style={{
+                                                        ...formattingBtnStyle,
+                                                        background: activeFormats.bold ? 'rgba(98, 100, 167, 0.4)' : 'transparent',
+                                                        color: activeFormats.bold ? '#fff' : '#c7c9ff',
+                                                        border: activeFormats.bold ? '1px solid rgba(98, 100, 167, 0.6)' : '1px solid transparent'
+                                                    }}
                                                 >
                                                     <strong>B</strong>
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => insertFormatting('italic')}
-                                                    title="Italic (*text*)"
-                                                    style={formattingBtnStyle}
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={toggleItalic}
+                                                    title="Italic"
+                                                    style={{
+                                                        ...formattingBtnStyle,
+                                                        background: activeFormats.italic ? 'rgba(98, 100, 167, 0.4)' : 'transparent',
+                                                        color: activeFormats.italic ? '#fff' : '#c7c9ff',
+                                                        border: activeFormats.italic ? '1px solid rgba(98, 100, 167, 0.6)' : '1px solid transparent'
+                                                    }}
                                                 >
                                                     <em>I</em>
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => insertFormatting('code')}
-                                                    title="Code (`code`)"
-                                                    style={formattingBtnStyle}
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={toggleInlineCode}
+                                                    title="Code"
+                                                    style={{
+                                                        ...formattingBtnStyle,
+                                                        background: activeFormats.code ? 'rgba(98, 100, 167, 0.4)' : 'transparent',
+                                                        color: activeFormats.code ? '#fff' : '#c7c9ff',
+                                                        border: activeFormats.code ? '1px solid rgba(98, 100, 167, 0.6)' : '1px solid transparent'
+                                                    }}
                                                 >
                                                     &lt;/&gt;
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => insertFormatting('bullet')}
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={toggleList}
                                                     title="Bulleted list"
-                                                    style={formattingBtnStyle}
+                                                    style={{
+                                                        ...formattingBtnStyle,
+                                                        background: activeFormats.list ? 'rgba(98, 100, 167, 0.4)' : 'transparent',
+                                                        color: activeFormats.list ? '#fff' : '#c7c9ff',
+                                                        border: activeFormats.list ? '1px solid rgba(98, 100, 167, 0.6)' : '1px solid transparent'
+                                                    }}
                                                 >
                                                     • List
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => insertFormatting('quote')}
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={toggleQuote}
                                                     title="Quote"
-                                                    style={formattingBtnStyle}
+                                                    style={{
+                                                        ...formattingBtnStyle,
+                                                        background: activeFormats.quote ? 'rgba(98, 100, 167, 0.4)' : 'transparent',
+                                                        color: activeFormats.quote ? '#fff' : '#c7c9ff',
+                                                        border: activeFormats.quote ? '1px solid rgba(98, 100, 167, 0.6)' : '1px solid transparent'
+                                                    }}
                                                 >
                                                     &ldquo; Quote
                                                 </button>
@@ -1626,22 +1947,35 @@ export function DirectMessagesHub({
                                             </div>
                                         )}
 
-                                        {/* Main Input Textarea */}
-                                        <div style={{ position: 'relative' }}>
-                                            <textarea
-                                                ref={textareaRef}
-                                                value={messageInput}
-                                                onChange={handleMessageInputChange}
-                                                onKeyDown={e => {
-                                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                                        e.preventDefault()
-                                                        handleSendMessage()
-                                                    }
-                                                }}
-                                                placeholder={`Type a message to ${activeContact.fullName} (Enter to send, Shift+Enter for new line)...`}
-                                                rows={isFormatBarOpen ? 3 : 1}
+                                        {/* Main Input WYSIWYG Container */}
+                                        <div style={{ position: 'relative', width: '100%', minHeight: isFormatBarOpen ? 80 : 42, display: 'flex' }}>
+                                            {isEditorEmpty && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    left: 14,
+                                                    top: 10,
+                                                    color: '#64748b',
+                                                    fontSize: '0.8125rem',
+                                                    pointerEvents: 'none',
+                                                    userSelect: 'none'
+                                                }}>
+                                                    Type a message to {activeContact.fullName} (Enter to send, Shift+Enter for new line)...
+                                                </div>
+                                            )}
+                                            <div
+                                                ref={composerEditorRef}
+                                                contentEditable
+                                                role="textbox"
+                                                aria-multiline="true"
+                                                onInput={handleEditorInput}
+                                                onKeyDown={handleEditorKeyDown}
+                                                onKeyUp={updateActiveFormats}
+                                                onMouseUp={updateActiveFormats}
                                                 style={{
                                                     width: '100%',
+                                                    minHeight: isFormatBarOpen ? 80 : 42,
+                                                    maxHeight: 180,
+                                                    overflowY: 'auto',
                                                     padding: '10px 14px',
                                                     fontSize: '0.8125rem',
                                                     lineHeight: 1.4,
@@ -1649,10 +1983,10 @@ export function DirectMessagesHub({
                                                     background: 'rgba(255, 255, 255, 0.04)',
                                                     border: isUrgentMessage ? '1px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.08)',
                                                     color: '#fff',
-                                                    resize: 'none',
                                                     outline: 'none',
-                                                    fontFamily: 'inherit',
-                                                    boxSizing: 'border-box'
+                                                    boxSizing: 'border-box',
+                                                    wordBreak: 'break-word',
+                                                    whiteSpace: 'pre-wrap'
                                                 }}
                                             />
                                         </div>
@@ -1725,11 +2059,7 @@ export function DirectMessagesHub({
                                                                 <button
                                                                     key={emoji}
                                                                     type="button"
-                                                                    onClick={() => {
-                                                                        setMessageInput(prev => prev + emoji)
-                                                                        setShowEmojiPicker(false)
-                                                                        textareaRef.current?.focus()
-                                                                    }}
+                                                                    onClick={() => handleInsertEmoji(emoji)}
                                                                     style={{
                                                                         background: 'none',
                                                                         border: 'none',
@@ -1784,7 +2114,7 @@ export function DirectMessagesHub({
                                             <button
                                                 type="button"
                                                 onClick={() => handleSendMessage()}
-                                                disabled={!messageInput.trim() || sendingMessage}
+                                                disabled={isEditorEmpty || sendingMessage}
                                                 style={{
                                                     height: 34,
                                                     padding: '0 16px',
@@ -1795,11 +2125,11 @@ export function DirectMessagesHub({
                                                     fontWeight: 700,
                                                     fontSize: '0.78125rem',
                                                     border: 'none',
-                                                    background: messageInput.trim() ? '#6264a7' : 'rgba(255, 255, 255, 0.08)',
-                                                    color: messageInput.trim() ? '#fff' : 'rgba(255, 255, 255, 0.4)',
-                                                    cursor: messageInput.trim() ? 'pointer' : 'not-allowed',
+                                                    background: !isEditorEmpty ? '#6264a7' : 'rgba(255, 255, 255, 0.08)',
+                                                    color: !isEditorEmpty ? '#fff' : 'rgba(255, 255, 255, 0.4)',
+                                                    cursor: !isEditorEmpty ? 'pointer' : 'not-allowed',
                                                     transition: 'all 0.15s ease',
-                                                    boxShadow: messageInput.trim() ? '0 2px 8px rgba(98, 100, 167, 0.4)' : 'none'
+                                                    boxShadow: !isEditorEmpty ? '0 2px 8px rgba(98, 100, 167, 0.4)' : 'none'
                                                 }}
                                             >
                                                 <IconSend size={13} />
@@ -1851,7 +2181,7 @@ export function DirectMessagesHub({
                                                 Original Message &bull; {formatTimestamp(activeThreadParent.createdAt)}
                                             </div>
                                             <div style={{ fontSize: '0.8125rem', color: '#e2e8f0', lineHeight: 1.4, wordBreak: 'break-word' }}>
-                                                {activeThreadParent.message}
+                                                {renderFormattedMessage(activeThreadParent.message)}
                                             </div>
                                         </div>
 
@@ -1885,7 +2215,7 @@ export function DirectMessagesHub({
                                                                 maxWidth: '85%',
                                                                 wordBreak: 'break-word'
                                                             }}>
-                                                                {reply.message}
+                                                                {renderFormattedMessage(reply.message)}
                                                                 <div style={{ fontSize: '0.5625rem', color: 'rgba(255,255,255,0.6)', textAlign: 'right', marginTop: 3 }}>
                                                                     {formatTimestamp(reply.createdAt)}
                                                                 </div>
@@ -2050,27 +2380,49 @@ export function DirectMessagesHub({
                                                         <td style={{ padding: '12px 16px', color: 'var(--color-text-muted)' }}>{formatTimestamp(file.date)}</td>
                                                         <td style={{ padding: '12px 16px', color: 'var(--color-text-muted)' }}>{file.size}</td>
                                                         <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                                                            <a
-                                                                href={file.url}
-                                                                download
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                style={{
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    gap: 4,
-                                                                    padding: '4px 10px',
-                                                                    borderRadius: 6,
-                                                                    background: 'rgba(255, 255, 255, 0.08)',
-                                                                    color: '#fff',
-                                                                    textDecoration: 'none',
-                                                                    fontWeight: 600,
-                                                                    fontSize: '0.71875rem'
-                                                                }}
-                                                            >
-                                                                <IconDownload size={12} />
-                                                                <span>Download</span>
-                                                            </a>
+                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setPreviewFile({ name: file.name, url: file.url, size: file.size })}
+                                                                    style={{
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: 4,
+                                                                        padding: '4px 10px',
+                                                                        borderRadius: 6,
+                                                                        background: 'rgba(98, 100, 167, 0.25)',
+                                                                        border: '1px solid rgba(98, 100, 167, 0.45)',
+                                                                        color: '#c7c9ff',
+                                                                        fontWeight: 600,
+                                                                        fontSize: '0.71875rem',
+                                                                        cursor: 'pointer'
+                                                                    }}
+                                                                >
+                                                                    <IconEye size={12} />
+                                                                    <span>Preview</span>
+                                                                </button>
+                                                                <a
+                                                                    href={file.url}
+                                                                    download={file.name}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    style={{
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: 4,
+                                                                        padding: '4px 10px',
+                                                                        borderRadius: 6,
+                                                                        background: 'rgba(255, 255, 255, 0.08)',
+                                                                        color: '#fff',
+                                                                        textDecoration: 'none',
+                                                                        fontWeight: 600,
+                                                                        fontSize: '0.71875rem'
+                                                                    }}
+                                                                >
+                                                                    <IconDownload size={12} />
+                                                                    <span>Download</span>
+                                                                </a>
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -2201,27 +2553,55 @@ export function DirectMessagesHub({
                         <p style={{ fontSize: '0.8125rem', lineHeight: 1.5, margin: '0 0 16px 0' }}>
                             Select an existing chat from the left or click below to start a new chat with any team member.
                         </p>
-                        <button
-                            type="button"
-                            onClick={() => setShowNewChatModal(true)}
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                padding: '8px 18px',
-                                borderRadius: 8,
-                                background: '#6264a7',
-                                border: 'none',
-                                color: '#fff',
-                                fontWeight: 700,
-                                fontSize: '0.8125rem',
-                                cursor: 'pointer',
-                                boxShadow: '0 4px 14px rgba(98, 100, 167, 0.4)'
-                            }}
-                        >
-                            <IconPlus size={14} />
-                            <span>Start New Chat</span>
-                        </button>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                            {isSidebarCollapsed && (
+                                <button
+                                    type="button"
+                                    onClick={toggleSidebarCollapse}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        padding: '8px 16px',
+                                        borderRadius: 8,
+                                        background: 'rgba(255, 255, 255, 0.08)',
+                                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                                        color: '#c7c9ff',
+                                        fontWeight: 700,
+                                        fontSize: '0.8125rem',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                        <line x1="9" y1="3" x2="9" y2="21" />
+                                        <path d="m13 15 3-3-3-3" />
+                                    </svg>
+                                    <span>Show Chat List</span>
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => setShowNewChatModal(true)}
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    padding: '8px 18px',
+                                    borderRadius: 8,
+                                    background: '#6264a7',
+                                    border: 'none',
+                                    color: '#fff',
+                                    fontWeight: 700,
+                                    fontSize: '0.8125rem',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 4px 14px rgba(98, 100, 167, 0.4)'
+                                }}
+                            >
+                                <IconPlus size={14} />
+                                <span>Start New Chat</span>
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -2329,7 +2709,7 @@ export function DirectMessagesHub({
                                                 setActiveContact(c)
                                                 setShowNewChatModal(false)
                                                 setSidebarTab('recent')
-                                                setTimeout(() => textareaRef.current?.focus(), 100)
+                                                setTimeout(() => composerEditorRef.current?.focus(), 100)
                                             }}
                                             style={{
                                                 display: 'flex',
@@ -2401,6 +2781,13 @@ export function DirectMessagesHub({
                 userPlan={userPlan}
                 recipientId={activeContact?._id}
                 onClipUploaded={handleClipUploaded}
+            />
+
+            {/* Document / File Preview Modal */}
+            <DocumentPreviewModal
+                isOpen={Boolean(previewFile)}
+                onClose={() => setPreviewFile(null)}
+                file={previewFile}
             />
         </div>
     )
@@ -2703,7 +3090,7 @@ export function DirectMessagesHub({
                         </div>
                     ) : (
                         <div style={{ whiteSpace: 'pre-wrap' }}>
-                            {msg.message.replace(/^\[IMPORTANT\]\s*/, '')}
+                            {renderFormattedMessage(msg.message.replace(/^\[IMPORTANT\]\s*/, ''))}
                         </div>
                     )}
 
@@ -2775,16 +3162,30 @@ export function DirectMessagesHub({
         const fileExt = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() || 'FILE' : 'FILE'
 
         return (
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                background: 'rgba(0, 0, 0, 0.25)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: 8,
-                padding: '10px 14px',
-                minWidth: 240
-            }}>
+            <div
+                onClick={() => setPreviewFile({ name: fileName, url: fileUrl, size: fileSize })}
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    background: 'rgba(0, 0, 0, 0.28)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    minWidth: 250,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#6264a7'
+                    e.currentTarget.style.background = 'rgba(98, 100, 167, 0.15)'
+                }}
+                onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'
+                    e.currentTarget.style.background = 'rgba(0, 0, 0, 0.28)'
+                }}
+                title="Click to preview document"
+            >
                 <div style={{
                     width: 36,
                     height: 36,
@@ -2806,27 +3207,61 @@ export function DirectMessagesHub({
                         {fileExt} &bull; {fileSize}
                     </div>
                 </div>
-                <a
-                    href={fileUrl}
-                    download={fileName}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Download file"
-                    style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: 6,
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#fff',
-                        textDecoration: 'none',
-                        flexShrink: 0
-                    }}
-                >
-                    <IconDownload size={14} />
-                </a>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            setPreviewFile({ name: fileName, url: fileUrl, size: fileSize })
+                        }}
+                        style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 6,
+                            background: 'rgba(98, 100, 167, 0.25)',
+                            border: '1px solid rgba(98, 100, 167, 0.45)',
+                            color: '#c7c9ff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(98, 100, 167, 0.45)'
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(98, 100, 167, 0.25)'
+                        }}
+                        title="Preview document"
+                    >
+                        <IconEye size={14} />
+                    </button>
+                    <a
+                        href={fileUrl}
+                        download={fileName}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        title="Download file"
+                        style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 6,
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#fff',
+                            textDecoration: 'none',
+                            flexShrink: 0
+                        }}
+                    >
+                        <IconDownload size={13} />
+                    </a>
+                </div>
             </div>
         )
     }

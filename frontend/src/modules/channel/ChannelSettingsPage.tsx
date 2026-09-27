@@ -24,9 +24,11 @@ import { ChannelMembersPage } from './ChannelMembersPage'
 import {
     IconMessage, IconFileText, IconUsers, IconEye, IconShield,
     IconAlertTriangle, IconHash, IconCheck, IconTrash, IconPlus, IconX,
-    IconPin, IconFolder, IconSparkles, IconMonitor, IconDownload, IconHand
+    IconPin, IconFolder, IconSparkles, IconMonitor, IconDownload, IconHand,
+    IconSearch, IconBell, IconBellOff, IconMic, IconLock
 } from '../../components/common/Icons'
 import { FileCard } from './components/FileCard'
+import { DocumentPreviewModal, type PreviewDocument } from '../../components/common/DocumentPreviewModal'
 import { CodeSnippetModal } from './components/CodeSnippetModal'
 import { CodeSnippetCard } from './components/CodeSnippetCard'
 import type { ChannelAttachment, CodeSnippet } from './channel.types'
@@ -34,6 +36,7 @@ import { soundEffects } from '../../utils/soundEffects'
 import { AsyncClipRecorderModal } from '../chat/components/AsyncClipRecorderModal'
 import io from 'socket.io-client'
 import { SOCKET_URL, API_BASE } from '../../config'
+import { renderFormattedMessage } from '../../utils/formatMessage'
 
 interface ChannelSettingsPageProps {
     token: string
@@ -43,6 +46,188 @@ interface ChannelSettingsPageProps {
     teams?: any[]
     onSelectTeam?: (teamId: string) => void
     onStartMeeting?: (meetingId: string) => void
+}
+
+/**
+ * Format timestamp into conversational date dividers: Today, Yesterday, or formatted date.
+ */
+function formatMessageDateDivider(dateStr: string): string {
+    const date = new Date(dateStr)
+    const today = new Date()
+    const yesterday = new Date()
+    yesterday.setDate(today.getDate() - 1)
+
+    if (date.toDateString() === today.toDateString()) {
+        return 'Today'
+    }
+    if (date.toDateString() === yesterday.toDateString()) {
+        return 'Yesterday'
+    }
+    return date.toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
+    })
+}
+
+function formatDuration(sec: number): string {
+    const m = Math.floor(sec / 60)
+    const s = sec % 60
+    return `${m}:${s < 10 ? '0' : ''}${s}`
+}
+
+/**
+ * VoiceMessageCard
+ * Rich interactive audio waveform player for channel voice notes.
+ */
+function VoiceMessageCard({ url, duration, name }: { url: string; duration?: number; name?: string }) {
+    const [playing, setPlaying] = useState(false)
+    const [currentTime, setCurrentTime] = useState(0)
+    const [audioDuration, setAudioDuration] = useState(duration || 0)
+    const audioRef = useRef<HTMLAudioElement | null>(null)
+
+    const togglePlay = () => {
+        const audio = audioRef.current
+        if (!audio) return
+        if (playing) {
+            audio.pause()
+        } else {
+            audio.play().catch(() => { })
+        }
+    }
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '8px 14px',
+            borderRadius: 12,
+            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.18) 0%, rgba(168, 85, 247, 0.12) 100%)',
+            border: '1px solid rgba(99, 102, 241, 0.35)',
+            maxWidth: 320,
+            marginTop: 4,
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)'
+        }}>
+            <audio
+                ref={audioRef}
+                src={url}
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onEnded={() => { setPlaying(false); setCurrentTime(0); }}
+                onTimeUpdate={() => {
+                    if (audioRef.current) setCurrentTime(audioRef.current.currentTime)
+                }}
+                onLoadedMetadata={() => {
+                    if (audioRef.current && audioRef.current.duration && !isNaN(audioRef.current.duration)) {
+                        setAudioDuration(audioRef.current.duration)
+                    }
+                }}
+            />
+            <button
+                type="button"
+                onClick={togglePlay}
+                style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: '50%',
+                    background: playing ? '#818cf8' : '#6366f1',
+                    border: 'none',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 10px rgba(99, 102, 241, 0.45)',
+                    flexShrink: 0,
+                    transition: 'all 0.15s ease'
+                }}
+                title={playing ? 'Pause' : 'Play voice message'}
+            >
+                {playing ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                    </svg>
+                ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 2 }}>
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                )}
+            </button>
+
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 3, height: 18 }}>
+                    {[35, 70, 50, 90, 65, 85, 45, 95, 60, 80, 50, 75, 40, 65].map((h, i) => {
+                        const progress = audioDuration > 0 ? currentTime / audioDuration : 0
+                        const barProgress = i / 14
+                        const isActive = barProgress <= progress
+                        return (
+                            <div
+                                key={i}
+                                style={{
+                                    width: 3,
+                                    height: `${h}%`,
+                                    borderRadius: 2,
+                                    background: isActive ? '#818cf8' : 'rgba(255, 255, 255, 0.25)',
+                                    transition: 'all 0.1s ease'
+                                }}
+                            />
+                        )
+                    })}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.675rem', color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ color: playing ? '#818cf8' : '#94a3b8', fontWeight: 600 }}>
+                        {formatDuration(Math.floor(currentTime))}
+                    </span>
+                    <span>
+                        {audioDuration > 0 ? formatDuration(Math.floor(audioDuration)) : name || 'Voice Note'}
+                    </span>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+/**
+ * Convert rich contenteditable HTML into clean, standard Markdown for storage
+ */
+function htmlToMarkdown(html: string): string {
+    if (!html || !html.trim()) return ''
+    const temp = document.createElement('div')
+    temp.innerHTML = html
+
+    // Replace <b> and <strong> with **...**
+    temp.querySelectorAll('b, strong').forEach(el => {
+        const text = el.textContent || ''
+        el.replaceWith(document.createTextNode(text ? `**${text}**` : ''))
+    })
+    // Replace <i> and <em> with *...*
+    temp.querySelectorAll('i, em').forEach(el => {
+        const text = el.textContent || ''
+        el.replaceWith(document.createTextNode(text ? `*${text}*` : ''))
+    })
+    // Replace <strike>, <s>, <del> with ~~...~~
+    temp.querySelectorAll('strike, s, del').forEach(el => {
+        const text = el.textContent || ''
+        el.replaceWith(document.createTextNode(text ? `~~${text}~~` : ''))
+    })
+    // Replace <code> with `...`
+    temp.querySelectorAll('code').forEach(el => {
+        const text = el.textContent || ''
+        el.replaceWith(document.createTextNode(text ? `\`${text}\`` : ''))
+    })
+    // Replace <br> with \n
+    temp.querySelectorAll('br').forEach(el => {
+        el.replaceWith(document.createTextNode('\n'))
+    })
+    // Replace <div> and <p> with \n
+    temp.querySelectorAll('div, p').forEach(el => {
+        el.prepend(document.createTextNode('\n'))
+    })
+
+    return temp.textContent?.trim() || ''
 }
 
 export function ChannelSettingsPage({
@@ -63,6 +248,7 @@ export function ChannelSettingsPage({
     const [showEditDialog, setShowEditDialog] = useState(false)
     const [channelSearch, setChannelSearch] = useState('')
     const [members, setMembers] = useState<Channel['members']>([])
+    const [previewFile, setPreviewFile] = useState<PreviewDocument | null>(null)
 
     const [activePanelTab, setActivePanelTab] = useState<'chat' | 'files' | 'members' | 'info' | 'permissions' | 'danger'>(() => {
         try {
@@ -70,17 +256,24 @@ export function ChannelSettingsPage({
             if (saved && ['chat', 'files', 'members', 'info', 'permissions', 'danger'].includes(saved)) {
                 return saved as any
             }
-        } catch (_) {}
+        } catch (_) { }
         return 'chat'
     })
 
     useEffect(() => {
         try {
             localStorage.setItem('jts_channel_panel_tab', activePanelTab)
-        } catch (_) {}
+        } catch (_) { }
     }, [activePanelTab])
     const [messages, setMessages] = useState<any[]>([])
     const [chatInput, setChatInput] = useState('')
+    const [isEditorEmpty, setIsEditorEmpty] = useState(true)
+    const [activeFormats, setActiveFormats] = useState<{ bold: boolean; italic: boolean; strike: boolean; code: boolean }>({
+        bold: false,
+        italic: false,
+        strike: false,
+        code: false
+    })
     const [activeThreadParent, setActiveThreadParent] = useState<any | null>(null)
     const [threadMessages, setThreadMessages] = useState<any[]>([])
     const [threadInput, setThreadInput] = useState('')
@@ -89,9 +282,63 @@ export function ChannelSettingsPage({
     const [socketInstance, setSocketInstance] = useState<any | null>(null)
     const [showClipModal, setShowClipModal] = useState(false)
 
+    // Feature 1: In-Channel Message Search
+    const [showInChannelSearch, setShowInChannelSearch] = useState(false)
+    const [inChannelSearchQuery, setInChannelSearchQuery] = useState('')
+
+    // Feature 3: Live Real-Time Typing Indicator
+    const [typingUsers, setTypingUsers] = useState<Array<{ userId: string; username: string; timestamp: number }>>([])
+    const typingDebounceRef = useRef<any>(null)
+
+    // Feature 4: Quick Voice Note Recorder
+    const [isRecordingAudio, setIsRecordingAudio] = useState(false)
+    const [audioRecordDuration, setAudioRecordDuration] = useState(0)
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+    const audioChunksRef = useRef<Blob[]>([])
+    const audioStreamRef = useRef<MediaStream | null>(null)
+    const audioTimerRef = useRef<any>(null)
+
+    // Feature 6: Unread Channel Count Badges
+    const [unreadChannelCounts, setUnreadChannelCounts] = useState<Record<string, number>>({})
+
+    // Feature 7: Per-Channel Notification Mute Toggle
+    const [isChannelMuted, setIsChannelMuted] = useState(false)
+
+    // Channel List Sidebar Collapse Toggle
+    const [isChannelListCollapsed, setIsChannelListCollapsed] = useState<boolean>(() => {
+        try {
+            return localStorage.getItem('jts_channel_list_collapsed') === 'true'
+        } catch (_) {
+            return false
+        }
+    })
+
+    const toggleChannelListCollapse = () => {
+        setIsChannelListCollapsed(prev => {
+            const next = !prev
+            try {
+                localStorage.setItem('jts_channel_list_collapsed', String(next))
+            } catch (_) {}
+            return next
+        })
+    }
+
+    // Next-Gen Feature 2: Channel Live Huddle (Slack 2.0 Style)
+    const [isHuddleActive, setIsHuddleActive] = useState(false)
+    const [isHuddleMuted, setIsHuddleMuted] = useState(false)
+    const [isHuddleCollapsed, setIsHuddleCollapsed] = useState(false)
+    const [ambientAudioMode, setAmbientAudioMode] = useState<'off' | 'lofi' | 'rain'>('off')
+
     // Resolved current user ID with JWT token decoding fallback
     const resolvedUserId = useMemo(() => {
         if (currentUserId) return currentUserId.toString()
+        try {
+            const stored = localStorage.getItem('user') || localStorage.getItem('auth_user')
+            if (stored) {
+                const u = JSON.parse(stored)
+                if (u._id || u.id) return (u._id || u.id).toString()
+            }
+        } catch (_) { }
         if (!token) return ''
         try {
             const base64Url = token.split('.')[1]
@@ -101,7 +348,7 @@ export function ChannelSettingsPage({
                 const parsed = JSON.parse(jsonPayload)
                 return (parsed.userId || parsed.id || parsed._id || parsed.sub || '').toString()
             }
-        } catch (_) {}
+        } catch (_) { }
         return ''
     }, [currentUserId, token])
 
@@ -126,7 +373,7 @@ export function ChannelSettingsPage({
 
     const requestBrowserNotificationPermission = () => {
         if (typeof Notification !== 'undefined') {
-            Notification.requestPermission().catch(() => {})
+            Notification.requestPermission().catch(() => { })
         }
     }
 
@@ -157,6 +404,350 @@ export function ChannelSettingsPage({
     const mainChatEndRef = useRef<HTMLDivElement>(null)
     const threadChatEndRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const chatInputRef = useRef<HTMLInputElement>(null)
+    const composerEditorRef = useRef<HTMLDivElement>(null)
+
+    const currentUserName = useMemo(() => {
+        const found = members.find(m => ((m as any).userId?._id || (m as any).userId)?.toString() === resolvedUserId)
+        return (found as any)?.fullName || (found as any)?.userId?.fullName || 'Colleague'
+    }, [members, resolvedUserId])
+
+    // Channel mute state sync
+    useEffect(() => {
+        if (selectedChannel?._id) {
+            const saved = localStorage.getItem(`jts_channel_muted_${selectedChannel._id}`)
+            setIsChannelMuted(saved === 'true')
+            setTypingUsers([])
+            setShowInChannelSearch(false)
+            setInChannelSearchQuery('')
+        }
+    }, [selectedChannel?._id])
+
+    // Cleanup expired typing indicator users
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setTypingUsers(prev => {
+                const now = Date.now()
+                const active = prev.filter(u => now - u.timestamp < 3500)
+                return active.length !== prev.length ? active : prev
+            })
+        }, 1500)
+        return () => clearInterval(timer)
+    }, [])
+
+    const toggleChannelMute = () => {
+        if (!selectedChannel) return
+        const next = !isChannelMuted
+        setIsChannelMuted(next)
+        try {
+            localStorage.setItem(`jts_channel_muted_${selectedChannel._id}`, String(next))
+        } catch (_) { }
+    }
+
+    const handleChatInputChange = (val: string) => {
+        setChatInput(val)
+        if (socketInstance && selectedChannel) {
+            socketInstance.emit('channel:typing', {
+                channelId: selectedChannel._id,
+                userId: resolvedUserId,
+                username: currentUserName,
+                typing: true
+            })
+            if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current)
+            typingDebounceRef.current = setTimeout(() => {
+                if (socketInstance && selectedChannel) {
+                    socketInstance.emit('channel:typing', {
+                        channelId: selectedChannel._id,
+                        userId: resolvedUserId,
+                        username: currentUserName,
+                        typing: false
+                    })
+                }
+            }, 2500)
+        }
+    }
+
+    const checkEditorState = () => {
+        const text = composerEditorRef.current?.innerText || ''
+        setIsEditorEmpty(!text.trim())
+    }
+
+    const updateActiveFormats = () => {
+        try {
+            const isBold = document.queryCommandState('bold')
+            const isItalic = document.queryCommandState('italic')
+            const isStrike = document.queryCommandState('strikeThrough')
+
+            let isCode = false
+            const sel = window.getSelection()
+            if (sel && sel.anchorNode && composerEditorRef.current) {
+                let node: Node | null = sel.anchorNode
+                while (node && node !== composerEditorRef.current) {
+                    if (node.nodeName === 'CODE') {
+                        isCode = true
+                        break
+                    }
+                    node = node.parentNode
+                }
+            }
+
+            setActiveFormats({
+                bold: isBold,
+                italic: isItalic,
+                strike: isStrike,
+                code: isCode
+            })
+        } catch (_) { }
+    }
+
+    const toggleBold = () => {
+        composerEditorRef.current?.focus()
+        document.execCommand('bold', false)
+        updateActiveFormats()
+        checkEditorState()
+    }
+
+    const toggleItalic = () => {
+        composerEditorRef.current?.focus()
+        document.execCommand('italic', false)
+        updateActiveFormats()
+        checkEditorState()
+    }
+
+    const toggleStrike = () => {
+        composerEditorRef.current?.focus()
+        document.execCommand('strikeThrough', false)
+        updateActiveFormats()
+        checkEditorState()
+    }
+
+    const toggleInlineCode = () => {
+        const editor = composerEditorRef.current
+        if (!editor) return
+        editor.focus()
+        const sel = window.getSelection()
+        if (!sel || sel.rangeCount === 0) return
+        const range = sel.getRangeAt(0)
+
+        let node: Node | null = sel.anchorNode
+        let codeParent: HTMLElement | null = null
+        while (node && node !== editor) {
+            if (node.nodeName === 'CODE') {
+                codeParent = node as HTMLElement
+                break
+            }
+            node = node.parentNode
+        }
+
+        if (codeParent) {
+            const parent = codeParent.parentNode
+            while (codeParent.firstChild) {
+                parent?.insertBefore(codeParent.firstChild, codeParent)
+            }
+            parent?.removeChild(codeParent)
+        } else {
+            const selectedText = range.toString() || 'code'
+            const codeEl = document.createElement('code')
+            codeEl.style.background = 'rgba(255, 255, 255, 0.1)'
+            codeEl.style.color = '#f43f5e'
+            codeEl.style.padding = '1px 5px'
+            codeEl.style.borderRadius = '4px'
+            codeEl.style.fontFamily = 'Consolas, Monaco, monospace'
+            codeEl.style.fontSize = '0.85em'
+            codeEl.textContent = selectedText
+            range.deleteContents()
+            range.insertNode(codeEl)
+
+            const newRange = document.createRange()
+            newRange.selectNodeContents(codeEl)
+            sel.removeAllRanges()
+            sel.addRange(newRange)
+        }
+        updateActiveFormats()
+        checkEditorState()
+    }
+
+    const handleEditorInput = () => {
+        checkEditorState()
+        updateActiveFormats()
+        const text = composerEditorRef.current?.innerText || ''
+        if (socketInstance && selectedChannel) {
+            socketInstance.emit('channel:typing', {
+                channelId: selectedChannel._id,
+                userId: resolvedUserId,
+                username: currentUserName,
+                typing: !!text.trim()
+            })
+            if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current)
+            typingDebounceRef.current = setTimeout(() => {
+                if (socketInstance && selectedChannel) {
+                    socketInstance.emit('channel:typing', {
+                        channelId: selectedChannel._id,
+                        userId: resolvedUserId,
+                        username: currentUserName,
+                        typing: false
+                    })
+                }
+            }, 2500)
+        }
+    }
+
+    const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            handleSendMessage()
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+            e.preventDefault()
+            toggleInlineCode()
+        }
+    }
+
+    const handleInsertEmoji = (emoji: string) => {
+        const editor = composerEditorRef.current
+        if (!editor) return
+        editor.focus()
+        const sel = window.getSelection()
+        if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+            const range = sel.getRangeAt(0)
+            range.deleteContents()
+            const textNode = document.createTextNode(emoji)
+            range.insertNode(textNode)
+            range.setStartAfter(textNode)
+            range.setEndAfter(textNode)
+            sel.removeAllRanges()
+            sel.addRange(range)
+        } else {
+            editor.innerText += emoji
+        }
+        checkEditorState()
+        setShowEmojiPicker(false)
+    }
+
+    // Audio recording methods
+    const startAudioRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            audioStreamRef.current = stream
+            const mediaRecorder = new MediaRecorder(stream)
+            mediaRecorderRef.current = mediaRecorder
+            audioChunksRef.current = []
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) {
+                    audioChunksRef.current.push(event.data)
+                }
+            }
+
+            mediaRecorder.start(200)
+            setIsRecordingAudio(true)
+            setAudioRecordDuration(0)
+
+            if (audioTimerRef.current) clearInterval(audioTimerRef.current)
+            audioTimerRef.current = setInterval(() => {
+                setAudioRecordDuration(prev => prev + 1)
+            }, 1000)
+        } catch (err: any) {
+            console.error('Failed to access microphone for voice note:', err)
+            alert('Could not access microphone: ' + (err?.message || 'Permission denied'))
+        }
+    }
+
+    const stopAudioRecording = async (send: boolean) => {
+        if (audioTimerRef.current) {
+            clearInterval(audioTimerRef.current)
+            audioTimerRef.current = null
+        }
+
+        const duration = audioRecordDuration
+
+        if (!send || !mediaRecorderRef.current || !selectedChannel) {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                mediaRecorderRef.current.stop()
+            }
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach(track => track.stop())
+                audioStreamRef.current = null
+            }
+            setIsRecordingAudio(false)
+            setAudioRecordDuration(0)
+            audioChunksRef.current = []
+            return
+        }
+
+        mediaRecorderRef.current.onstop = async () => {
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach(track => track.stop())
+                audioStreamRef.current = null
+            }
+            setIsRecordingAudio(false)
+            setAudioRecordDuration(0)
+
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+            audioChunksRef.current = []
+            if (audioBlob.size === 0) return
+
+            const audioFile = new File([audioBlob], `voice-note-${Date.now()}.webm`, { type: 'audio/webm' })
+
+            try {
+                setUploadingFile(true)
+                const uploaded = await uploadChannelFile(selectedChannel._id, audioFile, token)
+                const fileUrl = uploaded.secureUrl || `${API_BASE}/api/file/${uploaded._id}/download`
+
+                const attachmentData: ChannelAttachment = {
+                    name: audioFile.name,
+                    url: fileUrl,
+                    fileType: 'audio',
+                    size: audioFile.size,
+                    mimeType: 'audio/webm'
+                }
+
+                const res = await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        content: `🎙️ Voice Note (${formatDuration(duration)})`,
+                        messageType: 'audio',
+                        attachments: [attachmentData]
+                    })
+                })
+                const data = await res.json()
+                if (data.success && socketInstance) {
+                    if (data.data?._id) {
+                        sentByCurrentTabIds.current.add(data.data._id.toString())
+                    }
+                    socketInstance.emit('channel:message:send', data.data)
+                    setMessages(prev => {
+                        if (prev.some(m => m._id === data.data._id)) return prev
+                        return [...prev, data.data]
+                    })
+                }
+            } catch (err: any) {
+                console.error('Failed to send voice note:', err)
+                alert(err?.message || 'Failed to upload voice note')
+            } finally {
+                setUploadingFile(false)
+            }
+        }
+
+        if (mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop()
+        }
+    }
+
+    // Filtered message stream for In-Channel Search
+    const displayedMessages = useMemo(() => {
+        if (!inChannelSearchQuery.trim()) return messages
+        const q = inChannelSearchQuery.toLowerCase()
+        return messages.filter(m => {
+            const c = (m.content || '').toLowerCase()
+            const sender = (m.senderId?.fullName || '').toLowerCase()
+            const attNames = (m.attachments || []).map((a: any) => (a.name || '').toLowerCase()).join(' ')
+            return c.includes(q) || sender.includes(q) || attNames.includes(q)
+        })
+    }, [messages, inChannelSearchQuery])
 
     useEffect(() => {
         if (chatFeedRef.current) {
@@ -238,38 +829,95 @@ export function ChannelSettingsPage({
 
         socket.on('channel:message:receive', (msg: any) => {
             const msgId = (msg._id || msg.id)?.toString()
+            const targetCId = (msg.channelId?._id || msg.channelId)?.toString()
 
-            // Do not notify if this message was sent directly by this active tab
-            const isFromCurrentTab = msgId && sentByCurrentTabIds.current.has(msgId)
-
-            if (!isFromCurrentTab) {
-                // 1. Play signature Microsoft Teams notification chime
+            // Accurately resolve current user's identity
+            const myUserId = (currentUserId || (() => {
                 try {
-                    soundEffects.playMessageNotificationChime()
-                } catch (e) {
-                    console.error('Sound chime error:', e)
+                    const u = localStorage.getItem('user')
+                    if (!u) return ''
+                    const parsed = JSON.parse(u)
+                    return (parsed._id || parsed.id || '').toString()
+                } catch (_) {
+                    return ''
+                }
+            })() || (() => {
+                try {
+                    if (!token) return ''
+                    const payload = JSON.parse(atob(token.split('.')[1]))
+                    return (payload._id || payload.id || payload.userId || payload.sub || '').toString()
+                } catch (_) {
+                    return ''
+                }
+            })()).toString()
+
+            const myUserEmail = (() => {
+                try {
+                    const u = localStorage.getItem('user')
+                    return u ? (JSON.parse(u).email || '').toLowerCase() : ''
+                } catch (_) {
+                    return ''
+                }
+            })()
+
+            const senderIdStr = (typeof msg.senderId === 'object' && msg.senderId !== null
+                ? (msg.senderId._id || msg.senderId.id || '')
+                : (msg.senderId || '')).toString()
+
+            const senderEmailStr = (typeof msg.senderId === 'object' && msg.senderId !== null && msg.senderId.email
+                ? msg.senderId.email
+                : '').toLowerCase()
+
+            const isSentByMe = Boolean(
+                (myUserId && senderIdStr && myUserId === senderIdStr) ||
+                (myUserEmail && senderEmailStr && myUserEmail === senderEmailStr) ||
+                (msgId && sentByCurrentTabIds.current.has(msgId))
+            )
+
+            // NEVER notify or show toast/chime for messages sent by ME
+            if (!isSentByMe) {
+                // 1. Update unread count if message belongs to another channel
+                const isDifferentChannel = targetCId && selectedChannel && targetCId !== selectedChannel._id.toString()
+                if (isDifferentChannel) {
+                    setUnreadChannelCounts(prev => ({
+                        ...prev,
+                        [targetCId]: (prev[targetCId] || 0) + 1
+                    }))
+                }
+
+                // Check if channel is muted by user
+                const isMuted = selectedChannel && localStorage.getItem(`jts_channel_muted_${selectedChannel._id}`) === 'true'
+                if (!isMuted) {
+                    // Play signature Microsoft Teams notification chime
+                    try {
+                        soundEffects.playMessageNotificationChime()
+                    } catch (e) {
+                        console.error('Sound chime error:', e)
+                    }
                 }
 
                 const isAppFocused = typeof document !== 'undefined' && !document.hidden && document.hasFocus()
 
                 if (isAppFocused) {
-                    // 2. When user is inside the app, show only the sleek In-App Teams toast banner
-                    setIncomingNotificationToast({
-                        id: msgId || String(Date.now()),
-                        senderName: msg.senderId?.fullName || 'Colleague',
-                        senderAvatar: msg.senderId?.profileImage,
-                        channelName: selectedChannel?.name || 'General',
-                        channelId: selectedChannel?._id || '',
-                        content: msg.content || (msg.attachments?.length ? '📎 Sent an attachment' : 'Shared a message'),
-                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    })
+                    // When user is inside the app, only show in-app toast if message is from ANOTHER channel
+                    if (isDifferentChannel) {
+                        setIncomingNotificationToast({
+                            id: msgId || String(Date.now()),
+                            senderName: msg.senderId?.fullName || 'Colleague',
+                            senderAvatar: msg.senderId?.profileImage,
+                            channelName: msg.channelId?.name || selectedChannel?.name || 'Channel',
+                            channelId: targetCId || selectedChannel?._id || '',
+                            content: msg.content || (msg.attachments?.length ? '📎 Sent an attachment' : 'Shared a message'),
+                            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        })
+                    }
                 } else {
-                    // 3. When browser is minimized or user is on another tab, show OS Desktop Push notification
+                    // When browser is minimized or user is on another tab, show OS Desktop Push notification
                     if (typeof Notification !== 'undefined') {
                         if (Notification.permission === 'granted') {
                             try {
                                 const senderName = msg.senderId?.fullName || 'Colleague'
-                                const chName = selectedChannel?.name || 'General'
+                                const chName = msg.channelId?.name || selectedChannel?.name || 'General'
                                 const n = new Notification(`💬 ${senderName} in #${chName}`, {
                                     body: msg.content || (msg.attachments?.length ? '📎 Sent an attachment' : 'Shared a message'),
                                     icon: msg.senderId?.profileImage || '/icon.svg',
@@ -282,7 +930,7 @@ export function ChannelSettingsPage({
                                 }
                             } catch (_) { }
                         } else if (Notification.permission === 'default') {
-                            Notification.requestPermission().catch(() => {})
+                            Notification.requestPermission().catch(() => { })
                         }
                     }
                 }
@@ -332,6 +980,19 @@ export function ChannelSettingsPage({
                     return prev.filter(m => m._id !== messageId)
                 }
             })
+        })
+
+        socket.on('channel:typing', (payload: { channelId: string; userId: string; username: string; typing: boolean }) => {
+            if (payload?.channelId === selectedChannel?._id && payload?.userId !== resolvedUserIdRef.current) {
+                if (payload.typing) {
+                    setTypingUsers(prev => {
+                        const filtered = prev.filter(u => u.userId !== payload.userId)
+                        return [...filtered, { userId: payload.userId, username: payload.username || 'Colleague', timestamp: Date.now() }]
+                    })
+                } else {
+                    setTypingUsers(prev => prev.filter(u => u.userId !== payload.userId))
+                }
+            }
         })
 
         setSocketInstance(socket)
@@ -392,11 +1053,24 @@ export function ChannelSettingsPage({
 
     const handleSendMessage = async (e?: React.FormEvent) => {
         if (e) e.preventDefault()
-        if (!chatInput.trim() || !selectedChannel) return
+        if (!selectedChannel) return
 
-        const content = chatInput.trim()
+        let content = ''
+        if (composerEditorRef.current) {
+            content = htmlToMarkdown(composerEditorRef.current.innerHTML)
+        } else if (chatInput) {
+            content = chatInput.trim()
+        }
+
+        if (!content.trim()) return
+
+        if (composerEditorRef.current) {
+            composerEditorRef.current.innerHTML = ''
+        }
         setChatInput('')
+        setIsEditorEmpty(true)
         setShowEmojiPicker(false)
+        setActiveFormats({ bold: false, italic: false, strike: false, code: false })
 
         try {
             const res = await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
@@ -637,11 +1311,15 @@ export function ChannelSettingsPage({
         }
     }
 
-    // Instant Channel Meeting ("Meet Now")
+    // Instant Channel Meeting ("Meet Now" - Video)
     const handleStartChannelMeeting = () => {
         if (!selectedChannel) return
         const meetingId = `meet_${selectedChannel.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString(36).slice(-5)}`
-        
+
+        try {
+            sessionStorage.removeItem('jts_initial_camera_off')
+        } catch { }
+
         // Notify in channel chat
         const meetMsg = `🎥 **Live Meeting Started in #${selectedChannel.name}**\n👉 Click **[Join Meeting](#meeting?room=${meetingId})** to participate!`
         fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
@@ -651,12 +1329,66 @@ export function ChannelSettingsPage({
                 'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({ content: meetMsg })
-        }).catch(() => {})
+        }).catch(() => { })
 
         if (onStartMeeting) {
             onStartMeeting(meetingId)
         } else {
             window.location.hash = `#meeting?room=${meetingId}`
+        }
+    }
+
+    // Instant Group Audio Call ("Audio Call")
+    const handleStartChannelAudioCall = () => {
+        if (!selectedChannel) return
+        const meetingId = `call_${selectedChannel.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString(36).slice(-5)}`
+
+        try {
+            sessionStorage.setItem('jts_initial_camera_off', 'true')
+        } catch { }
+
+        // Notify in channel chat
+        const meetMsg = `📞 **Group Audio Call Started in #${selectedChannel.name}**\n👉 Click **[Join Audio Call](#meeting?room=${meetingId}&audio=true)** to participate!`
+        fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ content: meetMsg })
+        }).catch(() => { })
+
+        if (onStartMeeting) {
+            onStartMeeting(meetingId)
+        } else {
+            window.location.hash = `#meeting?room=${meetingId}&audio=true`
+        }
+    }
+
+    // Next-Gen Feature 2: Channel Live Huddle Handler (Slack 2.0 Style)
+    const handleToggleHuddle = () => {
+        if (!selectedChannel) return
+        if (isHuddleActive) {
+            setIsHuddleActive(false)
+            if (socketInstance) {
+                socketInstance.emit('channel:huddle:leave', {
+                    channelId: selectedChannel._id,
+                    userId: resolvedUserId,
+                    username: currentUserName
+                })
+            }
+            soundEffects.playLeaveChime()
+        } else {
+            setIsHuddleActive(true)
+            setIsHuddleMuted(false)
+            if (socketInstance) {
+                socketInstance.emit('channel:huddle:join', {
+                    channelId: selectedChannel._id,
+                    userId: resolvedUserId,
+                    username: currentUserName
+                })
+            }
+            soundEffects.playJoinChime()
         }
     }
 
@@ -696,7 +1428,7 @@ export function ChannelSettingsPage({
             setMembers(selectedChannel.members)
             try {
                 localStorage.setItem('jts_current_channel_id', selectedChannel._id)
-            } catch (_) {}
+            } catch (_) { }
         } else {
             setMembers([])
         }
@@ -711,13 +1443,14 @@ export function ChannelSettingsPage({
         setSelectedChannel(channel)
         try {
             localStorage.setItem('jts_current_channel_id', channel._id)
-        } catch (_) {}
+        } catch (_) { }
     }
 
     const handleSelectChannel = async (channelId: string) => {
         try {
             localStorage.setItem('jts_current_channel_id', channelId)
-        } catch (_) {}
+        } catch (_) { }
+        setUnreadChannelCounts(prev => ({ ...prev, [channelId]: 0 }))
         const channel = channels.find((item) => item._id === channelId)
         if (channel) {
             setSelectedChannel(channel)
@@ -867,7 +1600,7 @@ export function ChannelSettingsPage({
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', color: '#fff', fontFamily: 'var(--font-sans)', minHeight: 0, overflow: 'hidden' }}>
 
-            
+
             {error && (
                 <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', color: '#f87171', padding: '6px 12px', borderRadius: 8, fontSize: '0.75rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <IconAlertTriangle size={14} color="#f87171" /> {error}
@@ -886,34 +1619,32 @@ export function ChannelSettingsPage({
             ) : (
                 /* UNIFIED FULL-HEIGHT WORKSPACE CONTAINER */
                 <div className="glass-card" style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'clamp(210px, 20vw, 260px) 1fr',
-                    gridTemplateRows: '100%',
+                    display: 'flex',
+                    flexDirection: 'row',
                     flex: 1,
                     height: '100%',
                     minHeight: 0,
+                    width: '100%',
                     borderRadius: 14,
                     overflow: 'hidden',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
                     padding: 0
                 }} id="unified-channel-container">
-                    <style>{`
-                        @media (max-width: 580px) {
-                            #unified-channel-container {
-                                grid-template-columns: 1fr !important;
-                            }
-                        }
-                    `}</style>
 
                     {/* LEFT PANE: CHANNELS LIST + TEAM SWITCHER (Teams Style) */}
                     <div style={{
+                        width: isChannelListCollapsed ? 0 : 'clamp(210px, 20vw, 260px)',
+                        minWidth: isChannelListCollapsed ? 0 : 210,
+                        maxWidth: isChannelListCollapsed ? 0 : 280,
+                        flexShrink: 0,
                         background: 'rgba(10, 11, 16, 0.65)',
-                        borderRight: '1px solid rgba(255, 255, 255, 0.06)',
-                        display: 'flex',
+                        borderRight: isChannelListCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.06)',
+                        display: isChannelListCollapsed ? 'none' : 'flex',
                         flexDirection: 'column',
                         height: '100%',
                         minHeight: 0,
-                        overflow: 'hidden'
+                        overflow: 'hidden',
+                        transition: 'width 0.2s ease'
                     }}>
                         {/* Team / Department Selector Header */}
                         <div style={{
@@ -970,28 +1701,64 @@ export function ChannelSettingsPage({
                                 <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                     Channels ({channels.length})
                                 </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCreateDialog(true)}
-                                    style={{
-                                        background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
-                                        border: 'none',
-                                        borderRadius: 6,
-                                        padding: '3px 9px',
-                                        fontSize: '0.6875rem',
-                                        fontWeight: 700,
-                                        color: '#fff',
-                                        cursor: 'pointer',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 3,
-                                        boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)'
-                                    }}
-                                    title="Create new channel"
-                                >
-                                    <span>+</span>
-                                    <span>New</span>
-                                </button>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCreateDialog(true)}
+                                        style={{
+                                            background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
+                                            border: 'none',
+                                            borderRadius: 6,
+                                            padding: '3px 9px',
+                                            fontSize: '0.6875rem',
+                                            fontWeight: 700,
+                                            color: '#fff',
+                                            cursor: 'pointer',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 3,
+                                            boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)'
+                                        }}
+                                        title="Create new channel"
+                                    >
+                                        <span>+</span>
+                                        <span>New</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={toggleChannelListCollapse}
+                                        style={{
+                                            background: 'rgba(255, 255, 255, 0.05)',
+                                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                                            borderRadius: 6,
+                                            padding: '3px 6px',
+                                            color: 'var(--color-text-muted)',
+                                            cursor: 'pointer',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                        title="Collapse channels sidebar"
+                                        aria-label="Collapse channels sidebar"
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)'
+                                            e.currentTarget.style.color = '#fff'
+                                            e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.4)'
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                                            e.currentTarget.style.color = 'var(--color-text-muted)'
+                                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                                        }}
+                                    >
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                            <line x1="9" y1="3" x2="9" y2="21" />
+                                            <path d="m14 9-3 3 3 3" />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -1043,7 +1810,7 @@ export function ChannelSettingsPage({
                         )}
 
                         {/* Channel Items List */}
-                        <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: 3, scrollbarWidth: 'thin' }}>
                             {filteredChannels.length === 0 ? (
                                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', padding: '16px 8px', textAlign: 'center' }}>
                                     {channelSearch ? 'No matching channel' : 'No channels in this department'}
@@ -1080,20 +1847,39 @@ export function ChannelSettingsPage({
                                             }}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                                                <span style={{ color: isActive ? '#818cf8' : '#71717A', fontWeight: 800, fontSize: '0.875rem' }}>#</span>
+                                                {channel.type === 'private' ? (
+                                                    <IconLock size={13} color={isActive ? '#c084fc' : '#a1a1aa'} style={{ flexShrink: 0 }} />
+                                                ) : (
+                                                    <span style={{ color: isActive ? '#818cf8' : '#71717A', fontWeight: 800, fontSize: '0.875rem', flexShrink: 0 }}>#</span>
+                                                )}
                                                 <span style={{ fontWeight: isActive ? 700 : 500, fontSize: '0.8125rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                     {channel.name}
                                                 </span>
                                             </div>
-                                            <span style={{
-                                                fontSize: '0.6rem',
-                                                fontWeight: 700,
-                                                color: channel.type === 'public' ? '#4ade80' : '#c084fc',
-                                                textTransform: 'uppercase',
-                                                flexShrink: 0
-                                            }}>
-                                                {channel.type}
-                                            </span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                                {unreadChannelCounts[channel._id] > 0 && !isActive && (
+                                                    <span style={{
+                                                        background: '#6366f1',
+                                                        color: '#fff',
+                                                        fontSize: '0.625rem',
+                                                        fontWeight: 800,
+                                                        padding: '1px 6px',
+                                                        borderRadius: 10,
+                                                        boxShadow: '0 0 8px rgba(99, 102, 241, 0.6)'
+                                                    }}>
+                                                        {unreadChannelCounts[channel._id] > 99 ? '99+' : unreadChannelCounts[channel._id]}
+                                                    </span>
+                                                )}
+                                                <span style={{
+                                                    fontSize: '0.6rem',
+                                                    fontWeight: 700,
+                                                    color: channel.type === 'public' ? '#4ade80' : '#c084fc',
+                                                    textTransform: 'uppercase',
+                                                    flexShrink: 0
+                                                }}>
+                                                    {channel.type}
+                                                </span>
+                                            </div>
                                         </button>
                                     )
                                 })
@@ -1102,7 +1888,7 @@ export function ChannelSettingsPage({
                     </div>
 
                     {/* RIGHT PANE: ACTIVE CHANNEL WORKSPACE & CHAT */}
-                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, minWidth: 0, background: 'rgba(0, 0, 0, 0.2)', overflow: 'hidden' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, minWidth: 0, background: 'rgba(0, 0, 0, 0.2)', overflow: 'hidden', position: 'relative' }}>
                         {selectedChannel ? (
                             <>
                                 {/* TEAMS-STYLE HEADER TOOLBAR WITH "MEET NOW" CAMERA BUTTON */}
@@ -1118,14 +1904,64 @@ export function ChannelSettingsPage({
                                 }}>
                                     {/* Left: Channel Name + Description */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                                        <div style={{
-                                            width: 28, height: 28, borderRadius: 6,
-                                            background: 'rgba(99, 102, 241, 0.15)',
-                                            border: '1px solid rgba(99, 102, 241, 0.3)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontSize: '1rem', fontWeight: 800, color: '#818cf8'
-                                        }}>
-                                            #
+                                        {isChannelListCollapsed && (
+                                            <button
+                                                type="button"
+                                                onClick={toggleChannelListCollapse}
+                                                style={{
+                                                    background: 'rgba(99, 102, 241, 0.14)',
+                                                    border: '1px solid rgba(99, 102, 241, 0.35)',
+                                                    borderRadius: 7,
+                                                    color: '#818cf8',
+                                                    width: 28,
+                                                    height: 28,
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s ease',
+                                                    flexShrink: 0
+                                                }}
+                                                title="Show channels list (Expand)"
+                                                aria-label="Show channels list"
+                                                onMouseEnter={(e) => {
+                                                    e.currentTarget.style.background = 'rgba(99, 102, 241, 0.25)'
+                                                    e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.6)'
+                                                    e.currentTarget.style.color = '#fff'
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    e.currentTarget.style.background = 'rgba(99, 102, 241, 0.14)'
+                                                    e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.35)'
+                                                    e.currentTarget.style.color = '#818cf8'
+                                                }}
+                                            >
+                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                                    <line x1="9" y1="3" x2="9" y2="21" />
+                                                    <path d="m13 15 3-3-3-3" />
+                                                </svg>
+                                            </button>
+                                        )}
+                                        <div
+                                            style={{
+                                                width: 30,
+                                                height: 30,
+                                                borderRadius: 8,
+                                                background: selectedChannel.type === 'private' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+                                                border: selectedChannel.type === 'private' ? '1px solid rgba(168, 85, 247, 0.35)' : '1px solid rgba(99, 102, 241, 0.35)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                color: selectedChannel.type === 'private' ? '#c084fc' : '#818cf8',
+                                                flexShrink: 0
+                                            }}
+                                            title={selectedChannel.type === 'private' ? 'Private Channel (Members only)' : 'Public Channel'}
+                                        >
+                                            {selectedChannel.type === 'private' ? (
+                                                <IconLock size={15} />
+                                            ) : (
+                                                <IconHash size={15} />
+                                            )}
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                             <span style={{ fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
@@ -1153,7 +1989,7 @@ export function ChannelSettingsPage({
 
                                     {/* Right: Signature "Meet Now" + Actions Bar */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                        {/* MICROSOFT TEAMS "MEET NOW" BUTTON */}
+                                        {/* MICROSOFT TEAMS "MEET NOW" BUTTON (VIDEO) */}
                                         <button
                                             type="button"
                                             onClick={handleStartChannelMeeting}
@@ -1180,6 +2016,116 @@ export function ChannelSettingsPage({
                                                 <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                                             </svg>
                                             <span>Meet Now</span>
+                                        </button>
+
+                                        {/* INSTANT GROUP AUDIO CALL BUTTON */}
+                                        <button
+                                            type="button"
+                                            onClick={handleStartChannelAudioCall}
+                                            className="btn btn-secondary"
+                                            style={{
+                                                height: 30,
+                                                borderRadius: 8,
+                                                fontSize: '0.75rem',
+                                                fontWeight: 700,
+                                                padding: '0 12px',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 6,
+                                                background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                                                border: 'none',
+                                                color: '#fff',
+                                                boxShadow: '0 2px 10px rgba(16, 185, 129, 0.35)',
+                                                cursor: 'pointer'
+                                            }}
+                                            title="Start instant group audio call with channel members"
+                                        >
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                                            </svg>
+                                            <span>Audio Call</span>
+                                        </button>
+
+                                        {/* NEXT-GEN SLACK 2.0 STYLE LIVE HUDDLE BUTTON */}
+                                        <button
+                                            type="button"
+                                            onClick={handleToggleHuddle}
+                                            className="btn btn-secondary"
+                                            style={{
+                                                height: 30,
+                                                borderRadius: 8,
+                                                fontSize: '0.75rem',
+                                                fontWeight: 700,
+                                                padding: '0 12px',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 6,
+                                                background: isHuddleActive
+                                                    ? 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)'
+                                                    : 'rgba(168, 85, 247, 0.15)',
+                                                border: `1px solid ${isHuddleActive ? '#a855f7' : 'rgba(168, 85, 247, 0.35)'}`,
+                                                color: '#fff',
+                                                boxShadow: isHuddleActive ? '0 0 14px rgba(168, 85, 247, 0.45)' : 'none',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease'
+                                            }}
+                                            title={isHuddleActive ? "Leave ongoing Huddle" : "Start or join ambient co-working voice Huddle"}
+                                        >
+                                            <span style={{
+                                                width: 7,
+                                                height: 7,
+                                                borderRadius: '50%',
+                                                background: isHuddleActive ? '#22c55e' : '#c084fc',
+                                                boxShadow: isHuddleActive ? '0 0 8px #22c55e' : 'none'
+                                            }} />
+                                            <span>{isHuddleActive ? 'In Huddle' : 'Huddle'}</span>
+                                        </button>
+
+                                        {/* IN-CHANNEL SEARCH TOGGLE BUTTON */}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowInChannelSearch(prev => !prev)
+                                                if (showInChannelSearch) setInChannelSearchQuery('')
+                                            }}
+                                            style={{
+                                                height: 30,
+                                                borderRadius: 8,
+                                                padding: '0 9px',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                background: showInChannelSearch ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255,255,255,0.05)',
+                                                border: showInChannelSearch ? '1px solid #818cf8' : '1px solid rgba(255,255,255,0.1)',
+                                                color: showInChannelSearch ? '#c7c9ff' : '#d4d4d8',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            title="Search messages in this channel"
+                                        >
+                                            <IconSearch size={14} />
+                                        </button>
+
+                                        {/* CHANNEL NOTIFICATION BELL MUTE TOGGLE */}
+                                        <button
+                                            type="button"
+                                            onClick={toggleChannelMute}
+                                            style={{
+                                                height: 30,
+                                                borderRadius: 8,
+                                                padding: '0 9px',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                background: isChannelMuted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255,255,255,0.05)',
+                                                border: isChannelMuted ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid rgba(255,255,255,0.1)',
+                                                color: isChannelMuted ? '#f87171' : '#d4d4d8',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            title={isChannelMuted ? "Channel notifications muted (Click to unmute)" : "Notifications active (Click to mute)"}
+                                        >
+                                            {isChannelMuted ? <IconBellOff size={14} /> : <IconBell size={14} />}
                                         </button>
 
                                         {selectedChannel.type === 'public' && !isMember && (
@@ -1270,6 +2216,63 @@ export function ChannelSettingsPage({
                                         </span>
                                     </div>
                                 </div>
+
+                                {/* IN-CHANNEL SEARCH EXPANDED BAR */}
+                                {showInChannelSearch && (
+                                    <div style={{
+                                        padding: '8px 16px',
+                                        background: 'rgba(17, 19, 29, 0.98)',
+                                        borderBottom: '1px solid rgba(99, 102, 241, 0.3)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 10,
+                                        animation: 'fadeIn 0.15s ease'
+                                    }}>
+                                        <IconSearch size={14} color="#818cf8" />
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            value={inChannelSearchQuery}
+                                            onChange={(e) => setInChannelSearchQuery(e.target.value)}
+                                            placeholder={`Search messages, files, or snippets in #${selectedChannel.name}...`}
+                                            style={{
+                                                flex: 1,
+                                                background: 'rgba(255, 255, 255, 0.05)',
+                                                border: '1px solid rgba(255, 255, 255, 0.12)',
+                                                borderRadius: 6,
+                                                padding: '5px 12px',
+                                                color: '#fff',
+                                                fontSize: '0.78rem',
+                                                outline: 'none'
+                                            }}
+                                        />
+                                        {inChannelSearchQuery && (
+                                            <span style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                                                {displayedMessages.length} {displayedMessages.length === 1 ? 'match' : 'matches'}
+                                            </span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowInChannelSearch(false)
+                                                setInChannelSearchQuery('')
+                                            }}
+                                            style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                color: '#94a3b8',
+                                                cursor: 'pointer',
+                                                padding: '4px 6px',
+                                                fontSize: '0.75rem',
+                                                display: 'flex',
+                                                alignItems: 'center'
+                                            }}
+                                            title="Close search"
+                                        >
+                                            <IconX size={14} />
+                                        </button>
+                                    </div>
+                                )}
 
                                 {/* TAB 1: CHAT STREAM */}
                                 {activePanelTab === 'chat' && (
@@ -1395,23 +2398,49 @@ export function ChannelSettingsPage({
                                                                         {pm.content}
                                                                     </div>
                                                                 </div>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => { e.stopPropagation(); handleTogglePin(pm._id); }}
-                                                                    style={{
-                                                                        background: 'transparent',
-                                                                        border: 'none',
-                                                                        color: '#ef4444',
-                                                                        cursor: 'pointer',
-                                                                        padding: '2px 6px',
-                                                                        fontSize: '0.6875rem',
-                                                                        fontWeight: 600,
-                                                                        flexShrink: 0
-                                                                    }}
-                                                                    title="Unpin from channel"
-                                                                >
-                                                                    Unpin
-                                                                </button>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation()
+                                                                            const el = document.getElementById(`msg-${pm._id}`)
+                                                                            if (el) {
+                                                                                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                                                                el.style.backgroundColor = 'rgba(99, 102, 241, 0.25)'
+                                                                                setTimeout(() => { el.style.backgroundColor = '' }, 2000)
+                                                                            }
+                                                                        }}
+                                                                        style={{
+                                                                            background: 'rgba(99, 102, 241, 0.2)',
+                                                                            border: '1px solid rgba(99, 102, 241, 0.35)',
+                                                                            color: '#a5b4fc',
+                                                                            cursor: 'pointer',
+                                                                            padding: '2px 8px',
+                                                                            borderRadius: 4,
+                                                                            fontSize: '0.6875rem',
+                                                                            fontWeight: 600
+                                                                        }}
+                                                                        title="Jump to message"
+                                                                    >
+                                                                        Jump
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => { e.stopPropagation(); handleTogglePin(pm._id); }}
+                                                                        style={{
+                                                                            background: 'transparent',
+                                                                            border: 'none',
+                                                                            color: '#ef4444',
+                                                                            cursor: 'pointer',
+                                                                            padding: '2px 6px',
+                                                                            fontSize: '0.6875rem',
+                                                                            fontWeight: 600
+                                                                        }}
+                                                                        title="Unpin from channel"
+                                                                    >
+                                                                        Unpin
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -1421,247 +2450,374 @@ export function ChannelSettingsPage({
 
                                         {/* Messages Feed */}
                                         <div ref={chatFeedRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
-                                            {messages.length === 0 ? (
+                                            {displayedMessages.length === 0 ? (
                                                 <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem', maxWidth: 420, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                                     <IconHand size={28} color="#f59e0b" style={{ marginBottom: 6 }} />
                                                     <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.9375rem', marginBottom: 4 }}>
-                                                        Welcome to #{selectedChannel.name}!
+                                                        {inChannelSearchQuery ? 'No matching messages found' : `Welcome to #${selectedChannel.name}!`}
                                                     </div>
                                                     <p style={{ margin: 0, fontSize: '0.75rem', lineHeight: 1.5 }}>
-                                                        This is the start of the #{selectedChannel.name} channel. Post an announcement, drag & drop documents, share code snippets, or click <strong>Meet Now</strong> to start a video call.
+                                                        {inChannelSearchQuery
+                                                            ? `No messages matched "${inChannelSearchQuery}". Try another keyword or clear search.`
+                                                            : `This is the start of the #${selectedChannel.name} channel. Post an announcement, drag & drop documents, share code snippets, or click Meet Now to start a video call.`}
                                                     </p>
-                                                </div>
-                                            ) : (
-                                                messages.map((msg) => {
-                                                    const senderName = msg.senderId?.fullName || 'Colleague'
-                                                    const isHovered = hoveredMessageId === msg._id
-
-                                                    return (
-                                                        <div
-                                                            key={msg._id}
-                                                            onMouseEnter={() => setHoveredMessageId(msg._id)}
-                                                            onMouseLeave={() => setHoveredMessageId(null)}
+                                                    {inChannelSearchQuery && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setInChannelSearchQuery('')}
                                                             style={{
-                                                                display: 'flex',
-                                                                gap: 10,
-                                                                padding: '6px 8px',
-                                                                borderRadius: 8,
-                                                                position: 'relative',
-                                                                transition: 'background 0.15s',
-                                                                background: isHovered ? 'rgba(255, 255, 255, 0.03)' : 'transparent'
+                                                                marginTop: 10,
+                                                                padding: '4px 12px',
+                                                                borderRadius: 6,
+                                                                background: 'rgba(99, 102, 241, 0.2)',
+                                                                border: '1px solid rgba(99, 102, 241, 0.4)',
+                                                                color: '#c7c9ff',
+                                                                fontSize: '0.75rem',
+                                                                cursor: 'pointer'
                                                             }}
                                                         >
-                                                            {/* User Avatar */}
-                                                            {msg.senderId?.profileImage ? (
-                                                                <img
-                                                                    src={msg.senderId.profileImage}
-                                                                    alt={senderName}
-                                                                    style={{ width: 30, height: 30, minWidth: 30, borderRadius: '50%', objectFit: 'cover' }}
-                                                                />
-                                                            ) : (
+                                                            Clear Search
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                displayedMessages.map((msg, index) => {
+                                                    const msgSenderId = typeof msg.senderId === 'object' && msg.senderId !== null
+                                                        ? (msg.senderId._id || msg.senderId.id || '').toString()
+                                                        : (msg.senderId || '').toString()
+                                                    const isMe = Boolean(resolvedUserId && msgSenderId && (msgSenderId === resolvedUserId))
+                                                    const senderName = isMe ? 'You' : (msg.senderId?.fullName || 'Colleague')
+                                                    const isHovered = hoveredMessageId === msg._id
+
+                                                    const msgDate = msg.createdAt ? new Date(msg.createdAt).toDateString() : ''
+                                                    const prevMsg = index > 0 ? displayedMessages[index - 1] : null
+                                                    const prevMsgDate = prevMsg?.createdAt ? new Date(prevMsg.createdAt).toDateString() : ''
+                                                    const showDateDivider = msgDate && msgDate !== prevMsgDate
+
+                                                    return (
+                                                        <React.Fragment key={msg._id}>
+                                                            {showDateDivider && (
                                                                 <div style={{
-                                                                    width: 30, height: 30, minWidth: 30, borderRadius: '50%',
-                                                                    background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
-                                                                    color: '#fff', display: 'flex', alignItems: 'center',
-                                                                    justifyContent: 'center', fontWeight: 700, fontSize: '0.725rem'
-                                                                }}>
-                                                                    {senderName.charAt(0).toUpperCase()}
-                                                                </div>
-                                                            )}
-
-                                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                    <span style={{ fontWeight: 700, fontSize: '0.8125rem', color: '#fff' }}>{senderName}</span>
-                                                                    <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
-                                                                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                    </span>
-                                                                    {msg.edited && (
-                                                                        <span style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                                                            (edited)
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-
-                                                                {/* Pinned Announcement Tag */}
-                                                                {msg.pinned && (
-                                                                    <div style={{
-                                                                        display: 'inline-flex',
-                                                                        alignItems: 'center',
-                                                                        gap: 4,
-                                                                        padding: '2px 6px',
-                                                                        borderRadius: 4,
-                                                                        background: 'rgba(245, 158, 11, 0.15)',
-                                                                        color: '#fbbf24',
-                                                                        fontSize: '0.65rem',
-                                                                        fontWeight: 700,
-                                                                        width: 'fit-content',
-                                                                        marginBottom: 2
-                                                                    }}>
-                                                                        <IconPin size={10} />
-                                                                        <span>Pinned Announcement</span>
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Accompanying note, text or Zoom Clip */}
-                                                                {msg.content && (!msg.attachments?.length || msg.messageType !== 'file') && (!msg.codeSnippet || msg.messageType !== 'code') && (
-                                                                    msg.content.includes('/uploads/clips/') ? (
-                                                                        <div style={{ marginTop: 4, borderRadius: 8, overflow: 'hidden', maxWidth: 380, background: '#000' }}>
-                                                                            <div style={{
-                                                                                fontSize: '0.6875rem', fontWeight: 700, color: '#c084fc',
-                                                                                padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 6,
-                                                                                background: 'rgba(168, 85, 247, 0.15)', borderBottom: '1px solid rgba(168, 85, 247, 0.2)'
-                                                                            }}>
-                                                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                                                                                    <polygon points="23 7 16 12 23 17 23 7" />
-                                                                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                                                                                </svg>
-                                                                                <span>Zoom Clip &bull; Video Message</span>
-                                                                            </div>
-                                                                            <video
-                                                                                src={(() => {
-                                                                                    const match = msg.content.match(/(\/uploads\/clips\/[^\s\)]+)/)
-                                                                                    if (match) return `${API_BASE}${match[1]}`
-                                                                                    return msg.content
-                                                                                })()}
-                                                                                controls
-                                                                                playsInline
-                                                                                style={{ width: '100%', maxHeight: 220, objectFit: 'contain', display: 'block' }}
-                                                                            />
-                                                                            {msg.content.split('\n')[0] && !msg.content.split('\n')[0].startsWith('/uploads') && (
-                                                                                <div style={{ padding: '6px 8px', fontSize: '0.75rem', color: '#e2e8f0' }}>
-                                                                                    {msg.content.split('\n')[0].replace('[Video Clip] ', '')}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div style={{ fontSize: '0.8125rem', color: '#e5e7eb', lineHeight: 1.45, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-                                                                            {msg.content}
-                                                                        </div>
-                                                                    )
-                                                                )}
-
-                                                                {/* If code snippet has caption */}
-                                                                {msg.codeSnippet && msg.content && msg.content !== `Shared a ${msg.codeSnippet.language || ''} code snippet` && (
-                                                                    <div style={{ fontSize: '0.8125rem', color: '#e5e7eb', lineHeight: 1.45, marginBottom: 2 }}>
-                                                                        {msg.content}
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Code Snippet Card */}
-                                                                {msg.codeSnippet && (
-                                                                    <CodeSnippetCard snippet={msg.codeSnippet} />
-                                                                )}
-
-                                                                {/* Attachments (PDF, Excel, Images, Docs) */}
-                                                                {msg.attachments && msg.attachments.length > 0 && (
-                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-                                                                        {msg.attachments.map((att: ChannelAttachment, idx: number) => (
-                                                                            <FileCard key={idx} attachment={att} />
-                                                                        ))}
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Emoji reactions row with toggle action */}
-                                                                {msg.reactions && msg.reactions.length > 0 && (
-                                                                    <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
-                                                                        {Array.from(new Set(msg.reactions.map((r: any) => r.emoji))).map((emoji: any) => {
-                                                                            const count = msg.reactions.filter((r: any) => r.emoji === emoji).length
-                                                                            const userReacted = msg.reactions.some((r: any) => (r.userId?._id || r.userId)?.toString() === currentUserId?.toString() && r.emoji === emoji)
-                                                                            return (
-                                                                                <button
-                                                                                    key={emoji}
-                                                                                    type="button"
-                                                                                    onClick={() => handleReaction(msg._id, emoji)}
-                                                                                    style={{
-                                                                                        background: userReacted ? 'rgba(99, 102, 241, 0.25)' : 'rgba(99, 102, 241, 0.1)',
-                                                                                        border: userReacted ? '1px solid #818cf8' : '1px solid rgba(99, 102, 241, 0.25)',
-                                                                                        borderRadius: 12,
-                                                                                        padding: '1px 7px',
-                                                                                        fontSize: '0.725rem',
-                                                                                        color: '#fff',
-                                                                                        display: 'inline-flex',
-                                                                                        alignItems: 'center',
-                                                                                        gap: 3,
-                                                                                        cursor: 'pointer',
-                                                                                        boxShadow: userReacted ? '0 0 8px rgba(99, 102, 241, 0.3)' : 'none',
-                                                                                        transition: 'all 0.15s ease'
-                                                                                    }}
-                                                                                    title={userReacted ? `You reacted with ${emoji} (click to toggle)` : `React with ${emoji}`}
-                                                                                >
-                                                                                    <span>{emoji}</span>
-                                                                                    <span style={{ fontSize: '0.625rem', fontWeight: 700, color: userReacted ? '#fff' : '#818cf8' }}>{count}</span>
-                                                                                </button>
-                                                                            )
-                                                                        })}
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Thread Reply Link */}
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => setActiveThreadParent(msg)}
-                                                                        style={{ background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.6875rem', cursor: 'pointer', padding: 0, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                                                                        className="hover:underline"
-                                                                    >
-                                                                        <IconMessage size={12} /> Reply in thread
-                                                                    </button>
-                                                                    {msg.replyCount > 0 && (
-                                                                        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
-                                                                            • {msg.replyCount} {msg.replyCount === 1 ? 'reply' : 'replies'}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Quick Reaction Bar on Hover (MS Teams Style) */}
-                                                            {isHovered && (
-                                                                <div style={{
-                                                                    position: 'absolute',
-                                                                    right: 8,
-                                                                    top: -12,
-                                                                    background: '#1e1f29',
-                                                                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                                                                    borderRadius: 18,
-                                                                    padding: '2px 6px',
                                                                     display: 'flex',
                                                                     alignItems: 'center',
-                                                                    gap: 3,
-                                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-                                                                    zIndex: 10
+                                                                    margin: '14px 0 8px 0',
+                                                                    gap: 12
                                                                 }}>
-                                                                    {['👍', '❤️', '🎉', '😂', '😮', '🚀'].map((em) => (
-                                                                        <button
-                                                                            key={em}
-                                                                            type="button"
-                                                                            onClick={() => handleReaction(msg._id, em)}
-                                                                            style={{ background: 'transparent', border: 'none', fontSize: '0.85rem', cursor: 'pointer', padding: '1px 3px', borderRadius: 4 }}
-                                                                            title={`React with ${em}`}
-                                                                        >
-                                                                            {em}
-                                                                        </button>
-                                                                    ))}
-                                                                    <div style={{ width: 1, height: 16, background: 'rgba(255, 255, 255, 0.15)', margin: '0 2px' }} />
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleTogglePin(msg._id)}
-                                                                        style={{
-                                                                            background: msg.pinned ? 'rgba(245, 158, 11, 0.25)' : 'transparent',
-                                                                            border: 'none',
-                                                                            color: msg.pinned ? '#f59e0b' : '#94a3b8',
-                                                                            cursor: 'pointer',
-                                                                            padding: '2px 4px',
-                                                                            borderRadius: 4,
-                                                                            display: 'flex',
-                                                                            alignItems: 'center'
-                                                                        }}
-                                                                        title={msg.pinned ? 'Unpin message' : 'Pin message to channel'}
-                                                                    >
-                                                                        <IconPin size={13} />
-                                                                    </button>
+                                                                    <div style={{ flex: 1, height: 1, background: 'rgba(255, 255, 255, 0.08)' }} />
+                                                                    <span style={{
+                                                                        fontSize: '0.6875rem',
+                                                                        fontWeight: 700,
+                                                                        color: '#94a3b8',
+                                                                        background: 'rgba(255, 255, 255, 0.06)',
+                                                                        padding: '2px 10px',
+                                                                        borderRadius: 10,
+                                                                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                                        letterSpacing: '0.02em',
+                                                                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)'
+                                                                    }}>
+                                                                        {formatMessageDateDivider(msg.createdAt)}
+                                                                    </span>
+                                                                    <div style={{ flex: 1, height: 1, background: 'rgba(255, 255, 255, 0.08)' }} />
                                                                 </div>
                                                             )}
-                                                        </div>
+                                                            <div
+                                                                id={`msg-${msg._id}`}
+                                                                onMouseEnter={() => setHoveredMessageId(msg._id)}
+                                                                onMouseLeave={() => setHoveredMessageId(null)}
+                                                                style={{
+                                                                    display: 'flex',
+                                                                    flexDirection: isMe ? 'row-reverse' : 'row',
+                                                                    gap: 10,
+                                                                    padding: '6px 8px',
+                                                                    borderRadius: 8,
+                                                                    position: 'relative',
+                                                                    transition: 'background 0.2s',
+                                                                    background: isHovered ? 'rgba(255, 255, 255, 0.03)' : 'transparent',
+                                                                    width: '100%',
+                                                                    boxSizing: 'border-box'
+                                                                }}
+                                                            >
+                                                                {/* User Avatar */}
+                                                                {msg.senderId?.profileImage ? (
+                                                                    <img
+                                                                        src={msg.senderId.profileImage}
+                                                                        alt={senderName}
+                                                                        style={{ width: 30, height: 30, minWidth: 30, borderRadius: '50%', objectFit: 'cover' }}
+                                                                    />
+                                                                ) : (
+                                                                    <div style={{
+                                                                        width: 30, height: 30, minWidth: 30, borderRadius: '50%',
+                                                                        background: isMe ? 'linear-gradient(135deg, #6264a7 0%, #4f518a 100%)' : 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+                                                                        color: '#fff', display: 'flex', alignItems: 'center',
+                                                                        justifyContent: 'center', fontWeight: 700, fontSize: '0.725rem'
+                                                                    }}>
+                                                                        {senderName.charAt(0).toUpperCase()}
+                                                                    </div>
+                                                                )}
+
+                                                                <div style={{
+                                                                    flex: 1,
+                                                                    display: 'flex',
+                                                                    flexDirection: 'column',
+                                                                    alignItems: isMe ? 'flex-end' : 'flex-start',
+                                                                    gap: 3,
+                                                                    minWidth: 0
+                                                                }}>
+                                                                    {/* Sender Header */}
+                                                                    <div style={{
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        flexDirection: isMe ? 'row-reverse' : 'row',
+                                                                        gap: 6
+                                                                    }}>
+                                                                        <span style={{ fontWeight: 700, fontSize: '0.8125rem', color: isMe ? '#c7c9ff' : '#fff' }}>
+                                                                            {senderName}
+                                                                        </span>
+                                                                        <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
+                                                                            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                        </span>
+                                                                        {msg.edited && (
+                                                                            <span style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                                                                (edited)
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* Pinned Announcement Tag */}
+                                                                    {msg.pinned && (
+                                                                        <div style={{
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            gap: 4,
+                                                                            padding: '2px 6px',
+                                                                            borderRadius: 4,
+                                                                            background: 'rgba(245, 158, 11, 0.15)',
+                                                                            color: '#fbbf24',
+                                                                            fontSize: '0.65rem',
+                                                                            fontWeight: 700,
+                                                                            width: 'fit-content',
+                                                                            marginBottom: 2
+                                                                        }}>
+                                                                            <IconPin size={10} />
+                                                                            <span>Pinned Announcement</span>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Accompanying note, text or Zoom Clip */}
+                                                                    {msg.content && (!msg.attachments?.length || msg.messageType !== 'file') && (!msg.codeSnippet || msg.messageType !== 'code') && msg.messageType !== 'audio' && (
+                                                                        msg.content.includes('/uploads/clips/') ? (
+                                                                            <div style={{
+                                                                                marginTop: 4,
+                                                                                borderRadius: 8,
+                                                                                overflow: 'hidden',
+                                                                                maxWidth: 380,
+                                                                                background: '#000',
+                                                                                alignSelf: isMe ? 'flex-end' : 'flex-start'
+                                                                            }}>
+                                                                                <div style={{
+                                                                                    fontSize: '0.6875rem', fontWeight: 700, color: '#c084fc',
+                                                                                    padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 6,
+                                                                                    background: 'rgba(168, 85, 247, 0.15)', borderBottom: '1px solid rgba(168, 85, 247, 0.2)'
+                                                                                }}>
+                                                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                                                                        <polygon points="23 7 16 12 23 17 23 7" />
+                                                                                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                                                                                    </svg>
+                                                                                    <span>Zoom Clip &bull; Video Message</span>
+                                                                                </div>
+                                                                                <video
+                                                                                    src={(() => {
+                                                                                        const match = msg.content.match(/(\/uploads\/clips\/[^\s\)]+)/)
+                                                                                        if (match) return `${API_BASE}${match[1]}`
+                                                                                        return msg.content
+                                                                                    })()}
+                                                                                    controls
+                                                                                    playsInline
+                                                                                    style={{ width: '100%', maxHeight: 220, objectFit: 'contain', display: 'block' }}
+                                                                                />
+                                                                                {msg.content.split('\n')[0] && !msg.content.split('\n')[0].startsWith('/uploads') && (
+                                                                                    <div style={{ padding: '6px 8px', fontSize: '0.75rem', color: '#e2e8f0' }}>
+                                                                                        {msg.content.split('\n')[0].replace('[Video Clip] ', '')}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div style={{
+                                                                                fontSize: '0.8125rem',
+                                                                                color: isMe ? '#fff' : '#e5e7eb',
+                                                                                lineHeight: 1.45,
+                                                                                wordBreak: 'break-word',
+                                                                                whiteSpace: 'pre-wrap',
+                                                                                background: isMe
+                                                                                    ? 'linear-gradient(135deg, #6264a7 0%, #4f518a 100%)'
+                                                                                    : 'rgba(255, 255, 255, 0.05)',
+                                                                                border: isMe
+                                                                                    ? '1px solid rgba(129, 140, 248, 0.4)'
+                                                                                    : '1px solid rgba(255, 255, 255, 0.08)',
+                                                                                padding: '7px 12px',
+                                                                                borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                                                                                maxWidth: '75%',
+                                                                                boxShadow: isMe ? '0 2px 8px rgba(98, 100, 167, 0.25)' : 'none',
+                                                                                textAlign: 'left'
+                                                                            }}>
+                                                                                {renderFormattedMessage(msg.content)}
+                                                                            </div>
+                                                                        )
+                                                                    )}
+
+                                                                    {/* If code snippet has caption */}
+                                                                    {msg.codeSnippet && msg.content && msg.content !== `Shared a ${msg.codeSnippet.language || ''} code snippet` && (
+                                                                        <div style={{
+                                                                            fontSize: '0.8125rem',
+                                                                            color: '#e5e7eb',
+                                                                            lineHeight: 1.45,
+                                                                            marginBottom: 2,
+                                                                            alignSelf: isMe ? 'flex-end' : 'flex-start'
+                                                                        }}>
+                                                                            {renderFormattedMessage(msg.content)}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Code Snippet Card */}
+                                                                    {msg.codeSnippet && (
+                                                                        <div style={{ alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                                                                            <CodeSnippetCard snippet={msg.codeSnippet} />
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Attachments (PDF, Excel, Images, Docs, Voice Notes) */}
+                                                                    {msg.attachments && msg.attachments.length > 0 && (
+                                                                        <div style={{
+                                                                            display: 'flex',
+                                                                            flexDirection: 'column',
+                                                                            gap: 6,
+                                                                            marginTop: 4,
+                                                                            alignSelf: isMe ? 'flex-end' : 'flex-start'
+                                                                        }}>
+                                                                            {msg.attachments.map((att: ChannelAttachment, idx: number) => {
+                                                                                const isAudio = att.fileType === 'audio' || (att.mimeType && att.mimeType.startsWith('audio/')) || (att.url && (att.url.endsWith('.webm') || att.url.endsWith('.mp3') || att.url.endsWith('.wav') || att.url.endsWith('.ogg')))
+                                                                                if (isAudio) {
+                                                                                    return <VoiceMessageCard key={idx} url={att.url} name={att.name} />
+                                                                                }
+                                                                                return <FileCard key={idx} attachment={att} />
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Emoji reactions row with toggle action */}
+                                                                    {msg.reactions && msg.reactions.length > 0 && (
+                                                                        <div style={{
+                                                                            display: 'flex',
+                                                                            gap: 4,
+                                                                            marginTop: 4,
+                                                                            flexWrap: 'wrap',
+                                                                            justifyContent: isMe ? 'flex-end' : 'flex-start'
+                                                                        }}>
+                                                                            {Array.from(new Set(msg.reactions.map((r: any) => r.emoji))).map((emoji: any) => {
+                                                                                const count = msg.reactions.filter((r: any) => r.emoji === emoji).length
+                                                                                const userReacted = msg.reactions.some((r: any) => (r.userId?._id || r.userId)?.toString() === resolvedUserId && r.emoji === emoji)
+                                                                                return (
+                                                                                    <button
+                                                                                        key={emoji}
+                                                                                        type="button"
+                                                                                        onClick={() => handleReaction(msg._id, emoji)}
+                                                                                        style={{
+                                                                                            background: userReacted ? 'rgba(99, 102, 241, 0.25)' : 'rgba(99, 102, 241, 0.1)',
+                                                                                            border: userReacted ? '1px solid #818cf8' : '1px solid rgba(99, 102, 241, 0.25)',
+                                                                                            borderRadius: 12,
+                                                                                            padding: '1px 7px',
+                                                                                            fontSize: '0.725rem',
+                                                                                            color: '#fff',
+                                                                                            display: 'inline-flex',
+                                                                                            alignItems: 'center',
+                                                                                            gap: 3,
+                                                                                            cursor: 'pointer',
+                                                                                            boxShadow: userReacted ? '0 0 8px rgba(99, 102, 241, 0.3)' : 'none',
+                                                                                            transition: 'all 0.15s ease'
+                                                                                        }}
+                                                                                        title={userReacted ? `You reacted with ${emoji} (click to toggle)` : `React with ${emoji}`}
+                                                                                    >
+                                                                                        <span>{emoji}</span>
+                                                                                        <span style={{ fontSize: '0.625rem', fontWeight: 700, color: userReacted ? '#fff' : '#818cf8' }}>{count}</span>
+                                                                                    </button>
+                                                                                )
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Thread Reply Link */}
+                                                                    <div style={{
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: 8,
+                                                                        marginTop: 2,
+                                                                        flexDirection: isMe ? 'row-reverse' : 'row'
+                                                                    }}>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setActiveThreadParent(msg)}
+                                                                            style={{ background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.6875rem', cursor: 'pointer', padding: 0, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                                                            className="hover:underline"
+                                                                        >
+                                                                            <IconMessage size={12} /> Reply in thread
+                                                                        </button>
+                                                                        {msg.replyCount > 0 && (
+                                                                            <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
+                                                                                • {msg.replyCount} {msg.replyCount === 1 ? 'reply' : 'replies'}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Quick Reaction Bar on Hover (MS Teams Style) */}
+                                                                {isHovered && (
+                                                                    <div style={{
+                                                                        position: 'absolute',
+                                                                        [isMe ? 'left' : 'right']: 8,
+                                                                        top: -12,
+                                                                        background: '#1e1f29',
+                                                                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                                                                        borderRadius: 18,
+                                                                        padding: '2px 6px',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: 3,
+                                                                        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                                                                        zIndex: 10
+                                                                    }}>
+                                                                        {['👍', '❤️', '🎉', '😂', '😮', '🚀'].map((em) => (
+                                                                            <button
+                                                                                key={em}
+                                                                                type="button"
+                                                                                onClick={() => handleReaction(msg._id, em)}
+                                                                                style={{ background: 'transparent', border: 'none', fontSize: '0.85rem', cursor: 'pointer', padding: '1px 3px', borderRadius: 4 }}
+                                                                                title={`React with ${em}`}
+                                                                            >
+                                                                                {em}
+                                                                            </button>
+                                                                        ))}
+                                                                        <div style={{ width: 1, height: 16, background: 'rgba(255, 255, 255, 0.15)', margin: '0 2px' }} />
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleTogglePin(msg._id)}
+                                                                            style={{
+                                                                                background: msg.pinned ? 'rgba(245, 158, 11, 0.25)' : 'transparent',
+                                                                                border: 'none',
+                                                                                color: msg.pinned ? '#f59e0b' : '#94a3b8',
+                                                                                cursor: 'pointer',
+                                                                                padding: '2px 4px',
+                                                                                borderRadius: 4,
+                                                                                display: 'flex',
+                                                                                alignItems: 'center'
+                                                                            }}
+                                                                            title={msg.pinned ? 'Unpin message' : 'Pin message to channel'}
+                                                                        >
+                                                                            <IconPin size={13} />
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </React.Fragment>
                                                     )
                                                 })
                                             )}
@@ -1763,6 +2919,30 @@ export function ChannelSettingsPage({
                                                         <span>Record Clip</span>
                                                     </button>
 
+                                                    {/* Feature 4: Quick Voice Note Button */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={isRecordingAudio ? () => stopAudioRecording(true) : startAudioRecording}
+                                                        disabled={selectedChannel.archived || uploadingFile}
+                                                        title={isRecordingAudio ? "Stop & send voice message" : "Record voice note"}
+                                                        style={{
+                                                            background: isRecordingAudio ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.12)',
+                                                            border: `1px solid ${isRecordingAudio ? '#ef4444' : 'rgba(16, 185, 129, 0.3)'}`,
+                                                            borderRadius: 6,
+                                                            padding: '4px 8px',
+                                                            fontSize: '0.75rem',
+                                                            fontWeight: 600,
+                                                            color: isRecordingAudio ? '#ef4444' : '#10b981',
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 4
+                                                        }}
+                                                    >
+                                                        <IconMic size={13} />
+                                                        <span>{isRecordingAudio ? `Recording (${formatDuration(audioRecordDuration)})` : 'Voice Note'}</span>
+                                                    </button>
+
                                                     {/* Emoji toggle */}
                                                     <button
                                                         type="button"
@@ -1781,31 +2961,124 @@ export function ChannelSettingsPage({
                                                         <IconSparkles size={14} color="#facc15" />
                                                     </button>
 
-                                                    {/* Quick Format Pills */}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setChatInput(prev => prev + '**bold text**')}
-                                                        title="Bold"
-                                                        style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', padding: '2px 6px' }}
-                                                    >
-                                                        B
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setChatInput(prev => prev + '*italic text*')}
-                                                        title="Italic"
-                                                        style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.75rem', fontStyle: 'italic', cursor: 'pointer', padding: '2px 6px' }}
-                                                    >
-                                                        I
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setChatInput(prev => prev + '`code`')}
-                                                        title="Inline Code"
-                                                        style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.75rem', fontFamily: 'monospace', cursor: 'pointer', padding: '2px 6px' }}
-                                                    >
-                                                        &lt;/&gt;
-                                                    </button>
+                                                    {/* Divider */}
+                                                    <div style={{ width: 1, height: 16, background: 'rgba(255, 255, 255, 0.12)', margin: '0 2px' }} />
+
+                                                    {/* Professional MS Teams / Slack Formatting Toolbar */}
+                                                    <div style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        background: 'rgba(255, 255, 255, 0.05)',
+                                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                                        borderRadius: 6,
+                                                        padding: '1px 2px',
+                                                        gap: 2
+                                                    }}>
+                                                        {/* Bold Button */}
+                                                        <button
+                                                            type="button"
+                                                            onMouseDown={(e) => e.preventDefault()}
+                                                            onClick={toggleBold}
+                                                            title="Bold (Ctrl+B)"
+                                                            style={{
+                                                                width: 24,
+                                                                height: 24,
+                                                                borderRadius: 4,
+                                                                background: activeFormats.bold ? 'rgba(99, 102, 241, 0.35)' : 'transparent',
+                                                                border: activeFormats.bold ? '1px solid rgba(99, 102, 241, 0.6)' : 'none',
+                                                                color: activeFormats.bold ? '#a5b4fc' : '#e2e8f0',
+                                                                fontSize: '0.8125rem',
+                                                                fontWeight: 900,
+                                                                fontFamily: 'system-ui, sans-serif',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.15s ease'
+                                                            }}
+                                                        >
+                                                            B
+                                                        </button>
+
+                                                        {/* Italic Button */}
+                                                        <button
+                                                            type="button"
+                                                            onMouseDown={(e) => e.preventDefault()}
+                                                            onClick={toggleItalic}
+                                                            title="Italic (Ctrl+I)"
+                                                            style={{
+                                                                width: 24,
+                                                                height: 24,
+                                                                borderRadius: 4,
+                                                                background: activeFormats.italic ? 'rgba(99, 102, 241, 0.35)' : 'transparent',
+                                                                border: activeFormats.italic ? '1px solid rgba(99, 102, 241, 0.6)' : 'none',
+                                                                color: activeFormats.italic ? '#a5b4fc' : '#e2e8f0',
+                                                                fontSize: '0.8125rem',
+                                                                fontStyle: 'italic',
+                                                                fontFamily: 'Georgia, serif',
+                                                                fontWeight: 600,
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.15s ease'
+                                                            }}
+                                                        >
+                                                            I
+                                                        </button>
+
+                                                        {/* Strikethrough Button */}
+                                                        <button
+                                                            type="button"
+                                                            onMouseDown={(e) => e.preventDefault()}
+                                                            onClick={toggleStrike}
+                                                            title="Strikethrough"
+                                                            style={{
+                                                                width: 24,
+                                                                height: 24,
+                                                                borderRadius: 4,
+                                                                background: activeFormats.strike ? 'rgba(99, 102, 241, 0.35)' : 'transparent',
+                                                                border: activeFormats.strike ? '1px solid rgba(99, 102, 241, 0.6)' : 'none',
+                                                                color: activeFormats.strike ? '#a5b4fc' : '#94a3b8',
+                                                                fontSize: '0.8125rem',
+                                                                fontWeight: 600,
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.15s ease',
+                                                                textDecoration: 'line-through'
+                                                            }}
+                                                        >
+                                                            S
+                                                        </button>
+
+                                                        {/* Inline Code Button */}
+                                                        <button
+                                                            type="button"
+                                                            onMouseDown={(e) => e.preventDefault()}
+                                                            onClick={toggleInlineCode}
+                                                            title="Inline Code (Ctrl+E)"
+                                                            style={{
+                                                                height: 24,
+                                                                padding: '0 6px',
+                                                                borderRadius: 4,
+                                                                background: activeFormats.code ? 'rgba(99, 102, 241, 0.35)' : 'transparent',
+                                                                border: activeFormats.code ? '1px solid rgba(99, 102, 241, 0.6)' : 'none',
+                                                                color: activeFormats.code ? '#a5b4fc' : '#cbd5e1',
+                                                                fontSize: '0.725rem',
+                                                                fontFamily: 'Consolas, Monaco, monospace',
+                                                                fontWeight: 700,
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.15s ease'
+                                                            }}
+                                                        >
+                                                            &lt;/&gt;
+                                                        </button>
+                                                    </div>
                                                 </div>
 
                                                 <span style={{ fontSize: '0.675rem', color: 'var(--color-text-muted)' }}>
@@ -1828,10 +3101,7 @@ export function ChannelSettingsPage({
                                                         <button
                                                             key={emoji}
                                                             type="button"
-                                                            onClick={() => {
-                                                                setChatInput(prev => prev + emoji)
-                                                                setShowEmojiPicker(false)
-                                                            }}
+                                                            onClick={() => handleInsertEmoji(emoji)}
                                                             style={{ background: 'transparent', border: 'none', fontSize: '1.1rem', cursor: 'pointer', padding: '2px 4px' }}
                                                         >
                                                             {emoji}
@@ -1840,34 +3110,149 @@ export function ChannelSettingsPage({
                                                 </div>
                                             )}
 
-                                            {/* Input Bar Form */}
-                                            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: 8 }}>
-                                                <input
-                                                    value={chatInput}
-                                                    onChange={(e) => setChatInput(e.target.value)}
-                                                    className="input"
-                                                    placeholder={`Send a message to #${selectedChannel.name}...`}
-                                                    style={{ flex: 1, borderRadius: 8, height: 36, fontSize: '0.8125rem', background: 'rgba(255,255,255,0.03)' }}
-                                                    disabled={selectedChannel.archived}
-                                                />
-                                                <button
-                                                    type="submit"
-                                                    className="btn btn-primary"
-                                                    style={{
-                                                        padding: '0 18px',
-                                                        borderRadius: 8,
-                                                        height: 36,
-                                                        fontSize: '0.8125rem',
-                                                        fontWeight: 700,
-                                                        background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
-                                                        border: 'none',
-                                                        cursor: 'pointer'
-                                                    }}
-                                                    disabled={selectedChannel.archived || !chatInput.trim()}
-                                                >
-                                                    Send
-                                                </button>
-                                            </form>
+                                            {/* Feature 3: Live Real-Time Typing Indicator */}
+                                            {typingUsers.length > 0 && (
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 6,
+                                                    fontSize: '0.725rem',
+                                                    color: '#818cf8',
+                                                    padding: '2px 4px',
+                                                    animation: 'fadeIn 0.15s ease'
+                                                }}>
+                                                    <span>✍️</span>
+                                                    <span style={{ fontWeight: 600 }}>
+                                                        {typingUsers.map(u => u.username).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            {/* Feature 4: Active Audio Recording Banner */}
+                                            {isRecordingAudio ? (
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    background: 'rgba(239, 68, 68, 0.12)',
+                                                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                                                    borderRadius: 8,
+                                                    padding: '8px 14px'
+                                                }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        <span style={{
+                                                            width: 9,
+                                                            height: 9,
+                                                            borderRadius: '50%',
+                                                            background: '#ef4444',
+                                                            boxShadow: '0 0 8px #ef4444'
+                                                        }} />
+                                                        <span style={{ color: '#ef4444', fontWeight: 700, fontSize: '0.8125rem' }}>
+                                                            Recording Voice Note... ({formatDuration(audioRecordDuration)})
+                                                        </span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => stopAudioRecording(false)}
+                                                            style={{
+                                                                background: 'transparent',
+                                                                border: 'none',
+                                                                color: '#94a3b8',
+                                                                cursor: 'pointer',
+                                                                fontSize: '0.75rem',
+                                                                padding: '4px 8px'
+                                                            }}
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => stopAudioRecording(true)}
+                                                            className="btn btn-primary"
+                                                            style={{
+                                                                height: 30,
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 700,
+                                                                borderRadius: 6,
+                                                                padding: '0 12px',
+                                                                background: '#10b981',
+                                                                border: 'none',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            Send Audio
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                /* Rich WYSIWYG Composer */
+                                                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', width: '100%' }}>
+                                                    <div style={{ position: 'relative', flex: 1, minHeight: 38, display: 'flex' }}>
+                                                        {isEditorEmpty && (
+                                                            <div style={{
+                                                                position: 'absolute',
+                                                                left: 12,
+                                                                top: 9,
+                                                                color: '#64748b',
+                                                                fontSize: '0.8125rem',
+                                                                pointerEvents: 'none',
+                                                                userSelect: 'none'
+                                                            }}>
+                                                                Send a message to #{selectedChannel.name}...
+                                                            </div>
+                                                        )}
+                                                        <div
+                                                            ref={composerEditorRef}
+                                                            contentEditable={!selectedChannel.archived}
+                                                            role="textbox"
+                                                            aria-multiline="true"
+                                                            onInput={handleEditorInput}
+                                                            onKeyDown={handleEditorKeyDown}
+                                                            onKeyUp={updateActiveFormats}
+                                                            onMouseUp={updateActiveFormats}
+                                                            style={{
+                                                                flex: 1,
+                                                                minHeight: 38,
+                                                                maxHeight: 140,
+                                                                overflowY: 'auto',
+                                                                borderRadius: 8,
+                                                                padding: '8px 12px',
+                                                                fontSize: '0.8125rem',
+                                                                background: 'rgba(255, 255, 255, 0.03)',
+                                                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                                                color: '#fff',
+                                                                outline: 'none',
+                                                                lineHeight: 1.5,
+                                                                wordBreak: 'break-word',
+                                                                whiteSpace: 'pre-wrap'
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSendMessage()}
+                                                        className="btn btn-primary"
+                                                        style={{
+                                                            height: 38,
+                                                            padding: '0 16px',
+                                                            borderRadius: 8,
+                                                            fontSize: '0.8125rem',
+                                                            fontWeight: 700,
+                                                            background: !isEditorEmpty ? '#6366F1' : 'rgba(99, 102, 241, 0.4)',
+                                                            border: 'none',
+                                                            color: '#fff',
+                                                            cursor: !isEditorEmpty ? 'pointer' : 'default',
+                                                            boxShadow: !isEditorEmpty ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
+                                                            transition: 'all 0.15s ease',
+                                                            whiteSpace: 'nowrap'
+                                                        }}
+                                                        disabled={selectedChannel.archived || isEditorEmpty}
+                                                    >
+                                                        Send
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Slide-in Thread Sidebar */}
@@ -1886,7 +3271,7 @@ export function ChannelSettingsPage({
                                                     </div>
                                                     <div style={{ minWidth: 0, flex: 1 }}>
                                                         <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>{activeThreadParent.senderId?.fullName || 'User'}</div>
-                                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 2, wordBreak: 'break-word' }}>{activeThreadParent.content}</div>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 2, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{renderFormattedMessage(activeThreadParent.content)}</div>
                                                     </div>
                                                 </div>
 
@@ -1896,20 +3281,52 @@ export function ChannelSettingsPage({
                                                             <IconMessage size={14} /> No replies in this thread yet. Be the first to respond!
                                                         </div>
                                                     ) : (
-                                                        threadMessages.map((reply) => (
-                                                            <div key={reply._id} style={{ display: 'flex', gap: 8, padding: '4px 0' }}>
-                                                                <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(99, 102, 241, 0.2)', color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.65rem' }}>
-                                                                    {reply.senderId?.fullName ? reply.senderId.fullName.charAt(0).toUpperCase() : 'U'}
-                                                                </div>
-                                                                <div style={{ flex: 1 }}>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                        <span style={{ fontWeight: 700, fontSize: '0.725rem', color: '#fff' }}>{reply.senderId?.fullName || 'User'}</span>
-                                                                        <span style={{ fontSize: '0.6rem', color: 'var(--color-text-muted)' }}>{new Date(reply.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                        threadMessages.map((reply) => {
+                                                            const rSenderId = typeof reply.senderId === 'object' && reply.senderId !== null
+                                                                ? (reply.senderId._id || reply.senderId.id || '').toString()
+                                                                : (reply.senderId || '').toString()
+                                                            const isMeReply = Boolean(resolvedUserId && rSenderId && (rSenderId === resolvedUserId))
+                                                            const rSenderName = isMeReply ? 'You' : (reply.senderId?.fullName || 'User')
+
+                                                            return (
+                                                                <div key={reply._id} style={{ display: 'flex', flexDirection: isMeReply ? 'row-reverse' : 'row', gap: 8, padding: '4px 0' }}>
+                                                                    <div style={{
+                                                                        width: 22,
+                                                                        height: 22,
+                                                                        borderRadius: '50%',
+                                                                        background: isMeReply ? 'linear-gradient(135deg, #6264a7 0%, #4f518a 100%)' : 'rgba(99, 102, 241, 0.2)',
+                                                                        color: isMeReply ? '#fff' : '#818cf8',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center',
+                                                                        fontWeight: 700,
+                                                                        fontSize: '0.65rem'
+                                                                    }}>
+                                                                        {rSenderName.charAt(0).toUpperCase()}
                                                                     </div>
-                                                                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#d1d5db', marginTop: 2, wordBreak: 'break-word' }}>{reply.content}</p>
+                                                                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: isMeReply ? 'flex-end' : 'flex-start' }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', flexDirection: isMeReply ? 'row-reverse' : 'row', gap: 6 }}>
+                                                                            <span style={{ fontWeight: 700, fontSize: '0.725rem', color: isMeReply ? '#c7c9ff' : '#fff' }}>{rSenderName}</span>
+                                                                            <span style={{ fontSize: '0.6rem', color: 'var(--color-text-muted)' }}>{new Date(reply.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                                        </div>
+                                                                        <div style={{
+                                                                            margin: 0,
+                                                                            fontSize: '0.75rem',
+                                                                            color: isMeReply ? '#fff' : '#d1d5db',
+                                                                            marginTop: 2,
+                                                                            wordBreak: 'break-word',
+                                                                            whiteSpace: 'pre-wrap',
+                                                                            background: isMeReply ? 'linear-gradient(135deg, #6264a7 0%, #4f518a 100%)' : 'rgba(255, 255, 255, 0.05)',
+                                                                            padding: '4px 8px',
+                                                                            borderRadius: isMeReply ? '8px 8px 2px 8px' : '8px 8px 8px 2px',
+                                                                            maxWidth: '85%'
+                                                                        }}>
+                                                                            {renderFormattedMessage(reply.content)}
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        ))
+                                                            )
+                                                        })
                                                     )}
                                                     <div ref={threadChatEndRef} />
                                                 </div>
@@ -1938,153 +3355,195 @@ export function ChannelSettingsPage({
                                         if (!fileSearchQuery.trim()) return true
                                         const q = fileSearchQuery.toLowerCase()
                                         return (f.originalName || f.fileName || '').toLowerCase().includes(q) ||
-                                               (f.uploadedBy?.fullName || '').toLowerCase().includes(q)
+                                            (f.uploadedBy?.fullName || '').toLowerCase().includes(q)
                                     })
 
                                     return (
-                                    <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-                                            <div>
-                                                <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                    <span>Channel Files & Shared Documents</span>
-                                                    <span style={{ fontSize: '0.72rem', background: 'rgba(99, 102, 241, 0.15)', color: '#818CF8', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
-                                                        {files.length} Files
-                                                    </span>
-                                                </h3>
-                                                <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
-                                                    All attachments, documents, and media shared in #{selectedChannel.name}.
-                                                </p>
-                                            </div>
+                                        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                                                <div>
+                                                    <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        <span>Channel Files & Shared Documents</span>
+                                                        <span style={{ fontSize: '0.72rem', background: 'rgba(99, 102, 241, 0.15)', color: '#818CF8', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
+                                                            {files.length} Files
+                                                        </span>
+                                                    </h3>
+                                                    <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
+                                                        All attachments, documents, and media shared in #{selectedChannel.name}.
+                                                    </p>
+                                                </div>
 
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                {files.length > 0 && (
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Filter files..."
-                                                        value={fileSearchQuery}
-                                                        onChange={(e) => setFileSearchQuery(e.target.value)}
-                                                        className="input"
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                    {files.length > 0 && (
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Filter files..."
+                                                            value={fileSearchQuery}
+                                                            onChange={(e) => setFileSearchQuery(e.target.value)}
+                                                            className="input"
+                                                            style={{
+                                                                height: 32,
+                                                                padding: '0 12px',
+                                                                fontSize: '0.75rem',
+                                                                borderRadius: 8,
+                                                                width: 180,
+                                                                background: 'rgba(255, 255, 255, 0.04)'
+                                                            }}
+                                                        />
+                                                    )}
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => fileInputRef.current?.click()}
+                                                        disabled={uploadingFile}
+                                                        className="btn btn-primary"
                                                         style={{
                                                             height: 32,
-                                                            padding: '0 12px',
+                                                            padding: '0 14px',
                                                             fontSize: '0.75rem',
+                                                            fontWeight: 600,
                                                             borderRadius: 8,
-                                                            width: 180,
-                                                            background: 'rgba(255, 255, 255, 0.04)'
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 6,
+                                                            background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)',
+                                                            border: 'none',
+                                                            cursor: 'pointer'
                                                         }}
-                                                    />
-                                                )}
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() => fileInputRef.current?.click()}
-                                                    disabled={uploadingFile}
-                                                    className="btn btn-primary"
-                                                    style={{
-                                                        height: 32,
-                                                        padding: '0 14px',
-                                                        fontSize: '0.75rem',
-                                                        fontWeight: 600,
-                                                        borderRadius: 8,
-                                                        display: 'inline-flex',
-                                                        alignItems: 'center',
-                                                        gap: 6,
-                                                        background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)',
-                                                        border: 'none',
-                                                        cursor: 'pointer'
-                                                    }}
-                                                >
-                                                    <IconPlus size={13} />
-                                                    <span>{uploadingFile ? 'Uploading...' : 'Upload File'}</span>
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {files.length === 0 ? (
-                                            <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                                <IconFolder size={36} color="#818cf8" style={{ marginBottom: 8 }} />
-                                                <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.9375rem', marginBottom: 4 }}>
-                                                    No files uploaded yet
+                                                    >
+                                                        <IconPlus size={13} />
+                                                        <span>{uploadingFile ? 'Uploading...' : 'Upload File'}</span>
+                                                    </button>
                                                 </div>
-                                                <p style={{ fontSize: '0.75rem', margin: '0 0 16px', maxWidth: 360, marginInline: 'auto' }}>
-                                                    Drag & drop documents, PDFs, or design assets in the chat or click upload so your team can access them anytime.
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => fileInputRef.current?.click()}
-                                                    className="btn btn-secondary"
-                                                    style={{ padding: '6px 14px', fontSize: '0.75rem', borderRadius: 8, cursor: 'pointer' }}
-                                                >
-                                                    Upload Document Now
-                                                </button>
                                             </div>
-                                        ) : filteredFiles.length === 0 ? (
-                                            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                No files match "{fileSearchQuery}".
-                                            </div>
-                                        ) : (
-                                            <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, background: 'rgba(255,255,255,0.01)' }}>
-                                                <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.75rem' }}>
-                                                    <thead>
-                                                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
-                                                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>File Name</th>
-                                                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Size</th>
-                                                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Shared By</th>
-                                                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Date</th>
-                                                            <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'right' }}>Download</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {filteredFiles.map((file) => {
-                                                            const uploader = file.uploadedBy?.fullName || 'Colleague'
-                                                            const dateStr = file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : 'Recent'
-                                                            return (
-                                                                <tr key={file._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }} className="hover:bg-white/2">
-                                                                    <td style={{ padding: '10px 14px' }}>
-                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            {file.mimeType?.startsWith('image/') ? <IconSparkles size={16} color="#38bdf8" /> : file.originalName?.endsWith('.pdf') ? <IconFileText size={16} color="#f87171" /> : <IconFileText size={16} color="#94a3b8" />}
-                                                                            <span style={{ fontWeight: 600, color: '#fff' }}>{file.originalName || file.fileName}</span>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>
-                                                                        {formatFileSize(file.size)}
-                                                                    </td>
-                                                                    <td style={{ padding: '10px 14px', color: '#e4e4e7' }}>
-                                                                        {uploader}
-                                                                    </td>
-                                                                    <td style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>
-                                                                        {dateStr}
-                                                                    </td>
-                                                                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                                                                        <a
-                                                                            href={`${API_BASE}/api/file/${file._id}/download`}
-                                                                            target="_blank"
-                                                                            rel="noreferrer"
-                                                                            style={{
-                                                                                display: 'inline-flex',
-                                                                                alignItems: 'center',
-                                                                                gap: 4,
-                                                                                padding: '4px 10px',
-                                                                                borderRadius: 6,
-                                                                                background: 'rgba(99, 102, 241, 0.1)',
-                                                                                border: '1px solid rgba(99, 102, 241, 0.25)',
-                                                                                color: '#818cf8',
-                                                                                textDecoration: 'none',
-                                                                                fontWeight: 600,
-                                                                                fontSize: '0.7rem'
-                                                                            }}
-                                                                        >
-                                                                            Download ⬇
-                                                                        </a>
-                                                                    </td>
-                                                                </tr>
-                                                            )
-                                                        })}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        )}
-                                    </div>
+
+                                            {files.length === 0 ? (
+                                                <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                    <IconFolder size={36} color="#818cf8" style={{ marginBottom: 8 }} />
+                                                    <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.9375rem', marginBottom: 4 }}>
+                                                        No files uploaded yet
+                                                    </div>
+                                                    <p style={{ fontSize: '0.75rem', margin: '0 0 16px', maxWidth: 360, marginInline: 'auto' }}>
+                                                        Drag & drop documents, PDFs, or design assets in the chat or click upload so your team can access them anytime.
+                                                    </p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => fileInputRef.current?.click()}
+                                                        className="btn btn-secondary"
+                                                        style={{ padding: '6px 14px', fontSize: '0.75rem', borderRadius: 8, cursor: 'pointer' }}
+                                                    >
+                                                        Upload Document Now
+                                                    </button>
+                                                </div>
+                                            ) : filteredFiles.length === 0 ? (
+                                                <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                                    No files match "{fileSearchQuery}".
+                                                </div>
+                                            ) : (
+                                                <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, background: 'rgba(255,255,255,0.01)' }}>
+                                                    <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.75rem' }}>
+                                                        <thead>
+                                                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
+                                                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>File Name</th>
+                                                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Size</th>
+                                                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Shared By</th>
+                                                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Date</th>
+                                                                <th style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'right' }}>Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {filteredFiles.map((file) => {
+                                                                const uploader = file.uploadedBy?.fullName || 'Colleague'
+                                                                const dateStr = file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : 'Recent'
+                                                                const fileName = file.originalName || file.fileName || 'document'
+                                                                const fileUrl = file.url || `${API_BASE}/api/file/${file._id}/download`
+
+                                                                return (
+                                                                    <tr
+                                                                        key={file._id}
+                                                                        style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.15s ease' }}
+                                                                        className="hover:bg-white/5"
+                                                                        onClick={() => setPreviewFile({ name: fileName, url: fileUrl, size: file.size })}
+                                                                    >
+                                                                        <td style={{ padding: '10px 14px' }}>
+                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                                                {file.mimeType?.startsWith('image/') ? <IconSparkles size={16} color="#38bdf8" /> : fileName.endsWith('.pdf') ? <IconFileText size={16} color="#f87171" /> : <IconFileText size={16} color="#94a3b8" />}
+                                                                                <span style={{ fontWeight: 600, color: '#fff' }}>{fileName}</span>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>
+                                                                            {formatFileSize(file.size)}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 14px', color: '#e4e4e7' }}>
+                                                                            {uploader}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>
+                                                                            {dateStr}
+                                                                        </td>
+                                                                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation()
+                                                                                        setPreviewFile({ name: fileName, url: fileUrl, size: file.size })
+                                                                                    }}
+                                                                                    style={{
+                                                                                        display: 'inline-flex',
+                                                                                        alignItems: 'center',
+                                                                                        gap: 4,
+                                                                                        padding: '4px 10px',
+                                                                                        borderRadius: 6,
+                                                                                        background: 'rgba(99, 102, 241, 0.15)',
+                                                                                        border: '1px solid rgba(99, 102, 241, 0.35)',
+                                                                                        color: '#c7c9ff',
+                                                                                        fontWeight: 600,
+                                                                                        fontSize: '0.72rem',
+                                                                                        cursor: 'pointer',
+                                                                                        transition: 'all 0.15s ease'
+                                                                                    }}
+                                                                                    title="Preview document"
+                                                                                >
+                                                                                    <IconEye size={13} />
+                                                                                    <span>Preview</span>
+                                                                                </button>
+
+                                                                                <a
+                                                                                    href={fileUrl}
+                                                                                    download={fileName}
+                                                                                    target="_blank"
+                                                                                    rel="noreferrer"
+                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                    style={{
+                                                                                        display: 'inline-flex',
+                                                                                        alignItems: 'center',
+                                                                                        gap: 4,
+                                                                                        padding: '4px 10px',
+                                                                                        borderRadius: 6,
+                                                                                        background: 'rgba(255, 255, 255, 0.06)',
+                                                                                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                                                                                        color: '#e2e8f0',
+                                                                                        textDecoration: 'none',
+                                                                                        fontWeight: 600,
+                                                                                        fontSize: '0.72rem',
+                                                                                        cursor: 'pointer',
+                                                                                        transition: 'all 0.15s ease'
+                                                                                    }}
+                                                                                    title="Download file"
+                                                                                >
+                                                                                    <IconDownload size={13} />
+                                                                                    <span>Download</span>
+                                                                                </a>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                )
+                                                            })}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
+                                        </div>
                                     )
                                 })()}
 
@@ -2221,8 +3680,120 @@ export function ChannelSettingsPage({
                                 )}
                             </>
                         ) : (
-                            <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                <IconHash size={16} color="#818cf8" /> Select a channel from the left sidebar to start collaborating.
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+                                {isChannelListCollapsed && (
+                                    <div style={{
+                                        padding: '12px 18px',
+                                        borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 10,
+                                        background: 'rgba(255, 255, 255, 0.02)'
+                                    }}>
+                                        <button
+                                            type="button"
+                                            onClick={toggleChannelListCollapse}
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 6,
+                                                padding: '6px 12px',
+                                                borderRadius: 7,
+                                                background: 'rgba(99, 102, 241, 0.18)',
+                                                border: '1px solid rgba(99, 102, 241, 0.4)',
+                                                color: '#818cf8',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer'
+                                            }}
+                                            title="Show channels list"
+                                        >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                                <line x1="9" y1="3" x2="9" y2="21" />
+                                                <path d="m13 15 3-3-3-3" />
+                                            </svg>
+                                            <span>Show Channels</span>
+                                        </button>
+                                        <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                                            Channels list collapsed
+                                        </span>
+                                    </div>
+                                )}
+                                <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', maxWidth: 440, padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+                                    <div style={{
+                                        width: 52,
+                                        height: 52,
+                                        borderRadius: 14,
+                                        background: 'rgba(99, 102, 241, 0.12)',
+                                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#818cf8'
+                                    }}>
+                                        <IconHash size={26} />
+                                    </div>
+                                    <div>
+                                        <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', margin: '0 0 6px 0' }}>
+                                            Channel Workspace
+                                        </h3>
+                                        <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5 }}>
+                                            {isChannelListCollapsed
+                                                ? 'Channels sidebar is collapsed. Click below to expand your team channels list.'
+                                                : 'Select a channel from the left sidebar or create a new one to start collaborating.'}
+                                        </p>
+                                    </div>
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                                        {isChannelListCollapsed && (
+                                            <button
+                                                type="button"
+                                                onClick={toggleChannelListCollapse}
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 7,
+                                                    padding: '8px 16px',
+                                                    borderRadius: 8,
+                                                    background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
+                                                    border: 'none',
+                                                    color: '#fff',
+                                                    fontWeight: 700,
+                                                    fontSize: '0.8125rem',
+                                                    cursor: 'pointer',
+                                                    boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+                                                }}
+                                            >
+                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                                    <line x1="9" y1="3" x2="9" y2="21" />
+                                                    <path d="m13 15 3-3-3-3" />
+                                                </svg>
+                                                <span>Show Channels List</span>
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowCreateDialog(true)}
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 6,
+                                                padding: '8px 16px',
+                                                borderRadius: 8,
+                                                background: isChannelListCollapsed ? 'rgba(255, 255, 255, 0.08)' : 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
+                                                border: isChannelListCollapsed ? '1px solid rgba(255, 255, 255, 0.15)' : 'none',
+                                                color: '#fff',
+                                                fontWeight: 700,
+                                                fontSize: '0.8125rem',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <span>+</span>
+                                            <span>Create New Channel</span>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -2383,6 +3954,211 @@ export function ChannelSettingsPage({
                 token={token}
                 channelId={selectedChannel?._id}
                 onClipUploaded={handleClipUploaded}
+            />
+
+            {/* Next-Gen Feature 2: Slack 2.0 Channel Live Huddle Dock (Corner Anchored & Collapsible) */}
+            {isHuddleActive && selectedChannel && (
+                isHuddleCollapsed ? (
+                    /* COLLAPSED MINI-PILL IN BOTTOM-RIGHT CORNER */
+                    <div style={{
+                        position: 'fixed',
+                        bottom: 80,
+                        right: 24,
+                        zIndex: 9999,
+                        background: 'rgba(15, 17, 26, 0.95)',
+                        backdropFilter: 'blur(16px)',
+                        border: '1px solid rgba(168, 85, 247, 0.4)',
+                        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(168, 85, 247, 0.25)',
+                        borderRadius: 9999,
+                        padding: '5px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        animation: 'fadeInUp 0.2s ease'
+                    }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#fff' }}>Huddle</span>
+                        <button
+                            type="button"
+                            onClick={() => setIsHuddleMuted(!isHuddleMuted)}
+                            style={{
+                                background: isHuddleMuted ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.1)',
+                                border: 'none',
+                                color: isHuddleMuted ? '#f87171' : '#fff',
+                                borderRadius: '50%',
+                                width: 24,
+                                height: 24,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer'
+                            }}
+                            title={isHuddleMuted ? "Unmute Mic" : "Mute Mic"}
+                        >
+                            <IconMic size={11} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setIsHuddleCollapsed(false)}
+                            style={{
+                                background: 'rgba(168, 85, 247, 0.2)',
+                                border: '1px solid rgba(168, 85, 247, 0.4)',
+                                color: '#c084fc',
+                                borderRadius: 6,
+                                padding: '2px 7px',
+                                fontSize: '0.68rem',
+                                fontWeight: 600,
+                                cursor: 'pointer'
+                            }}
+                            title="Open Huddle controls"
+                        >
+                            ▲ Open
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleToggleHuddle}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#94a3b8',
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                padding: '0 3px',
+                                lineHeight: 1
+                            }}
+                            title="Leave Huddle"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                ) : (
+                    /* EXPANDED CORNER WIDGET WITH COLLAPSE TOGGLE */
+                    <div style={{
+                        position: 'fixed',
+                        bottom: 80,
+                        right: 24,
+                        zIndex: 9999,
+                        background: 'rgba(15, 17, 26, 0.96)',
+                        backdropFilter: 'blur(20px)',
+                        border: '1px solid rgba(168, 85, 247, 0.45)',
+                        boxShadow: '0 12px 32px rgba(0, 0, 0, 0.65), 0 0 20px rgba(168, 85, 247, 0.25)',
+                        borderRadius: 14,
+                        padding: '10px 14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 10,
+                        minWidth: 280,
+                        animation: 'fadeInUp 0.2s ease'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
+                                <span style={{ fontWeight: 800, fontSize: '0.78rem', color: '#fff' }}>
+                                    #{selectedChannel.name} Huddle
+                                </span>
+                                <span style={{ fontSize: '0.68rem', color: '#c084fc', background: 'rgba(168, 85, 247, 0.18)', padding: '1px 6px', borderRadius: 9999 }}>
+                                    Live Audio
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsHuddleCollapsed(true)}
+                                style={{
+                                    background: 'rgba(255, 255, 255, 0.08)',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    color: '#94a3b8',
+                                    borderRadius: 6,
+                                    padding: '2px 7px',
+                                    fontSize: '0.68rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                }}
+                                title="Collapse to corner"
+                            >
+                                <span>▼</span>
+                                <span>Hide</span>
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {/* Mic Toggle */}
+                            <button
+                                type="button"
+                                onClick={() => setIsHuddleMuted(!isHuddleMuted)}
+                                style={{
+                                    background: isHuddleMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                                    border: isHuddleMuted ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255, 255, 255, 0.12)',
+                                    color: isHuddleMuted ? '#f87171' : '#fff',
+                                    borderRadius: 8,
+                                    padding: '5px 10px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 5
+                                }}
+                            >
+                                <IconMic size={13} />
+                                <span>{isHuddleMuted ? 'Muted' : 'Mute'}</span>
+                            </button>
+
+                            {/* Ambient Focus Sounds */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const next = ambientAudioMode === 'off' ? 'lofi' : (ambientAudioMode === 'lofi' ? 'rain' : 'off')
+                                    setAmbientAudioMode(next)
+                                }}
+                                style={{
+                                    background: ambientAudioMode !== 'off' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                                    border: ambientAudioMode !== 'off' ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid rgba(255, 255, 255, 0.12)',
+                                    color: ambientAudioMode !== 'off' ? '#a5b4fc' : '#94a3b8',
+                                    borderRadius: 8,
+                                    padding: '5px 10px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 5
+                                }}
+                            >
+                                <span>🎵</span>
+                                <span>{ambientAudioMode === 'off' ? 'Ambient' : (ambientAudioMode === 'lofi' ? 'Lo-Fi' : 'Rain')}</span>
+                            </button>
+
+                            {/* Leave */}
+                            <button
+                                type="button"
+                                onClick={handleToggleHuddle}
+                                style={{
+                                    background: 'rgba(239, 68, 68, 0.2)',
+                                    border: '1px solid rgba(239, 68, 68, 0.45)',
+                                    color: '#fca5a5',
+                                    borderRadius: 8,
+                                    padding: '5px 10px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    marginLeft: 'auto'
+                                }}
+                            >
+                                Leave
+                            </button>
+                        </div>
+                    </div>
+                )
+            )}
+
+            {/* Document / File Preview Modal */}
+            <DocumentPreviewModal
+                isOpen={Boolean(previewFile)}
+                onClose={() => setPreviewFile(null)}
+                file={previewFile}
             />
         </div>
     )

@@ -1,5 +1,9 @@
 import React, { useState } from 'react'
-import { IconFileText, IconPackage, IconMonitor, IconSparkles, IconSearch, IconDownload, IconX } from '../../../components/common/Icons'
+import {
+    IconFileText, IconPackage, IconMonitor, IconSparkles,
+    IconSearch, IconDownload, IconEye
+} from '../../../components/common/Icons'
+import { DocumentPreviewModal } from '../../../components/common/DocumentPreviewModal'
 import type { ChannelAttachment } from '../channel.types'
 
 interface FileCardProps {
@@ -74,7 +78,7 @@ export function getFileCategory(name: string, type?: string): {
             isImage: false
         }
     }
-    if (['js', 'ts', 'jsx', 'tsx', 'py', 'html', 'css', 'json', 'sql', 'sh'].includes(ext) || type === 'code') {
+    if (['js', 'ts', 'jsx', 'tsx', 'py', 'html', 'css', 'json', 'sql', 'sh', 'env', 'yml', 'yaml', 'xml'].includes(ext) || type === 'code') {
         return {
             icon: <IconMonitor size={20} color="#c084fc" />,
             color: '#c084fc',
@@ -95,12 +99,13 @@ export function getFileCategory(name: string, type?: string): {
 }
 
 export function FileCard({ attachment }: FileCardProps) {
-    const [showLightbox, setShowLightbox] = useState(false)
+    const [showPreview, setShowPreview] = useState(false)
     const category = getFileCategory(attachment.name, attachment.fileType)
 
     return (
         <>
             <div
+                onClick={() => setShowPreview(true)}
                 style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -113,13 +118,26 @@ export function FileCard({ attachment }: FileCardProps) {
                     width: '100%',
                     marginTop: 6,
                     boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
-                    transition: 'transform 0.18s ease, border-color 0.18s ease'
+                    transition: 'all 0.18s ease',
+                    cursor: 'pointer'
                 }}
+                onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = category.color
+                    e.currentTarget.style.transform = 'translateY(-1px)'
+                }}
+                onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = category.borderColor
+                    e.currentTarget.style.transform = 'translateY(0)'
+                }}
+                title="Click to preview document"
             >
                 {/* Image preview banner if image */}
                 {category.isImage && (
                     <div
-                        onClick={() => setShowLightbox(true)}
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            setShowPreview(true)
+                        }}
                         style={{
                             width: '100%',
                             maxHeight: 180,
@@ -144,7 +162,6 @@ export function FileCard({ attachment }: FileCardProps) {
                             onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.03)')}
                             onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1.0)')}
                             onError={(e) => {
-                                // Fallback if image fails to load
                                 (e.currentTarget as HTMLElement).style.display = 'none'
                             }}
                         />
@@ -234,129 +251,82 @@ export function FileCard({ attachment }: FileCardProps) {
                         </div>
                     </div>
 
-                    {/* Download button */}
-                    <a
-                        href={attachment.url}
-                        download={attachment.name}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            padding: '6px 12px',
-                            background: 'rgba(255, 255, 255, 0.08)',
-                            border: '1px solid rgba(255, 255, 255, 0.12)',
-                            borderRadius: '8px',
-                            color: '#fff',
-                            textDecoration: 'none',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            flexShrink: 0,
-                            transition: 'all 0.15s ease'
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(99, 102, 241, 0.3)'
-                            e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.5)'
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
-                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'
-                        }}
-                    >
-                        <IconDownload size={13} /> Download
-                    </a>
+                    {/* Actions: Icon-only Preview & Download buttons */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                setShowPreview(true)
+                            }}
+                            style={{
+                                width: 30,
+                                height: 30,
+                                borderRadius: 7,
+                                background: 'rgba(99, 102, 241, 0.18)',
+                                border: '1px solid rgba(99, 102, 241, 0.35)',
+                                color: '#c7c9ff',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(99, 102, 241, 0.35)'
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(99, 102, 241, 0.18)'
+                            }}
+                            title="Preview document"
+                        >
+                            <IconEye size={15} />
+                        </button>
+
+                        <a
+                            href={attachment.url}
+                            download={attachment.name}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                                width: 30,
+                                height: 30,
+                                borderRadius: 7,
+                                background: 'rgba(255, 255, 255, 0.08)',
+                                border: '1px solid rgba(255, 255, 255, 0.12)',
+                                color: '#fff',
+                                textDecoration: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)'
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
+                            }}
+                            title="Download file"
+                        >
+                            <IconDownload size={14} />
+                        </a>
+                    </div>
                 </div>
             </div>
 
-            {/* Fullscreen Lightbox Modal for Images */}
-            {showLightbox && (
-                <div
-                    onClick={() => setShowLightbox(false)}
-                    style={{
-                        position: 'fixed',
-                        inset: 0,
-                        zIndex: 99999,
-                        background: 'rgba(0, 0, 0, 0.88)',
-                        backdropFilter: 'blur(10px)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: 24,
-                        cursor: 'zoom-out'
-                    }}
-                >
-                    <div
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                            position: 'relative',
-                            maxWidth: '90vw',
-                            maxHeight: '85vh',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            cursor: 'default'
-                        }}
-                    >
-                        <button
-                            onClick={() => setShowLightbox(false)}
-                            style={{
-                                position: 'absolute',
-                                top: -40,
-                                right: 0,
-                                background: 'rgba(255, 255, 255, 0.15)',
-                                border: 'none',
-                                color: '#fff',
-                                width: 32,
-                                height: 32,
-                                borderRadius: '50%',
-                                cursor: 'pointer',
-                                fontSize: '1rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                            }}
-                        >
-                            <IconX size={15} />
-                        </button>
-                        <img
-                            src={attachment.url}
-                            alt={attachment.name}
-                            style={{
-                                maxWidth: '100%',
-                                maxHeight: '80vh',
-                                objectFit: 'contain',
-                                borderRadius: '12px',
-                                boxShadow: '0 12px 40px rgba(0, 0, 0, 0.8)'
-                            }}
-                        />
-                        <div
-                            style={{
-                                marginTop: 12,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 16,
-                                color: '#fff',
-                                fontSize: '0.875rem'
-                            }}
-                        >
-                            <span style={{ fontWeight: 600 }}>{attachment.name}</span>
-                            <a
-                                href={attachment.url}
-                                download={attachment.name}
-                                style={{
-                                    color: '#818cf8',
-                                    textDecoration: 'underline',
-                                    fontWeight: 600
-                                }}
-                            >
-                                Download Original
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Document Preview Modal */}
+            <DocumentPreviewModal
+                isOpen={showPreview}
+                onClose={() => setShowPreview(false)}
+                file={{
+                    name: attachment.name,
+                    url: attachment.url,
+                    size: attachment.size
+                }}
+            />
         </>
     )
 }

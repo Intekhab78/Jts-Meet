@@ -29,25 +29,7 @@ router.get('/ice-servers', (req: Request, res: Response) => {
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
-        { urls: 'stun:stun.cloudflare.com:3478' },
-        { urls: 'stun:stun.services.mozilla.com' },
-        {
-            urls: [
-                'turn:openrelay.metered.ca:80',
-                'turn:openrelay.metered.ca:443',
-                'turn:openrelay.metered.ca:443?transport=tcp'
-            ],
-            username: process.env.TURN_USERNAME || 'openrelay',
-            credential: process.env.TURN_CREDENTIAL || 'openrelay'
-        },
-        {
-            urls: [
-                'turns:openrelay.metered.ca:443?transport=tcp',
-                'turns:openrelay.metered.ca:5349?transport=tcp'
-            ],
-            username: process.env.TURN_USERNAME || 'openrelay',
-            credential: process.env.TURN_CREDENTIAL || 'openrelay'
-        }
+        { urls: 'stun:stun.cloudflare.com:3478' }
     ]
 
     res.json({

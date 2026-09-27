@@ -167,15 +167,24 @@ namespace JtsInputInjector
 
         static void Main(string[] args)
         {
-            Console.OutputEncoding = Encoding.UTF8;
-            Console.WriteLine("JTS_INPUT_READY");
-
-            string line;
-            while ((line = Console.ReadLine()) != null)
+            try
             {
-                line = line.Trim();
-                if (string.IsNullOrEmpty(line)) continue;
-                if (line.Equals("EXIT", StringComparison.OrdinalIgnoreCase)) break;
+                Console.OutputEncoding = Encoding.UTF8;
+                Console.WriteLine("JTS_INPUT_READY");
+            }
+            catch
+            {
+                // Ignore console handle errors when spawned with hidden window or redirected IO
+            }
+
+            try
+            {
+                string line;
+                while ((line = Console.ReadLine()) != null)
+                {
+                    line = line.Trim();
+                    if (string.IsNullOrEmpty(line)) continue;
+                    if (line.Equals("EXIT", StringComparison.OrdinalIgnoreCase)) break;
 
                 try
                 {
@@ -269,11 +278,16 @@ namespace JtsInputInjector
                         SendUnicodeString(text);
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    // Ignore transient errors
+                    // Ignore transient command parsing errors
                 }
             }
         }
+        catch
+        {
+            // Process terminated or input closed
+        }
     }
+}
 }

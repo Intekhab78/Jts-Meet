@@ -503,18 +503,71 @@ export const IconSend: React.FC<IconProps> = ({ size = 18, color = 'currentColor
     </svg>
 )
 
-export const IconCloud: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
+export const IconRedo: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style} {...props}>
-        <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+        <path d="M21 7v6h-6" />
+        <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7" />
+    </svg>
+)
+
+export const IconType: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style} {...props}>
+        <polyline points="4 7 4 4 20 4 20 7" />
+        <line x1="9" y1="20" x2="15" y2="20" />
+        <line x1="12" y1="4" x2="12" y2="20" />
+    </svg>
+)
+
+export const IconArrowRight: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style} {...props}>
+        <line x1="5" y1="12" x2="19" y2="12" />
+        <polyline points="12 5 19 12 12 19" />
+    </svg>
+)
+
+export const IconStickyNote: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style} {...props}>
+        <path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" />
+        <path d="M15 3v6h6" />
     </svg>
 )
 
 
+export const IconChevronLeft: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style} {...props}>
+        <polyline points="15 18 9 12 15 6" />
+    </svg>
+)
 
+export const IconChevronRight: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style} {...props}>
+        <polyline points="9 18 15 12 9 6" />
+    </svg>
+)
 
+export const IconGrid: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style} {...props}>
+        <rect x="3" y="3" width="7" height="7" />
+        <rect x="14" y="3" width="7" height="7" />
+        <rect x="14" y="14" width="7" height="7" />
+        <rect x="3" y="14" width="7" height="7" />
+    </svg>
+)
 
+export const IconZoomIn: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style} {...props}>
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        <line x1="11" y1="8" x2="11" y2="14" />
+        <line x1="8" y1="11" x2="14" y2="11" />
+    </svg>
+)
 
-
-
-
+export const IconZoomOut: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style} {...props}>
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        <line x1="8" y1="11" x2="14" y2="11" />
+    </svg>
+)
 

@@ -3,10 +3,52 @@ const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
 
+// Disable dev security warnings in renderer DevTools console
+process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true'
+
+// Prevent crash / error dialog from stream EPIPE or broken pipes
+process.stdout?.on('error', (err) => { if (err && err.code === 'EPIPE') return })
+process.stderr?.on('error', (err) => { if (err && err.code === 'EPIPE') return })
+process.on('uncaughtException', (err) => {
+    if (err && (err.code === 'EPIPE' || (typeof err.message === 'string' && err.message.includes('EPIPE')))) {
+        console.warn('[Desktop] Handled stream EPIPE:', err.message)
+        return
+    }
+    console.error('[Desktop] Uncaught exception:', err)
+})
+
 // Disable Chromium background throttling so screen share and WebRTC never pause when another OS window is clicked
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
+
+// Register deep-linking scheme (e.g. jtsmeet://meet/room-code)
+if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient('jtsmeet', process.execPath, [path.resolve(process.argv[1])])
+    }
+} else {
+    app.setAsDefaultProtocolClient('jtsmeet')
+}
+
+// Enforce single instance to prevent duplicate audio/meeting collisions
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+    app.quit()
+} else {
+    app.on('second-instance', (_event, commandLine) => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore()
+            mainWindow.show()
+            mainWindow.focus()
+            const deepLink = commandLine.find(arg => arg.startsWith('jtsmeet://'))
+            if (deepLink) {
+                const target = deepLink.replace('jtsmeet://', '')
+                mainWindow.webContents.send('app:navigate', target)
+            }
+        }
+    })
+}
 
 let mainWindow = null
 let inputProcess = null
@@ -18,13 +60,14 @@ function setupDisplayMediaHandler(sess) {
     if (!sess || typeof sess.setDisplayMediaRequestHandler !== 'function') return
     sess.setDisplayMediaRequestHandler(
         (request, callback) => {
-            desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
+            desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 1, height: 1 } }).then((sources) => {
                 if (!sources || sources.length === 0) {
+                    console.warn('[ScreenShare] No desktop sources available')
                     return callback({})
                 }
                 const chosen = (selectedScreenSourceId && sources.find(s => s.id === selectedScreenSourceId)) || sources[0]
+                console.log('[ScreenShare] setDisplayMediaRequestHandler serving source:', chosen ? `${chosen.id} (${chosen.name})` : 'none')
                 const response = { video: chosen }
-                // Only attach audio if the renderer explicitly requested audio capture
                 if (request.audioRequested) {
                     response.audio = 'loopback'
                 }
@@ -57,6 +100,13 @@ function initInputProcess() {
             stdio: ['pipe', 'ignore', 'ignore'],
             windowsHide: true
         })
+        if (inputProcess.stdin) {
+            inputProcess.stdin.on('error', (err) => {
+                // Prevent unhandled stream error (EPIPE)
+                console.warn('[Desktop] Input injector stdin error:', err?.message || err)
+                inputProcess = null
+            })
+        }
         inputProcess.on('error', (err) => {
             console.error('[Desktop] Input injector process error:', err?.message || err)
             inputProcess = null
@@ -66,49 +116,59 @@ function initInputProcess() {
         })
     } catch (e) {
         console.error('[Desktop] Failed to spawn input injector process:', e)
+        inputProcess = null
     }
 }
 
 // Native Windows Input Simulator using compiled high-performance Win32 Injector
 function simulateWindowsInput(action, x, y, button, key, deltaY) {
     if (process.platform !== 'win32') return
-    if (!inputProcess || !inputProcess.stdin || inputProcess.stdin.destroyed) {
+    if (!inputProcess || !inputProcess.stdin || inputProcess.stdin.destroyed || !inputProcess.stdin.writable) {
         initInputProcess()
     }
-    if (!inputProcess || !inputProcess.stdin || inputProcess.stdin.destroyed) return
+    if (!inputProcess || !inputProcess.stdin || inputProcess.stdin.destroyed || !inputProcess.stdin.writable) return
 
     const safeX = Number.isFinite(x) ? Math.round(x) : 0
     const safeY = Number.isFinite(y) ? Math.round(y) : 0
 
-    try {
-        if (action === 'move') {
-            const now = Date.now()
-            if (now - lastMoveTime < 12) return // Smooth 80Hz cursor tracking
-            lastMoveTime = now
-            inputProcess.stdin.write(`MOVE ${safeX} ${safeY}\n`)
-        } else if (action === 'click') {
-            const btn = button === 2 ? 2 : (button === 1 ? 1 : 0)
-            inputProcess.stdin.write(`CLICK ${safeX} ${safeY} ${btn}\n`)
-        } else if (action === 'down') {
-            const btn = button === 2 ? 2 : (button === 1 ? 1 : 0)
-            inputProcess.stdin.write(`DOWN ${safeX} ${safeY} ${btn}\n`)
-        } else if (action === 'up') {
-            const btn = button === 2 ? 2 : (button === 1 ? 1 : 0)
-            inputProcess.stdin.write(`UP ${safeX} ${safeY} ${btn}\n`)
-        } else if (action === 'dblclick') {
-            inputProcess.stdin.write(`DBLCLICK ${safeX} ${safeY}\n`)
-        } else if (action === 'contextmenu') {
-            inputProcess.stdin.write(`CONTEXTMENU ${safeX} ${safeY}\n`)
-        } else if (action === 'scroll') {
-            const scrollAmount = Math.round((Number.isFinite(deltaY) ? deltaY : 0) * -1)
-            inputProcess.stdin.write(`SCROLL ${scrollAmount}\n`)
-        } else if (action === 'key' && key) {
-            inputProcess.stdin.write(`KEY down ${key}\n`)
-        } else if (action === 'keyup' && key) {
-            inputProcess.stdin.write(`KEY up ${key}\n`)
+    let cmd = null
+    if (action === 'move') {
+        const now = Date.now()
+        if (now - lastMoveTime < 12) return // Smooth 80Hz cursor tracking
+        lastMoveTime = now
+        cmd = `MOVE ${safeX} ${safeY}\n`
+    } else if (action === 'click') {
+        const btn = button === 2 ? 2 : (button === 1 ? 1 : 0)
+        cmd = `CLICK ${safeX} ${safeY} ${btn}\n`
+    } else if (action === 'down') {
+        const btn = button === 2 ? 2 : (button === 1 ? 1 : 0)
+        cmd = `DOWN ${safeX} ${safeY} ${btn}\n`
+    } else if (action === 'up') {
+        const btn = button === 2 ? 2 : (button === 1 ? 1 : 0)
+        cmd = `UP ${safeX} ${safeY} ${btn}\n`
+    } else if (action === 'dblclick') {
+        cmd = `DBLCLICK ${safeX} ${safeY}\n`
+    } else if (action === 'contextmenu') {
+        cmd = `CONTEXTMENU ${safeX} ${safeY}\n`
+    } else if (action === 'scroll') {
+        const scrollAmount = Math.round((Number.isFinite(deltaY) ? deltaY : 0) * -1)
+        cmd = `SCROLL ${scrollAmount}\n`
+    } else if (action === 'key' && key) {
+        cmd = `KEY down ${key}\n`
+    } else if (action === 'keyup' && key) {
+        cmd = `KEY up ${key}\n`
+    }
+
+    if (cmd && inputProcess && inputProcess.stdin && !inputProcess.stdin.destroyed && inputProcess.stdin.writable) {
+        try {
+            inputProcess.stdin.write(cmd, (err) => {
+                if (err) {
+                    inputProcess = null
+                }
+            })
+        } catch (err) {
+            inputProcess = null
         }
-    } catch (err) {
-        console.error('[Desktop] Failed to write to input stream:', err)
     }
 }
 
@@ -142,14 +202,28 @@ function createWindow() {
 
 
     // ─── Auto-approve Media (Microphone & Camera) and Screen permissions in Electron session
-    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-        const allowed = ['media', 'mediaKeySystem', 'notifications', 'pointerLock', 'fullscreen', 'display-capture']
-        callback(allowed.includes(permission))
-    })
-    session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
-        const allowed = ['media', 'mediaKeySystem', 'notifications', 'pointerLock', 'fullscreen', 'display-capture']
-        return allowed.includes(permission)
-    })
+    const setupPermissions = (targetSession) => {
+        if (!targetSession) return
+        const allowed = [
+            'media',
+            'mediaKeySystem',
+            'notifications',
+            'pointerLock',
+            'fullscreen',
+            'display-capture',
+            'clipboard-read',
+            'clipboard-sanitized-write',
+            'clipboard'
+        ]
+        targetSession.setPermissionRequestHandler((webContents, permission, callback) => {
+            callback(allowed.includes(permission))
+        })
+        targetSession.setPermissionCheckHandler((webContents, permission) => {
+            return allowed.includes(permission)
+        })
+    }
+    setupPermissions(session.defaultSession)
+    setupPermissions(mainWindow.webContents.session)
 
     // Determine target URL:
     // 1. If explicit FRONTEND_URL is set in environment, use that
@@ -239,13 +313,15 @@ ipcMain.handle('get-screen-sources', async () => {
     try {
         const sources = await desktopCapturer.getSources({
             types: ['screen', 'window'],
-            thumbnailSize: { width: 320, height: 180 }
+            thumbnailSize: { width: 480, height: 270 },
+            fetchWindowIcons: true
         })
-        // Serialize sources (thumbnail is a NativeImage — convert to dataURL)
+        // Serialize sources (thumbnail and appIcon are NativeImage — convert to dataURL)
         return sources.map(src => ({
             id: src.id,
             name: src.name,
-            thumbnail: src.thumbnail.toDataURL()
+            thumbnail: src.thumbnail ? src.thumbnail.toDataURL() : '',
+            appIcon: src.appIcon ? src.appIcon.toDataURL() : null
         }))
     } catch (err) {
         console.error('[ScreenShare] getSources error:', err)
@@ -254,24 +330,32 @@ ipcMain.handle('get-screen-sources', async () => {
 })
 
 // ─── IPC: Set a specific sourceId for next getDisplayMedia call ──────────────
-ipcMain.on('set-screen-source', (_event, sourceId) => {
+ipcMain.handle('set-screen-source', async (_event, sourceId) => {
     selectedScreenSourceId = sourceId
-    if (mainWindow && mainWindow.webContents && mainWindow.webContents.session) {
-        setupDisplayMediaHandler(mainWindow.webContents.session)
-    }
-    if (session.defaultSession) {
-        setupDisplayMediaHandler(session.defaultSession)
-    }
+    console.log('[ScreenShare] Selected screen source ID set to:', sourceId)
+    return true
 })
 
 // Handle Remote Control Input Events from Presenter's Frontend Overlay
 ipcMain.on('remote-control:input', (event, data) => {
     try {
-        const primaryDisplay = screen.getPrimaryDisplay()
-        const { width, height } = primaryDisplay.bounds
+        const allDisplays = screen.getAllDisplays()
+        let targetDisplay = screen.getPrimaryDisplay()
 
-        const targetX = Math.round((data.x ?? 0.5) * width)
-        const targetY = Math.round((data.y ?? 0.5) * height)
+        // Multi-monitor support: calculate relative offset if secondary display is targeted
+        if (data.displayIndex !== undefined && allDisplays[data.displayIndex]) {
+            targetDisplay = allDisplays[data.displayIndex]
+        } else if (selectedScreenSourceId) {
+            const match = selectedScreenSourceId.match(/screen:(\d+)/i)
+            if (match && allDisplays[parseInt(match[1], 10)]) {
+                targetDisplay = allDisplays[parseInt(match[1], 10)]
+            }
+        }
+
+        const { x: offsetX, y: offsetY, width, height } = targetDisplay.bounds
+
+        const targetX = Math.round(offsetX + (data.x ?? 0.5) * width)
+        const targetY = Math.round(offsetY + (data.y ?? 0.5) * height)
 
         if (data.type === 'mouse') {
             simulateWindowsInput(data.action, targetX, targetY, data.button, null, data.deltaY)

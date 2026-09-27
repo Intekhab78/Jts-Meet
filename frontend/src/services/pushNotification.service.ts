@@ -21,8 +21,14 @@ class PushNotificationService {
     private isSubscribed: boolean = false
 
     public isSupported(): boolean {
+        if (typeof window === 'undefined') return false
+
+        // In Electron, Web Push (PushManager/FCM) is not available because Electron
+        // does not bundle Google Cloud Messaging service keys. Native OS notifications are used instead.
+        const isElectron = !!(window as any).electronAPI || navigator.userAgent.toLowerCase().includes('electron')
+        if (isElectron) return false
+
         return (
-            typeof window !== 'undefined' &&
             'serviceWorker' in navigator &&
             'PushManager' in window &&
             'Notification' in window
@@ -122,7 +128,11 @@ class PushNotificationService {
             localStorage.setItem('jts_push_subscribed', 'true')
             console.log('[PushService] Web push subscription registered with server!')
             return true
-        } catch (error) {
+        } catch (error: any) {
+            if (error?.message?.includes('push service not available') || error?.name === 'DOMException') {
+                console.warn('[PushService] Push service not available in this environment.')
+                return false
+            }
             console.error('[PushService] Error subscribing user to push:', error)
             return false
         }
