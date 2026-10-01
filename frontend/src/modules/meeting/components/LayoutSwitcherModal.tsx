@@ -86,7 +86,7 @@ export function LayoutSwitcherModal({
     ]
 
     return (
-        <div className="modal-overlay" style={{ zIndex: 1200 }}>
+        <div className="modal-overlay" style={{ zIndex: 50000 }}>
             <div 
                 className="modal-container anim-scale-in" 
                 style={{ 

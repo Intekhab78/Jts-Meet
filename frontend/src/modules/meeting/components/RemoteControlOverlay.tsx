@@ -300,8 +300,6 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
             onMouseMove={handleMouseMove}
             onMouseDown={handleMouseDown}
             onMouseUp={handleMouseUp}
-            onClick={handleClick}
-            onDoubleClick={handleDoubleClick}
             onContextMenu={handleContextMenu}
             onWheel={handleWheel}
         >

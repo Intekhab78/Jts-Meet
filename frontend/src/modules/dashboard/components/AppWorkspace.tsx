@@ -306,7 +306,10 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                 callerName: data.callerName || 'Colleague',
                 callerAvatar: data.callerAvatar,
                 meetingId: data.meetingId,
-                callType: data.callType || 'video'
+                callType: data.callType || 'video',
+                channelName: data.channelName,
+                channelId: data.channelId,
+                isGroupCall: data.isGroupCall
             })
 
             // Electron desktop app: Flash taskbar & restore window
@@ -347,13 +350,12 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
 
             const callType = target?.callType || 'audio'
 
-            // ⚠️ CRITICAL: Switch away from 'meeting' tab and clear meeting room ID
-            // so that connectToMeeting (which sets meetingId context) does NOT cause
-            // MeetingRoom to auto-join and open in the background.
             setActiveMeetingRoomId('')
-            setActiveTab('chat')
-            // Clear URL and sessionStorage so hash-based tab detection doesn't re-open meeting room
-            window.history.replaceState(null, '', '/#chat')
+            if (activeTab === 'meeting') {
+                const targetTab = (target?.channelId || target?.channelName) ? 'channel' : 'chat'
+                setActiveTab(targetTab)
+                window.history.replaceState(null, '', `/#${targetTab}`)
+            }
             try { sessionStorage.removeItem('jts_active_meeting_id') } catch {}
 
             setActiveAudioCall({
@@ -361,7 +363,10 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                 peerId: target?.targetUserId || data?.calleeId || '',
                 peerName: target?.targetName || 'Colleague',
                 peerAvatar: target?.targetAvatar,
-                callType
+                callType,
+                channelName: target?.channelName,
+                channelId: target?.channelId,
+                isGroupCall: target?.isGroupCall || (target?.targetUserIds && target.targetUserIds.length > 0)
             })
             try {
                 if (callType === 'audio') {
@@ -387,6 +392,18 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
             console.log('[AppWorkspace] Outgoing call was declined by peer:', data)
             if ((window as any).electronAPI?.dismissIncomingCallAlert) {
                 (window as any).electronAPI.dismissIncomingCallAlert()
+            }
+            const target = outgoingCallRef.current
+            if (target?.targetUserIds && target.targetUserIds.length > 1) {
+                const remaining = target.targetUserIds.filter(id => id !== data?.calleeId)
+                if (remaining.length > 0) {
+                    setOutgoingCall(prev => prev ? {
+                        ...prev,
+                        targetUserIds: remaining,
+                        targetName: prev.channelName ? `#${prev.channelName} (${remaining.length} ringing)` : prev.targetName
+                    } : null)
+                    return
+                }
             }
             if (pendingScreenStreamRef.current) {
                 pendingScreenStreamRef.current.getTracks().forEach(t => {
@@ -433,7 +450,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
             socket.off('call:initiated', handleCallInitiated)
             socket.off(SocketEvents.WEBRTC_USER_LEFT, handleDirectCallPeerLeft)
         }
-    }, [socket, profileName, connectToMeeting, leaveMeeting, requestMedia, stopMedia, startScreenShare])
+    }, [socket, profileName, connectToMeeting, leaveMeeting, requestMedia, stopMedia, startScreenShare, activeTab])
 
     const handleAcceptCall = useCallback(async (call: IncomingCallData) => {
         if ((window as any).electronAPI?.dismissIncomingCallAlert) {
@@ -450,22 +467,24 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         }
         setIncomingCall(null)
 
-        // ⚠️ CRITICAL: Switch away from 'meeting' tab and clear meeting room ID
-        // so that connectToMeeting (which sets meetingId context) does NOT cause
-        // MeetingRoom to auto-join and open in the background.
         setActiveMeetingRoomId('')
-        setActiveTab('chat')
-        // Clear URL and sessionStorage so hash-based tab detection doesn't re-open meeting room
-        window.history.replaceState(null, '', '/#chat')
+        if (activeTab === 'meeting') {
+            const targetTab = (call.channelId || call.channelName) ? 'channel' : 'chat'
+            setActiveTab(targetTab)
+            window.history.replaceState(null, '', `/#${targetTab}`)
+        }
         try { sessionStorage.removeItem('jts_active_meeting_id') } catch {}
 
         const callType = call.callType || 'audio'
         setActiveAudioCall({
             meetingId: call.meetingId,
             peerId: call.callerId,
-            peerName: call.callerName || 'Colleague',
+            peerName: call.channelName ? `#${call.channelName}` : (call.callerName || 'Colleague'),
             peerAvatar: call.callerAvatar,
-            callType
+            callType,
+            channelName: call.channelName,
+            channelId: call.channelId,
+            isGroupCall: call.isGroupCall
         })
         try {
             if (callType === 'audio') {
@@ -477,7 +496,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         } catch (err) {
             console.error('[AppWorkspace] Failed to connect call media:', err)
         }
-    }, [socket, requestMedia, connectToMeeting, profileName])
+    }, [socket, requestMedia, connectToMeeting, profileName, activeTab])
 
     // Listen for Service Worker postMessage (when 'Accept' is clicked in push notification while tab was already open)
     useEffect(() => {
@@ -536,6 +555,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         if (outgoingCall && socket) {
             socket.emit(SocketEvents.CALL_CANCELLED, {
                 targetUserId: outgoingCall.targetUserId,
+                targetUserIds: outgoingCall.targetUserIds,
                 meetingId: outgoingCall.meetingId
             })
         }
@@ -560,6 +580,19 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         leaveMeeting()
         stopMedia()
         setActiveAudioCall(null)
+    }
+
+    const impersonatedOrgName = typeof window !== 'undefined' ? sessionStorage.getItem('jts_impersonated_org_name') : null
+
+    const handleExitSupportMode = () => {
+        const orig = sessionStorage.getItem('jts_original_admin_token')
+        if (orig) {
+            localStorage.setItem('token', orig)
+        }
+        sessionStorage.removeItem('jts_original_admin_token')
+        sessionStorage.removeItem('jts_impersonated_org_name')
+        window.location.hash = '#super-admin'
+        window.location.reload()
     }
 
     const handleStartDirectCall = (
@@ -592,6 +625,41 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         })
         setShowDirectDialModal(false)
         setDirectDialTarget('')
+    }
+
+    const handleStartGroupCall = async (
+        targetUserIds: string[],
+        channelName: string,
+        channelId: string,
+        callType: 'video' | 'audio' = 'audio'
+    ) => {
+        if (!socket || !targetUserIds.length) return
+        const newMeetingId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`
+        socket.emit(SocketEvents.CALL_INITIATE, {
+            targetUserIds,
+            channelName,
+            channelId,
+            callerName: profileName || 'Colleague',
+            callerAvatar: profileImage,
+            callType,
+            meetingId: newMeetingId
+        })
+        setOutgoingCall({
+            meetingId: newMeetingId,
+            targetUserIds,
+            channelName,
+            channelId,
+            isGroupCall: true,
+            targetName: `#${channelName} (${targetUserIds.length} members)`,
+            callType,
+            status: 'ringing'
+        })
+        try {
+            await requestMedia(callType === 'audio')
+            connectToMeeting(newMeetingId, profileName || 'Colleague', true)
+        } catch (err) {
+            console.warn('[AppWorkspace] Audio request error for group call:', err)
+        }
     }
 
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -716,8 +784,26 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
     useEffect(() => {
         fetchBroadcast()
         const interval = setInterval(fetchBroadcast, 15000)
+
+        // Instant Real-Time WebSocket Listener for Platform Broadcasts
+        if (socket) {
+            const onBroadcastSocket = (notice: any) => {
+                if (notice && notice.active && notice.message) {
+                    setActiveBroadcast(notice)
+                    setDismissedBroadcast(false)
+                } else {
+                    setActiveBroadcast(null)
+                }
+            }
+            socket.on('platform:broadcast', onBroadcastSocket)
+            return () => {
+                clearInterval(interval)
+                socket.off('platform:broadcast', onBroadcastSocket)
+            }
+        }
+
         return () => clearInterval(interval)
-    }, [])
+    }, [socket])
 
     // Fetch user details & meetings from API
     const fetchProfile = async () => {
@@ -1528,6 +1614,50 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
 
             {/* Main Content Pane */}
             <main id="main-content" tabIndex={-1} style={{ flex: 1, overflowY: (activeTab === 'meeting' || activeTab === 'channel' || activeTab === 'chat') ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', position: 'relative', outline: 'none' }}>
+                {/* ENTERPRISE TENANT SUPPORT IMPERSONATION BANNER */}
+                {impersonatedOrgName && (
+                    <div style={{
+                        background: 'linear-gradient(90deg, #9a3412 0%, #ea580c 50%, #9a3412 100%)',
+                        color: '#ffffff',
+                        padding: '10px 20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontWeight: 600,
+                        fontSize: '0.85rem',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                        zIndex: 60,
+                        flexShrink: 0
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: '1.2rem' }}>👁️</span>
+                            <span>
+                                <strong>ENTERPRISE SUPPORT SESSION:</strong> Currently acting on behalf of organization <u>{impersonatedOrgName}</u>.
+                            </span>
+                        </div>
+                        <button
+                            onClick={handleExitSupportMode}
+                            style={{
+                                background: '#ffffff',
+                                color: '#9a3412',
+                                border: 'none',
+                                padding: '5px 14px',
+                                borderRadius: 'var(--radius-sm)',
+                                fontWeight: 800,
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+                            }}
+                        >
+                            <span>Exit Support Mode & Return to Platform Center</span>
+                            <span>✕</span>
+                        </button>
+                    </div>
+                )}
+
                 {activeTab !== 'meeting' && (
                     <header style={{
                         position: 'sticky',
@@ -1817,6 +1947,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                                     teams={teams}
                                     onSelectTeam={(newTeamId) => setCurrentTeamId(newTeamId)}
                                     onStartMeeting={handleLaunchMeeting}
+                                    onStartGroupCall={handleStartGroupCall}
                                 />
                             ) : (loadingOrgs || loadingTeams) ? (
                                 <WorkspaceTabSkeleton />

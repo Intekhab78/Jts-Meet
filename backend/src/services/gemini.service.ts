@@ -215,6 +215,47 @@ Question: ${params.prompt}`
 
 const translationCache = new Map<string, string>()
 
+const GLOBAL_LANG_NAMES: Record<string, string> = {
+    en: 'English',
+    hi: 'Hindi',
+    es: 'Spanish',
+    ar: 'Arabic',
+    fr: 'French',
+    de: 'German',
+    zh: 'Chinese',
+    ja: 'Japanese',
+    ru: 'Russian',
+    pt: 'Portuguese',
+    ur: 'Urdu',
+    bn: 'Bengali',
+    mr: 'Marathi',
+    te: 'Telugu',
+    ta: 'Tamil',
+    gu: 'Gujarati',
+    kn: 'Kannada',
+    ml: 'Malayalam',
+    pa: 'Punjabi',
+    fa: 'Persian',
+    tr: 'Turkish',
+    he: 'Hebrew',
+    sw: 'Swahili',
+    ko: 'Korean',
+    vi: 'Vietnamese',
+    th: 'Thai',
+    id: 'Indonesian',
+    ms: 'Malay',
+    tl: 'Tagalog',
+    it: 'Italian',
+    nl: 'Dutch',
+    pl: 'Polish',
+    sv: 'Swedish',
+    uk: 'Ukrainian',
+    el: 'Greek',
+    cs: 'Czech',
+    ro: 'Romanian',
+    hu: 'Hungarian'
+}
+
 export async function translateCaptionText(text: string, targetLang: string): Promise<string> {
     const cleanText = text.trim()
     if (!cleanText) return ''
@@ -225,18 +266,27 @@ export async function translateCaptionText(text: string, targetLang: string): Pr
         return translationCache.get(cacheKey)!
     }
 
-    const langNames: Record<string, string> = {
-        hi: 'Hindi',
-        es: 'Spanish',
-        fr: 'French',
-        de: 'German',
-        ja: 'Japanese',
-        ar: 'Arabic',
-        ru: 'Russian'
-    }
+    // Step 1: Ultra-fast low-latency Google Translate engine (50-120ms for live caption streaming)
+    try {
+        const gtUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(targetLang)}&dt=t&q=${encodeURIComponent(cleanText)}`
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 1800)
+        const gtRes = await fetch(gtUrl, { signal: controller.signal })
+        clearTimeout(timeout)
 
-    const targetLangName = langNames[targetLang] || targetLang
+        if (gtRes.ok) {
+            const gtData: any = await gtRes.json()
+            const translated = gtData?.[0]?.map((item: any) => item[0]).join('')
+            if (translated && translated.trim()) {
+                const result = translated.trim()
+                translationCache.set(cacheKey, result)
+                return result
+            }
+        }
+    } catch (_) {}
 
+    // Step 2: High-context Gemini AI Fallback (if fast engine is blocked or returns empty)
+    const targetLangName = GLOBAL_LANG_NAMES[targetLang] || targetLang
     if (GEMINI_API_KEY) {
         try {
             const prompt = `Translate the following spoken sentence into ${targetLangName}. Return ONLY the direct translation without any explanation, quotes, or notes.\n\n"${cleanText}"`
@@ -250,20 +300,6 @@ export async function translateCaptionText(text: string, targetLang: string): Pr
             // fallback
         }
     }
-
-    // Google Translate fallback endpoint
-    try {
-        const gtUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(cleanText)}`
-        const gtRes = await fetch(gtUrl)
-        if (gtRes.ok) {
-            const gtData: any = await gtRes.json()
-            const translated = gtData?.[0]?.map((item: any) => item[0]).join('')
-            if (translated) {
-                translationCache.set(cacheKey, translated)
-                return translated
-            }
-        }
-    } catch (_) {}
 
     return cleanText
 }

@@ -28,6 +28,8 @@ export interface ScreenAnnotationOverlayProps {
     socket?: any
     meetingId?: string
     onClose?: () => void
+    isAttendeeDrawingActive?: boolean
+    onToggleAttendeeDrawing?: (active: boolean) => void
 }
 
 const COLORS = [
@@ -44,7 +46,9 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
     isPresenter = false,
     socket,
     meetingId,
-    onClose
+    onClose,
+    isAttendeeDrawingActive,
+    onToggleAttendeeDrawing
 }) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
     const [tool, setTool] = useState<AnnotationTool>('laser')
@@ -53,7 +57,8 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
     const [strokes, setStrokes] = useState<Stroke[]>([])
     const [allowAttendeeDrawing, setAllowAttendeeDrawing] = useState(true)
     const [attendeeDrawingActive, setAttendeeDrawingActive] = useState(false)
-    const canDraw = (isPresenter && isActive) || (!isPresenter && allowAttendeeDrawing && attendeeDrawingActive)
+    const effectiveAttendeeDrawingActive = isAttendeeDrawingActive !== undefined ? isAttendeeDrawingActive : attendeeDrawingActive
+    const canDraw = (isPresenter && isActive) || (!isPresenter && allowAttendeeDrawing && effectiveAttendeeDrawingActive)
     const isDrawing = useRef(false)
     const currentStroke = useRef<Stroke | null>(null)
     const laserTrail = useRef<LaserPoint[]>([])
@@ -395,11 +400,14 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
             userSelect: 'none',
             overflow: 'hidden'
         }}>
-            {/* Attendee "Annotate on Screen" entry pill (When allowed by presenter) */}
-            {!isPresenter && allowAttendeeDrawing && !attendeeDrawingActive && (
+            {/* Attendee "Annotate on Screen" entry pill (Fallback if not controlled by parent toolbar) */}
+            {!isPresenter && allowAttendeeDrawing && !effectiveAttendeeDrawingActive && isAttendeeDrawingActive === undefined && (
                 <button
                     type="button"
-                    onClick={() => setAttendeeDrawingActive(true)}
+                    onClick={() => {
+                        setAttendeeDrawingActive(true)
+                        onToggleAttendeeDrawing?.(true)
+                    }}
                     style={{
                         position: 'absolute',
                         top: 16,
@@ -651,7 +659,10 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                     {!isPresenter && (
                         <button
                             type="button"
-                            onClick={() => setAttendeeDrawingActive(false)}
+                            onClick={() => {
+                                setAttendeeDrawingActive(false)
+                                onToggleAttendeeDrawing?.(false)
+                            }}
                             style={{
                                 background: 'rgba(255, 255, 255, 0.08)',
                                 border: '1px solid rgba(255, 255, 255, 0.15)',

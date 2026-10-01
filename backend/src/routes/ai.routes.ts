@@ -11,6 +11,7 @@ import jwt from 'jsonwebtoken'
 import { JWT_SECRET, ADMIN_EMAIL } from '../config'
 import { User } from '../models/user.model'
 import { Organization } from '../modules/organization/organization.model'
+import { PlatformSettings } from '../modules/admin/platformSettings.model'
 
 const router = Router()
 
@@ -55,8 +56,37 @@ async function getUserPlanTier(userId?: string): Promise<string> {
     }
 }
 
+const enforceAiPlatformPolicy = async (req: any, res: any, next: any) => {
+    try {
+        const settings = await PlatformSettings.findOne({ key: 'global_config' }).lean()
+        if (settings) {
+            if (settings.aiGlobalEnabled === false) {
+                res.status(403).json({
+                    success: false,
+                    message: 'AI intelligence features have been temporarily disabled platform-wide by the administrator.'
+                })
+                return
+            }
+
+            if (!settings.aiAllowFreeTier) {
+                const planTier = await getUserPlanTier(req.userId)
+                if (planTier === 'free') {
+                    res.status(403).json({
+                        success: false,
+                        message: 'AI features require a Starter or Enterprise plan subscription. Please upgrade your organization tier.'
+                    })
+                    return
+                }
+            }
+        }
+        next()
+    } catch (_) {
+        next()
+    }
+}
+
 // Generate AI meeting summary & action items
-router.post('/summary', optionalAuth, async (req: Request, res: Response): Promise<void> => {
+router.post('/summary', optionalAuth, enforceAiPlatformPolicy, async (req: Request, res: Response): Promise<void> => {
     try {
         const { title, participants, duration, notes, transcripts, chatMessages } = req.body
         const result = await generateMeetingSummary({
@@ -82,7 +112,7 @@ router.post('/summary', optionalAuth, async (req: Request, res: Response): Promi
 })
 
 // Ask JTS AI Companion
-router.post('/assistant', optionalAuth, async (req: Request, res: Response): Promise<void> => {
+router.post('/assistant', optionalAuth, enforceAiPlatformPolicy, async (req: Request, res: Response): Promise<void> => {
     try {
         const { prompt, meetingContext } = req.body
         if (!prompt || typeof prompt !== 'string') {
@@ -124,7 +154,7 @@ router.post('/translate', optionalAuth, async (req: Request, res: Response): Pro
 })
 
 // Late-Joiner AI Summary: "Catch Me Up" (MS Teams Copilot feature)
-router.post('/catch-up', optionalAuth, async (req: Request, res: Response): Promise<void> => {
+router.post('/catch-up', optionalAuth, enforceAiPlatformPolicy, async (req: Request, res: Response): Promise<void> => {
     try {
         const { title, transcripts, chatMessages } = req.body
         const result = await generateLateJoinerCatchUp({
@@ -143,7 +173,7 @@ router.post('/catch-up', optionalAuth, async (req: Request, res: Response): Prom
 })
 
 // AI Meeting Agenda & Prep Generator (Zoom / Teams Copilot style)
-router.post('/agenda-generate', optionalAuth, async (req: Request, res: Response): Promise<void> => {
+router.post('/agenda-generate', optionalAuth, enforceAiPlatformPolicy, async (req: Request, res: Response): Promise<void> => {
     try {
         const { title, durationMinutes, context, participants } = req.body
 

@@ -13,12 +13,23 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
     socket.on(SocketEvents.CALL_INITIATE, async (payload: {
         targetUserId?: string
         calleeId?: string
+        targetUserIds?: string[]
+        channelName?: string
+        channelId?: string
         callType?: 'video' | 'audio' | 'screenshare'
         callerName?: string
         callerAvatar?: string
+        meetingId?: string
     }) => {
-        const targetUserId = payload?.targetUserId || payload?.calleeId
-        if (!userId || !targetUserId || userId === targetUserId) {
+        const singleTarget = payload?.targetUserId || payload?.calleeId
+        let targetUserIds: string[] = []
+        if (Array.isArray(payload?.targetUserIds) && payload.targetUserIds.length > 0) {
+            targetUserIds = payload.targetUserIds.map(String).filter(id => id && id !== String(userId))
+        } else if (singleTarget && String(singleTarget) !== String(userId)) {
+            targetUserIds = [String(singleTarget)]
+        }
+
+        if (!userId || targetUserIds.length === 0) {
             socket.emit('error', { message: 'Invalid call target' })
             return
         }
@@ -33,18 +44,29 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
                 callerAvatar = caller?.profileImage || ''
             }
 
-            // Create an instant meeting room for the direct call
-            const callMeeting = await createMeeting(userId, `Direct Call: ${callerName}`)
-            if (targetUserId) {
-                try {
-                    const { Types } = await import('mongoose')
-                    if (Types.ObjectId.isValid(targetUserId)) {
-                        callMeeting.participants.push(new Types.ObjectId(targetUserId) as any)
-                        await callMeeting.save()
+            const channelName = payload.channelName
+            const channelId = payload.channelId
+            const isGroupCall = targetUserIds.length > 1 || Boolean(channelName)
+
+            // Create an instant meeting room for the call
+            const meetingTitle = channelName
+                ? `Channel Call: #${channelName}`
+                : isGroupCall
+                    ? `Group Call: ${callerName}`
+                    : `Direct Call: ${callerName}`
+
+            const callMeeting = await createMeeting(userId, meetingTitle)
+            try {
+                const { Types } = await import('mongoose')
+                for (const tId of targetUserIds) {
+                    if (Types.ObjectId.isValid(tId)) {
+                        callMeeting.participants.push(new Types.ObjectId(tId) as any)
                     }
-                } catch (_) {}
-            }
-            const meetingId = callMeeting.meetingId
+                }
+                await callMeeting.save()
+            } catch (_) {}
+
+            const meetingId = payload.meetingId || callMeeting.meetingId
 
             const incomingCallPayload = {
                 meetingId,
@@ -52,27 +74,34 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
                 callerName,
                 callerAvatar,
                 callType: payload.callType || 'video',
+                channelName,
+                channelId,
+                isGroupCall,
                 createdAt: new Date()
             }
 
-            // 1. Emit to target user's personal room (for open/connected browser tabs)
-            io.to(`user:${targetUserId}`).emit(SocketEvents.CALL_INCOMING, incomingCallPayload)
+            // 1. Emit to all target users' personal rooms (for open/connected browser tabs)
+            for (const tId of targetUserIds) {
+                io.to(`user:${tId}`).emit(SocketEvents.CALL_INCOMING, incomingCallPayload)
 
-            // 2. Dispatch High-Priority Web Push (rings device even if browser tabs are closed)
-            NotificationService.sendIncomingCallPush(targetUserId, {
-                meetingId,
-                callerName,
-                callerAvatar,
-                callType: payload.callType || 'video',
-                callerId: userId
-            }).catch(err => {
-                console.warn('[DirectCall] Push dispatch error:', err?.message || err)
-            })
+                // 2. Dispatch High-Priority Web Push (rings device even if browser tabs are closed)
+                const pushCallerTitle = channelName ? `${callerName} (#${channelName})` : callerName
+                NotificationService.sendIncomingCallPush(tId, {
+                    meetingId,
+                    callerName: pushCallerTitle,
+                    callerAvatar,
+                    callType: payload.callType || 'video',
+                    callerId: userId
+                }).catch(err => {
+                    console.warn('[DirectCall] Push dispatch error:', err?.message || err)
+                })
+            }
 
             // Confirm initiation to caller with the meetingId
             socket.emit('call:initiated', {
                 meetingId,
-                targetUserId
+                targetUserId: targetUserIds[0],
+                targetUserIds
             })
         } catch (error: any) {
             socket.emit('error', { message: error?.message || 'Failed to initiate direct call' })
@@ -133,19 +162,28 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
     socket.on(SocketEvents.CALL_CANCELLED, (payload: {
         targetUserId?: string
         calleeId?: string
+        targetUserIds?: string[]
         meetingId?: string
     }) => {
         if (!userId) return
 
-        const targetId = payload?.targetUserId || payload?.calleeId
         const cancelData = {
             callerId: userId,
             meetingId: payload?.meetingId
         }
 
-        if (targetId) {
-            io.to(`user:${targetId}`).emit(SocketEvents.CALL_CANCELLED, cancelData)
+        const targets = new Set<string>()
+        if (payload?.targetUserId) targets.add(String(payload.targetUserId))
+        if (payload?.calleeId) targets.add(String(payload.calleeId))
+        if (Array.isArray(payload?.targetUserIds)) {
+            payload.targetUserIds.forEach(id => {
+                if (id) targets.add(String(id))
+            })
         }
+
+        targets.forEach(tId => {
+            io.to(`user:${tId}`).emit(SocketEvents.CALL_CANCELLED, cancelData)
+        })
 
         if (payload?.meetingId) {
             io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.CALL_CANCELLED, cancelData)

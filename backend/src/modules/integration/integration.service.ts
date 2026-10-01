@@ -3,6 +3,7 @@ import https from 'https'
 import http from 'http'
 import dns from 'dns'
 import { Integration, IIntegration, IntegrationEvent, IntegrationType } from './integration.model'
+import { Organization } from '../organization/organization.model'
 
 export interface CreateIntegrationDto {
     name: string
@@ -107,6 +108,31 @@ export async function createIntegration(userId: string, orgId: string | undefine
     const urlValidation = await validateWebhookUrl(dto.url)
     if (!urlValidation.valid) {
         throw { status: 400, message: urlValidation.reason || 'Invalid webhook URL' }
+    }
+
+    // Dynamic Plan-Based Quota Check
+    if (orgId) {
+        try {
+            const org = await Organization.findById(orgId).select('planTier').lean()
+            const planTier = org?.planTier?.toLowerCase() || 'enterprise'
+            const maxAllowed = planTier === 'free' ? 2 : planTier === 'starter' ? 10 : 999999
+
+            let currentCount = 0
+            try {
+                currentCount = await Integration.countDocuments({ organizationId: orgId })
+            } catch (_) {
+                currentCount = memoryIntegrations.filter(i => i.organizationId === orgId).length
+            }
+
+            if (currentCount >= maxAllowed) {
+                throw {
+                    status: 403,
+                    message: `Webhook quota exceeded for ${planTier.toUpperCase()} plan (${currentCount}/${maxAllowed} endpoints). Please upgrade to Growth Pro or Enterprise for additional webhook integrations.`
+                }
+            }
+        } catch (planErr: any) {
+            if (planErr.status === 403) throw planErr
+        }
     }
 
     const item = {
@@ -309,6 +335,28 @@ function formatPayload(type: IntegrationType, eventType: IntegrationEvent, paylo
                     footer: { text: 'JTS Meet Enterprise Integrations Hub' }
                 }
             ]
+        })
+    }
+
+    if (type === 'calendar') {
+        return JSON.stringify({
+            event: eventType,
+            calendarAction: eventType === 'meeting.started' ? 'SYNC_EVENT' : 'ARCHIVE_EVENT',
+            summary: payloadData.title || `JTS Meet: ${payloadData.meetingId}`,
+            description: `Live JTS Meet session hosted by ${payloadData.hostName || 'Organizer'}. Join URL: https://meet.jtsmiddleeast.com/#room=${payloadData.meetingId}`,
+            start: { dateTime: new Date().toISOString() },
+            end: { dateTime: new Date(Date.now() + 3600000).toISOString() },
+            attendees: payloadData.participants || []
+        })
+    }
+
+    if (type === 'email') {
+        return JSON.stringify({
+            event: eventType,
+            subject: `[JTS Meet Alert] ${eventType.toUpperCase()}: ${payloadData.title || payloadData.meetingId}`,
+            recipients: payloadData.recipients || ['admin@jtsmeet.com'],
+            htmlBody: `<h3>JTS Meet Event: ${eventType}</h3><p>Meeting <strong>${payloadData.title || payloadData.meetingId}</strong> has triggered an event at ${new Date().toLocaleString()}.</p>`,
+            data: payloadData
         })
     }
 

@@ -3508,6 +3508,7 @@ export function MeetingRoom({
     const lastSeenMessageCountRef = useRef(0)
     const moreMenuRef = useRef<HTMLDivElement>(null)
     const moreBtnRef = useRef<HTMLButtonElement>(null)
+    const footerToolbarRef = useRef<HTMLElement>(null)
 
     useEffect(() => {
         if (!showMoreMenu) return
@@ -3805,6 +3806,14 @@ export function MeetingRoom({
     const [handsRaisedMap, setHandsRaisedMap] = useState<{ [key: string]: boolean }>({})
     const [pinnedUserId, setPinnedUserId] = useState<string | null>(null)
     const [toolbarVisible, setToolbarVisible] = useState(true)
+    const [isToolbarHovered, setIsToolbarHovered] = useState(false)
+    const isToolbarHoveredRef = useRef(false)
+    const showMoreMenuRef = useRef(false)
+    const showReactionsPopoverRef = useRef(false)
+    const activePanelRef = useRef<ActivePanel>(null)
+    showMoreMenuRef.current = showMoreMenu
+    showReactionsPopoverRef.current = showReactionsPopover
+    activePanelRef.current = activePanel
     const [windowWidth, setWindowWidth] = useState(window.innerWidth)
     const [hoveredTile, setHoveredTile] = useState<string | null>(null)
     const [fullScreenUserId, setFullScreenUserId] = useState<string | null>(null)
@@ -3949,6 +3958,7 @@ export function MeetingRoom({
     const [activeLocalStream, setActiveLocalStream] = useState<MediaStream | null>(null)
     const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = useState(true)
     const [isAnnotationActive, setIsAnnotationActive] = useState(false)
+    const [isAttendeeAnnotationActive, setIsAttendeeAnnotationActive] = useState(false)
     const [isBreakoutModalOpen, setIsBreakoutModalOpen] = useState(false)
     const [activeBreakoutSession, setActiveBreakoutSession] = useState<{
         isActive: boolean
@@ -3982,15 +3992,18 @@ export function MeetingRoom({
         }
     }, [])
 
-    // Toolbar auto-hide listener
+    // Toolbar auto-hide listener - never auto-hide when menus, popovers, sidepanels or hover are active
     useEffect(() => {
         let timeoutId: number
         const handleMouseMove = () => {
             setToolbarVisible(true)
             clearTimeout(timeoutId)
             timeoutId = window.setTimeout(() => {
+                if (showMoreMenuRef.current || showReactionsPopoverRef.current || activePanelRef.current !== null || isToolbarHoveredRef.current) {
+                    return // Keep toolbar visible while menus, panels or hover are active
+                }
                 setToolbarVisible(false)
-            }, 3000)
+            }, 3500)
         }
         window.addEventListener('mousemove', handleMouseMove)
         return () => {
@@ -3998,6 +4011,12 @@ export function MeetingRoom({
             clearTimeout(timeoutId)
         }
     }, [])
+
+    useEffect(() => {
+        if (showMoreMenu || showReactionsPopover || activePanel !== null || isToolbarHovered) {
+            setToolbarVisible(true)
+        }
+    }, [showMoreMenu, showReactionsPopover, activePanel, isToolbarHovered])
 
     // Socket hand raise listener
     useEffect(() => {
@@ -5809,6 +5828,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     stream={stream}
                     label={displayName}
                     muted={userId === 'me'}
+                    isScreenShare={isUserSharingScreen}
                     isPrimary={isEnlarged}
                     isHandRaised={isUserHandRaised}
                     isHost={userId === 'me' ? isLocalHost : !!(meetingInfo && meetingInfo.host && (meetingInfo.host._id === userId || meetingInfo.host === userId))}
@@ -5822,60 +5842,6 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     isActiveSpeaker={isUserSpeaking}
                     isMutedProp={isMutedUser}
                 />
-
-                {/* Top Overlay Badges */}
-                <div style={{
-                    position: 'absolute',
-                    top: isCompact ? 6 : 12,
-                    right: isCompact ? 6 : 12,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: isCompact ? 4 : 8,
-                    zIndex: 20
-                }}>
-                    {screenSharingUserIds.includes(userId) && (
-                        <span style={{
-                            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.95), rgba(139, 92, 246, 0.95))',
-                            backdropFilter: 'blur(8px)',
-                            color: '#fff',
-                            fontSize: isCompact ? '0.62rem' : '0.7rem',
-                            fontWeight: 800,
-                            padding: isCompact ? '2px 6px' : '3px 8px',
-                            borderRadius: 'var(--radius-full)',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            boxShadow: '0 0 12px rgba(99, 102, 241, 0.6)'
-                        }}>
-                            <IconMonitor size={isCompact ? 10 : 12} />
-                            <span>SCREEN</span>
-                        </span>
-                    )}
-                    {isUserHandRaised && (
-                        <span className="badge badge-warning anim-pulse" style={{ fontSize: isCompact ? '0.65rem' : '0.75rem', padding: isCompact ? '2px 6px' : '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <IconHand size={isCompact ? 11 : 13} /> Raised Hand
-                        </span>
-                    )}
-                    {/* Connection Health Indicator */}
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        background: 'rgba(0, 0, 0, 0.65)',
-                        backdropFilter: 'blur(8px)',
-                        padding: isCompact ? '2px 6px' : '3px 8px',
-                        borderRadius: 'var(--radius-full)',
-                        fontSize: isCompact ? '0.65rem' : '0.7rem',
-                        fontWeight: 600,
-                        color: 'var(--color-success)',
-                        border: '1px solid rgba(255,255,255,0.08)'
-                    }}>
-                        <svg width={isCompact ? 9 : 11} height={isCompact ? 9 : 11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M2 20h.01M7 20v-4M12 20v-8M17 20V4" />
-                        </svg>
-                        {!isCompact && <span>Good</span>}
-                    </div>
-                </div>
 
                 {/* Hover Actions Controls */}
                 {hoveredTile === userId && (
@@ -6006,6 +5972,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         : isTablet
             ? { display: 'flex', flexDirection: 'column', height: '100%', width: '100%', gap: 16, overflow: 'hidden' }
             : { display: 'flex', flexDirection: 'row', height: '100%', width: '100%', gap: 20, overflow: 'hidden' }
+
+    const isToolbarActuallyVisible = toolbarVisible || showMoreMenu || showReactionsPopover || activePanel !== null || isToolbarHovered
 
     return (
         <div style={{
@@ -6883,6 +6851,36 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                             </span>
                                                         </button>
                                                     )}
+
+                                                    {/* Viewer Annotation Trigger (Attendee drawing on screen) */}
+                                                    {isScreenShareActive && screenSharingUserId !== 'me' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setIsAttendeeAnnotationActive(prev => !prev)}
+                                                            style={{
+                                                                background: isAttendeeAnnotationActive ? 'rgba(99, 102, 241, 0.95)' : 'rgba(10, 11, 15, 0.85)',
+                                                                backdropFilter: 'blur(10px)',
+                                                                WebkitBackdropFilter: 'blur(10px)',
+                                                                border: isAttendeeAnnotationActive ? '1px solid #818cf8' : '1px solid rgba(255, 255, 255, 0.18)',
+                                                                borderRadius: 'var(--radius-full)',
+                                                                padding: '6px 14px',
+                                                                color: '#fff',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 700,
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 6,
+                                                                boxShadow: isAttendeeAnnotationActive ? '0 0 16px rgba(99, 102, 241, 0.5)' : 'var(--shadow-md)',
+                                                                transition: 'all 0.2s ease',
+                                                                whiteSpace: 'nowrap'
+                                                            }}
+                                                            title="Toggle drawing and annotations on screen"
+                                                        >
+                                                            <IconEdit size={14} />
+                                                            <span>{isAttendeeAnnotationActive ? 'Drawing Active' : 'Annotate'}</span>
+                                                        </button>
+                                                    )}
                                                 </div>
                                             );
                                         })()}
@@ -6960,7 +6958,12 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                 isPresenter={screenSharingUserId === 'me'}
                                                 socket={socket}
                                                 meetingId={meetingInfo?.customId || meetingInfo?.id || meetingId || initialMeetingId}
-                                                onClose={() => setIsAnnotationActive(false)}
+                                                onClose={() => {
+                                                    setIsAnnotationActive(false)
+                                                    setIsAttendeeAnnotationActive(false)
+                                                }}
+                                                isAttendeeDrawingActive={isAttendeeAnnotationActive}
+                                                onToggleAttendeeDrawing={setIsAttendeeAnnotationActive}
                                             />
                                         )}
 
@@ -7212,29 +7215,42 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             </main>
 
             {/* ── Bottom Control Bar ── */}
-            <footer className="meeting-toolbar" style={{
-                position: 'fixed',
-                bottom: windowWidth < 640 ? 12 : 20,
-                left: '50%',
-                transform: `translateX(-50%) translateY(${toolbarVisible ? '0px' : '100px'})`,
-                height: windowWidth < 640 ? 54 : 64,
-                display: 'flex',
-                alignItems: 'center',
-                gap: windowWidth < 640 ? 8 : 12,
-                padding: windowWidth < 640 ? '0 12px' : '0 20px',
-                background: 'rgba(10,11,15,0.88)',
-                backdropFilter: 'blur(24px) saturate(1.8)',
-                WebkitBackdropFilter: 'blur(24px) saturate(1.8)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '40px',
-                boxShadow: '0 10px 40px rgba(0,0,0,0.6)',
-                zIndex: 'var(--z-toolbar)' as any,
-                opacity: toolbarVisible ? 1 : 0,
-                maxWidth: 'calc(100vw - 16px)',
-                overflowX: 'auto',
-                scrollbarWidth: 'none',
-                transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease',
-            }}>
+            <footer
+                ref={footerToolbarRef}
+                className="meeting-toolbar"
+                onMouseEnter={() => {
+                    setIsToolbarHovered(true)
+                    isToolbarHoveredRef.current = true
+                    setToolbarVisible(true)
+                }}
+                onMouseLeave={() => {
+                    setIsToolbarHovered(false)
+                    isToolbarHoveredRef.current = false
+                }}
+                style={{
+                    position: 'fixed',
+                    bottom: windowWidth < 640 ? 12 : 20,
+                    left: '50%',
+                    transform: `translateX(-50%) translateY(${isToolbarActuallyVisible ? '0px' : '100px'})`,
+                    height: windowWidth < 640 ? 54 : 64,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: windowWidth < 640 ? 8 : 12,
+                    padding: windowWidth < 640 ? '0 12px' : '0 20px',
+                    background: 'rgba(10,11,15,0.92)',
+                    backdropFilter: 'blur(24px) saturate(1.8)',
+                    WebkitBackdropFilter: 'blur(24px) saturate(1.8)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: '40px',
+                    boxShadow: '0 12px 42px rgba(0,0,0,0.65)',
+                    zIndex: 10000,
+                    opacity: isToolbarActuallyVisible ? 1 : 0,
+                    pointerEvents: isToolbarActuallyVisible ? 'auto' : 'none',
+                    maxWidth: 'calc(100vw - 16px)',
+                    overflowX: windowWidth < 640 ? 'auto' : 'visible',
+                    scrollbarWidth: 'none',
+                    transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease',
+                }}>
                 {/* Mic Trigger */}
                 <button
                     onClick={toggleMute}
@@ -7446,6 +7462,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     className={`btn-icon ${showMoreMenu ? 'active' : ''}`}
                     onClick={(e) => {
                         e.stopPropagation()
+                        e.preventDefault()
                         setShowMoreMenu(prev => !prev)
                     }}
                     title="More options (⋮)"
@@ -7509,30 +7526,35 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             {/* Google Meet Style Dynamic "More Options" Floating Popover */}
             {showMoreMenu && (() => {
                 const rect = moreBtnRef.current?.getBoundingClientRect()
-                const bottom = rect ? window.innerHeight - rect.top + 12 : 90
-                const left = rect ? Math.max(160, Math.min(window.innerWidth - 160, rect.left + rect.width / 2)) : window.innerWidth / 2
+                const bottom = rect ? Math.max(76, window.innerHeight - rect.top + 14) : 90
+                const left = rect ? Math.max(165, Math.min(window.innerWidth - 165, rect.left + rect.width / 2)) : window.innerWidth / 2
+                const availableHeight = Math.max(260, window.innerHeight - bottom - 20)
+                const maxHeight = Math.min(availableHeight, 520)
 
                 return (
                     <div
                         ref={moreMenuRef}
+                        className="jts-more-menu-scroll"
                         style={{
                             position: 'fixed',
                             bottom: `${bottom}px`,
                             left: `${left}px`,
                             transform: 'translateX(-50%)',
-                            width: 300,
-                            maxHeight: 'calc(100vh - 120px)',
+                            width: windowWidth < 400 ? 'calc(100vw - 24px)' : 315,
+                            maxHeight: `${maxHeight}px`,
                             overflowY: 'auto',
-                            background: 'rgba(15, 18, 26, 0.98)',
+                            scrollbarWidth: 'thin',
+                            scrollbarColor: 'rgba(255, 255, 255, 0.28) rgba(255, 255, 255, 0.04)',
+                            background: 'rgba(14, 18, 27, 0.98)',
                             backdropFilter: 'blur(24px)',
                             WebkitBackdropFilter: 'blur(24px)',
-                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                            border: '1px solid rgba(255, 255, 255, 0.14)',
                             borderRadius: '16px',
-                            padding: '8px',
+                            padding: '6px',
                             display: 'flex',
                             flexDirection: 'column',
                             gap: '3px',
-                            boxShadow: '0 24px 54px rgba(0,0,0,0.85), 0 0 1px 1px rgba(255,255,255,0.1)',
+                            boxShadow: '0 24px 54px rgba(0,0,0,0.88), 0 0 1px 1px rgba(255,255,255,0.12)',
                             zIndex: 10005,
                             animation: 'jts-slide-up 0.18s ease-out'
                         }}

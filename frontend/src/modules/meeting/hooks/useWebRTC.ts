@@ -211,8 +211,11 @@ export function useWebRTC(
         if (!pc || !socket || !activeMeetingId) return
         try {
             console.log(`[WebRTC] Initiating ICE restart for user ${targetUserId}`)
-            setIsReconnecting(true)
-            setNetworkStatus('reconnecting')
+            // Only show reconnecting warning banner if connection is ACTUALLY interrupted
+            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                setIsReconnecting(true)
+                setNetworkStatus('reconnecting')
+            }
             const offer = await pc.createOffer({ iceRestart: true, voiceActivityDetection: true } as any)
             const activePeers = Object.keys(peerConnectionsRef.current).length + 1
             const hdSdp = enhanceSdpForHdVideo(offer.sdp, activePeers)
@@ -252,13 +255,13 @@ export function useWebRTC(
                     if (directionChanged) {
                         tc.direction = 'sendrecv'
                     }
-                    const hadNoTrack = !tc.sender?.track
                     if (tc.sender) {
                         tc.sender.replaceTrack(newTrack).then(() => {
                             if (kind === 'video') {
                                 optimizePeerConnectionForHd(pc, peerCount, isScreen)
                             }
-                            if (directionChanged || hadNoTrack || isScreen) {
+                            // Only restart ICE if transceiver direction had to be flipped or screen sharing started
+                            if (directionChanged || isScreen) {
                                 triggerIceRestart(targetUserId)
                             }
                         }).catch(err => {

@@ -155,8 +155,8 @@ export function DeviceSettingsModal({
     if (!isOpen) return null
 
     return (
-        <div className="modal-overlay">
-            <div className="modal-container anim-scale-in" style={{ maxWidth: 540 }}>
+        <div className="modal-overlay" style={{ zIndex: 50000 }}>
+            <div className="modal-container anim-scale-in" style={{ maxWidth: 540, maxHeight: 'min(90vh, 720px)', overflowY: 'auto' }}>
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border)', paddingBottom: 14 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -383,8 +383,8 @@ export function DeviceSettingsModal({
                 </div>
 
                 {/* Footer */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
-                    <button onClick={onClose} className="btn btn-primary" style={{ padding: '8px 20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <button onClick={onClose} className="btn btn-primary" style={{ padding: '8px 24px', fontWeight: 700, borderRadius: 8 }}>
                         Done
                     </button>
                 </div>

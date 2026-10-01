@@ -1,16 +1,50 @@
 import nodemailer from 'nodemailer'
+import { PlatformSettings } from '../modules/admin/platformSettings.model'
 
 const SMTP_USER = process.env.SMTP_USER || ''
 const SMTP_PASS = process.env.SMTP_PASS || ''
 const EMAIL_FROM = process.env.EMAIL_FROM || (SMTP_USER ? `"JTS-Meet" <${SMTP_USER}>` : '"JTS-Meet" <noreply@jtsmeet.com>')
 
-const transporter = nodemailer.createTransport({
+const defaultTransporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
         user: SMTP_USER,
         pass: SMTP_PASS
     }
 })
+
+export async function getDynamicEmailConfig(): Promise<{ transporter: nodemailer.Transporter; from: string }> {
+    try {
+        const settings = await PlatformSettings.findOne({ key: 'global_config' }).lean()
+        if (settings && settings.smtpEnabled && settings.smtpUser && settings.smtpPass) {
+            const dynamicTransporter = nodemailer.createTransport({
+                host: settings.smtpHost || 'smtp.gmail.com',
+                port: settings.smtpPort || 587,
+                secure: Boolean(settings.smtpSecure),
+                auth: {
+                    user: settings.smtpUser,
+                    pass: settings.smtpPass
+                },
+                tls: { rejectUnauthorized: false }
+            })
+            const from = settings.smtpFrom || (settings.smtpUser ? `"JTS-Meet" <${settings.smtpUser}>` : EMAIL_FROM)
+            return { transporter: dynamicTransporter, from }
+        }
+    } catch (_) {}
+
+    return { transporter: defaultTransporter, from: EMAIL_FROM }
+}
+
+const transporter = {
+    sendMail: async (options: nodemailer.SendMailOptions) => {
+        const { transporter: activeTransporter, from } = await getDynamicEmailConfig()
+        const opts = { ...options }
+        if (!opts.from || opts.from === EMAIL_FROM) {
+            opts.from = from
+        }
+        return activeTransporter.sendMail(opts)
+    }
+}
 
 export async function sendOTPEmail(to: string, code: string): Promise<void> {
     const html = `

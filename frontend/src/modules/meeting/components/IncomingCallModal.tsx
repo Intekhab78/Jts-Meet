@@ -8,6 +8,9 @@ export interface IncomingCallData {
     callerName: string
     callerAvatar?: string
     callType?: 'video' | 'audio' | 'screenshare'
+    channelName?: string
+    channelId?: string
+    isGroupCall?: boolean
 }
 
 interface IncomingCallModalProps {
@@ -67,7 +70,7 @@ export function IncomingCallModal({ call, onAccept, onDecline }: IncomingCallMod
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: '2rem', fontWeight: 800, color: '#fff', border: '3px solid var(--color-accent)'
                         }}>
-                            {call.callerName ? call.callerName.charAt(0).toUpperCase() : 'C'}
+                            {call.channelName ? '#' : (call.callerName ? call.callerName.charAt(0).toUpperCase() : 'C')}
                         </div>
                     )}
                 </div>
@@ -77,6 +80,23 @@ export function IncomingCallModal({ call, onAccept, onDecline }: IncomingCallMod
                     <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 6px', color: '#fff' }}>
                         {call.callerName}
                     </h3>
+                    {call.channelName && (
+                        <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            background: 'rgba(99, 102, 241, 0.18)',
+                            border: '1px solid rgba(99, 102, 241, 0.35)',
+                            padding: '3px 10px',
+                            borderRadius: 12,
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            color: '#818cf8',
+                            marginBottom: 6
+                        }}>
+                            <span>#{call.channelName}</span>
+                        </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--color-accent)', fontSize: '0.875rem', fontWeight: 600 }}>
                         {call.callType === 'audio' ? (
                             <IconPhone size={15} color="var(--color-accent)" />
@@ -87,7 +107,7 @@ export function IncomingCallModal({ call, onAccept, onDecline }: IncomingCallMod
                         )}
                         <span>
                             {call.callType === 'audio'
-                                ? 'Incoming Audio Call...'
+                                ? (call.channelName ? `Incoming Channel Audio Call...` : 'Incoming Audio Call...')
                                 : call.callType === 'screenshare'
                                     ? 'Incoming Screen Share Call...'
                                     : 'Incoming Video Call...'}

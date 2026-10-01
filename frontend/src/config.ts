@@ -1,4 +1,4 @@
-const ONLINE_URL = typeof window !== 'undefined' ? window.location.origin : 'https://meet.jtsmiddleeast.com'
+const ONLINE_URL = typeof window !== 'undefined' ? window.location.origin : 'https://meetapi.jtsmiddleeast.com'
 
 const envUrl = import.meta.env.VITE_API_URL
 

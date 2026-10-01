@@ -29,14 +29,14 @@ const getMeetingIdFromUrl = (): string | null => {
                 if (id) return id
             }
         }
-    } catch (e) {}
+    } catch (e) { }
 
     // 3. Search query ?id=xxx or ?meetingId=xxx
     try {
         const searchParams = new URLSearchParams(window.location.search)
         const id = searchParams.get('id') || searchParams.get('meetingId')
         if (id) return id
-    } catch (e) {}
+    } catch (e) { }
 
     // 4. Stored active meeting ID ONLY if currently on a meeting route
     try {
@@ -44,7 +44,7 @@ const getMeetingIdFromUrl = (): string | null => {
             const active = sessionStorage.getItem('jts_active_meeting_id')
             if (active) return active
         }
-    } catch (e) {}
+    } catch (e) { }
 
     return null
 }
@@ -132,7 +132,7 @@ function App() {
 
         return 'landing'
     })
-    
+
     const [token, setToken] = useState<string>(() => {
         const params = new URLSearchParams(window.location.search)
         const urlToken = params.get('token')
@@ -174,23 +174,23 @@ function App() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ meetingId: meetId, guestName: savedGuestName })
             })
-            .then(res => res.json())
-            .then(data => {
-                if (data?.success && data?.data?.token) {
-                    setGuestToken(data.data.token)
-                    setGuestUserId(data.data.userId)
-                    try {
-                        localStorage.setItem('jts_guest_token', data.data.token)
-                        localStorage.setItem('jts_guest_user_id', data.data.userId)
-                    } catch(e) {}
-                    if (!data.data.isPending) {
-                        setView('app')
-                    } else {
-                        setView('guest-waiting')
+                .then(res => res.json())
+                .then(data => {
+                    if (data?.success && data?.data?.token) {
+                        setGuestToken(data.data.token)
+                        setGuestUserId(data.data.userId)
+                        try {
+                            localStorage.setItem('jts_guest_token', data.data.token)
+                            localStorage.setItem('jts_guest_user_id', data.data.userId)
+                        } catch (e) { }
+                        if (!data.data.isPending) {
+                            setView('app')
+                        } else {
+                            setView('guest-waiting')
+                        }
                     }
-                }
-            })
-            .catch(() => {})
+                })
+                .catch(() => { })
         }
     }, [token, guestToken])
 
@@ -205,7 +205,7 @@ function App() {
                 sessionStorage.removeItem('jts_active_meeting_id')
                 sessionStorage.removeItem('jts_meeting_joined')
                 localStorage.removeItem('jts_last_meeting_id')
-            } catch (e) {}
+            } catch (e) { }
             if (!token && guestToken) {
                 setGuestToken('')
                 setGuestUserId('')
@@ -219,7 +219,7 @@ function App() {
         const handleHashOrPopState = () => {
             const currentMeetId = getMeetingIdFromUrl()
             setMeetingIdFromUrl(currentMeetId)
-            
+
             const userToken = localStorage.getItem('jts_token')
             const savedGuest = localStorage.getItem('jts_guest_token')
 
@@ -248,7 +248,7 @@ function App() {
                 localStorage.removeItem('jts_guest_user_id')
                 sessionStorage.removeItem('jts_active_meeting_id')
                 sessionStorage.removeItem('jts_meeting_joined')
-            } catch (e) {}
+            } catch (e) { }
             setGuestToken('')
             setView('landing')
         }
@@ -305,7 +305,7 @@ function App() {
                         if (details?.guestName) {
                             localStorage.setItem('jts_guest_name', details.guestName)
                         }
-                    } catch (e) {}
+                    } catch (e) { }
                     if (isPending) {
                         setView('guest-waiting')
                     } else {
@@ -417,17 +417,17 @@ function MicrosoftCallbackPage({ onAuthSuccess, onAuthFailure }: { onAuthSuccess
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code, redirectUri })
         })
-        .then(async (res) => {
-            const data = await res.json()
-            if (!res.ok) {
-                throw new Error(data.error || 'Microsoft authentication failed')
-            }
-            window.history.pushState({}, '', '/')
-            onAuthSuccess(data.data.accessToken)
-        })
-        .catch((err) => {
-            onAuthFailure(err.message || 'Identity Provider authentication failed.')
-        })
+            .then(async (res) => {
+                const data = await res.json()
+                if (!res.ok) {
+                    throw new Error(data.error || 'Microsoft authentication failed')
+                }
+                window.history.pushState({}, '', '/')
+                onAuthSuccess(data.data.accessToken)
+            })
+            .catch((err) => {
+                onAuthFailure(err.message || 'Identity Provider authentication failed.')
+            })
     }, [onAuthSuccess, onAuthFailure])
 
     return (
@@ -470,17 +470,17 @@ function GoogleCallbackPage({ onAuthSuccess, onAuthFailure }: { onAuthSuccess: (
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ idToken })
         })
-        .then(async (res) => {
-            const data = await res.json()
-            if (!res.ok) {
-                throw new Error(data.error || 'Google authentication failed')
-            }
-            window.history.pushState({}, '', '/')
-            onAuthSuccess(data.data.accessToken)
-        })
-        .catch((err) => {
-            onAuthFailure(err.message || 'Identity Provider authentication failed.')
-        })
+            .then(async (res) => {
+                const data = await res.json()
+                if (!res.ok) {
+                    throw new Error(data.error || 'Google authentication failed')
+                }
+                window.history.pushState({}, '', '/')
+                onAuthSuccess(data.data.accessToken)
+            })
+            .catch((err) => {
+                onAuthFailure(err.message || 'Identity Provider authentication failed.')
+            })
     }, [onAuthSuccess, onAuthFailure])
 
     return (

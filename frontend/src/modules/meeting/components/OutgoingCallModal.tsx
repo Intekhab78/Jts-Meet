@@ -4,10 +4,14 @@ import { IconPhone, IconPhoneOff, IconVideo, IconMonitor } from '../../../compon
 
 export interface OutgoingCallData {
     meetingId: string
-    targetUserId: string
+    targetUserId?: string
+    targetUserIds?: string[]
     targetName: string
     targetAvatar?: string
     callType?: 'video' | 'audio' | 'screenshare'
+    channelName?: string
+    channelId?: string
+    isGroupCall?: boolean
     status?: 'calling' | 'ringing' | 'declined' | 'no_answer' | 'offline'
 }
 
@@ -69,7 +73,7 @@ export function OutgoingCallModal({ call, onCancel }: OutgoingCallModalProps) {
     }
 
     return (
-        <div className="modal-overlay" style={{ zIndex: 10000, backdropFilter: 'blur(10px)', background: 'rgba(5, 6, 10, 0.8)' }}>
+        <div className="modal-overlay" style={{ zIndex: 50000, backdropFilter: 'blur(10px)', background: 'rgba(5, 6, 10, 0.8)' }}>
             <div
                 className="modal-container anim-scale-in"
                 style={{
@@ -138,7 +142,7 @@ export function OutgoingCallModal({ call, onCancel }: OutgoingCallModalProps) {
                             border: isTerminated ? '3px solid #ef4444' : '3px solid #6264a7',
                             boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
                         }}>
-                            {call.targetName ? call.targetName.charAt(0).toUpperCase() : 'C'}
+                            {call.channelName ? '#' : (call.targetName ? call.targetName.charAt(0).toUpperCase() : 'C')}
                         </div>
                     )}
                 </div>
@@ -148,6 +152,22 @@ export function OutgoingCallModal({ call, onCancel }: OutgoingCallModalProps) {
                     <h3 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, color: '#fff', letterSpacing: '-0.01em' }}>
                         {call.targetName}
                     </h3>
+                    {call.channelName && (
+                        <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            background: 'rgba(99, 102, 241, 0.18)',
+                            border: '1px solid rgba(99, 102, 241, 0.35)',
+                            padding: '3px 10px',
+                            borderRadius: 12,
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            color: '#818cf8'
+                        }}>
+                            <span>#{call.channelName}</span>
+                        </div>
+                    )}
                     
                     <div style={{
                         display: 'flex',

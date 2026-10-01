@@ -231,7 +231,7 @@ function createWindow() {
     // 3. Fallback to production https://meet.jtsmiddleeast.com
     const isPackaged = app.isPackaged
     const isDev = process.argv.includes('--dev') || (!isPackaged && process.env.NODE_ENV !== 'production')
-    const primaryUrl = process.env.FRONTEND_URL || (isDev ? 'http://localhost:3000' : 'http://localhost:3000')
+    const primaryUrl = process.env.FRONTEND_URL || (isDev ? 'http://localhost:3000' : 'https://meet.jtsmiddleeast.com')
     const fallbackUrl = 'https://meet.jtsmiddleeast.com'
 
     mainWindow.loadURL(primaryUrl).catch(() => {

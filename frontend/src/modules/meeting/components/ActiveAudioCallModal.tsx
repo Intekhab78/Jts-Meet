@@ -41,6 +41,9 @@ export interface ActiveCallData {
     peerName: string
     peerAvatar?: string
     callType: 'audio' | 'video' | 'screenshare'
+    channelName?: string
+    channelId?: string
+    isGroupCall?: boolean
 }
 
 interface ActiveAudioCallModalProps {
@@ -426,7 +429,7 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                                         border: isRemoteSpeaking ? '1.5px solid #3b82f6' : '1.5px solid transparent'
                                     }}
                                 >
-                                    {call.peerName.charAt(0).toUpperCase()}
+                                    {call.channelName ? '#' : call.peerName.charAt(0).toUpperCase()}
                                 </div>
                             </div>
                             <div>
@@ -1255,7 +1258,7 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                                 transition: 'all 0.2s ease'
                             }}
                         >
-                            {call.peerName.charAt(0).toUpperCase()}
+                            {call.channelName ? '#' : call.peerName.charAt(0).toUpperCase()}
                         </div>
                     )}
                 </div>
@@ -1266,7 +1269,7 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                         {call.peerName}
                     </h3>
                     <p style={{ margin: 0, fontSize: '0.8125rem', color: isRemoteSpeaking ? '#818cf8' : '#94a3b8', fontWeight: isRemoteSpeaking ? 700 : 500 }}>
-                        {isRemoteSpeaking ? 'Speaking...' : 'Live 1-on-1 Voice Call'}
+                        {isRemoteSpeaking ? 'Speaking...' : call.channelName ? `Channel Audio Call (#${call.channelName})` : call.isGroupCall ? 'Group Audio Call' : 'Live 1-on-1 Voice Call'}
                     </p>
                 </div>
 

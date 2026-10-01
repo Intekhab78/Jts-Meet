@@ -20,7 +20,14 @@ import {
     updateTenantStatus,
     updateTenantQuota,
     getLiveTelemetry,
-    postBroadcastNotice
+    postBroadcastNotice,
+    forceTerminateMeeting,
+    getPlatformSettings,
+    updatePlatformSettings,
+    impersonateTenant,
+    testSmtpConnection,
+    purgeExpiredRecordings,
+    exportAuditLogs
 } from './admin.service'
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { parseCursorQuery, executeCursorQuery } from '../../utils/paginationHelper'
@@ -315,5 +322,115 @@ export const adminController = {
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to fetch active broadcast notice')
         }
+    },
+
+    getAuditLogsAction: async (req: AuthRequest, res: Response) => {
+        if (!req.userId) return sendError(res, 401, 'Unauthorized access')
+
+        try {
+            const page = Math.max(1, parseInt(req.query.page as string) || 1)
+            const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50))
+            const action = (req.query.action as string) || ''
+            const result = await getAuditLogs(page, limit, action)
+            return sendSuccess(res, result, 'Platform audit logs retrieved successfully')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to retrieve audit logs')
+        }
+    },
+
+    terminateMeetingAction: async (req: AuthRequest, res: Response) => {
+        if (!req.userId) return sendError(res, 401, 'Unauthorized access')
+
+        try {
+            const { meetingId } = req.params
+            const { reason } = req.body || {}
+            if (!meetingId) return sendError(res, 400, 'Meeting ID is required')
+
+            const targetMeetingId = Array.isArray(meetingId) ? meetingId[0] : (meetingId as string)
+            const result = await forceTerminateMeeting(req.userId, targetMeetingId, reason)
+            return sendSuccess(res, result, 'Live meeting force-terminated successfully')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to terminate meeting')
+        }
+    },
+
+    getPlatformSettingsAction: async (req: AuthRequest, res: Response) => {
+        try {
+            const settings = await getPlatformSettings()
+            return sendSuccess(res, settings, 'Platform settings retrieved successfully')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to retrieve platform settings')
+        }
+    },
+
+    updatePlatformSettingsAction: async (req: AuthRequest, res: Response) => {
+        if (!req.userId) return sendError(res, 401, 'Unauthorized access')
+
+        try {
+            const settings = await updatePlatformSettings(req.userId, req.body || {})
+            return sendSuccess(res, settings, 'Platform settings updated successfully')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to update platform settings')
+        }
+    },
+
+    impersonateTenantAction: async (req: AuthRequest, res: Response) => {
+        if (!req.userId) return sendError(res, 401, 'Unauthorized access')
+
+        try {
+            const orgId = String(req.params.orgId)
+            const result = await impersonateTenant(req.userId, orgId)
+            return sendSuccess(res, result, 'Tenant support impersonation session created')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to create impersonation session')
+        }
+    },
+
+    testSmtpAction: async (req: AuthRequest, res: Response) => {
+        if (!req.userId) return sendError(res, 401, 'Unauthorized access')
+
+        try {
+            const { testEmail } = req.body || {}
+            const result = await testSmtpConnection(req.userId, testEmail)
+            return sendSuccess(res, result, 'SMTP test ping dispatched successfully')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to dispatch test ping via SMTP Gateway')
+        }
+    },
+
+    purgeStorageAction: async (req: AuthRequest, res: Response) => {
+        if (!req.userId) return sendError(res, 401, 'Unauthorized access')
+
+        try {
+            const { retentionDays } = req.body || {}
+            const result = await purgeExpiredRecordings(req.userId, retentionDays ? Number(retentionDays) : undefined)
+            return sendSuccess(res, result, 'Cloud storage retention lifecycle purge completed')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to execute storage retention purge')
+        }
+    },
+
+    exportAuditLogsAction: async (req: AuthRequest, res: Response) => {
+        if (!req.userId) return sendError(res, 401, 'Unauthorized access')
+
+        try {
+            const format = (req.query.format as string) === 'json' ? 'json' : 'csv'
+            const startDate = req.query.startDate as string
+            const endDate = req.query.endDate as string
+            const action = req.query.action as string
+
+            const result = await exportAuditLogs(req.userId, format, startDate, endDate, action)
+
+            if (format === 'csv' && (result as any).csvContent) {
+                res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+                res.setHeader('Content-Disposition', `attachment; filename="${(result as any).filename}"`)
+                return res.status(200).send((result as any).csvContent)
+            }
+
+            return sendSuccess(res, result, 'Audit logs exported successfully')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to export audit logs')
+        }
     }
 }
+

@@ -23,6 +23,7 @@ export function VirtualBackgroundModal({
 }: VirtualBackgroundModalProps) {
     const previewVideoRef = useRef<HTMLVideoElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const [customWallpaper, setCustomWallpaper] = useState<string | null>(() => virtualBackgroundService.getCustomWallpaper())
 
     // Bind local stream to the live preview window
     const currentTrackId = localStream?.getVideoTracks()[0]?.id
@@ -41,8 +42,6 @@ export function VirtualBackgroundModal({
     }, [isOpen, localStream, activePreset, currentTrackId])
 
     if (!isOpen) return null
-
-    const [customWallpaper, setCustomWallpaper] = useState<string | null>(() => virtualBackgroundService.getCustomWallpaper())
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
@@ -77,7 +76,7 @@ export function VirtualBackgroundModal({
                 background: 'rgba(0, 0, 0, 0.72)',
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
-                zIndex: 10002,
+                zIndex: 50000,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

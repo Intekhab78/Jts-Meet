@@ -1106,9 +1106,11 @@ export function OrganizationSettingsPage({
 
                     {/* TAB: ENTERPRISE INTEGRATIONS & WEBHOOKS */}
                     {activeSubTab === 'integrations' && (
-                        <div className="glass-card" style={{ padding: '20px', borderRadius: 14 }}>
-                            <IntegrationsTab token={token} currentOrgId={organization._id} />
-                        </div>
+                            <IntegrationsTab 
+                                token={token} 
+                                currentOrgId={organization._id} 
+                                planTier={organization.planTier || 'enterprise'}
+                            />
                     )}
 
                     {/* TAB: SUBSCRIPTION & QUOTA USAGE */}

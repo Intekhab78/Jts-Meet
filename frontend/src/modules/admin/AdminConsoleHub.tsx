@@ -2120,7 +2120,11 @@ export function AdminConsoleHub({
             {/* TAB 4: ENTERPRISE INTEGRATIONS & WEBHOOKS HUB */}
             {/* ========================================================================= */}
             {activeTab === 'integrations' && (
-                <IntegrationsTab token={token} currentOrgId={currentOrgId} />
+                <IntegrationsTab 
+                    token={token} 
+                    currentOrgId={currentOrgId}
+                    planTier={organizations.find(o => (o._id || o.id) === currentOrgId)?.planTier || 'enterprise'}
+                />
             )}
 
             {/* 4. VIDEO LIGHTBOX PLAYER MODAL */}

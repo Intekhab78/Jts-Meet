@@ -46,6 +46,7 @@ interface ChannelSettingsPageProps {
     teams?: any[]
     onSelectTeam?: (teamId: string) => void
     onStartMeeting?: (meetingId: string) => void
+    onStartGroupCall?: (targetUserIds: string[], channelName: string, channelId: string, callType?: 'video' | 'audio') => void
 }
 
 /**
@@ -237,7 +238,8 @@ export function ChannelSettingsPage({
     currentUserId,
     teams = [],
     onSelectTeam,
-    onStartMeeting
+    onStartMeeting,
+    onStartGroupCall
 }: ChannelSettingsPageProps) {
     const [channels, setChannels] = useState<Channel[]>([])
     const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null)
@@ -1341,14 +1343,15 @@ export function ChannelSettingsPage({
     // Instant Group Audio Call ("Audio Call")
     const handleStartChannelAudioCall = () => {
         if (!selectedChannel) return
-        const meetingId = `call_${selectedChannel.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString(36).slice(-5)}`
 
-        try {
-            sessionStorage.setItem('jts_initial_camera_off', 'true')
-        } catch { }
+        // Extract all other member IDs from the channel
+        const otherMemberIds = (selectedChannel.members || []).map((m: any) => {
+            const userObj = typeof m.userId === 'object' && m.userId !== null ? m.userId : null
+            return userObj?._id ? userObj._id.toString() : (typeof m.userId === 'string' ? m.userId : ((m.user as any)?._id || ''))
+        }).filter(id => id && String(id) !== String(resolvedUserId))
 
         // Notify in channel chat
-        const meetMsg = `📞 **Group Audio Call Started in #${selectedChannel.name}**\n👉 Click **[Join Audio Call](#meeting?room=${meetingId}&audio=true)** to participate!`
+        const meetMsg = `📞 **Group Audio Call started in #${selectedChannel.name}**\n🔔 *Ringing channel members...*`
         fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
             method: 'POST',
             headers: {
@@ -1358,10 +1361,13 @@ export function ChannelSettingsPage({
             body: JSON.stringify({ content: meetMsg })
         }).catch(() => { })
 
-        if (onStartMeeting) {
-            onStartMeeting(meetingId)
-        } else {
-            window.location.hash = `#meeting?room=${meetingId}&audio=true`
+        if (otherMemberIds.length === 0) {
+            alert(`No other members found in #${selectedChannel.name} to call. Please invite members to this channel first.`)
+            return
+        }
+
+        if (onStartGroupCall) {
+            onStartGroupCall(otherMemberIds, selectedChannel.name, selectedChannel._id, 'audio')
         }
     }
 

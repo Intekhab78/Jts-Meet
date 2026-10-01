@@ -3,6 +3,7 @@ import { Meeting } from '../modules/meeting/meeting.model'
 import { NotificationService } from '../modules/notification/notification.service'
 import { User } from '../models/user.model'
 import { sendMeetingInvitationEmail } from '../services/email.service'
+import { PlatformSettings } from '../modules/admin/platformSettings.model'
 import { FRONTEND_URL } from '../config'
 
 async function processMeetingReminders() {
@@ -104,5 +105,25 @@ export function initializeCronJobs() {
         await processMeetingReminders()
     })
 
-    console.log('[CRON] Meeting reminder scheduler initialized (running minute-level checks).')
+    // Daily at 02:00 UTC - Cloud Storage Retention Auto-Purge Lifecycle
+    cron.schedule('0 2 * * *', async () => {
+        try {
+            const settings = await PlatformSettings.findOne({ key: 'global_config' }).lean()
+            if (settings && settings.autoPurgeRecordings) {
+                const days = settings.storageRetentionDays || 60
+                const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+                const res = await Meeting.updateMany(
+                    { createdAt: { $lt: cutoff }, status: 'ended', isRecordingPurged: { $ne: true } },
+                    { $set: { isRecordingPurged: true, recordingPurgedAt: new Date() } }
+                ).exec()
+                if (res.modifiedCount > 0) {
+                    console.log(`[STORAGE_CRON] Auto-purged ${res.modifiedCount} archived meeting recordings older than ${days} days`)
+                }
+            }
+        } catch (err: any) {
+            console.error('[STORAGE_CRON] Error running storage auto-purge lifecycle:', err?.message || err)
+        }
+    })
+
+    console.log('[CRON] Meeting reminder scheduler and Storage Vault lifecycle initialized.')
 }
