@@ -109,6 +109,20 @@ export class ChannelChatController {
         return res.status(204).send()
     })
 
+    static undoDeleteMessage = asyncWrapper(async (req: AuthRequest, res: Response) => {
+        const { channelId, messageId } = req.params as { channelId: string; messageId: string }
+
+        await ChannelService.ensureMember(channelId, req.userId as string)
+        const message = await ChannelChatService.undoDeleteMessage(messageId, req.userId as string)
+
+        const io = getIO()
+        if (io) {
+            io.to(channelId).to(`channel:${channelId}`).emit('channel:message:undo', { channelId, message })
+        }
+
+        return sendSuccess(res, message, 'Message restored')
+    })
+
     static addReaction = asyncWrapper(async (req: AuthRequest, res: Response) => {
         const { channelId, messageId } = req.params as { channelId: string; messageId: string }
         const { emoji } = req.body as { emoji: string }

@@ -1,6 +1,7 @@
 import { Types } from 'mongoose'
 import { ChannelChat, IChannelChat, IChannelAttachment, ICodeSnippet } from './channelChat.model'
-import { getChannel } from '../channel/channel.service'
+import { getChannel, isChannelOwnerOrModerator } from '../channel/channel.service'
+import { Channel } from '../channel/channel.model'
 
 export interface CreateChannelMessageOptions {
     replyTo?: string
@@ -106,12 +107,31 @@ export class ChannelChatService {
             throw new Error('Message not found')
         }
         if (message.senderId.toString() !== senderId) {
-            throw new Error('Forbidden')
+            const channel = await Channel.findById(message.channelId)
+            const isMod = channel ? await isChannelOwnerOrModerator(channel, senderId) : false
+            if (!isMod) {
+                throw new Error('Forbidden')
+            }
         }
 
         message.deleted = true
         await message.save()
         return message
+    }
+
+    static async undoDeleteMessage(messageId: string, senderId: string) {
+        const message = await ChannelChat.findById(messageId)
+        if (!message) {
+            throw new Error('Message not found')
+        }
+        if (message.senderId.toString() !== senderId) {
+            throw new Error('Forbidden')
+        }
+
+        message.deleted = false
+        await message.save()
+        const populated = await message.populate('senderId', 'fullName email profileImage')
+        return populated.toObject()
     }
 
     static async addReactionToMessage(messageId: string, userId: string, emoji: string) {

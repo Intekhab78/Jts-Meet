@@ -6,7 +6,7 @@ import { ChannelTypes, ChannelRoles, ChannelStatuses, GeneralChannelName } from 
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
 
-async function isChannelOwnerOrModerator(channel: IChannel, userId: string): Promise<boolean> {
+export async function isChannelOwnerOrModerator(channel: IChannel, userId: string): Promise<boolean> {
     try {
         const user = await User.findById(userId).select('email').exec()
         if (user?.email?.toLowerCase().trim() === 'admin@jtsmeet.com') return true

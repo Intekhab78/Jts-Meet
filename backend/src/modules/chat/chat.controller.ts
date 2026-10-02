@@ -11,7 +11,10 @@ import {
     RecentChatItem,
     addReactionToMessage,
     removeReactionFromMessage,
-    searchContacts
+    searchContacts,
+    deleteDirectMessage,
+    undoDeleteDirectMessage,
+    clearChatForUser
 } from './chat.service'
 import { validateSendMessage, validateConversationQuery, validateRecentChatsQuery } from './chat.validator'
 import { AuthRequest } from '../../middleware/authMiddleware'
@@ -68,7 +71,8 @@ export const chatController = {
                         { sender: userObjectId, receiver: otherObjectId },
                         { sender: otherObjectId, receiver: userObjectId }
                     ],
-                    parentMessageId: null
+                    parentMessageId: null,
+                    clearedFor: { $ne: userObjectId }
                 },
                 params,
                 ['message']
@@ -107,7 +111,8 @@ export const chatController = {
             const pipeline: any[] = [
                 {
                     $match: {
-                        $or: [{ sender: userObjectId }, { receiver: userObjectId }]
+                        $or: [{ sender: userObjectId }, { receiver: userObjectId }],
+                        clearedFor: { $ne: userObjectId }
                     }
                 },
                 { $sort: { createdAt: -1 } },
@@ -206,7 +211,10 @@ export const chatController = {
         const params = parseCursorQuery(req.query)
         const result = await executeCursorQuery(
             Message,
-            { parentMessageId: new Types.ObjectId(parentMessageId as any) },
+            {
+                parentMessageId: new Types.ObjectId(parentMessageId as any),
+                clearedFor: { $ne: new Types.ObjectId(userId) }
+            },
             params,
             ['message']
         )
@@ -373,5 +381,94 @@ export const chatController = {
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to search contacts')
         }
+    },
+
+    deleteMessage: async (req: AuthRequest, res: Response) => {
+        const messageId = req.params.messageId as string
+        const userId = req.userId
+
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        if (!messageId || !/^[a-fA-F0-9]{24}$/.test(messageId)) {
+            return sendError(res, 400, 'messageId is required and must be a valid ID')
+        }
+
+        try {
+            const result = await deleteDirectMessage(messageId, userId)
+            if (!result) {
+                return sendError(res, 404, 'Message not found')
+            }
+
+            const receiverId = result.sender.toString() === userId 
+                ? result.receiver.toString() 
+                : result.sender.toString()
+            const io = req.app?.get('io') || (global as any).io
+            if (io) {
+                io.to(`user:${userId}`).to(`user:${receiverId}`).emit(SocketEvents.MESSAGE_DELETE, {
+                    messageId,
+                    isDeleted: true,
+                    deletedAt: result.deletedAt
+                })
+            }
+
+            return sendSuccess(res, result, 'Message deleted successfully')
+        } catch (err: any) {
+            return sendError(res, 400, err.message || 'Failed to delete message')
+        }
+    },
+
+    undoDeleteMessage: async (req: AuthRequest, res: Response) => {
+        const messageId = req.params.messageId as string
+        const userId = req.userId
+
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        if (!messageId || !/^[a-fA-F0-9]{24}$/.test(messageId)) {
+            return sendError(res, 400, 'messageId is required and must be a valid ID')
+        }
+
+        try {
+            const result = await undoDeleteDirectMessage(messageId, userId)
+            if (!result) {
+                return sendError(res, 404, 'Message not found')
+            }
+
+            const receiverId = result.sender.toString() === userId 
+                ? result.receiver.toString() 
+                : result.sender.toString()
+            const io = req.app?.get('io') || (global as any).io
+            if (io) {
+                io.to(`user:${userId}`).to(`user:${receiverId}`).emit(SocketEvents.MESSAGE_UNDO_DELETE, {
+                    messageId,
+                    message: result
+                })
+            }
+
+            return sendSuccess(res, result, 'Message restored successfully')
+        } catch (err: any) {
+            return sendError(res, 400, err.message || 'Failed to restore message')
+        }
+    },
+
+    clearConversation: async (req: AuthRequest, res: Response) => {
+        const userId = req.userId
+        const otherUserId = (req.params.otherUserId || req.body.otherUserId) as string
+
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        if (!otherUserId || !/^[a-fA-F0-9]{24}$/.test(otherUserId)) {
+            return sendError(res, 400, 'otherUserId is required and must be a valid ID')
+        }
+
+        try {
+            const count = await clearChatForUser(userId, otherUserId)
+            return sendSuccess(res, { clearedCount: count }, 'Chat cleared successfully for you')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to clear chat')
+        }
     }
 }
+

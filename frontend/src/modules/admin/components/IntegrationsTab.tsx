@@ -767,11 +767,25 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                     </div>
                 </div>
 
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))',
-                    gap: 16
-                }}>
+                {/* Responsive 4-Column Connectors Grid */}
+                <style>{`
+                    .integrations-connectors-grid {
+                        display: grid;
+                        grid-template-columns: repeat(4, minmax(0, 1fr));
+                        gap: 14px;
+                    }
+                    @media (max-width: 1200px) {
+                        .integrations-connectors-grid {
+                            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                        }
+                    }
+                    @media (max-width: 640px) {
+                        .integrations-connectors-grid {
+                            grid-template-columns: 1fr !important;
+                        }
+                    }
+                `}</style>
+                <div className="integrations-connectors-grid">
                     {connectorsList.map(connector => {
                         const configuredItems = integrations.filter(i => i.type === connector.type)
                         const configuredCount = configuredItems.length
@@ -785,12 +799,12 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                                     border: isConfigured 
                                         ? '1px solid rgba(99, 102, 241, 0.35)' 
                                         : '1px solid rgba(255, 255, 255, 0.08)',
-                                    borderRadius: 16,
-                                    padding: 20,
+                                    borderRadius: 14,
+                                    padding: '16px 14px',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     justifyContent: 'space-between',
-                                    gap: 16,
+                                    gap: 12,
                                     transition: 'border-color 0.2s, transform 0.2s',
                                     position: 'relative',
                                     overflow: 'hidden'
@@ -807,11 +821,11 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                                     }} />
                                 )}
 
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                                     <div style={{
-                                        width: 44,
-                                        height: 44,
-                                        borderRadius: 12,
+                                        width: 38,
+                                        height: 38,
+                                        borderRadius: 10,
                                         background: connector.bg,
                                         display: 'flex',
                                         alignItems: 'center',
@@ -821,66 +835,68 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                                     }}>
                                         {connector.iconNode}
                                     </div>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-                                            <h4 style={{ margin: 0, fontSize: '0.98rem', color: '#fff', fontWeight: 700 }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6, marginBottom: 4 }}>
+                                            <h4 style={{ margin: 0, fontSize: '0.88rem', color: '#fff', fontWeight: 700, lineHeight: 1.3 }}>
                                                 {connector.title}
                                             </h4>
                                             {isConfigured ? (
                                                 <span style={{
-                                                    fontSize: '0.68rem',
+                                                    fontSize: '0.62rem',
                                                     fontWeight: 800,
-                                                    padding: '2px 8px',
-                                                    borderRadius: 10,
+                                                    padding: '2px 6px',
+                                                    borderRadius: 8,
                                                     background: 'rgba(34, 197, 94, 0.15)',
                                                     border: '1px solid rgba(34, 197, 94, 0.35)',
                                                     color: '#4ade80',
                                                     display: 'flex',
                                                     alignItems: 'center',
-                                                    gap: 4
+                                                    gap: 3,
+                                                    whiteSpace: 'nowrap'
                                                 }}>
-                                                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80', display: 'inline-block' }} />
+                                                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#4ade80', display: 'inline-block' }} />
                                                     {configuredCount} Active
                                                 </span>
                                             ) : (
                                                 <span style={{
-                                                    fontSize: '0.68rem',
+                                                    fontSize: '0.62rem',
                                                     fontWeight: 600,
-                                                    padding: '2px 7px',
-                                                    borderRadius: 10,
+                                                    padding: '2px 6px',
+                                                    borderRadius: 8,
                                                     background: 'rgba(148, 163, 184, 0.1)',
-                                                    color: '#94a3b8'
+                                                    color: '#94a3b8',
+                                                    whiteSpace: 'nowrap'
                                                 }}>
                                                     Ready
                                                 </span>
                                             )}
                                         </div>
-                                        <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.45 }}>
+                                        <p style={{ margin: 0, fontSize: '0.74rem', color: '#94a3b8', lineHeight: 1.4 }}>
                                             {connector.desc}
                                         </p>
                                     </div>
                                 </div>
 
-                                <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+                                <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
                                     <button
                                         onClick={() => openAddModalForType(connector.type)}
                                         style={{
                                             flex: 1,
-                                            padding: '8px 12px',
+                                            padding: '7px 10px',
                                             background: isConfigured ? 'rgba(255, 255, 255, 0.06)' : 'rgba(99, 102, 241, 0.15)',
                                             border: isConfigured ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(99, 102, 241, 0.35)',
                                             borderRadius: 8,
                                             color: isConfigured ? '#e2e8f0' : '#a5b4fc',
-                                            fontSize: '0.8rem',
+                                            fontSize: '0.75rem',
                                             fontWeight: 600,
                                             cursor: 'pointer',
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
-                                            gap: 6
+                                            gap: 4
                                         }}
                                     >
-                                        <IconPlus size={13} />
+                                        <IconPlus size={12} />
                                         <span>{isConfigured ? 'Add Another' : `Connect ${connector.title.split(' ')[0]}`}</span>
                                     </button>
 
@@ -892,21 +908,21 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                                             }}
                                             disabled={testingId !== null}
                                             style={{
-                                                padding: '8px 12px',
+                                                padding: '7px 10px',
                                                 background: 'rgba(99, 102, 241, 0.15)',
                                                 border: '1px solid rgba(99, 102, 241, 0.35)',
                                                 borderRadius: 8,
                                                 color: '#a5b4fc',
-                                                fontSize: '0.8rem',
+                                                fontSize: '0.75rem',
                                                 fontWeight: 600,
                                                 cursor: 'pointer',
                                                 display: 'flex',
                                                 alignItems: 'center',
-                                                gap: 5
+                                                gap: 4
                                             }}
                                             title="Send a quick test ping to this service"
                                         >
-                                            <IconZap size={13} color="#a5b4fc" />
+                                            <IconZap size={12} color="#a5b4fc" />
                                             <span>Ping</span>
                                         </button>
                                     )}

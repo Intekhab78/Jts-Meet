@@ -153,3 +153,22 @@ export async function addChannelMessageReaction(channelId: string, messageId: st
     })
     return parseResponse<any>(response)
 }
+
+export async function deleteChannelMessage(channelId: string, messageId: string, token: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/api/channel/${channelId}/chat/${messageId}`, {
+        method: 'DELETE',
+        headers: authHeaders(token)
+    })
+    if (!response.ok) {
+        throw new Error('Failed to delete channel message')
+    }
+}
+
+export async function undoDeleteChannelMessage(channelId: string, messageId: string, token: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/api/channel/${channelId}/chat/${messageId}/undo`, {
+        method: 'POST',
+        headers: authHeaders(token)
+    })
+    return parseResponse<any>(response)
+}
+

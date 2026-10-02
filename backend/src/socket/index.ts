@@ -4,7 +4,7 @@ import { createAdapter } from '@socket.io/redis-adapter'
 import { SocketEvents } from './events'
 import { authenticateSocket, AuthenticatedSocket } from './auth'
 import { setUserOnline, removeUserSocket, markUserOnline, markUserOffline, getAllUserPresences, updateUserStatus, getUserPresenceState, PresenceStatus } from './presence'
-import { createMessage, markMessageDelivered, markConversationSeen, addReactionToMessage, removeReactionFromMessage } from '../modules/chat/chat.service'
+import { createMessage, markMessageDelivered, markConversationSeen, addReactionToMessage, removeReactionFromMessage, deleteDirectMessage, undoDeleteDirectMessage } from '../modules/chat/chat.service'
 import { registerMeetingHandlers } from './meeting'
 import { registerMeetingChatHandlers } from './meetingChat'
 import { registerChannelChatHandlers } from './channelChat'
@@ -348,6 +348,37 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
                 }
             } catch (error) {
                 console.error('Failed to remove reaction via socket:', error)
+            }
+        })
+
+        socket.on(SocketEvents.MESSAGE_DELETE, async (payload: { messageId: string; receiverId: string }) => {
+            if (!payload?.messageId || !payload?.receiverId) return
+            try {
+                const result = await deleteDirectMessage(payload.messageId, userId)
+                if (result) {
+                    io.to(`user:${userId}`).to(`user:${payload.receiverId}`).emit(SocketEvents.MESSAGE_DELETE, {
+                        messageId: payload.messageId,
+                        isDeleted: true,
+                        deletedAt: result.deletedAt
+                    })
+                }
+            } catch (error) {
+                console.error('Failed to delete message via socket:', error)
+            }
+        })
+
+        socket.on(SocketEvents.MESSAGE_UNDO_DELETE, async (payload: { messageId: string; receiverId: string }) => {
+            if (!payload?.messageId || !payload?.receiverId) return
+            try {
+                const result = await undoDeleteDirectMessage(payload.messageId, userId)
+                if (result) {
+                    io.to(`user:${userId}`).to(`user:${payload.receiverId}`).emit(SocketEvents.MESSAGE_UNDO_DELETE, {
+                        messageId: payload.messageId,
+                        message: result
+                    })
+                }
+            } catch (error) {
+                console.error('Failed to undo delete message via socket:', error)
             }
         })
 

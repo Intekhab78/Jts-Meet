@@ -22,7 +22,9 @@ import {
     IconFolder,
     IconFlag,
     IconInfo,
-    IconEye
+    IconEye,
+    IconTrash,
+    IconUndo
 } from '../../../components/common/Icons'
 import { UserPresenceBadge, PresenceStatus } from '../../../components/common/UserPresenceBadge'
 import { UserAvatar } from '../../../components/common/UserAvatar'
@@ -52,6 +54,8 @@ export interface ChatMessage {
     createdAt: string
     parentMessageId?: string | null
     threadCount?: number
+    isDeleted?: boolean
+    deletedAt?: string | null
 }
 
 export interface RecentChat {
@@ -153,6 +157,8 @@ export function DirectMessagesHub({
     const [threadInput, setThreadInput] = useState('')
     const [loadingThread, setLoadingThread] = useState(false)
     const [sendingThreadReply, setSendingThreadReply] = useState(false)
+    const [showClearChatModal, setShowClearChatModal] = useState(false)
+    const [isClearingChat, setIsClearingChat] = useState(false)
 
     // File input ref
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -363,6 +369,56 @@ export function DirectMessagesHub({
             }))
         })
 
+        // Teams-style message delete / unsend
+        socket.on('chat:message:delete', (data: { messageId: string; isDeleted: boolean; deletedAt?: string }) => {
+            setMessages(prev => prev.map(m => {
+                if (m._id === data.messageId) {
+                    return { ...m, isDeleted: true }
+                }
+                return m
+            }))
+            setThreadReplies(prev => prev.map(m => {
+                if (m._id === data.messageId) {
+                    return { ...m, isDeleted: true }
+                }
+                return m
+            }))
+            setRecentChats(prev => prev.map(c => {
+                if (c.latestMessage?._id === data.messageId) {
+                    return {
+                        ...c,
+                        latestMessage: { ...c.latestMessage, isDeleted: true }
+                    }
+                }
+                return c
+            }))
+        })
+
+        // Teams-style message undo delete / restore
+        socket.on('chat:message:undo', (data: { messageId: string; message: ChatMessage }) => {
+            setMessages(prev => prev.map(m => {
+                if (m._id === data.messageId) {
+                    return { ...m, ...data.message, isDeleted: false }
+                }
+                return m
+            }))
+            setThreadReplies(prev => prev.map(m => {
+                if (m._id === data.messageId) {
+                    return { ...m, ...data.message, isDeleted: false }
+                }
+                return m
+            }))
+            setRecentChats(prev => prev.map(c => {
+                if (c.latestMessage?._id === data.messageId) {
+                    return {
+                        ...c,
+                        latestMessage: { ...c.latestMessage, ...data.message, isDeleted: false }
+                    }
+                }
+                return c
+            }))
+        })
+
         return () => {
             socket.off()
             socket.disconnect()
@@ -439,6 +495,30 @@ export function DirectMessagesHub({
         }, 300)
         return () => clearTimeout(timer)
     }, [searchQuery])
+
+    const loadConversation = (contactId?: string) => {
+        const targetId = contactId || activeContact?._id
+        if (!targetId) return
+
+        fetch(`${API_BASE}/api/chat/conversation?userId=${targetId}&limit=50`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+            .then(res => res.json())
+            .then(json => {
+                const data = json.data?.messages || json.data || json
+                if (Array.isArray(data)) {
+                    const rev = [...data].reverse()
+                    const uniqueMap = new Map<string, ChatMessage>()
+                    for (const m of rev) {
+                        if (m && m._id && !uniqueMap.has(m._id)) {
+                            uniqueMap.set(m._id, m)
+                        }
+                    }
+                    setMessages(Array.from(uniqueMap.values()))
+                }
+            })
+            .catch(() => {})
+    }
 
     // Load conversation when active contact changes
     useEffect(() => {
@@ -657,6 +737,112 @@ export function DirectMessagesHub({
             })
         } catch (err) {
             console.warn('[DM Hub] Failed to persist reaction:', err)
+        }
+    }
+
+    // Teams-style Message Delete / Unsend handler
+    const handleDeleteMessage = async (messageId: string) => {
+        // Optimistic update
+        setMessages(prev => prev.map(m => m._id === messageId ? { ...m, isDeleted: true } : m))
+        setThreadReplies(prev => prev.map(m => m._id === messageId ? { ...m, isDeleted: true } : m))
+        setRecentChats(prev => prev.map(c => {
+            if (c.latestMessage?._id === messageId) {
+                return { ...c, latestMessage: { ...c.latestMessage, isDeleted: true } }
+            }
+            return c
+        }))
+
+        // Emit via socket if active contact exists
+        if (socketRef.current && socketRef.current.connected && activeContact) {
+            socketRef.current.emit('chat:message:delete', {
+                messageId,
+                receiverId: activeContact._id
+            })
+        }
+
+        // Call backend DELETE endpoint
+        try {
+            const res = await fetch(`${API_BASE}/api/chat/message/${messageId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            if (!res.ok) {
+                console.warn('[DM Hub] Failed to delete message on server')
+            }
+        } catch (err) {
+            console.warn('[DM Hub] Error deleting message:', err)
+        }
+    }
+
+    // Teams-style Message Undo Delete handler
+    const handleUndoDeleteMessage = async (messageId: string) => {
+        // Optimistic update
+        setMessages(prev => prev.map(m => m._id === messageId ? { ...m, isDeleted: false } : m))
+        setThreadReplies(prev => prev.map(m => m._id === messageId ? { ...m, isDeleted: false } : m))
+        setRecentChats(prev => prev.map(c => {
+            if (c.latestMessage?._id === messageId) {
+                return { ...c, latestMessage: { ...c.latestMessage, isDeleted: false } }
+            }
+            return c
+        }))
+
+        // Emit via socket if active contact exists
+        if (socketRef.current && socketRef.current.connected && activeContact) {
+            socketRef.current.emit('chat:message:undo', {
+                messageId,
+                receiverId: activeContact._id
+            })
+        }
+
+        // Call backend Undo endpoint
+        try {
+            const res = await fetch(`${API_BASE}/api/chat/message/${messageId}/undo`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            if (!res.ok) {
+                console.warn('[DM Hub] Failed to restore message on server')
+            }
+        } catch (err) {
+            console.warn('[DM Hub] Error restoring message:', err)
+        }
+    }
+
+    // Clear Chat History for Current User (Other member's chat remains intact)
+    const handleClearChat = async () => {
+        if (!activeContact) return
+        setIsClearingChat(true)
+        try {
+            // Optimistically clear local messages
+            setMessages([])
+            setThreadReplies([])
+            setActiveThreadParent(null)
+
+            // Clear preview from recent chats list
+            setRecentChats(prev => prev.filter(c => c.conversationWith !== activeContact._id))
+
+            const res = await fetch(`${API_BASE}/api/chat/conversation/${activeContact._id}/clear`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            if (!res.ok) {
+                console.warn('[DM Hub] Failed to clear chat on server')
+                loadConversation(activeContact._id)
+            } else {
+                loadRecentChats()
+            }
+        } catch (err) {
+            console.error('Error clearing chat:', err)
+            loadConversation(activeContact._id)
+        } finally {
+            setIsClearingChat(false)
+            setShowClearChatModal(false)
         }
     }
 
@@ -1656,6 +1842,24 @@ export function DirectMessagesHub({
                                     >
                                         <IconUserPlus size={16} />
                                     </button>
+
+                                    {/* Clear Chat Button (Clears chat for current user only) */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowClearChatModal(true)}
+                                        title="Clear chat for me"
+                                        style={teamsHeaderActionBtnStyle}
+                                        onMouseEnter={e => {
+                                            e.currentTarget.style.color = '#f87171'
+                                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)'
+                                        }}
+                                        onMouseLeave={e => {
+                                            e.currentTarget.style.color = 'var(--color-text-secondary)'
+                                            e.currentTarget.style.background = 'transparent'
+                                        }}
+                                    >
+                                        <IconTrash size={16} />
+                                    </button>
                                 </div>
                             </div>
 
@@ -2205,21 +2409,81 @@ export function DirectMessagesHub({
                                                             flexDirection: 'column',
                                                             alignItems: isMyReply ? 'flex-end' : 'flex-start'
                                                         }}>
-                                                            <div style={{
-                                                                padding: '8px 12px',
-                                                                borderRadius: isMyReply ? '10px 10px 2px 10px' : '10px 10px 10px 2px',
-                                                                background: isMyReply ? '#6264a7' : 'rgba(255, 255, 255, 0.06)',
-                                                                border: isMyReply ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
-                                                                color: '#fff',
-                                                                fontSize: '0.75rem',
-                                                                maxWidth: '85%',
-                                                                wordBreak: 'break-word'
-                                                            }}>
-                                                                {renderFormattedMessage(reply.message)}
-                                                                <div style={{ fontSize: '0.5625rem', color: 'rgba(255,255,255,0.6)', textAlign: 'right', marginTop: 3 }}>
-                                                                    {formatTimestamp(reply.createdAt)}
+                                                            {reply.isDeleted ? (
+                                                                <div style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 6,
+                                                                    padding: '6px 10px',
+                                                                    borderRadius: 6,
+                                                                    background: 'rgba(255, 255, 255, 0.03)',
+                                                                    border: '1px dashed rgba(255, 255, 255, 0.15)',
+                                                                    color: '#94a3b8',
+                                                                    fontSize: '0.75rem',
+                                                                    fontStyle: 'italic',
+                                                                    margin: '2px 0'
+                                                                }}>
+                                                                    <IconTrash size={11} color="#94a3b8" />
+                                                                    <span>This message was deleted.</span>
+                                                                    {isMyReply && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleUndoDeleteMessage(reply._id)}
+                                                                            style={{
+                                                                                background: 'none',
+                                                                                border: 'none',
+                                                                                color: '#818cf8',
+                                                                                cursor: 'pointer',
+                                                                                fontSize: '0.75rem',
+                                                                                fontWeight: 600,
+                                                                                textDecoration: 'underline',
+                                                                                padding: '0 2px'
+                                                                            }}
+                                                                        >
+                                                                            Undo
+                                                                        </button>
+                                                                    )}
                                                                 </div>
-                                                            </div>
+                                                            ) : (
+                                                                <div style={{
+                                                                    padding: '8px 12px',
+                                                                    borderRadius: isMyReply ? '10px 10px 2px 10px' : '10px 10px 10px 2px',
+                                                                    background: isMyReply ? '#6264a7' : 'rgba(255, 255, 255, 0.06)',
+                                                                    border: isMyReply ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+                                                                    color: '#fff',
+                                                                    fontSize: '0.75rem',
+                                                                    maxWidth: '85%',
+                                                                    wordBreak: 'break-word',
+                                                                    position: 'relative'
+                                                                }}>
+                                                                    {renderFormattedMessage(reply.message)}
+                                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 4 }}>
+                                                                        {isMyReply && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleDeleteMessage(reply._id)}
+                                                                                title="Delete reply"
+                                                                                style={{
+                                                                                    background: 'none',
+                                                                                    border: 'none',
+                                                                                    color: 'rgba(255,255,255,0.4)',
+                                                                                    cursor: 'pointer',
+                                                                                    padding: 0,
+                                                                                    display: 'inline-flex',
+                                                                                    alignItems: 'center'
+                                                                                }}
+                                                                                onMouseEnter={e => { e.currentTarget.style.color = '#f87171' }}
+                                                                                onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.4)' }}
+                                                                            >
+                                                                                <IconTrash size={11} />
+                                                                            </button>
+                                                                        )}
+                                                                        <div style={{ fontSize: '0.5625rem', color: 'rgba(255,255,255,0.6)', marginLeft: 'auto' }}>
+                                                                            {formatTimestamp(reply.createdAt)}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     )
                                                 })
@@ -2789,6 +3053,97 @@ export function DirectMessagesHub({
                 onClose={() => setPreviewFile(null)}
                 file={previewFile}
             />
+
+            {/* Clear Chat Confirmation Modal (Clear for me) */}
+            {showClearChatModal && activeContact && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 1000,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(0, 0, 0, 0.65)',
+                    backdropFilter: 'blur(4px)',
+                    animation: 'fadeIn 0.15s ease'
+                }}>
+                    <div style={{
+                        background: '#1a1d2d',
+                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                        borderRadius: 12,
+                        width: 420,
+                        maxWidth: '90vw',
+                        padding: '22px 24px',
+                        boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                            <div style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: '50%',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#ef4444'
+                            }}>
+                                <IconTrash size={18} />
+                            </div>
+                            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#fff' }}>
+                                Clear Chat History?
+                            </h3>
+                        </div>
+                        <p style={{ fontSize: '0.8125rem', color: '#94a3b8', lineHeight: 1.5, margin: '0 0 20px 0' }}>
+                            Are you sure you want to clear your chat with <strong style={{ color: '#fff' }}>{activeContact.fullName}</strong>?
+                            <br /><br />
+                            <span style={{ color: '#cbd5e1' }}>
+                                📌 <strong>Note:</strong> Messages will be cleared from <strong>your</strong> view only. The other member will still have the entire chat history intact.
+                            </span>
+                        </p>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                            <button
+                                type="button"
+                                disabled={isClearingChat}
+                                onClick={() => setShowClearChatModal(false)}
+                                style={{
+                                    padding: '8px 16px',
+                                    borderRadius: 6,
+                                    background: 'rgba(255, 255, 255, 0.08)',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    color: '#cbd5e1',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={isClearingChat}
+                                onClick={handleClearChat}
+                                style={{
+                                    padding: '8px 18px',
+                                    borderRadius: 6,
+                                    background: '#dc2626',
+                                    border: 'none',
+                                    color: '#fff',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 700,
+                                    cursor: isClearingChat ? 'not-allowed' : 'pointer',
+                                    opacity: isClearingChat ? 0.7 : 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6
+                                }}
+                            >
+                                <IconTrash size={14} />
+                                <span>{isClearingChat ? 'Clearing...' : 'Clear for Me'}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 
@@ -2863,7 +3218,11 @@ export function DirectMessagesHub({
                             textOverflow: 'ellipsis',
                             maxWidth: 160
                         }}>
-                            {isLastSentByMe ? 'You: ' : ''}{chat.latestMessage.message.replace(/\[File:\s*(.*?)\s*\|.*?\]/, '📎 $1')}
+                            {chat.latestMessage.isDeleted ? (
+                                <span style={{ fontStyle: 'italic', color: '#94a3b8' }}>This message was deleted</span>
+                            ) : (
+                                <>{isLastSentByMe ? 'You: ' : ''}{chat.latestMessage.message.replace(/\[File:\s*(.*?)\s*\|.*?\]/, '📎 $1')}</>
+                            )}
                         </span>
                         {isLastSentByMe && (
                             <span style={{ color: chat.latestMessage.isSeen ? '#38bdf8' : '#94a3b8', fontSize: '0.625rem', marginLeft: 4 }}>
@@ -2930,7 +3289,7 @@ export function DirectMessagesHub({
                 }}
             >
                 {/* Floating Teams Reaction & Action Bar on Hover */}
-                {isHovered && (
+                {isHovered && !msg.isDeleted && (
                     <div style={{
                         position: 'absolute',
                         top: -14,
@@ -2995,6 +3354,31 @@ export function DirectMessagesHub({
                                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                             </svg>
                         </button>
+
+                        {/* Teams Delete / Unsend message button (only for sender) */}
+                        {isMe && (
+                            <>
+                                <div style={{ width: 1, height: 14, background: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
+                                <button
+                                    type="button"
+                                    onClick={() => handleDeleteMessage(msg._id)}
+                                    title="Delete (Unsend) message"
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: '#f87171',
+                                        cursor: 'pointer',
+                                        padding: '2px 4px',
+                                        display: 'flex',
+                                        alignItems: 'center'
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.color = '#ef4444' }}
+                                    onMouseLeave={e => { e.currentTarget.style.color = '#f87171' }}
+                                >
+                                    <IconTrash size={13} />
+                                </button>
+                            </>
+                        )}
                     </div>
                 )}
 
@@ -3026,102 +3410,148 @@ export function DirectMessagesHub({
                     )}
                 </div>
 
-                {/* Bubble Container */}
-                <div
-                    style={{
-                        maxWidth: '75%',
-                        padding: '10px 14px',
-                        borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                        background: isUrgent
-                            ? 'rgba(239, 68, 68, 0.15)'
-                            : isMe
-                                ? '#6264a7' // MS Teams purple
-                                : 'rgba(255, 255, 255, 0.05)',
-                        border: isUrgent
-                            ? '1px solid #ef4444'
-                            : isMe
-                                ? 'none'
-                                : '1px solid rgba(255, 255, 255, 0.08)',
-                        color: '#fff',
-                        fontSize: '0.8125rem',
-                        lineHeight: 1.5,
-                        wordBreak: 'break-word',
-                        boxShadow: isMe ? '0 2px 8px rgba(98, 100, 167, 0.3)' : 'none',
-                        position: 'relative'
-                    }}
-                >
-                    {/* Content Rendering: File card, Video Clip, or Text */}
-                    {isFile ? (
-                        renderFileCard(msg.message)
-                    ) : isClip ? (
-                        <div style={{ marginTop: 2 }}>
-                            <div style={{
-                                display: 'flex', alignItems: 'center', gap: 6,
-                                marginBottom: 6, fontSize: '0.75rem', fontWeight: 700,
-                                color: isMe ? '#e0e7ff' : '#c084fc'
-                            }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                                    <polygon points="23 7 16 12 23 17 23 7" />
-                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                                </svg>
-                                <span>Zoom Clip &bull; Video Message</span>
-                            </div>
-                            <video
-                                src={(() => {
-                                    const match = msg.message.match(/(\/uploads\/clips\/[^\s\)]+)/)
-                                    if (match) return `${API_BASE}${match[1]}`
-                                    return msg.message
-                                })()}
-                                controls
-                                playsInline
-                                style={{
-                                    width: '100%',
-                                    maxHeight: 220,
-                                    borderRadius: 8,
-                                    background: '#000',
-                                    display: 'block'
-                                }}
-                            />
-                            {msg.message.split('\n')[0] && !msg.message.split('\n')[0].startsWith('/uploads') && (
-                                <div style={{ marginTop: 6, fontSize: '0.75rem', color: isMe ? '#e0e7ff' : 'var(--color-text-secondary)' }}>
-                                    {msg.message.split('\n')[0].replace('[Video Clip] ', '')}
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div style={{ whiteSpace: 'pre-wrap' }}>
-                            {renderFormattedMessage(msg.message.replace(/^\[IMPORTANT\]\s*/, ''))}
-                        </div>
-                    )}
-
-                    {/* Thread reply counter if exists */}
-                    {msg.threadCount && msg.threadCount > 0 ? (
-                        <div style={{ marginTop: 6, paddingTop: 4, borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                {/* Bubble Container or Teams-style Deleted Tombstone */}
+                {msg.isDeleted ? (
+                    <div
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '8px 12px',
+                            borderRadius: '10px',
+                            background: 'rgba(255, 255, 255, 0.04)',
+                            border: '1px dashed rgba(255, 255, 255, 0.18)',
+                            color: '#94a3b8',
+                            fontSize: '0.8125rem',
+                            fontStyle: 'italic',
+                            userSelect: 'none',
+                            marginTop: 2
+                        }}
+                    >
+                        <IconTrash size={13} color="#94a3b8" />
+                        <span>This message was deleted.</span>
+                        {isMe && (
                             <button
                                 type="button"
-                                onClick={() => setActiveThreadParent(msg)}
+                                onClick={() => handleUndoDeleteMessage(msg._id)}
                                 style={{
                                     background: 'none',
                                     border: 'none',
-                                    color: isMe ? '#c7c9ff' : '#a6a8f8',
-                                    fontSize: '0.6875rem',
+                                    color: '#818cf8',
                                     fontWeight: 700,
+                                    fontSize: '0.8125rem',
                                     cursor: 'pointer',
+                                    padding: '2px 4px',
+                                    marginLeft: 6,
+                                    textDecoration: 'underline',
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: 4,
-                                    padding: 0
+                                    gap: 3
                                 }}
+                                title="Undo deletion"
                             >
-                                <IconMessage size={12} />
-                                <span>{msg.threadCount} {msg.threadCount === 1 ? 'reply' : 'replies'}</span>
+                                <IconUndo size={12} />
+                                <span>Undo</span>
                             </button>
-                        </div>
-                    ) : null}
-                </div>
+                        )}
+                    </div>
+                ) : (
+                    <div
+                        style={{
+                            maxWidth: '75%',
+                            padding: '10px 14px',
+                            borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                            background: isUrgent
+                                ? 'rgba(239, 68, 68, 0.15)'
+                                : isMe
+                                    ? '#6264a7' // MS Teams purple
+                                    : 'rgba(255, 255, 255, 0.05)',
+                            border: isUrgent
+                                ? '1px solid #ef4444'
+                                : isMe
+                                    ? 'none'
+                                    : '1px solid rgba(255, 255, 255, 0.08)',
+                            color: '#fff',
+                            fontSize: '0.8125rem',
+                            lineHeight: 1.5,
+                            wordBreak: 'break-word',
+                            boxShadow: isMe ? '0 2px 8px rgba(98, 100, 167, 0.3)' : 'none',
+                            position: 'relative'
+                        }}
+                    >
+                        {/* Content Rendering: File card, Video Clip, or Text */}
+                        {isFile ? (
+                            renderFileCard(msg.message)
+                        ) : isClip ? (
+                            <div style={{ marginTop: 2 }}>
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: 6,
+                                    marginBottom: 6, fontSize: '0.75rem', fontWeight: 700,
+                                    color: isMe ? '#e0e7ff' : '#c084fc'
+                                }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                        <polygon points="23 7 16 12 23 17 23 7" />
+                                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                                    </svg>
+                                    <span>Zoom Clip &bull; Video Message</span>
+                                </div>
+                                <video
+                                    src={(() => {
+                                        const match = msg.message.match(/(\/uploads\/clips\/[^\s\)]+)/)
+                                        if (match) return `${API_BASE}${match[1]}`
+                                        return msg.message
+                                    })()}
+                                    controls
+                                    playsInline
+                                    style={{
+                                        width: '100%',
+                                        maxHeight: 220,
+                                        borderRadius: 8,
+                                        background: '#000',
+                                        display: 'block'
+                                    }}
+                                />
+                                {msg.message.split('\n')[0] && !msg.message.split('\n')[0].startsWith('/uploads') && (
+                                    <div style={{ marginTop: 6, fontSize: '0.75rem', color: isMe ? '#e0e7ff' : 'var(--color-text-secondary)' }}>
+                                        {msg.message.split('\n')[0].replace('[Video Clip] ', '')}
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div style={{ whiteSpace: 'pre-wrap' }}>
+                                {renderFormattedMessage(msg.message.replace(/^\[IMPORTANT\]\s*/, ''))}
+                            </div>
+                        )}
+
+                        {/* Thread reply counter if exists */}
+                        {msg.threadCount && msg.threadCount > 0 ? (
+                            <div style={{ marginTop: 6, paddingTop: 4, borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveThreadParent(msg)}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: isMe ? '#c7c9ff' : '#a6a8f8',
+                                        fontSize: '0.6875rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        padding: 0
+                                    }}
+                                >
+                                    <IconMessage size={12} />
+                                    <span>{msg.threadCount} {msg.threadCount === 1 ? 'reply' : 'replies'}</span>
+                                </button>
+                            </div>
+                        ) : null}
+                    </div>
+                )}
 
                 {/* Reactions counter pills below bubble */}
-                {Object.keys(reactionGroups).length > 0 && (
+                {!msg.isDeleted && Object.keys(reactionGroups).length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
                         {Object.entries(reactionGroups).map(([emoji, data]) => (
                             <button

@@ -43,6 +43,10 @@ export async function requireTeamMember(req: Request, res: Response, next: NextF
         return sendError(res, 401, 'Unauthorized access')
     }
 
+    if (!Types.ObjectId.isValid(teamId)) {
+        return sendError(res, 400, 'Invalid team ID')
+    }
+
     const team = await Team.findById(teamId).exec()
     if (!team || team.deletedAt) {
         return sendError(res, 404, 'Team not found')
@@ -62,6 +66,10 @@ export async function requireTeamOwnerOrAdmin(req: Request, res: Response, next:
 
     if (!teamId || !userId) {
         return sendError(res, 401, 'Unauthorized access')
+    }
+
+    if (!Types.ObjectId.isValid(teamId)) {
+        return sendError(res, 400, 'Invalid team ID')
     }
 
     const team = await Team.findById(teamId).exec()

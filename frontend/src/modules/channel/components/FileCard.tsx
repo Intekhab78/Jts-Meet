@@ -5,6 +5,7 @@ import {
 } from '../../../components/common/Icons'
 import { DocumentPreviewModal } from '../../../components/common/DocumentPreviewModal'
 import type { ChannelAttachment } from '../channel.types'
+import { normalizeMediaUrl } from '../../../config'
 
 interface FileCardProps {
     attachment: ChannelAttachment
@@ -101,6 +102,7 @@ export function getFileCategory(name: string, type?: string): {
 export function FileCard({ attachment }: FileCardProps) {
     const [showPreview, setShowPreview] = useState(false)
     const category = getFileCategory(attachment.name, attachment.fileType)
+    const normalizedUrl = normalizeMediaUrl(attachment.url)
 
     return (
         <>
@@ -151,7 +153,7 @@ export function FileCard({ attachment }: FileCardProps) {
                         }}
                     >
                         <img
-                            src={attachment.url}
+                            src={normalizedUrl}
                             alt={attachment.name}
                             style={{
                                 width: '100%',
@@ -284,7 +286,7 @@ export function FileCard({ attachment }: FileCardProps) {
                         </button>
 
                         <a
-                            href={attachment.url}
+                            href={normalizedUrl}
                             download={attachment.name}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -323,7 +325,7 @@ export function FileCard({ attachment }: FileCardProps) {
                 onClose={() => setShowPreview(false)}
                 file={{
                     name: attachment.name,
-                    url: attachment.url,
+                    url: normalizedUrl,
                     size: attachment.size
                 }}
             />

@@ -11,6 +11,7 @@ router.get('/:messageId', ChannelChatController.getMessage)
 router.post('/', ChannelChatController.createMessage)
 router.put('/:messageId', ChannelChatController.editMessage)
 router.delete('/:messageId', ChannelChatController.deleteMessage)
+router.post('/:messageId/undo', ChannelChatController.undoDeleteMessage)
 router.post('/:messageId/reaction', ChannelChatController.addReaction)
 router.post('/:messageId/pin', ChannelChatController.togglePin)
 

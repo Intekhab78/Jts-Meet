@@ -11,6 +11,9 @@ export interface IMessage extends Document {
     parentMessageId?: Types.ObjectId | null
     threadCount?: number
     lastReplyAt?: Date | null
+    isDeleted?: boolean
+    deletedAt?: Date | null
+    clearedFor?: Types.ObjectId[]
     createdAt: Date
     updatedAt: Date
 }
@@ -32,7 +35,10 @@ const ChatSchema = new Schema<IMessage>(
         ],
         parentMessageId: { type: Schema.Types.ObjectId, ref: 'Message', default: null },
         threadCount: { type: Number, default: 0 },
-        lastReplyAt: { type: Date, default: null }
+        lastReplyAt: { type: Date, default: null },
+        isDeleted: { type: Boolean, default: false },
+        deletedAt: { type: Date, default: null },
+        clearedFor: [{ type: Schema.Types.ObjectId, ref: 'User', default: [] }]
     },
     { timestamps: true }
 )
@@ -40,5 +46,6 @@ const ChatSchema = new Schema<IMessage>(
 ChatSchema.index({ sender: 1, receiver: 1, createdAt: -1 })
 ChatSchema.index({ receiver: 1, sender: 1, createdAt: -1 })
 ChatSchema.index({ parentMessageId: 1 })
+ChatSchema.index({ clearedFor: 1 })
 
 export const Message = model<IMessage>('Message', ChatSchema)

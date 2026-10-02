@@ -1,5 +1,6 @@
 import React from 'react'
 import type { TeamMember, TeamRole } from './team.types'
+import { IconTrash } from '../../components/common/Icons'
 
 interface TeamMemberListProps {
     members: TeamMember[]
@@ -60,9 +61,33 @@ export function TeamMemberList({ members, currentUserId, onRemove, onRoleChange 
                                         <button
                                             type="button"
                                             onClick={() => onRemove(userIdStr)}
-                                            className="btn btn-ghost text-red-400 hover:text-red-300 hover:bg-red-950/20 text-xs px-2.5 py-1.5"
+                                            style={{
+                                                width: 32,
+                                                height: 32,
+                                                borderRadius: 8,
+                                                background: 'rgba(239, 68, 68, 0.1)',
+                                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                                color: '#f87171',
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.22)'
+                                                e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.45)'
+                                                e.currentTarget.style.color = '#fca5a5'
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
+                                                e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'
+                                                e.currentTarget.style.color = '#f87171'
+                                            }}
+                                            title={`Remove ${fullName} from team`}
+                                            aria-label={`Remove ${fullName}`}
                                         >
-                                            Remove
+                                            <IconTrash size={14} />
                                         </button>
                                     )}
                                 </div>

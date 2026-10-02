@@ -101,7 +101,8 @@ export async function getConversationBetweenUsers(
             { sender: userObjectId, receiver: otherObjectId },
             { sender: otherObjectId, receiver: userObjectId }
         ],
-        parentMessageId: null
+        parentMessageId: null,
+        clearedFor: { $ne: userObjectId }
     })
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -116,7 +117,8 @@ export async function getRecentChats(userId: string, page = 1, limit = 20): Prom
     return Message.aggregate<RecentChatItem>([
         {
             $match: {
-                $or: [{ sender: userObjectId }, { receiver: userObjectId }]
+                $or: [{ sender: userObjectId }, { receiver: userObjectId }],
+                clearedFor: { $ne: userObjectId }
             }
         },
         { $sort: { createdAt: -1 } },
@@ -200,3 +202,53 @@ export async function searchContacts(currentUserId: string, search?: string, lim
         .lean()
         .exec()
 }
+
+export async function deleteDirectMessage(messageId: string, userId: string): Promise<IMessage | null> {
+    const userObjectId = new Types.ObjectId(userId)
+    const msg = await Message.findById(messageId).exec()
+    if (!msg) return null
+
+    if (!msg.sender.equals(userObjectId)) {
+        throw new Error('You can only delete your own messages')
+    }
+
+    msg.isDeleted = true
+    msg.deletedAt = new Date()
+    return msg.save()
+}
+
+export async function undoDeleteDirectMessage(messageId: string, userId: string): Promise<IMessage | null> {
+    const userObjectId = new Types.ObjectId(userId)
+    const msg = await Message.findById(messageId).exec()
+    if (!msg) return null
+
+    if (!msg.sender.equals(userObjectId)) {
+        throw new Error('You can only restore your own messages')
+    }
+
+    msg.isDeleted = false
+    msg.deletedAt = null
+    return msg.save()
+}
+
+export async function clearChatForUser(userId: string, otherUserId: string): Promise<number> {
+    const userObjectId = new Types.ObjectId(userId)
+    const otherObjectId = new Types.ObjectId(otherUserId)
+
+    const res = await Message.updateMany(
+        {
+            $or: [
+                { sender: userObjectId, receiver: otherObjectId },
+                { sender: otherObjectId, receiver: userObjectId }
+            ],
+            clearedFor: { $ne: userObjectId }
+        },
+        {
+            $addToSet: { clearedFor: userObjectId }
+        }
+    ).exec()
+
+    return res.modifiedCount
+}
+
+

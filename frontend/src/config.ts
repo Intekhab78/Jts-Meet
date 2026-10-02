@@ -54,17 +54,17 @@ export function normalizeMediaUrl(url: string | undefined | null): string {
     if (typeof window !== 'undefined') {
         const isHttpsPage = window.location.protocol === 'https:'
 
-        // 1. Replace http://localhost:4000 or http://127.0.0.1:4000 with API_BASE
-        if (/^http:\/\/(localhost|127\.0\.0\.1):(4000|3000)/i.test(cleaned)) {
-            cleaned = cleaned.replace(/^http:\/\/(localhost|127\.0\.0\.1):(4000|3000)/i, API_BASE)
+        // 1. Replace http://localhost:* or http://127.0.0.1:* with API_BASE
+        if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(cleaned)) {
+            cleaned = cleaned.replace(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, API_BASE)
         }
 
         // 2. If page is HTTPS and URL is HTTP, upgrade to HTTPS
         if (isHttpsPage && cleaned.startsWith('http://') && !cleaned.includes('localhost') && !cleaned.includes('127.0.0.1')) {
             cleaned = cleaned.replace(/^http:\/\//i, 'https://')
         }
-    } else if (/^http:\/\/(localhost|127\.0\.0\.1):(4000|3000)/i.test(cleaned)) {
-        cleaned = cleaned.replace(/^http:\/\/(localhost|127\.0\.0\.1):(4000|3000)/i, API_BASE)
+    } else if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(cleaned)) {
+        cleaned = cleaned.replace(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, API_BASE)
     }
 
     // 3. If relative URL like /uploads/... or /api/..., prefix with API_BASE
@@ -72,6 +72,11 @@ export function normalizeMediaUrl(url: string | undefined | null): string {
         cleaned = `${API_BASE}${cleaned}`
     } else if (cleaned.startsWith('uploads/')) {
         cleaned = `${API_BASE}/${cleaned}`
+    }
+
+    // 4. Safely encode unencoded spaces in path
+    if (cleaned.includes(' ')) {
+        cleaned = cleaned.replace(/ /g, '%20')
     }
 
     return cleaned

@@ -15,7 +15,9 @@ import {
     updateChannelMemberRole,
     listChannelFiles,
     uploadChannelFile,
-    addChannelMessageReaction
+    addChannelMessageReaction,
+    deleteChannelMessage,
+    undoDeleteChannelMessage
 } from './channel.service'
 import { CreateChannelDialog } from './CreateChannelDialog'
 import { EditChannelDialog } from './EditChannelDialog'
@@ -25,7 +27,8 @@ import {
     IconMessage, IconFileText, IconUsers, IconEye, IconShield,
     IconAlertTriangle, IconHash, IconCheck, IconTrash, IconPlus, IconX,
     IconPin, IconFolder, IconSparkles, IconMonitor, IconDownload, IconHand,
-    IconSearch, IconBell, IconBellOff, IconMic, IconLock
+    IconSearch, IconBell, IconBellOff, IconMic, IconLock, IconUndo,
+    IconUserPlus, IconEdit, IconLogOut
 } from '../../components/common/Icons'
 import { FileCard } from './components/FileCard'
 import { DocumentPreviewModal, type PreviewDocument } from '../../components/common/DocumentPreviewModal'
@@ -35,7 +38,7 @@ import type { ChannelAttachment, CodeSnippet } from './channel.types'
 import { soundEffects } from '../../utils/soundEffects'
 import { AsyncClipRecorderModal } from '../chat/components/AsyncClipRecorderModal'
 import io from 'socket.io-client'
-import { SOCKET_URL, API_BASE } from '../../config'
+import { SOCKET_URL, API_BASE, normalizeMediaUrl } from '../../config'
 import { renderFormattedMessage } from '../../utils/formatMessage'
 
 interface ChannelSettingsPageProps {
@@ -113,7 +116,7 @@ function VoiceMessageCard({ url, duration, name }: { url: string; duration?: num
         }}>
             <audio
                 ref={audioRef}
-                src={url}
+                src={normalizeMediaUrl(url)}
                 onPlay={() => setPlaying(true)}
                 onPause={() => setPlaying(false)}
                 onEnded={() => { setPlaying(false); setCurrentTime(0); }}
@@ -960,9 +963,15 @@ export function ChannelSettingsPage({
         })
 
         socket.on('channel:message:delete', ({ messageId }: { messageId: string }) => {
-            setMessages(prev => prev.filter(m => m._id !== messageId))
-            setThreadMessages(prev => prev.filter(m => m._id !== messageId))
+            setMessages(prev => prev.map(m => m._id === messageId ? { ...m, deleted: true } : m))
+            setThreadMessages(prev => prev.map(m => m._id === messageId ? { ...m, deleted: true } : m))
             setPinnedMessages(prev => prev.filter(m => m._id !== messageId))
+        })
+
+        socket.on('channel:message:undo', ({ message }: { message: any }) => {
+            if (!message) return
+            setMessages(prev => prev.map(m => m._id === message._id ? { ...m, ...message, deleted: false } : m))
+            setThreadMessages(prev => prev.map(m => m._id === message._id ? { ...m, ...message, deleted: false } : m))
         })
 
         socket.on('channel:message:reaction', ({ messageId, reactions }: any) => {
@@ -1026,6 +1035,37 @@ export function ChannelSettingsPage({
             }
         } catch (err) {
             console.error('[handleTogglePin] error:', err)
+        }
+    }
+
+    const handleDeleteChannelMessage = async (messageId: string) => {
+        if (!selectedChannel) return
+        // Optimistic UI update
+        setMessages(prev => prev.map(m => m._id === messageId ? { ...m, deleted: true } : m))
+        setThreadMessages(prev => prev.map(m => m._id === messageId ? { ...m, deleted: true } : m))
+        setPinnedMessages(prev => prev.filter(m => m._id !== messageId))
+
+        try {
+            await deleteChannelMessage(selectedChannel._id, messageId, token)
+        } catch (err: any) {
+            console.error('Failed to delete channel message:', err)
+        }
+    }
+
+    const handleUndoDeleteChannelMessage = async (messageId: string) => {
+        if (!selectedChannel) return
+        // Optimistic UI update
+        setMessages(prev => prev.map(m => m._id === messageId ? { ...m, deleted: false } : m))
+        setThreadMessages(prev => prev.map(m => m._id === messageId ? { ...m, deleted: false } : m))
+
+        try {
+            const res = await undoDeleteChannelMessage(selectedChannel._id, messageId, token)
+            if (res && res.data) {
+                setMessages(prev => prev.map(m => m._id === messageId ? { ...m, ...res.data, deleted: false } : m))
+                setThreadMessages(prev => prev.map(m => m._id === messageId ? { ...m, ...res.data, deleted: false } : m))
+            }
+        } catch (err: any) {
+            console.error('Failed to undo delete channel message:', err)
         }
     }
 
@@ -2002,26 +2042,25 @@ export function ChannelSettingsPage({
                                             className="btn btn-primary"
                                             style={{
                                                 height: 30,
+                                                width: 32,
                                                 borderRadius: 8,
-                                                fontSize: '0.75rem',
-                                                fontWeight: 700,
-                                                padding: '0 12px',
+                                                padding: 0,
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
-                                                gap: 6,
+                                                justifyContent: 'center',
                                                 background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
                                                 border: 'none',
                                                 color: '#fff',
                                                 boxShadow: '0 2px 10px rgba(99, 102, 241, 0.35)',
-                                                cursor: 'pointer'
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease'
                                             }}
-                                            title="Start instant video meeting with channel members"
+                                            title="Meet Now (Start instant video meeting)"
                                         >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                                 <polygon points="23 7 16 12 23 17 23 7" />
                                                 <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                                             </svg>
-                                            <span>Meet Now</span>
                                         </button>
 
                                         {/* INSTANT GROUP AUDIO CALL BUTTON */}
@@ -2031,25 +2070,24 @@ export function ChannelSettingsPage({
                                             className="btn btn-secondary"
                                             style={{
                                                 height: 30,
+                                                width: 32,
                                                 borderRadius: 8,
-                                                fontSize: '0.75rem',
-                                                fontWeight: 700,
-                                                padding: '0 12px',
+                                                padding: 0,
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
-                                                gap: 6,
+                                                justifyContent: 'center',
                                                 background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
                                                 border: 'none',
                                                 color: '#fff',
                                                 boxShadow: '0 2px 10px rgba(16, 185, 129, 0.35)',
-                                                cursor: 'pointer'
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease'
                                             }}
-                                            title="Start instant group audio call with channel members"
+                                            title="Audio Call (Start group voice call)"
                                         >
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                                 <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
                                             </svg>
-                                            <span>Audio Call</span>
                                         </button>
 
                                         {/* NEXT-GEN SLACK 2.0 STYLE LIVE HUDDLE BUTTON */}
@@ -2059,13 +2097,12 @@ export function ChannelSettingsPage({
                                             className="btn btn-secondary"
                                             style={{
                                                 height: 30,
+                                                width: 32,
                                                 borderRadius: 8,
-                                                fontSize: '0.75rem',
-                                                fontWeight: 700,
-                                                padding: '0 12px',
+                                                padding: 0,
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
-                                                gap: 6,
+                                                justifyContent: 'center',
                                                 background: isHuddleActive
                                                     ? 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)'
                                                     : 'rgba(168, 85, 247, 0.15)',
@@ -2075,16 +2112,15 @@ export function ChannelSettingsPage({
                                                 cursor: 'pointer',
                                                 transition: 'all 0.2s ease'
                                             }}
-                                            title={isHuddleActive ? "Leave ongoing Huddle" : "Start or join ambient co-working voice Huddle"}
+                                            title={isHuddleActive ? "In Huddle (Click to leave)" : "Huddle (Ambient voice)"}
                                         >
                                             <span style={{
-                                                width: 7,
-                                                height: 7,
+                                                width: 8,
+                                                height: 8,
                                                 borderRadius: '50%',
                                                 background: isHuddleActive ? '#22c55e' : '#c084fc',
                                                 boxShadow: isHuddleActive ? '0 0 8px #22c55e' : 'none'
                                             }} />
-                                            <span>{isHuddleActive ? 'In Huddle' : 'Huddle'}</span>
                                         </button>
 
                                         {/* IN-CHANNEL SEARCH TOGGLE BUTTON */}
@@ -2096,8 +2132,9 @@ export function ChannelSettingsPage({
                                             }}
                                             style={{
                                                 height: 30,
+                                                width: 32,
                                                 borderRadius: 8,
-                                                padding: '0 9px',
+                                                padding: 0,
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
@@ -2118,8 +2155,9 @@ export function ChannelSettingsPage({
                                             onClick={toggleChannelMute}
                                             style={{
                                                 height: 30,
+                                                width: 32,
                                                 borderRadius: 8,
-                                                padding: '0 9px',
+                                                padding: 0,
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
@@ -2136,36 +2174,43 @@ export function ChannelSettingsPage({
 
                                         {selectedChannel.type === 'public' && !isMember && (
                                             <button
+                                                type="button"
                                                 onClick={handleJoinChannel}
                                                 className="btn btn-success"
-                                                style={{ height: 30, borderRadius: 8, fontSize: '0.75rem', fontWeight: 600, padding: '0 12px', background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)', border: 'none', color: '#fff', cursor: 'pointer' }}
+                                                style={{ height: 30, width: 32, borderRadius: 8, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)', border: 'none', color: '#fff', cursor: 'pointer' }}
+                                                title="Join Channel"
                                             >
-                                                Join Channel
+                                                <IconPlus size={14} />
                                             </button>
                                         )}
                                         {isMember && currentUserId && selectedChannel.members.some((member) => member.userId === currentUserId && member.role !== 'owner') && (
                                             <button
+                                                type="button"
                                                 onClick={handleLeaveChannel}
                                                 className="btn btn-danger"
-                                                style={{ height: 30, borderRadius: 8, fontSize: '0.75rem', fontWeight: 600, padding: '0 10px', cursor: 'pointer' }}
+                                                style={{ height: 30, width: 32, borderRadius: 8, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                                title="Leave Channel"
                                             >
-                                                Leave
+                                                <IconLogOut size={14} />
                                             </button>
                                         )}
                                         <button
+                                            type="button"
                                             onClick={() => setShowInviteDialog(true)}
                                             className="btn btn-secondary"
-                                            style={{ height: 30, borderRadius: 8, fontSize: '0.75rem', fontWeight: 600, padding: '0 10px', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                                            style={{ height: 30, width: 32, borderRadius: 8, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', transition: 'all 0.15s ease' }}
+                                            title="Invite channel members"
                                         >
-                                            <span>+</span>
-                                            <span>Invite</span>
+                                            <IconUserPlus size={15} />
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => setShowEditDialog(true)}
                                             className="btn btn-secondary"
-                                            style={{ height: 30, borderRadius: 8, fontSize: '0.75rem', fontWeight: 600, padding: '0 10px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#fff', cursor: 'pointer' }}
+                                            style={{ height: 30, width: 32, borderRadius: 8, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: '#fff', cursor: 'pointer', transition: 'all 0.15s ease' }}
+                                            title="Edit channel settings"
                                         >
-                                            Edit
+                                            <IconEdit size={14} />
                                         </button>
                                     </div>
                                 </div>
@@ -2181,22 +2226,22 @@ export function ChannelSettingsPage({
                                     background: 'rgba(255, 255, 255, 0.01)'
                                 }}>
                                     {/* Sub-Tabs */}
-                                    <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
+                                    <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
                                         {[
-                                            { id: 'chat', label: 'Posts & Chat', icon: <IconMessage size={13} /> },
-                                            { id: 'files', label: `Files (${files.length})`, icon: <IconFileText size={13} /> },
-                                            { id: 'members', label: `Members (${members.length})`, icon: <IconUsers size={13} /> },
-                                            { id: 'info', label: 'Info', icon: <IconEye size={13} /> },
-                                            { id: 'permissions', label: 'Roles', icon: <IconShield size={13} /> },
-                                            { id: 'danger', label: 'Danger', icon: <IconAlertTriangle size={13} /> }
+                                            { id: 'chat', label: 'Posts & Chat', icon: <IconMessage size={15} /> },
+                                            { id: 'files', label: `Files (${files.length})`, icon: <IconFileText size={15} /> },
+                                            { id: 'members', label: `Members (${members.length})`, icon: <IconUsers size={15} /> },
+                                            { id: 'info', label: 'Info', icon: <IconEye size={15} /> },
+                                            { id: 'permissions', label: 'Roles', icon: <IconShield size={15} /> },
+                                            { id: 'danger', label: 'Danger', icon: <IconAlertTriangle size={15} /> }
                                         ].map((tab) => (
                                             <button
                                                 key={tab.id}
+                                                type="button"
                                                 onClick={() => setActivePanelTab(tab.id as any)}
+                                                title={tab.label}
                                                 style={{
-                                                    padding: '8px 10px',
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: activePanelTab === tab.id ? 700 : 500,
+                                                    padding: '8px 12px',
                                                     background: 'transparent',
                                                     color: activePanelTab === tab.id ? '#818cf8' : 'var(--color-text-muted)',
                                                     border: 'none',
@@ -2204,12 +2249,11 @@ export function ChannelSettingsPage({
                                                     cursor: 'pointer',
                                                     display: 'inline-flex',
                                                     alignItems: 'center',
-                                                    gap: 5,
-                                                    whiteSpace: 'nowrap'
+                                                    justifyContent: 'center',
+                                                    transition: 'all 0.15s ease'
                                                 }}
                                             >
                                                 {tab.icon}
-                                                <span>{tab.label}</span>
                                             </button>
                                         ))}
                                     </div>
@@ -2487,13 +2531,18 @@ export function ChannelSettingsPage({
                                                     )}
                                                 </div>
                                             ) : (
-                                                displayedMessages.map((msg, index) => {
+                                                 displayedMessages.map((msg, index) => {
                                                     const msgSenderId = typeof msg.senderId === 'object' && msg.senderId !== null
                                                         ? (msg.senderId._id || msg.senderId.id || '').toString()
                                                         : (msg.senderId || '').toString()
                                                     const isMe = Boolean(resolvedUserId && msgSenderId && (msgSenderId === resolvedUserId))
                                                     const senderName = isMe ? 'You' : (msg.senderId?.fullName || 'Colleague')
                                                     const isHovered = hoveredMessageId === msg._id
+                                                    const isChannelAdmin = selectedChannel?.members?.some((m: any) => 
+                                                        (m.userId === resolvedUserId || m.userId?._id === resolvedUserId) && 
+                                                        (m.role === 'owner' || m.role === 'moderator')
+                                                    ) || false
+                                                    const canDelete = isMe || isChannelAdmin
 
                                                     const msgDate = msg.createdAt ? new Date(msg.createdAt).toDateString() : ''
                                                     const prevMsg = index > 0 ? displayedMessages[index - 1] : null
@@ -2546,7 +2595,7 @@ export function ChannelSettingsPage({
                                                                 {/* User Avatar */}
                                                                 {msg.senderId?.profileImage ? (
                                                                     <img
-                                                                        src={msg.senderId.profileImage}
+                                                                        src={normalizeMediaUrl(msg.senderId.profileImage)}
                                                                         alt={senderName}
                                                                         style={{ width: 30, height: 30, minWidth: 30, borderRadius: '50%', objectFit: 'cover' }}
                                                                     />
@@ -2582,7 +2631,7 @@ export function ChannelSettingsPage({
                                                                         <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
                                                                             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                                         </span>
-                                                                        {msg.edited && (
+                                                                        {msg.edited && !msg.deleted && (
                                                                             <span style={{ fontSize: '0.625rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
                                                                                 (edited)
                                                                             </span>
@@ -2590,7 +2639,7 @@ export function ChannelSettingsPage({
                                                                     </div>
 
                                                                     {/* Pinned Announcement Tag */}
-                                                                    {msg.pinned && (
+                                                                    {msg.pinned && !msg.deleted && (
                                                                         <div style={{
                                                                             display: 'inline-flex',
                                                                             alignItems: 'center',
@@ -2609,109 +2658,158 @@ export function ChannelSettingsPage({
                                                                         </div>
                                                                     )}
 
-                                                                    {/* Accompanying note, text or Zoom Clip */}
-                                                                    {msg.content && (!msg.attachments?.length || msg.messageType !== 'file') && (!msg.codeSnippet || msg.messageType !== 'code') && msg.messageType !== 'audio' && (
-                                                                        msg.content.includes('/uploads/clips/') ? (
-                                                                            <div style={{
-                                                                                marginTop: 4,
-                                                                                borderRadius: 8,
-                                                                                overflow: 'hidden',
-                                                                                maxWidth: 380,
-                                                                                background: '#000',
-                                                                                alignSelf: isMe ? 'flex-end' : 'flex-start'
-                                                                            }}>
-                                                                                <div style={{
-                                                                                    fontSize: '0.6875rem', fontWeight: 700, color: '#c084fc',
-                                                                                    padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 6,
-                                                                                    background: 'rgba(168, 85, 247, 0.15)', borderBottom: '1px solid rgba(168, 85, 247, 0.2)'
-                                                                                }}>
-                                                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                                                                                        <polygon points="23 7 16 12 23 17 23 7" />
-                                                                                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                                                                                    </svg>
-                                                                                    <span>Zoom Clip &bull; Video Message</span>
-                                                                                </div>
-                                                                                <video
-                                                                                    src={(() => {
-                                                                                        const match = msg.content.match(/(\/uploads\/clips\/[^\s\)]+)/)
-                                                                                        if (match) return `${API_BASE}${match[1]}`
-                                                                                        return msg.content
-                                                                                    })()}
-                                                                                    controls
-                                                                                    playsInline
-                                                                                    style={{ width: '100%', maxHeight: 220, objectFit: 'contain', display: 'block' }}
-                                                                                />
-                                                                                {msg.content.split('\n')[0] && !msg.content.split('\n')[0].startsWith('/uploads') && (
-                                                                                    <div style={{ padding: '6px 8px', fontSize: '0.75rem', color: '#e2e8f0' }}>
-                                                                                        {msg.content.split('\n')[0].replace('[Video Clip] ', '')}
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div style={{
+                                                                    {/* Deleted Message Tombstone (MS Teams Style) */}
+                                                                    {msg.deleted ? (
+                                                                        <div
+                                                                            style={{
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: 6,
+                                                                                padding: '8px 12px',
+                                                                                borderRadius: '10px',
+                                                                                background: 'rgba(255, 255, 255, 0.04)',
+                                                                                border: '1px dashed rgba(255, 255, 255, 0.18)',
+                                                                                color: '#94a3b8',
                                                                                 fontSize: '0.8125rem',
-                                                                                color: isMe ? '#fff' : '#e5e7eb',
-                                                                                lineHeight: 1.45,
-                                                                                wordBreak: 'break-word',
-                                                                                whiteSpace: 'pre-wrap',
-                                                                                background: isMe
-                                                                                    ? 'linear-gradient(135deg, #6264a7 0%, #4f518a 100%)'
-                                                                                    : 'rgba(255, 255, 255, 0.05)',
-                                                                                border: isMe
-                                                                                    ? '1px solid rgba(129, 140, 248, 0.4)'
-                                                                                    : '1px solid rgba(255, 255, 255, 0.08)',
-                                                                                padding: '7px 12px',
-                                                                                borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                                                                                maxWidth: '75%',
-                                                                                boxShadow: isMe ? '0 2px 8px rgba(98, 100, 167, 0.25)' : 'none',
-                                                                                textAlign: 'left'
-                                                                            }}>
-                                                                                {renderFormattedMessage(msg.content)}
-                                                                            </div>
-                                                                        )
-                                                                    )}
-
-                                                                    {/* If code snippet has caption */}
-                                                                    {msg.codeSnippet && msg.content && msg.content !== `Shared a ${msg.codeSnippet.language || ''} code snippet` && (
-                                                                        <div style={{
-                                                                            fontSize: '0.8125rem',
-                                                                            color: '#e5e7eb',
-                                                                            lineHeight: 1.45,
-                                                                            marginBottom: 2,
-                                                                            alignSelf: isMe ? 'flex-end' : 'flex-start'
-                                                                        }}>
-                                                                            {renderFormattedMessage(msg.content)}
+                                                                                fontStyle: 'italic',
+                                                                                userSelect: 'none',
+                                                                                marginTop: 2,
+                                                                                alignSelf: isMe ? 'flex-end' : 'flex-start'
+                                                                            }}
+                                                                        >
+                                                                            <IconTrash size={13} color="#94a3b8" />
+                                                                            <span>This message was deleted.</span>
+                                                                            {isMe && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleUndoDeleteChannelMessage(msg._id)}
+                                                                                    style={{
+                                                                                        background: 'none',
+                                                                                        border: 'none',
+                                                                                        color: '#818cf8',
+                                                                                        fontWeight: 700,
+                                                                                        fontSize: '0.8125rem',
+                                                                                        cursor: 'pointer',
+                                                                                        padding: '2px 4px',
+                                                                                        marginLeft: 6,
+                                                                                        textDecoration: 'underline',
+                                                                                        display: 'inline-flex',
+                                                                                        alignItems: 'center',
+                                                                                        gap: 3
+                                                                                    }}
+                                                                                    title="Undo deletion"
+                                                                                >
+                                                                                    <IconUndo size={12} />
+                                                                                    <span>Undo</span>
+                                                                                </button>
+                                                                            )}
                                                                         </div>
-                                                                    )}
+                                                                    ) : (
+                                                                        <>
+                                                                            {/* Accompanying note, text or Zoom Clip */}
+                                                                            {msg.content && (!msg.attachments?.length || msg.messageType !== 'file') && (!msg.codeSnippet || msg.messageType !== 'code') && msg.messageType !== 'audio' && (
+                                                                                msg.content.includes('/uploads/clips/') ? (
+                                                                                    <div style={{
+                                                                                        marginTop: 4,
+                                                                                        borderRadius: 8,
+                                                                                        overflow: 'hidden',
+                                                                                        maxWidth: 380,
+                                                                                        background: '#000',
+                                                                                        alignSelf: isMe ? 'flex-end' : 'flex-start'
+                                                                                    }}>
+                                                                                        <div style={{
+                                                                                            fontSize: '0.6875rem', fontWeight: 700, color: '#c084fc',
+                                                                                            padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 6,
+                                                                                            background: 'rgba(168, 85, 247, 0.15)', borderBottom: '1px solid rgba(168, 85, 247, 0.2)'
+                                                                                        }}>
+                                                                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                                                                                <polygon points="23 7 16 12 23 17 23 7" />
+                                                                                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                                                                                            </svg>
+                                                                                            <span>Zoom Clip &bull; Video Message</span>
+                                                                                        </div>
+                                                                                        <video
+                                                                                            src={(() => {
+                                                                                                const match = msg.content.match(/(\/uploads\/clips\/[^\s\)]+)/)
+                                                                                                return normalizeMediaUrl(match ? match[1] : msg.content)
+                                                                                            })()}
+                                                                                            controls
+                                                                                            playsInline
+                                                                                            style={{ width: '100%', maxHeight: 220, objectFit: 'contain', display: 'block' }}
+                                                                                        />
+                                                                                        {msg.content.split('\n')[0] && !msg.content.split('\n')[0].startsWith('/uploads') && (
+                                                                                            <div style={{ padding: '6px 8px', fontSize: '0.75rem', color: '#e2e8f0' }}>
+                                                                                                {msg.content.split('\n')[0].replace('[Video Clip] ', '')}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div style={{
+                                                                                        fontSize: '0.8125rem',
+                                                                                        color: isMe ? '#fff' : '#e5e7eb',
+                                                                                        lineHeight: 1.45,
+                                                                                        wordBreak: 'break-word',
+                                                                                        whiteSpace: 'pre-wrap',
+                                                                                        background: isMe
+                                                                                            ? 'linear-gradient(135deg, #6264a7 0%, #4f518a 100%)'
+                                                                                            : 'rgba(255, 255, 255, 0.05)',
+                                                                                        border: isMe
+                                                                                            ? '1px solid rgba(129, 140, 248, 0.4)'
+                                                                                            : '1px solid rgba(255, 255, 255, 0.08)',
+                                                                                        padding: '7px 12px',
+                                                                                        borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                                                                                        maxWidth: '75%',
+                                                                                        boxShadow: isMe ? '0 2px 8px rgba(98, 100, 167, 0.25)' : 'none',
+                                                                                        textAlign: 'left'
+                                                                                    }}>
+                                                                                        {renderFormattedMessage(msg.content)}
+                                                                                    </div>
+                                                                                )
+                                                                            )}
 
-                                                                    {/* Code Snippet Card */}
-                                                                    {msg.codeSnippet && (
-                                                                        <div style={{ alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
-                                                                            <CodeSnippetCard snippet={msg.codeSnippet} />
-                                                                        </div>
-                                                                    )}
+                                                                            {/* If code snippet has caption */}
+                                                                            {msg.codeSnippet && msg.content && msg.content !== `Shared a ${msg.codeSnippet.language || ''} code snippet` && (
+                                                                                <div style={{
+                                                                                    fontSize: '0.8125rem',
+                                                                                    color: '#e5e7eb',
+                                                                                    lineHeight: 1.45,
+                                                                                    marginBottom: 2,
+                                                                                    alignSelf: isMe ? 'flex-end' : 'flex-start'
+                                                                                }}>
+                                                                                    {renderFormattedMessage(msg.content)}
+                                                                                </div>
+                                                                            )}
 
-                                                                    {/* Attachments (PDF, Excel, Images, Docs, Voice Notes) */}
-                                                                    {msg.attachments && msg.attachments.length > 0 && (
-                                                                        <div style={{
-                                                                            display: 'flex',
-                                                                            flexDirection: 'column',
-                                                                            gap: 6,
-                                                                            marginTop: 4,
-                                                                            alignSelf: isMe ? 'flex-end' : 'flex-start'
-                                                                        }}>
-                                                                            {msg.attachments.map((att: ChannelAttachment, idx: number) => {
-                                                                                const isAudio = att.fileType === 'audio' || (att.mimeType && att.mimeType.startsWith('audio/')) || (att.url && (att.url.endsWith('.webm') || att.url.endsWith('.mp3') || att.url.endsWith('.wav') || att.url.endsWith('.ogg')))
-                                                                                if (isAudio) {
-                                                                                    return <VoiceMessageCard key={idx} url={att.url} name={att.name} />
-                                                                                }
-                                                                                return <FileCard key={idx} attachment={att} />
-                                                                            })}
-                                                                        </div>
+                                                                            {/* Code Snippet Card */}
+                                                                            {msg.codeSnippet && (
+                                                                                <div style={{ alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                                                                                    <CodeSnippetCard snippet={msg.codeSnippet} />
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* Attachments (PDF, Excel, Images, Docs, Voice Notes) */}
+                                                                            {msg.attachments && msg.attachments.length > 0 && (
+                                                                                <div style={{
+                                                                                    display: 'flex',
+                                                                                    flexDirection: 'column',
+                                                                                    gap: 6,
+                                                                                    marginTop: 4,
+                                                                                    alignSelf: isMe ? 'flex-end' : 'flex-start'
+                                                                                }}>
+                                                                                    {msg.attachments.map((att: ChannelAttachment, idx: number) => {
+                                                                                        const isAudio = att.fileType === 'audio' || (att.mimeType && att.mimeType.startsWith('audio/')) || (att.url && (att.url.endsWith('.webm') || att.url.endsWith('.mp3') || att.url.endsWith('.wav') || att.url.endsWith('.ogg')))
+                                                                                        if (isAudio) {
+                                                                                            return <VoiceMessageCard key={idx} url={att.url} name={att.name} />
+                                                                                        }
+                                                                                        return <FileCard key={idx} attachment={att} />
+                                                                                    })}
+                                                                                </div>
+                                                                            )}
+                                                                        </>
                                                                     )}
 
                                                                     {/* Emoji reactions row with toggle action */}
-                                                                    {msg.reactions && msg.reactions.length > 0 && (
+                                                                    {!msg.deleted && msg.reactions && msg.reactions.length > 0 && (
                                                                         <div style={{
                                                                             display: 'flex',
                                                                             gap: 4,
@@ -2759,24 +2857,31 @@ export function ChannelSettingsPage({
                                                                         marginTop: 2,
                                                                         flexDirection: isMe ? 'row-reverse' : 'row'
                                                                     }}>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => setActiveThreadParent(msg)}
-                                                                            style={{ background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.6875rem', cursor: 'pointer', padding: 0, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                                                                            className="hover:underline"
-                                                                        >
-                                                                            <IconMessage size={12} /> Reply in thread
-                                                                        </button>
+                                                                        {!msg.deleted && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setActiveThreadParent(msg)}
+                                                                                style={{ background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.6875rem', cursor: 'pointer', padding: 0, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                                                                className="hover:underline"
+                                                                            >
+                                                                                <IconMessage size={12} /> Reply in thread
+                                                                            </button>
+                                                                        )}
                                                                         {msg.replyCount > 0 && (
-                                                                            <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
-                                                                                • {msg.replyCount} {msg.replyCount === 1 ? 'reply' : 'replies'}
-                                                                            </span>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setActiveThreadParent(msg)}
+                                                                                style={{ background: 'transparent', border: 'none', fontSize: '0.6875rem', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 0 }}
+                                                                                className="hover:underline"
+                                                                            >
+                                                                                {msg.deleted ? '' : '• '}{msg.replyCount} {msg.replyCount === 1 ? 'reply' : 'replies'}
+                                                                            </button>
                                                                         )}
                                                                     </div>
                                                                 </div>
 
                                                                 {/* Quick Reaction Bar on Hover (MS Teams Style) */}
-                                                                {isHovered && (
+                                                                {isHovered && !msg.deleted && (
                                                                     <div style={{
                                                                         position: 'absolute',
                                                                         [isMe ? 'left' : 'right']: 8,
@@ -2820,6 +2925,30 @@ export function ChannelSettingsPage({
                                                                         >
                                                                             <IconPin size={13} />
                                                                         </button>
+                                                                        {canDelete && (
+                                                                            <>
+                                                                                <div style={{ width: 1, height: 16, background: 'rgba(255, 255, 255, 0.15)', margin: '0 2px' }} />
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleDeleteChannelMessage(msg._id)}
+                                                                                    style={{
+                                                                                        background: 'transparent',
+                                                                                        border: 'none',
+                                                                                        color: '#f87171',
+                                                                                        cursor: 'pointer',
+                                                                                        padding: '2px 4px',
+                                                                                        borderRadius: 4,
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center'
+                                                                                    }}
+                                                                                    title="Delete message"
+                                                                                    onMouseEnter={e => { e.currentTarget.style.color = '#ef4444' }}
+                                                                                    onMouseLeave={e => { e.currentTarget.style.color = '#f87171' }}
+                                                                                >
+                                                                                    <IconTrash size={13} />
+                                                                                </button>
+                                                                            </>
+                                                                        )}
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -3277,7 +3406,11 @@ export function ChannelSettingsPage({
                                                     </div>
                                                     <div style={{ minWidth: 0, flex: 1 }}>
                                                         <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>{activeThreadParent.senderId?.fullName || 'User'}</div>
-                                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 2, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{renderFormattedMessage(activeThreadParent.content)}</div>
+                                                        {activeThreadParent.deleted ? (
+                                                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic', marginTop: 2 }}>This message was deleted.</div>
+                                                        ) : (
+                                                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 2, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{renderFormattedMessage(activeThreadParent.content)}</div>
+                                                        )}
                                                     </div>
                                                 </div>
 
@@ -3293,6 +3426,11 @@ export function ChannelSettingsPage({
                                                                 : (reply.senderId || '').toString()
                                                             const isMeReply = Boolean(resolvedUserId && rSenderId && (rSenderId === resolvedUserId))
                                                             const rSenderName = isMeReply ? 'You' : (reply.senderId?.fullName || 'User')
+                                                            const isChannelAdminMember = selectedChannel?.members?.some((m: any) => 
+                                                                (m.userId === resolvedUserId || m.userId?._id === resolvedUserId) && 
+                                                                (m.role === 'owner' || m.role === 'moderator')
+                                                            ) || false
+                                                            const canDeleteReply = isMeReply || isChannelAdminMember
 
                                                             return (
                                                                 <div key={reply._id} style={{ display: 'flex', flexDirection: isMeReply ? 'row-reverse' : 'row', gap: 8, padding: '4px 0' }}>
@@ -3314,21 +3452,83 @@ export function ChannelSettingsPage({
                                                                         <div style={{ display: 'flex', alignItems: 'center', flexDirection: isMeReply ? 'row-reverse' : 'row', gap: 6 }}>
                                                                             <span style={{ fontWeight: 700, fontSize: '0.725rem', color: isMeReply ? '#c7c9ff' : '#fff' }}>{rSenderName}</span>
                                                                             <span style={{ fontSize: '0.6rem', color: 'var(--color-text-muted)' }}>{new Date(reply.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                                            {canDeleteReply && !reply.deleted && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleDeleteChannelMessage(reply._id)}
+                                                                                    style={{
+                                                                                        background: 'none',
+                                                                                        border: 'none',
+                                                                                        color: '#f87171',
+                                                                                        cursor: 'pointer',
+                                                                                        padding: '0 2px',
+                                                                                        display: 'inline-flex',
+                                                                                        alignItems: 'center',
+                                                                                        opacity: 0.75
+                                                                                    }}
+                                                                                    title="Delete reply"
+                                                                                    onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444' }}
+                                                                                    onMouseLeave={e => { e.currentTarget.style.opacity = '0.75'; e.currentTarget.style.color = '#f87171' }}
+                                                                                >
+                                                                                    <IconTrash size={11} />
+                                                                                </button>
+                                                                            )}
                                                                         </div>
-                                                                        <div style={{
-                                                                            margin: 0,
-                                                                            fontSize: '0.75rem',
-                                                                            color: isMeReply ? '#fff' : '#d1d5db',
-                                                                            marginTop: 2,
-                                                                            wordBreak: 'break-word',
-                                                                            whiteSpace: 'pre-wrap',
-                                                                            background: isMeReply ? 'linear-gradient(135deg, #6264a7 0%, #4f518a 100%)' : 'rgba(255, 255, 255, 0.05)',
-                                                                            padding: '4px 8px',
-                                                                            borderRadius: isMeReply ? '8px 8px 2px 8px' : '8px 8px 8px 2px',
-                                                                            maxWidth: '85%'
-                                                                        }}>
-                                                                            {renderFormattedMessage(reply.content)}
-                                                                        </div>
+                                                                        {reply.deleted ? (
+                                                                            <div style={{
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: 6,
+                                                                                padding: '6px 10px',
+                                                                                borderRadius: 6,
+                                                                                background: 'rgba(255, 255, 255, 0.03)',
+                                                                                border: '1px dashed rgba(255, 255, 255, 0.15)',
+                                                                                color: '#94a3b8',
+                                                                                fontSize: '0.75rem',
+                                                                                fontStyle: 'italic',
+                                                                                margin: '2px 0'
+                                                                            }}>
+                                                                                <IconTrash size={11} color="#94a3b8" />
+                                                                                <span>This message was deleted.</span>
+                                                                                {isMeReply && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleUndoDeleteChannelMessage(reply._id)}
+                                                                                        style={{
+                                                                                            background: 'none',
+                                                                                            border: 'none',
+                                                                                            color: '#818cf8',
+                                                                                            cursor: 'pointer',
+                                                                                            fontSize: '0.75rem',
+                                                                                            fontWeight: 600,
+                                                                                            textDecoration: 'underline',
+                                                                                            padding: '0 2px',
+                                                                                            display: 'inline-flex',
+                                                                                            alignItems: 'center',
+                                                                                            gap: 2
+                                                                                        }}
+                                                                                    >
+                                                                                        <IconUndo size={10} />
+                                                                                        <span>Undo</span>
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div style={{
+                                                                                margin: 0,
+                                                                                fontSize: '0.75rem',
+                                                                                color: isMeReply ? '#fff' : '#d1d5db',
+                                                                                marginTop: 2,
+                                                                                wordBreak: 'break-word',
+                                                                                whiteSpace: 'pre-wrap',
+                                                                                background: isMeReply ? 'linear-gradient(135deg, #6264a7 0%, #4f518a 100%)' : 'rgba(255, 255, 255, 0.05)',
+                                                                                padding: '4px 8px',
+                                                                                borderRadius: isMeReply ? '8px 8px 2px 8px' : '8px 8px 8px 2px',
+                                                                                maxWidth: '85%'
+                                                                            }}>
+                                                                                {renderFormattedMessage(reply.content)}
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             )

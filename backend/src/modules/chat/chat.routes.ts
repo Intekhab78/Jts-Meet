@@ -15,5 +15,8 @@ router.post('/thread/reply', authenticate, asyncWrapper(chatController.createRep
 router.get('/thread/:parentMessageId/count', authenticate, asyncWrapper(chatController.getThreadCount))
 router.post('/message/:messageId/react', authenticate, asyncWrapper(chatController.addReaction))
 router.delete('/message/:messageId/react', authenticate, asyncWrapper(chatController.removeReaction))
+router.delete('/message/:messageId', authenticate, asyncWrapper(chatController.deleteMessage))
+router.post('/message/:messageId/undo', authenticate, asyncWrapper(chatController.undoDeleteMessage))
+router.post('/conversation/:otherUserId/clear', authenticate, asyncWrapper(chatController.clearConversation))
 
 export default router

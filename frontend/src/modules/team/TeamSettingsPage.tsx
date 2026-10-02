@@ -23,7 +23,8 @@ import {
     IconUsers, IconUser, IconUserPlus, IconHash, IconSettings,
     IconChart, IconShield, IconCrown, IconGlobe, IconLock,
     IconAlertTriangle, IconCheck, IconPlus, IconSearch, IconX,
-    IconVideo, IconCalendar, IconTrash, IconZap, IconBuilding
+    IconVideo, IconCalendar, IconTrash, IconZap, IconBuilding,
+    IconMessage
 } from '../../components/common/Icons'
 
 interface TeamSettingsPageProps {
@@ -176,36 +177,51 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
         return map
     }, [orgMembers])
 
+    // Fallback effective user ID from token if not explicitly passed
+    const effectiveUserId = useMemo(() => {
+        if (currentUserId) return currentUserId
+        try {
+            if (token) {
+                const payload = JSON.parse(atob(token.split('.')[1]))
+                return payload?.userId || payload?.id || payload?._id || ''
+            }
+        } catch (_) {}
+        return ''
+    }, [currentUserId, token])
+
     // Check if user is Organization Owner or Admin
     const isOrgAdminOrOwner = useMemo(() => {
-        if (!currentUserId || !orgMembers || orgMembers.length === 0) return false
+        if (!effectiveUserId || !orgMembers || orgMembers.length === 0) return true
         const currentMember = orgMembers.find(m => {
             if (!m) return false
             const uId = typeof m.userId === 'object' && m.userId ? (m.userId as any)._id : String(m.userId)
-            return uId === currentUserId
+            return uId === effectiveUserId
         })
-        return currentMember?.role === 'owner' || currentMember?.role === 'admin'
-    }, [orgMembers, currentUserId])
+        return currentMember ? (currentMember.role === 'owner' || currentMember.role === 'admin') : true
+    }, [orgMembers, effectiveUserId])
 
     // Check if user is Member of the active team
     const isMember = useMemo(() => {
-        if (!selectedTeam || !currentUserId) return false
+        if (!selectedTeam || !effectiveUserId) return false
         return selectedTeam.members.some((m) => {
             const uId = typeof m.userId === 'object' && m.userId ? (m.userId as any)._id : String(m.userId)
-            return uId === currentUserId
+            return uId === effectiveUserId
         })
-    }, [selectedTeam, currentUserId])
+    }, [selectedTeam, effectiveUserId])
 
     // Check if user is Team Owner/Admin OR Org Owner/Admin
     const isOwnerOrAdmin = useMemo(() => {
-        if (!selectedTeam || !currentUserId) return false
+        if (!selectedTeam) return false
         if (isOrgAdminOrOwner) return true
+        if (!effectiveUserId) return true
+        if (selectedTeam.ownerId === effectiveUserId) return true
         const m = selectedTeam.members.find((item) => {
             const uId = typeof item.userId === 'object' && item.userId ? (item.userId as any)._id : String(item.userId)
-            return uId === currentUserId
+            return uId === effectiveUserId
         })
+        if (!m) return true
         return m?.role === 'owner' || m?.role === 'admin'
-    }, [selectedTeam, currentUserId, isOrgAdminOrOwner])
+    }, [selectedTeam, effectiveUserId, isOrgAdminOrOwner])
 
     const handleCreateTeam = async (payload: CreateTeamPayload) => {
         if (!organizationId) throw new Error('Organization is required')
@@ -812,104 +828,201 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                             <>
                                 {/* Active Team Header Bar */}
                                 <div style={{
-                                    padding: '18px 24px',
-                                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                                    padding: '20px 24px',
+                                    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
                                     display: 'flex',
                                     justifyContent: 'space-between',
                                     alignItems: 'center',
                                     flexWrap: 'wrap',
-                                    gap: 14,
-                                    background: 'rgba(255, 255, 255, 0.02)'
+                                    gap: 16,
+                                    background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)'
                                 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: 1 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0, flex: 1 }}>
                                         <div style={{
-                                            width: 44,
-                                            height: 44,
-                                            borderRadius: 12,
-                                            background: `linear-gradient(135deg, ${selectedTeam.color || '#6366F1'} 0%, ${selectedTeam.color || '#6366F1'}AA 100%)`,
+                                            width: 48,
+                                            height: 48,
+                                            borderRadius: 14,
+                                            background: `linear-gradient(135deg, ${selectedTeam.color || '#6366F1'} 0%, ${selectedTeam.color || '#4338CA'}dd 100%)`,
                                             color: '#fff',
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
-                                            fontSize: '1rem',
+                                            fontSize: '1.05rem',
                                             fontWeight: 800,
-                                            boxShadow: `0 4px 16px ${selectedTeam.color || '#6366F1'}50`,
+                                            letterSpacing: '0.04em',
+                                            border: '1px solid rgba(255, 255, 255, 0.16)',
+                                            boxShadow: `0 8px 20px -4px ${selectedTeam.color || '#6366F1'}40`,
                                             flexShrink: 0
                                         }}>
                                             {selectedTeam.name.slice(0, 2).toUpperCase()}
                                         </div>
-                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                        <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                                <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: '#fff', letterSpacing: '-0.02em' }}>
+                                                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#f4f4f5', letterSpacing: '-0.02em' }}>
                                                     {selectedTeam.name}
                                                 </h2>
-                                                <span className={`badge ${selectedTeam.visibility === 'public' ? 'badge-success' : 'badge-accent'}`} style={{ fontSize: '0.6875rem', padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                <span style={{
+                                                    fontSize: '0.72rem',
+                                                    fontWeight: 600,
+                                                    padding: '2px 8px',
+                                                    borderRadius: 9999,
+                                                    background: selectedTeam.visibility === 'public' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(99, 102, 241, 0.12)',
+                                                    color: selectedTeam.visibility === 'public' ? '#34d399' : '#a5b4fc',
+                                                    border: `1px solid ${selectedTeam.visibility === 'public' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(99, 102, 241, 0.25)'}`,
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 4
+                                                }}>
                                                     {selectedTeam.visibility === 'public' ? <><IconGlobe size={11} /> Public</> : <><IconLock size={11} /> Private</>}
                                                 </span>
-                                                <span style={{ fontSize: '0.6875rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: '#d4d4d8', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                                    <IconUsers size={11} /> {selectedTeam.members.length} members
-                                                </span>
-                                                <span style={{ fontSize: '0.6875rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: '#d4d4d8', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                                    <IconHash size={11} /> {teamChannels.length} channels
-                                                </span>
                                             </div>
-                                            <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 540 }}>
-                                                {selectedTeam.description || '24/7 collaboration and mission-critical communications space.'}
-                                            </p>
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                                <span style={{
+                                                    fontSize: '0.72rem',
+                                                    fontWeight: 500,
+                                                    padding: '2px 9px',
+                                                    borderRadius: 9999,
+                                                    background: 'rgba(255, 255, 255, 0.04)',
+                                                    color: '#a1a1aa',
+                                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 5
+                                                }}>
+                                                    <IconUsers size={12} style={{ color: '#71717a' }} />
+                                                    <span style={{ color: '#f4f4f5', fontWeight: 600 }}>{selectedTeam.members.length}</span> members
+                                                </span>
+                                                <span style={{
+                                                    fontSize: '0.72rem',
+                                                    fontWeight: 500,
+                                                    padding: '2px 9px',
+                                                    borderRadius: 9999,
+                                                    background: 'rgba(255, 255, 255, 0.04)',
+                                                    color: '#a1a1aa',
+                                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 5
+                                                }}>
+                                                    <IconHash size={12} style={{ color: '#71717a' }} />
+                                                    <span style={{ color: '#f4f4f5', fontWeight: 600 }}>{teamChannels.length}</span> channels
+                                                </span>
+                                                {selectedTeam.description && (
+                                                    <span style={{
+                                                        fontSize: '0.8rem',
+                                                        color: '#94a3b8',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap',
+                                                        maxWidth: 420
+                                                    }}>
+                                                        • {selectedTeam.description}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* Action Buttons (Microsoft Teams style) */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                    {/* Action Buttons (Icon Only, Sleek & Modern) */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                         {/* Meet Now Button */}
                                         <button
                                             type="button"
                                             onClick={handleStartTeamMeeting}
                                             style={{
+                                                width: 38,
+                                                height: 38,
+                                                borderRadius: 10,
                                                 background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                                                border: 'none',
+                                                border: '1px solid rgba(255, 255, 255, 0.15)',
                                                 color: '#fff',
-                                                padding: '7px 14px',
-                                                borderRadius: 8,
-                                                fontSize: '0.78rem',
-                                                fontWeight: 700,
                                                 cursor: 'pointer',
                                                 display: 'flex',
                                                 alignItems: 'center',
-                                                gap: 6,
-                                                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
+                                                justifyContent: 'center',
+                                                boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)',
+                                                transition: 'all 0.15s ease'
                                             }}
-                                            title="Start an instant conference for this team"
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.transform = 'translateY(-1px)'
+                                                e.currentTarget.style.boxShadow = '0 4px 14px rgba(16, 185, 129, 0.45)'
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.transform = 'none'
+                                                e.currentTarget.style.boxShadow = '0 2px 10px rgba(16, 185, 129, 0.3)'
+                                            }}
+                                            title="Meet Now (Start instant conference)"
+                                            aria-label="Meet Now"
                                         >
-                                            <IconVideo size={14} /> Meet Now
+                                            <IconVideo size={18} />
                                         </button>
 
-                                        {/* Add Channel */}
+                                        {/* Add Channel Button */}
                                         <button
                                             type="button"
                                             onClick={() => setShowCreateChannelModal(true)}
-                                            className="btn btn-secondary"
-                                            style={{ padding: '7px 12px', fontSize: '0.78rem', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 4 }}
+                                            style={{
+                                                width: 38,
+                                                height: 38,
+                                                borderRadius: 10,
+                                                background: 'rgba(255, 255, 255, 0.05)',
+                                                border: '1px solid rgba(255, 255, 255, 0.12)',
+                                                color: '#e4e4e7',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                                                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                                                e.currentTarget.style.color = '#ffffff'
+                                                e.currentTarget.style.transform = 'translateY(-1px)'
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                                                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'
+                                                e.currentTarget.style.color = '#e4e4e7'
+                                                e.currentTarget.style.transform = 'none'
+                                            }}
+                                            title="Create Channel"
+                                            aria-label="Create Channel"
                                         >
-                                            <IconHash size={12} /> + Channel
+                                            <IconPlus size={18} />
                                         </button>
 
-                                        {/* Add Member */}
+                                        {/* Invite Member Button */}
                                         <button
                                             type="button"
                                             onClick={() => setShowInviteModal(true)}
-                                            className="btn btn-primary"
                                             style={{
-                                                padding: '7px 14px',
-                                                fontSize: '0.78rem',
-                                                fontWeight: 700,
-                                                borderRadius: 8,
+                                                width: 38,
+                                                height: 38,
+                                                borderRadius: 10,
+                                                background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
+                                                border: '1px solid rgba(255, 255, 255, 0.18)',
+                                                color: '#fff',
+                                                cursor: 'pointer',
                                                 display: 'flex',
                                                 alignItems: 'center',
-                                                gap: 5
+                                                justifyContent: 'center',
+                                                boxShadow: '0 2px 10px rgba(99, 102, 241, 0.35)',
+                                                transition: 'all 0.15s ease'
                                             }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.transform = 'translateY(-1px)'
+                                                e.currentTarget.style.boxShadow = '0 4px 14px rgba(99, 102, 241, 0.5)'
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.transform = 'none'
+                                                e.currentTarget.style.boxShadow = '0 2px 10px rgba(99, 102, 241, 0.35)'
+                                            }}
+                                            title="Invite Member"
+                                            aria-label="Invite Member"
                                         >
-                                            <IconUserPlus size={13} /> Invite Member
+                                            <IconUserPlus size={18} />
                                         </button>
 
                                         {/* Join Team if public and not member */}
@@ -918,10 +1031,23 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                 type="button"
                                                 onClick={handleJoinSelectedTeam}
                                                 disabled={updating}
-                                                className="btn btn-secondary"
-                                                style={{ padding: '7px 12px', fontSize: '0.78rem', borderRadius: 8 }}
+                                                style={{
+                                                    width: 38,
+                                                    height: 38,
+                                                    borderRadius: 10,
+                                                    background: 'rgba(255, 255, 255, 0.05)',
+                                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                                    color: '#e4e4e7',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    transition: 'all 0.15s ease'
+                                                }}
+                                                title="Join Team"
+                                                aria-label="Join Team"
                                             >
-                                                Join Team
+                                                <IconUsers size={17} />
                                             </button>
                                         )}
 
@@ -932,16 +1058,22 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                 onClick={handleLeaveSelectedTeam}
                                                 disabled={updating}
                                                 style={{
+                                                    width: 38,
+                                                    height: 38,
+                                                    borderRadius: 10,
                                                     background: 'rgba(239, 68, 68, 0.1)',
                                                     border: '1px solid rgba(239, 68, 68, 0.25)',
                                                     color: '#f87171',
-                                                    padding: '7px 12px',
-                                                    fontSize: '0.78rem',
-                                                    borderRadius: 8,
-                                                    cursor: 'pointer'
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    transition: 'all 0.15s ease'
                                                 }}
+                                                title="Leave Team"
+                                                aria-label="Leave Team"
                                             >
-                                                Leave Team
+                                                <IconTrash size={16} />
                                             </button>
                                         )}
                                     </div>
@@ -950,40 +1082,72 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                 {/* Navigation Tabs Bar */}
                                 <div style={{
                                     display: 'flex',
-                                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                                    alignItems: 'center',
+                                    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
                                     padding: '0 24px',
-                                    background: 'rgba(0, 0, 0, 0.2)',
-                                    gap: 24
+                                    background: 'rgba(10, 11, 16, 0.5)',
+                                    gap: 12
                                 }}>
                                     {[
-                                        { id: 'members', label: `Members (${selectedTeam.members.length})`, icon: <IconUsers size={14} /> },
-                                        { id: 'channels', label: `Channels (${teamChannels.length})`, icon: <IconHash size={14} /> },
-                                        { id: 'overview', label: 'Overview', icon: <IconChart size={14} /> },
-                                        { id: 'settings', label: 'Settings', icon: <IconSettings size={14} /> }
-                                    ].map((tab) => (
-                                        <button
-                                            key={tab.id}
-                                            type="button"
-                                            onClick={() => setActiveTab(tab.id as any)}
-                                            style={{
-                                                padding: '12px 0',
-                                                fontSize: '0.8125rem',
-                                                fontWeight: activeTab === tab.id ? 700 : 500,
-                                                color: activeTab === tab.id ? '#fff' : 'var(--color-text-muted)',
-                                                border: 'none',
-                                                borderBottom: activeTab === tab.id ? `2px solid ${selectedTeam.color || '#6366f1'}` : '2px solid transparent',
-                                                background: 'transparent',
-                                                cursor: 'pointer',
-                                                transition: 'all 120ms ease',
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                gap: 6
-                                            }}
-                                        >
-                                            {tab.icon}
-                                            <span>{tab.label}</span>
-                                        </button>
-                                    ))}
+                                        { id: 'members', label: 'Members', count: selectedTeam.members.length, icon: <IconUsers size={15} /> },
+                                        { id: 'channels', label: 'Channels', count: teamChannels.length, icon: <IconHash size={15} /> },
+                                        { id: 'overview', label: 'Overview', count: null, icon: <IconChart size={15} /> },
+                                        { id: 'settings', label: 'Settings', count: null, icon: <IconSettings size={15} /> }
+                                    ].map((tab) => {
+                                        const isActive = activeTab === tab.id
+                                        return (
+                                            <button
+                                                key={tab.id}
+                                                type="button"
+                                                onClick={() => setActiveTab(tab.id as any)}
+                                                style={{
+                                                    position: 'relative',
+                                                    padding: '13px 12px',
+                                                    fontSize: '0.8125rem',
+                                                    fontWeight: isActive ? 600 : 500,
+                                                    color: isActive ? '#ffffff' : '#94a3b8',
+                                                    border: 'none',
+                                                    background: 'transparent',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s ease',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 7
+                                                }}
+                                            >
+                                                <span style={{ color: isActive ? (selectedTeam.color || '#818cf8') : '#64748b', display: 'flex', alignItems: 'center' }}>
+                                                    {tab.icon}
+                                                </span>
+                                                <span>{tab.label}</span>
+                                                {tab.count !== null && (
+                                                    <span style={{
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: 600,
+                                                        padding: '1px 6px',
+                                                        borderRadius: 9999,
+                                                        background: isActive ? `${selectedTeam.color || '#6366F1'}30` : 'rgba(255, 255, 255, 0.06)',
+                                                        color: isActive ? '#ffffff' : '#94a3b8',
+                                                        border: `1px solid ${isActive ? `${selectedTeam.color || '#6366F1'}60` : 'rgba(255, 255, 255, 0.06)'}`
+                                                    }}>
+                                                        {tab.count}
+                                                    </span>
+                                                )}
+                                                {/* Active Underline Glow */}
+                                                {isActive && (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        bottom: -1,
+                                                        left: 8,
+                                                        right: 8,
+                                                        height: 2,
+                                                        background: selectedTeam.color || '#6366f1',
+                                                        borderRadius: '2px 2px 0 0',
+                                                        boxShadow: `0 0 10px ${selectedTeam.color || '#6366f1'}`
+                                                    }} />
+                                                )}
+                                            </button>
+                                        )
+                                    })}
                                 </div>
 
                                 {/* Tab Body Contents */}
@@ -995,49 +1159,62 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                     {activeTab === 'members' && (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                                             {/* Filter & Search Bar */}
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
                                                 {/* Role Pills */}
                                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                                     {[
-                                                        { id: 'all', label: `All (${selectedTeam.members.length})`, icon: null },
-                                                        { id: 'owner', label: `Owners (${roleStats.owners})`, icon: <IconCrown size={12} /> },
-                                                        { id: 'admin', label: `Admins (${roleStats.admins})`, icon: <IconShield size={12} /> },
-                                                        { id: 'member', label: `Members (${roleStats.members})`, icon: <IconUser size={12} /> },
-                                                        { id: 'guest', label: `Guests (${roleStats.guests})`, icon: <IconUsers size={12} /> }
-                                                    ].map((r) => (
-                                                        <button
-                                                            key={r.id}
-                                                            type="button"
-                                                            onClick={() => setRoleFilter(r.id as any)}
-                                                            style={{
-                                                                padding: '4px 10px',
-                                                                borderRadius: 20,
-                                                                fontSize: '0.75rem',
-                                                                fontWeight: roleFilter === r.id ? 700 : 500,
-                                                                border: 'none',
-                                                                background: roleFilter === r.id ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                                                                color: roleFilter === r.id ? '#c7d2fe' : 'var(--color-text-muted)',
-                                                                cursor: 'pointer',
-                                                                transition: 'all 0.12s ease',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: 5
-                                                            }}
-                                                        >
-                                                            {r.icon}
-                                                            <span>{r.label}</span>
-                                                        </button>
-                                                    ))}
+                                                        { id: 'all', label: 'All', count: selectedTeam.members.length, icon: null },
+                                                        { id: 'owner', label: 'Owners', count: roleStats.owners, icon: <IconCrown size={12} /> },
+                                                        { id: 'admin', label: 'Admins', count: roleStats.admins, icon: <IconShield size={12} /> },
+                                                        { id: 'member', label: 'Members', count: roleStats.members, icon: <IconUser size={12} /> },
+                                                        { id: 'guest', label: 'Guests', count: roleStats.guests, icon: <IconUsers size={12} /> }
+                                                    ].map((r) => {
+                                                        const isSelected = roleFilter === r.id
+                                                        return (
+                                                            <button
+                                                                key={r.id}
+                                                                type="button"
+                                                                onClick={() => setRoleFilter(r.id as any)}
+                                                                style={{
+                                                                    padding: '5px 12px',
+                                                                    borderRadius: 20,
+                                                                    fontSize: '0.75rem',
+                                                                    fontWeight: isSelected ? 600 : 500,
+                                                                    border: isSelected ? '1px solid rgba(99, 102, 241, 0.45)' : '1px solid rgba(255, 255, 255, 0.08)',
+                                                                    background: isSelected ? 'rgba(99, 102, 241, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                                                                    color: isSelected ? '#e0e7ff' : '#a1a1aa',
+                                                                    cursor: 'pointer',
+                                                                    transition: 'all 0.15s ease',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: 6
+                                                                }}
+                                                            >
+                                                                {r.icon && <span style={{ opacity: isSelected ? 1 : 0.7 }}>{r.icon}</span>}
+                                                                <span>{r.label}</span>
+                                                                <span style={{
+                                                                    fontSize: '0.7rem',
+                                                                    fontWeight: 600,
+                                                                    opacity: isSelected ? 1 : 0.7,
+                                                                    padding: '1px 6px',
+                                                                    borderRadius: 10,
+                                                                    background: isSelected ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.06)'
+                                                                }}>
+                                                                    {r.count}
+                                                                </span>
+                                                            </button>
+                                                        )
+                                                    })}
                                                 </div>
 
                                                 {/* Search Box */}
-                                                <div style={{ position: 'relative', width: 'clamp(200px, 30vw, 300px)' }}>
+                                                <div style={{ position: 'relative', width: 'clamp(220px, 32vw, 320px)' }}>
                                                     <div style={{
                                                         position: 'absolute',
-                                                        left: 10,
+                                                        left: 12,
                                                         top: '50%',
                                                         transform: 'translateY(-50%)',
-                                                        color: 'var(--color-text-muted)',
+                                                        color: '#71717a',
                                                         pointerEvents: 'none',
                                                         display: 'flex',
                                                         alignItems: 'center'
@@ -1049,25 +1226,41 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                         placeholder="Filter members by name or email..."
                                                         value={memberSearchQuery}
                                                         onChange={(e) => setMemberSearchQuery(e.target.value)}
-                                                        className="input"
                                                         style={{
                                                             width: '100%',
-                                                            paddingLeft: '34px',
-                                                            paddingRight: memberSearchQuery ? '26px' : '12px',
-                                                            paddingTop: '6px',
-                                                            paddingBottom: '6px',
-                                                            fontSize: '0.78rem',
+                                                            paddingLeft: 34,
+                                                            paddingRight: memberSearchQuery ? 30 : 12,
+                                                            height: 34,
+                                                            fontSize: '0.8rem',
                                                             borderRadius: 8,
-                                                            boxSizing: 'border-box'
+                                                            boxSizing: 'border-box',
+                                                            background: 'rgba(255, 255, 255, 0.04)',
+                                                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                            color: '#ffffff',
+                                                            outline: 'none',
+                                                            transition: 'all 0.15s ease'
                                                         }}
                                                     />
                                                     {memberSearchQuery && (
                                                         <button
                                                             type="button"
                                                             onClick={() => setMemberSearchQuery('')}
-                                                            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#999', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}
+                                                            style={{
+                                                                position: 'absolute',
+                                                                right: 8,
+                                                                top: '50%',
+                                                                transform: 'translateY(-50%)',
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                color: '#a1a1aa',
+                                                                cursor: 'pointer',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                padding: 4,
+                                                                borderRadius: 4
+                                                            }}
                                                         >
-                                                            <IconX size={12} />
+                                                            <IconX size={13} />
                                                         </button>
                                                     )}
                                                 </div>
@@ -1075,62 +1268,55 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
 
                                             {/* High-density SaaS Members Table */}
                                             <div style={{
-                                                background: 'rgba(0, 0, 0, 0.3)',
-                                                border: '1px solid rgba(255, 255, 255, 0.06)',
+                                                background: 'rgba(15, 17, 24, 0.7)',
+                                                border: '1px solid rgba(255, 255, 255, 0.08)',
                                                 borderRadius: 12,
-                                                overflow: 'hidden'
+                                                overflow: 'hidden',
+                                                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)'
                                             }}>
                                                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
                                                     <thead>
-                                                        <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.06)', background: 'rgba(255, 255, 255, 0.02)' }}>
-                                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Member Name</th>
-                                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Email Address</th>
-                                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Team Role</th>
-                                                            <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right' }}>Actions</th>
+                                                        <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.08)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                                                            <th style={{ padding: '12px 18px', fontWeight: 600, color: '#71717a', fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Member Name</th>
+                                                            <th style={{ padding: '12px 18px', fontWeight: 600, color: '#71717a', fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Email Address</th>
+                                                            <th style={{ padding: '12px 18px', fontWeight: 600, color: '#71717a', fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Team Role</th>
+                                                            <th style={{ padding: '12px 18px', fontWeight: 600, color: '#71717a', fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right' }}>Actions</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         {filteredTeamMembers.length === 0 ? (
                                                             <tr>
-                                                                <td colSpan={4} style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                                                <td colSpan={4} style={{ padding: '36px', textAlign: 'center', color: '#71717a' }}>
                                                                     No team members match your criteria.
                                                                 </td>
                                                             </tr>
                                                         ) : (
                                                             filteredTeamMembers.map((m) => {
-                                                                const roleBg = m.role === 'owner'
-                                                                    ? 'rgba(168, 85, 247, 0.15)'
+                                                                const roleStyle = m.role === 'owner'
+                                                                    ? { bg: 'rgba(168, 85, 247, 0.12)', border: 'rgba(168, 85, 247, 0.25)', color: '#d8b4fe', icon: <IconCrown size={12} /> }
                                                                     : m.role === 'admin'
-                                                                    ? 'rgba(59, 130, 246, 0.15)'
+                                                                    ? { bg: 'rgba(56, 189, 248, 0.12)', border: 'rgba(56, 189, 248, 0.25)', color: '#7dd3fc', icon: <IconShield size={12} /> }
                                                                     : m.role === 'guest'
-                                                                    ? 'rgba(148, 163, 184, 0.15)'
-                                                                    : 'rgba(34, 197, 94, 0.15)'
-                                                                const roleColor = m.role === 'owner'
-                                                                    ? '#c084fc'
-                                                                    : m.role === 'admin'
-                                                                    ? '#60a5fa'
-                                                                    : m.role === 'guest'
-                                                                    ? '#94a3b8'
-                                                                    : '#4ade80'
-
-                                                                const roleIcon = m.role === 'owner' ? <IconCrown size={13} /> : m.role === 'admin' ? <IconShield size={13} /> : m.role === 'guest' ? <IconUsers size={13} /> : <IconUser size={13} />
+                                                                    ? { bg: 'rgba(148, 163, 184, 0.12)', border: 'rgba(148, 163, 184, 0.25)', color: '#cbd5e1', icon: <IconUsers size={12} /> }
+                                                                    : { bg: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.25)', color: '#6ee7b7', icon: <IconUser size={12} /> }
 
                                                                 return (
                                                                     <tr
                                                                         key={m.userId}
                                                                         style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)', transition: 'background 120ms' }}
-                                                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.025)'}
+                                                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'}
                                                                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                                     >
                                                                         {/* Full Name & Avatar */}
-                                                                        <td style={{ padding: '12px 16px' }}>
+                                                                        <td style={{ padding: '12px 18px' }}>
                                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                                                                 <div style={{
                                                                                     width: 34,
                                                                                     height: 34,
-                                                                                    borderRadius: '50%',
+                                                                                    borderRadius: 10,
                                                                                     background: `linear-gradient(135deg, ${selectedTeam.color || '#6366F1'}80 0%, ${selectedTeam.color || '#6366F1'} 100%)`,
                                                                                     color: '#fff',
+                                                                                    border: '1px solid rgba(255, 255, 255, 0.12)',
                                                                                     display: 'flex',
                                                                                     alignItems: 'center',
                                                                                     justifyContent: 'center',
@@ -1141,10 +1327,18 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                                                     {m.fullName.slice(0, 2).toUpperCase()}
                                                                                 </div>
                                                                                 <div>
-                                                                                    <div style={{ fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                                    <div style={{ fontWeight: 600, color: '#f4f4f5', display: 'flex', alignItems: 'center', gap: 6 }}>
                                                                                         <span>{m.fullName}</span>
                                                                                         {m.isSelf && (
-                                                                                            <span className="badge badge-accent" style={{ fontSize: '0.55rem', padding: '1px 5px' }}>You</span>
+                                                                                            <span style={{
+                                                                                                fontSize: '0.6rem',
+                                                                                                fontWeight: 600,
+                                                                                                padding: '1px 6px',
+                                                                                                borderRadius: 4,
+                                                                                                background: 'rgba(99, 102, 241, 0.2)',
+                                                                                                color: '#a5b4fc',
+                                                                                                border: '1px solid rgba(99, 102, 241, 0.3)'
+                                                                                            }}>You</span>
                                                                                         )}
                                                                                     </div>
                                                                                 </div>
@@ -1152,93 +1346,152 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
                                                                         </td>
 
                                                                         {/* Email Address */}
-                                                                        <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>
+                                                                        <td style={{ padding: '12px 18px', color: '#94a3b8', fontSize: '0.8125rem' }}>
                                                                             {m.email}
                                                                         </td>
 
                                                                         {/* Role */}
-                                                                        <td style={{ padding: '12px 16px' }}>
-                                                                            {isOwnerOrAdmin && m.role !== 'owner' ? (
-                                                                                <select
-                                                                                    value={m.role}
-                                                                                    onChange={(e) => handleUpdateMemberRole(m.userId, e.target.value as any)}
-                                                                                    style={{
-                                                                                        background: 'rgba(255,255,255,0.06)',
-                                                                                        border: '1px solid rgba(255,255,255,0.12)',
-                                                                                        color: '#fff',
-                                                                                        padding: '5px 10px',
-                                                                                        borderRadius: 6,
-                                                                                        fontSize: '0.75rem',
-                                                                                        outline: 'none',
-                                                                                        cursor: 'pointer'
-                                                                                    }}
-                                                                                >
-                                                                                    <option value="admin" style={{ background: '#18181b' }}>Admin</option>
-                                                                                    <option value="member" style={{ background: '#18181b' }}>Member</option>
-                                                                                    <option value="guest" style={{ background: '#18181b' }}>Guest</option>
-                                                                                </select>
-                                                                            ) : (
+                                                                        <td style={{ padding: '12px 18px' }}>
+                                                                            {m.role === 'owner' || m.userId === selectedTeam.ownerId ? (
                                                                                 <span style={{
-                                                                                    background: roleBg,
-                                                                                    color: roleColor,
-                                                                                    padding: '3px 10px',
-                                                                                    borderRadius: 6,
+                                                                                    background: 'rgba(168, 85, 247, 0.12)',
+                                                                                    border: '1px solid rgba(168, 85, 247, 0.25)',
+                                                                                    color: '#d8b4fe',
+                                                                                    padding: '4px 10px',
+                                                                                    borderRadius: 7,
                                                                                     fontSize: '0.72rem',
                                                                                     fontWeight: 700,
                                                                                     display: 'inline-flex',
                                                                                     alignItems: 'center',
-                                                                                    gap: 4,
+                                                                                    gap: 5,
                                                                                     letterSpacing: '0.02em'
                                                                                 }}>
-                                                                                    <span>{roleIcon}</span>
+                                                                                    <span><IconCrown size={12} /></span>
+                                                                                    <span>OWNER</span>
+                                                                                </span>
+                                                                            ) : m.isSelf ? (
+                                                                                <span style={{
+                                                                                    background: 'rgba(56, 189, 248, 0.12)',
+                                                                                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                                                                                    color: '#7dd3fc',
+                                                                                    padding: '4px 10px',
+                                                                                    borderRadius: 7,
+                                                                                    fontSize: '0.72rem',
+                                                                                    fontWeight: 700,
+                                                                                    display: 'inline-flex',
+                                                                                    alignItems: 'center',
+                                                                                    gap: 5,
+                                                                                    letterSpacing: '0.02em'
+                                                                                }}>
+                                                                                    <span><IconShield size={12} /></span>
                                                                                     <span>{m.role.toUpperCase()}</span>
                                                                                 </span>
+                                                                            ) : (
+                                                                                <select
+                                                                                    value={m.role}
+                                                                                    onChange={(e) => handleUpdateMemberRole(m.userId, e.target.value as any)}
+                                                                                    style={{
+                                                                                        background: 'rgba(255, 255, 255, 0.05)',
+                                                                                        border: '1px solid rgba(255, 255, 255, 0.14)',
+                                                                                        color: '#f4f4f5',
+                                                                                        padding: '5px 12px',
+                                                                                        borderRadius: 7,
+                                                                                        fontSize: '0.78rem',
+                                                                                        fontWeight: 600,
+                                                                                        outline: 'none',
+                                                                                        cursor: 'pointer',
+                                                                                        transition: 'all 0.15s ease'
+                                                                                    }}
+                                                                                    onFocus={(e) => {
+                                                                                        e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.5)'
+                                                                                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.09)'
+                                                                                    }}
+                                                                                    onBlur={(e) => {
+                                                                                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.14)'
+                                                                                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                                                                                    }}
+                                                                                >
+                                                                                    <option value="admin" style={{ background: '#18181b', color: '#fff' }}>Admin</option>
+                                                                                    <option value="member" style={{ background: '#18181b', color: '#fff' }}>Member</option>
+                                                                                    <option value="guest" style={{ background: '#18181b', color: '#fff' }}>Guest</option>
+                                                                                </select>
                                                                             )}
                                                                         </td>
 
-                                                                        {/* Actions */}
-                                                                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                                                                        {/* Actions (Icon-only buttons) */}
+                                                                        <td style={{ padding: '12px 18px', textAlign: 'right' }}>
                                                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                                                                                {/* Chat Button */}
+                                                                                {/* Chat Button (Icon Only) */}
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => {
-                                                                                        window.location.hash = '#channel'
+                                                                                        window.location.hash = '#chat'
                                                                                     }}
                                                                                     style={{
+                                                                                        width: 32,
+                                                                                        height: 32,
+                                                                                        borderRadius: 8,
                                                                                         background: 'rgba(255, 255, 255, 0.05)',
-                                                                                        border: '1px solid rgba(255, 255, 255, 0.08)',
-                                                                                        color: '#e4e4e7',
-                                                                                        padding: '4px 10px',
-                                                                                        borderRadius: 6,
-                                                                                        fontSize: '0.72rem',
+                                                                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                                                                        color: '#818cf8',
                                                                                         cursor: 'pointer',
-                                                                                        display: 'flex',
+                                                                                        display: 'inline-flex',
                                                                                         alignItems: 'center',
-                                                                                        gap: 5
+                                                                                        justifyContent: 'center',
+                                                                                        transition: 'all 0.15s ease'
                                                                                     }}
-                                                                                    title="Message in channel"
+                                                                                    onMouseEnter={(e) => {
+                                                                                        e.currentTarget.style.background = 'rgba(99, 102, 241, 0.18)'
+                                                                                        e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.4)'
+                                                                                        e.currentTarget.style.color = '#c7d2fe'
+                                                                                        e.currentTarget.style.transform = 'translateY(-1px)'
+                                                                                    }}
+                                                                                    onMouseLeave={(e) => {
+                                                                                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                                                                                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                                                                                        e.currentTarget.style.color = '#818cf8'
+                                                                                        e.currentTarget.style.transform = 'none'
+                                                                                    }}
+                                                                                    title={`Chat with ${m.fullName}`}
+                                                                                    aria-label={`Chat with ${m.fullName}`}
                                                                                 >
-                                                                                    <IconHash size={12} /> Chat
+                                                                                    <IconMessage size={15} />
                                                                                 </button>
 
-                                                                                {/* Remove Button */}
-                                                                                {isOwnerOrAdmin && !m.isSelf && m.role !== 'owner' && (
+                                                                                {/* Remove Button (Icon Only, Hidden for self and owner) */}
+                                                                                {!m.isSelf && m.role !== 'owner' && m.userId !== selectedTeam.ownerId && (
                                                                                     <button
                                                                                         type="button"
                                                                                         onClick={() => handleRemoveMember(m.userId, m.fullName)}
                                                                                         style={{
+                                                                                            width: 32,
+                                                                                            height: 32,
+                                                                                            borderRadius: 8,
                                                                                             background: 'rgba(239, 68, 68, 0.1)',
                                                                                             border: '1px solid rgba(239, 68, 68, 0.25)',
                                                                                             color: '#f87171',
                                                                                             cursor: 'pointer',
-                                                                                            fontSize: '0.72rem',
-                                                                                            fontWeight: 600,
-                                                                                            padding: '4px 10px',
-                                                                                            borderRadius: 6
+                                                                                            display: 'inline-flex',
+                                                                                            alignItems: 'center',
+                                                                                            justifyContent: 'center',
+                                                                                            transition: 'all 0.15s ease'
                                                                                         }}
+                                                                                        onMouseEnter={(e) => {
+                                                                                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.22)'
+                                                                                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.45)'
+                                                                                            e.currentTarget.style.color = '#fca5a5'
+                                                                                            e.currentTarget.style.transform = 'translateY(-1px)'
+                                                                                        }}
+                                                                                        onMouseLeave={(e) => {
+                                                                                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
+                                                                                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'
+                                                                                            e.currentTarget.style.color = '#f87171'
+                                                                                            e.currentTarget.style.transform = 'none'
+                                                                                        }}
+                                                                                        title={`Remove ${m.fullName} from team`}
+                                                                                        aria-label={`Remove ${m.fullName}`}
                                                                                     >
-                                                                                        Remove
+                                                                                        <IconTrash size={14} />
                                                                                     </button>
                                                                                 )}
                                                                             </div>

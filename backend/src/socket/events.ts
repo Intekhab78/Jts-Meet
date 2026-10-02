@@ -50,9 +50,11 @@ export const SocketEvents = {
     MEETING_CHAT_REACTION_ADD: 'meeting:chat:reaction:add',
     MEETING_CHAT_REACTION_REMOVE: 'meeting:chat:reaction:remove',
 
-    // Message status events
+    // Message status and deletion events
     MESSAGE_DELIVERED: 'message:delivered',
     MESSAGE_READ: 'message:read',
+    MESSAGE_DELETE: 'chat:message:delete',
+    MESSAGE_UNDO_DELETE: 'chat:message:undo',
 
     // Generic Typing indicator events
     TYPING_START: 'typing:start',
