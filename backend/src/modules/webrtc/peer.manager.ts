@@ -72,6 +72,26 @@ export function removePeerSessionBySocket(socketId: string): PeerSession | null 
     return session
 }
 
+export function removePeerSessionByUserId(userId: string): PeerSession | null {
+    const session = peersByUserId.get(userId)
+    if (!session) {
+        return null
+    }
+
+    peersByUserId.delete(userId)
+    peersBySocketId.delete(session.socketId)
+
+    const meetingSet = meetingPeers.get(session.meetingId)
+    if (meetingSet) {
+        meetingSet.delete(session.userId)
+        if (meetingSet.size === 0) {
+            meetingPeers.delete(session.meetingId)
+        }
+    }
+
+    return session
+}
+
 export function getPeerSessionByUserId(userId: string): PeerSession | null {
     return peersByUserId.get(userId) || null
 }

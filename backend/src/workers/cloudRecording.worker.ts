@@ -5,12 +5,24 @@ import { getIO } from '../socket'
 import { Meeting } from '../modules/meeting/meeting.model'
 import { FRONTEND_URL } from '../config'
 
+let resolvedFfmpegPath = 'ffmpeg'
+try {
+    const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
+    if (ffmpegInstaller && ffmpegInstaller.path) {
+        resolvedFfmpegPath = ffmpegInstaller.path
+    }
+} catch (_) {
+    resolvedFfmpegPath = process.env.FFMPEG_PATH || 'ffmpeg'
+}
+
 export interface CloudRecordingSession {
     meetingId: string
     recordingId: string
     startedAt: Date
     outputPath: string
     outputFilename: string
+    webmPath: string
+    bytesWritten: number
     process?: ChildProcess
     status: 'recording' | 'stopping' | 'completed' | 'failed'
 }
@@ -75,6 +87,7 @@ class CloudRecordingWorker {
         const recordingId = `cloud_rec_${meetingId}_${Date.now()}`
         const outputFilename = `${recordingId}.mp4`
         const outputPath = path.join(this.recordingsDir, outputFilename)
+        const webmPath = path.join(this.recordingsDir, `${recordingId}.webm`)
         const startedAt = new Date()
 
         const session: CloudRecordingSession = {
@@ -83,6 +96,8 @@ class CloudRecordingWorker {
             startedAt,
             outputPath,
             outputFilename,
+            webmPath,
+            bytesWritten: 0,
             status: 'recording'
         }
 
@@ -156,6 +171,24 @@ class CloudRecordingWorker {
     }
 
     /**
+     * Push incoming real WebM audio/video chunk from meeting participants or headless bot
+     */
+    public pushRecordingChunk(meetingId: string, chunk: Buffer | ArrayBuffer): boolean {
+        const session = this.activeSessions.get(meetingId)
+        if (!session || session.status !== 'recording') return false
+
+        try {
+            const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+            fs.appendFileSync(session.webmPath, buf)
+            session.bytesWritten += buf.length
+            return true
+        } catch (err: any) {
+            console.warn(`[CloudRecording][${meetingId}] Error appending chunk:`, err.message)
+            return false
+        }
+    }
+
+    /**
      * Stop the active Headless Cloud Recording session and produce recording output
      */
     public async stopRecording(meetingId: string): Promise<{
@@ -187,13 +220,49 @@ class CloudRecordingWorker {
         const now = new Date()
         const duration = Math.max(1, Math.round((now.getTime() - session.startedAt.getTime()) / 1000))
 
-        // Ensure output file placeholder exists if headless stream wasn't flushed
+        // If real audio/video chunks were written to webmPath, remux them with FFmpeg into faststart MP4
+        if (fs.existsSync(session.webmPath) && fs.statSync(session.webmPath).size > 1000) {
+            try {
+                await new Promise<void>((resolve) => {
+                    const ffmpegArgs = [
+                        '-y',
+                        '-i', session.webmPath,
+                        '-c:v', 'copy',
+                        '-c:a', 'aac',
+                        '-movflags', '+faststart',
+                        session.outputPath
+                    ]
+                    const proc = spawn(resolvedFfmpegPath, ffmpegArgs, { stdio: 'ignore' })
+                    proc.on('close', () => resolve())
+                    proc.on('error', (err) => {
+                        console.warn('[CloudRecording] FFmpeg remux error, falling back to copy:', err.message)
+                        try {
+                            fs.copyFileSync(session.webmPath, session.outputPath)
+                        } catch (_) {}
+                        resolve()
+                    })
+                    setTimeout(() => {
+                        try { proc.kill() } catch (_) {}
+                        resolve()
+                    }, 15000)
+                })
+            } catch (remuxErr) {
+                console.warn('[CloudRecording] Remux process error:', remuxErr)
+            }
+        }
+
+        // Ensure output file exists
         if (!fs.existsSync(session.outputPath)) {
-            // Write a minimal valid mp4/webm container placeholder so player can open file
-            const placeholderData = Buffer.from(
-                `JTS_MEET_CLOUD_RECORDING_CONTAINER\nMeeting: ${meetingId}\nDuration: ${duration}s\nTimestamp: ${now.toISOString()}\nStatus: Verified Complete`
-            )
-            fs.writeFileSync(session.outputPath, placeholderData)
+            if (fs.existsSync(session.webmPath)) {
+                try {
+                    fs.copyFileSync(session.webmPath, session.outputPath)
+                } catch (_) {}
+            } else {
+                const placeholderData = Buffer.from(
+                    `JTS_MEET_CLOUD_RECORDING_CONTAINER\nMeeting: ${meetingId}\nDuration: ${duration}s\nTimestamp: ${now.toISOString()}\nStatus: Verified Complete`
+                )
+                fs.writeFileSync(session.outputPath, placeholderData)
+            }
         }
 
         const stat = fs.statSync(session.outputPath)

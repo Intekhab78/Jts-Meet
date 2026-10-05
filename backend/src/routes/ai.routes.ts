@@ -5,7 +5,8 @@ import {
     askMeetingAssistant,
     translateCaptionText,
     generateLateJoinerCatchUp,
-    generateMeetingAgenda
+    generateMeetingAgenda,
+    transcribeAudioChunk
 } from '../services/gemini.service'
 import jwt from 'jsonwebtoken'
 import { JWT_SECRET, ADMIN_EMAIL } from '../config'
@@ -204,6 +205,23 @@ router.post('/agenda-generate', optionalAuth, enforceAiPlatformPolicy, async (re
     } catch (error: any) {
         console.error('[agenda-generate] Error:', error)
         res.status(500).json({ success: false, message: error.message || 'Failed to generate agenda' })
+    }
+})
+
+// Cross-Browser Speech-to-Text Live Transcription (for Safari, Firefox, or AI backend captions)
+router.post('/transcribe', optionalAuth, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { audio, mimeType } = req.body
+        if (!audio || typeof audio !== 'string') {
+            res.status(400).json({ success: false, message: 'Audio base64 data is required' })
+            return
+        }
+
+        const text = await transcribeAudioChunk(audio, mimeType || 'audio/webm')
+        res.status(200).json({ success: true, data: { text } })
+    } catch (error: any) {
+        console.error('[transcribe] Error:', error.message)
+        res.status(500).json({ success: false, message: error.message || 'Transcription failed' })
     }
 })
 

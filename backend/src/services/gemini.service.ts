@@ -61,6 +61,49 @@ async function callGeminiApi(prompt: string, options: { jsonResponse?: boolean; 
     throw lastError || new Error('All Gemini model endpoints failed')
 }
 
+export async function transcribeAudioChunk(audioBase64: string, mimeType = 'audio/webm'): Promise<string> {
+    if (!GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY is not configured on the server')
+    }
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`
+    const bodyPayload = {
+        contents: [
+            {
+                parts: [
+                    {
+                        inlineData: {
+                            mimeType,
+                            data: audioBase64
+                        }
+                    },
+                    {
+                        text: 'Transcribe this audio snippet verbatim. Return ONLY the spoken words with no preamble, markdown, or timestamps.'
+                    }
+                ]
+            }
+        ],
+        generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 250
+        }
+    }
+
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload)
+    })
+
+    if (!response.ok) {
+        throw new Error(`Audio transcription failed: HTTP ${response.status}`)
+    }
+
+    const data: any = await response.json()
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    return text.trim()
+}
+
 export interface GenerateSummaryParams {
     title: string
     participants?: string[]

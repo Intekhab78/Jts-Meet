@@ -18,65 +18,65 @@ export const CAPTION_LANGUAGE_GROUPS: CaptionLanguageGroup[] = [
     {
         group: 'Standard',
         languages: [
-            { code: 'original', label: 'Original Audio (Off)', flag: '🎙️' },
-            { code: 'en', label: 'English', flag: '🇬🇧' },
+            { code: 'original', label: 'Original Audio (Off)' },
+            { code: 'en', label: 'English' },
         ]
     },
     {
         group: 'Indian Regional Languages',
         languages: [
-            { code: 'hi', label: 'Hindi (हिंदी)', flag: '🇮🇳' },
-            { code: 'ur', label: 'Urdu (اردو)', flag: '🇮🇳' },
-            { code: 'bn', label: 'Bengali (বাংলা)', flag: '🇮🇳' },
-            { code: 'mr', label: 'Marathi (मराठी)', flag: '🇮🇳' },
-            { code: 'te', label: 'Telugu (తెలుగు)', flag: '🇮🇳' },
-            { code: 'ta', label: 'Tamil (தமிழ்)', flag: '🇮🇳' },
-            { code: 'gu', label: 'Gujarati (ગુજરાતી)', flag: '🇮🇳' },
-            { code: 'kn', label: 'Kannada (ಕನ್ನಡ)', flag: '🇮🇳' },
-            { code: 'ml', label: 'Malayalam (മലയാളം)', flag: '🇮🇳' },
-            { code: 'pa', label: 'Punjabi (ਪੰਜਾਬੀ)', flag: '🇮🇳' },
+            { code: 'hi', label: 'Hindi (हिंदी)' },
+            { code: 'pa', label: 'Punjabi (ਪੰਜਾਬੀ)' },
+            { code: 'ur', label: 'Urdu (اردو)' },
+            { code: 'bn', label: 'Bengali (বাংলা)' },
+            { code: 'mr', label: 'Marathi (मराठी)' },
+            { code: 'te', label: 'Telugu (తెలుగు)' },
+            { code: 'ta', label: 'Tamil (தமிழ்)' },
+            { code: 'gu', label: 'Gujarati (ગુજરાતી)' },
+            { code: 'kn', label: 'Kannada (ಕನ್ನಡ)' },
+            { code: 'ml', label: 'Malayalam (മലയാളം)' },
         ]
     },
     {
         group: 'Middle East & Africa',
         languages: [
-            { code: 'ar', label: 'Arabic (العربية)', flag: '🇦🇪' },
-            { code: 'fa', label: 'Persian (فارسی)', flag: '🇮🇷' },
-            { code: 'tr', label: 'Turkish (Türkçe)', flag: '🇹🇷' },
-            { code: 'he', label: 'Hebrew (עברית)', flag: '🇮🇱' },
-            { code: 'sw', label: 'Swahili (Kiswahili)', flag: '🇰🇪' },
+            { code: 'ar', label: 'Arabic (العربية)' },
+            { code: 'fa', label: 'Persian (فارسی)' },
+            { code: 'tr', label: 'Turkish (Türkçe)' },
+            { code: 'he', label: 'Hebrew (עברית)' },
+            { code: 'sw', label: 'Swahili (Kiswahili)' },
         ]
     },
     {
         group: 'East & Southeast Asia',
         languages: [
-            { code: 'zh', label: 'Chinese (中文)', flag: '🇨🇳' },
-            { code: 'ja', label: 'Japanese (日本語)', flag: '🇯🇵' },
-            { code: 'ko', label: 'Korean (한국어)', flag: '🇰🇷' },
-            { code: 'vi', label: 'Vietnamese (Tiếng Việt)', flag: '🇻🇳' },
-            { code: 'th', label: 'Thai (ไทย)', flag: '🇹🇭' },
-            { code: 'id', label: 'Indonesian (Bahasa)', flag: '🇮🇩' },
-            { code: 'ms', label: 'Malay (Bahasa Melayu)', flag: '🇲🇾' },
-            { code: 'tl', label: 'Filipino (Tagalog)', flag: '🇵🇭' },
+            { code: 'zh', label: 'Chinese (中文)' },
+            { code: 'ja', label: 'Japanese (日本語)' },
+            { code: 'ko', label: 'Korean (한국어)' },
+            { code: 'vi', label: 'Vietnamese (Tiếng Việt)' },
+            { code: 'th', label: 'Thai (ไทย)' },
+            { code: 'id', label: 'Indonesian (Bahasa)' },
+            { code: 'ms', label: 'Malay (Bahasa Melayu)' },
+            { code: 'tl', label: 'Filipino (Tagalog)' },
         ]
     },
     {
         group: 'Europe & Americas',
         languages: [
-            { code: 'es', label: 'Spanish (Español)', flag: '🇪🇸' },
-            { code: 'fr', label: 'French (Français)', flag: '🇫🇷' },
-            { code: 'de', label: 'German (Deutsch)', flag: '🇩🇪' },
-            { code: 'it', label: 'Italian (Italiano)', flag: '🇮🇹' },
-            { code: 'pt', label: 'Portuguese (Português)', flag: '🇧🇷' },
-            { code: 'ru', label: 'Russian (Русский)', flag: '🇷🇺' },
-            { code: 'nl', label: 'Dutch (Nederlands)', flag: '🇳🇱' },
-            { code: 'pl', label: 'Polish (Polski)', flag: '🇵🇱' },
-            { code: 'sv', label: 'Swedish (Svenska)', flag: '🇸🇪' },
-            { code: 'uk', label: 'Ukrainian (Українська)', flag: '🇺🇦' },
-            { code: 'el', label: 'Greek (Ελληνικά)', flag: '🇬🇷' },
-            { code: 'cs', label: 'Czech (Čeština)', flag: '🇨🇿' },
-            { code: 'ro', label: 'Romanian (Română)', flag: '🇷🇴' },
-            { code: 'hu', label: 'Hungarian (Magyar)', flag: '🇭🇺' },
+            { code: 'es', label: 'Spanish (Español)' },
+            { code: 'fr', label: 'French (Français)' },
+            { code: 'de', label: 'German (Deutsch)' },
+            { code: 'it', label: 'Italian (Italiano)' },
+            { code: 'pt', label: 'Portuguese (Português)' },
+            { code: 'ru', label: 'Russian (Русский)' },
+            { code: 'nl', label: 'Dutch (Nederlands)' },
+            { code: 'pl', label: 'Polish (Polski)' },
+            { code: 'sv', label: 'Swedish (Svenska)' },
+            { code: 'uk', label: 'Ukrainian (Українська)' },
+            { code: 'el', label: 'Greek (Ελληνικά)' },
+            { code: 'cs', label: 'Czech (Čeština)' },
+            { code: 'ro', label: 'Romanian (Română)' },
+            { code: 'hu', label: 'Hungarian (Magyar)' },
         ]
     }
 ]
@@ -140,6 +140,7 @@ interface MeetingCaptionsBannerProps {
     socket: Socket | null
     isLocalMuted?: boolean
     onTranscriptUpdate?: (transcript: CaptionEntry[]) => void
+    onClose?: () => void
 }
 
 export function MeetingCaptionsBanner({ 
@@ -148,7 +149,8 @@ export function MeetingCaptionsBanner({
     meetingId,
     socket,
     isLocalMuted,
-    onTranscriptUpdate 
+    onTranscriptUpdate,
+    onClose
 }: MeetingCaptionsBannerProps) {
     const [displayText, setDisplayText] = useState<string>('')
     const [currentSpeaker, setCurrentSpeaker] = useState<string>('')
@@ -182,31 +184,12 @@ export function MeetingCaptionsBanner({
     const transcriptRef = useRef<CaptionEntry[]>([])
     const recognitionRef = useRef<any>(null)
     const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const idleNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const translationAbortControllerRef = useRef<AbortController | null>(null)
 
     const speakerNameRef = useRef(speakerName)
     const meetingIdRef = useRef(meetingId)
     const socketRef = useRef(socket)
     const onTranscriptUpdateRef = useRef(onTranscriptUpdate)
-
-    // Auto-hide idle notice after 3.5 seconds of silence
-    useEffect(() => {
-        if (isEnabled) {
-            setShowIdleNotice(true)
-            if (idleNoticeTimerRef.current) clearTimeout(idleNoticeTimerRef.current)
-            idleNoticeTimerRef.current = setTimeout(() => {
-                setShowIdleNotice(false)
-            }, 3500)
-        } else {
-            setShowIdleNotice(false)
-            if (idleNoticeTimerRef.current) clearTimeout(idleNoticeTimerRef.current)
-        }
-
-        return () => {
-            if (idleNoticeTimerRef.current) clearTimeout(idleNoticeTimerRef.current)
-        }
-    }, [isEnabled, isLocalMuted])
 
     useEffect(() => {
         speakerNameRef.current = speakerName
@@ -369,9 +352,92 @@ export function MeetingCaptionsBanner({
 
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
         if (!SpeechRecognition) {
-            setIsUnsupportedBrowser(true)
-            console.warn('SpeechRecognition API is not supported in this browser environment')
-            return
+            // Enterprise Cross-Browser Fallback for Safari/Firefox/iOS: Server-side AI transcription
+            setIsUnsupportedBrowser(false)
+            let fallbackRecorder: MediaRecorder | null = null
+            let audioStream: MediaStream | null = null
+            let isCancelled = false
+
+            navigator.mediaDevices?.getUserMedia({ audio: true }).then(stream => {
+                audioStream = stream
+                if (isCancelled || !isEnabled || isLocalMuted) {
+                    stream.getTracks().forEach(t => t.stop())
+                    return
+                }
+
+                try {
+                    let mimeType = 'audio/webm'
+                    if (typeof MediaRecorder !== 'undefined' && !MediaRecorder.isTypeSupported('audio/webm')) {
+                        mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : ''
+                    }
+                    fallbackRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+                } catch {
+                    try {
+                        fallbackRecorder = new MediaRecorder(stream)
+                    } catch (_) {}
+                }
+
+                if (!fallbackRecorder) return
+
+                fallbackRecorder.ondataavailable = async (e) => {
+                    if (e.data && e.data.size > 2000 && !isLocalMuted) {
+                        try {
+                            const reader = new FileReader()
+                            reader.onloadend = async () => {
+                                const base64data = (reader.result as string)?.split(',')[1]
+                                if (!base64data) return
+                                const res = await fetch(`${API_BASE}/api/ai/transcribe`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ audio: base64data, mimeType: fallbackRecorder?.mimeType || 'audio/webm' })
+                                })
+                                const resData = await res.json()
+                                if (resData?.success && resData?.data?.text) {
+                                    const text = resData.data.text.trim()
+                                    if (text) {
+                                        setCurrentSpeaker(speakerNameRef.current || 'You')
+                                        setDisplayText(text)
+                                        if (socketRef.current && socketRef.current.connected) {
+                                            socketRef.current.emit('meeting:caption', {
+                                                meetingId: meetingIdRef.current,
+                                                speakerName: speakerNameRef.current || 'You',
+                                                text,
+                                                isFinal: true
+                                            })
+                                        }
+                                        const newEntry: CaptionEntry = {
+                                            speaker: speakerNameRef.current || 'You',
+                                            text,
+                                            timestamp: new Date()
+                                        }
+                                        transcriptRef.current.push(newEntry)
+                                        onTranscriptUpdateRef.current?.([...transcriptRef.current])
+                                        if (clearTimerRef.current) clearTimeout(clearTimerRef.current)
+                                        clearTimerRef.current = setTimeout(() => setDisplayText(''), 4000)
+                                    }
+                                }
+                            }
+                            reader.readAsDataURL(e.data)
+                        } catch (recErr) {
+                            console.warn('[AI Captions] Fallback error:', recErr)
+                        }
+                    }
+                }
+
+                fallbackRecorder.start(3500)
+            }).catch(() => {
+                setIsUnsupportedBrowser(true)
+            })
+
+            return () => {
+                isCancelled = true
+                if (fallbackRecorder && fallbackRecorder.state !== 'inactive') {
+                    try { fallbackRecorder.stop() } catch (_) {}
+                }
+                if (audioStream) {
+                    audioStream.getTracks().forEach(t => t.stop())
+                }
+            }
         }
         setIsUnsupportedBrowser(false)
 
@@ -459,9 +525,11 @@ export function MeetingCaptionsBanner({
 
     if (!isEnabled) return null
 
+    const selectedLang = CAPTION_LANGUAGES.find(l => l.code === targetLanguage)
+    const selectedLangLabel = targetLanguage === 'original' ? 'Original Audio' : (selectedLang?.label || targetLanguage.toUpperCase())
+
     // Idle Notice: Clean, compact pill when no speech is currently active
     if (!displayText) {
-        if (!showIdleNotice) return null
 
         if (isUnsupportedBrowser) {
             return (
@@ -486,67 +554,192 @@ export function MeetingCaptionsBanner({
 
         return (
             <div style={{
-                position: 'absolute', bottom: 84, left: '50%', transform: 'translateX(-50%)',
-                zIndex: 80, padding: '5px 12px',
-                background: 'rgba(10, 14, 23, 0.88)', backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
+                position: 'absolute',
+                bottom: 84,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 80,
+                padding: '4px 6px 4px 12px',
+                background: 'rgba(15, 23, 42, 0.85)',
+                backdropFilter: 'blur(20px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
                 border: '1px solid rgba(255, 255, 255, 0.12)',
                 borderRadius: '9999px',
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-                display: 'flex', alignItems: 'center', gap: 8,
-                pointerEvents: 'auto'
+                boxShadow: '0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 9,
+                userSelect: 'none'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <style>{`
+                    @keyframes liveListeningPulse {
+                        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+                        70% { transform: scale(1.05); box-shadow: 0 0 0 5px rgba(52, 211, 153, 0); }
+                        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+                    }
+                    @keyframes eqWave1 { 0%, 100% { height: 4px; } 50% { height: 11px; } }
+                    @keyframes eqWave2 { 0%, 100% { height: 10px; } 50% { height: 4px; } }
+                    @keyframes eqWave3 { 0%, 100% { height: 5px; } 50% { height: 12px; } }
+                `}</style>
+
+                {/* Status Indicator */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
                     {isLocalMuted ? (
                         <>
-                            <IconMicOff size={12} color="#f59e0b" />
-                            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#e2e8f0' }}>Mic Muted</span>
+                            <div style={{
+                                width: 18, height: 18, borderRadius: '50%',
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <IconMicOff size={11} color="#f59e0b" />
+                            </div>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1' }}>Mic Muted</span>
                         </>
                     ) : (
                         <>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399', boxShadow: '0 0 6px #34d399' }} />
-                            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#e2e8f0' }}>Listening...</span>
+                            <div style={{
+                                width: 8, height: 8, borderRadius: '50%',
+                                background: '#10b981',
+                                animation: 'liveListeningPulse 2s infinite'
+                            }} />
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#f8fafc' }}>Listening...</span>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 12, marginLeft: 1 }}>
+                                <span style={{ width: 2, background: '#10b981', borderRadius: 1, animation: 'eqWave1 1.2s ease-in-out infinite' }} />
+                                <span style={{ width: 2, background: '#10b981', borderRadius: 1, animation: 'eqWave2 1s ease-in-out infinite' }} />
+                                <span style={{ width: 2, background: '#10b981', borderRadius: 1, animation: 'eqWave3 1.4s ease-in-out infinite' }} />
+                            </div>
                         </>
                     )}
                 </div>
 
-                <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.14)' }} />
+                <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
 
-                {/* Compact Language Selector */}
-                <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    borderRadius: 6,
-                    padding: '1px 5px'
-                }}>
-                    <IconGlobe size={11} color="#38bdf8" style={{ marginRight: 3, flexShrink: 0 }} />
+                {/* Professional Language Selector Pill */}
+                <div
+                    style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '3px 8px',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                        borderRadius: 9999,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.14)' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)' }}
+                >
+                    <IconGlobe size={12} color="#38bdf8" style={{ flexShrink: 0 }} />
+                    <span style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        color: '#f8fafc',
+                        maxWidth: 130,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                    }}>
+                        {selectedLangLabel}
+                    </span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <polyline points="6 9 12 15 18 9" />
+                    </svg>
+
+                    {/* Seamless Native Dropdown */}
                     <select
                         value={targetLanguage}
                         onChange={(e) => handleLanguageChange(e.target.value)}
                         style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: '#e2e8f0',
-                            fontSize: '0.6875rem',
-                            fontWeight: 600,
-                            outline: 'none',
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            opacity: 0,
                             cursor: 'pointer',
-                            maxWidth: 120
+                            appearance: 'none',
+                            WebkitAppearance: 'none'
                         }}
                     >
                         {CAPTION_LANGUAGE_GROUPS.map(grp => (
                             <optgroup key={grp.group} label={grp.group} style={{ background: '#0f172a', color: '#94a3b8' }}>
                                 {grp.languages.map(l => (
                                     <option key={l.code} value={l.code} style={{ background: '#0f172a', color: '#fff' }}>
-                                        {l.flag ? `${l.flag} ` : ''}{l.label}
+                                        {l.label}
                                     </option>
                                 ))}
                             </optgroup>
                         ))}
                     </select>
                 </div>
+
+                {/* AI Dubbing Toggle if not original */}
+                {targetLanguage !== 'original' && (
+                    <button
+                        type="button"
+                        onClick={handleToggleVoiceDubbing}
+                        title={isVoiceDubbingEnabled ? "Disable AI Spoken Dubbing" : "Enable AI Spoken Dubbing"}
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            padding: '3px 7px',
+                            borderRadius: 9999,
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            background: isVoiceDubbingEnabled ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.06)',
+                            border: isVoiceDubbingEnabled ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
+                            color: isVoiceDubbingEnabled ? '#38bdf8' : 'rgba(255,255,255,0.7)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                        }}
+                    >
+                        <span>🔊</span>
+                        <span>{isVoiceDubbingEnabled ? 'Dub ON' : 'Dub'}</span>
+                    </button>
+                )}
+
+                {/* Close Button */}
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (onClose) {
+                            onClose()
+                        } else {
+                            setShowIdleNotice(false)
+                        }
+                    }}
+                    title="Hide Captions"
+                    style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: '50%',
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'rgba(255, 255, 255, 0.45)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.15s ease',
+                        flexShrink: 0
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.color = '#fff'
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.14)'
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.color = 'rgba(255, 255, 255, 0.45)'
+                        e.currentTarget.style.background = 'transparent'
+                    }}
+                >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
             </div>
         )
     }
@@ -560,31 +753,31 @@ export function MeetingCaptionsBanner({
             position: 'absolute', bottom: 84, left: '50%', transform: 'translateX(-50%)',
             zIndex: 80,
             width: 'auto',
-            maxWidth: 'min(92vw, 540px)',
+            maxWidth: 'min(92vw, 560px)',
             minWidth: 'min(92vw, 320px)',
-            padding: '7px 14px',
-            background: 'rgba(10, 14, 23, 0.88)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
+            padding: '8px 14px',
+            background: 'rgba(15, 23, 42, 0.88)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
             border: '1px solid rgba(255, 255, 255, 0.12)',
-            borderRadius: '13px',
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.6), 0 0 1px 1px rgba(255, 255, 255, 0.08)',
+            borderRadius: '14px',
+            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.6), 0 0 1px 1px rgba(255, 255, 255, 0.08)',
             display: 'flex',
             flexDirection: 'column',
-            gap: 4,
+            gap: 6,
             pointerEvents: 'auto'
         }}>
-            {/* Top row: Speaker Badge + Wave + Language Selector + Dubbing */}
+            {/* Top row: Speaker Badge + Wave + Language Selector + Dubbing + Close */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                 {/* Speaker & Audio Wave */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                     <span style={{
-                        fontSize: '0.6875rem',
+                        fontSize: '0.7rem',
                         fontWeight: 700,
                         color: isSelf ? '#34d399' : '#818cf8',
                         background: isSelf ? 'rgba(52, 211, 153, 0.12)' : 'rgba(99, 102, 241, 0.14)',
                         border: isSelf ? '1px solid rgba(52, 211, 153, 0.25)' : '1px solid rgba(99, 102, 241, 0.25)',
-                        padding: '1.5px 7px',
+                        padding: '2px 8px',
                         borderRadius: 9999,
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
@@ -595,44 +788,65 @@ export function MeetingCaptionsBanner({
                     </span>
 
                     {/* Audio wave animation */}
-                    <span style={{ display: 'inline-flex', gap: 1.5, alignItems: 'center', height: 10 }}>
+                    <span style={{ display: 'inline-flex', gap: 2, alignItems: 'center', height: 10 }}>
                         <span style={{ width: 2, height: 7, background: isSelf ? '#34d399' : '#818cf8', borderRadius: 1 }} />
                         <span style={{ width: 2, height: 11, background: isSelf ? '#34d399' : '#818cf8', borderRadius: 1 }} />
                         <span style={{ width: 2, height: 6, background: isSelf ? '#34d399' : '#818cf8', borderRadius: 1 }} />
                     </span>
                 </div>
 
-                {/* Right: Language Selector + Dubbing Toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                {/* Right: Language Selector + Dubbing Toggle + Close */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {/* Modern Dropdown */}
-                    <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        background: 'rgba(255, 255, 255, 0.06)',
-                        border: '1px solid rgba(255, 255, 255, 0.12)',
-                        borderRadius: 6,
-                        padding: '1px 5px'
-                    }}>
-                        <IconGlobe size={11} color="#38bdf8" style={{ marginRight: 3, flexShrink: 0 }} />
+                    <div
+                        style={{
+                            position: 'relative',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '2px 7px',
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                            borderRadius: 9999,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                        }}
+                    >
+                        <IconGlobe size={11} color="#38bdf8" style={{ flexShrink: 0 }} />
+                        <span style={{
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
+                            color: '#f8fafc',
+                            maxWidth: 110,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                        }}>
+                            {selectedLangLabel}
+                        </span>
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
                         <select
                             value={targetLanguage}
                             onChange={(e) => handleLanguageChange(e.target.value)}
                             style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#e2e8f0',
-                                fontSize: '0.6875rem',
-                                fontWeight: 600,
-                                outline: 'none',
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                height: '100%',
+                                opacity: 0,
                                 cursor: 'pointer',
-                                maxWidth: 120
+                                appearance: 'none',
+                                WebkitAppearance: 'none'
                             }}
                         >
                             {CAPTION_LANGUAGE_GROUPS.map(grp => (
                                 <optgroup key={grp.group} label={grp.group} style={{ background: '#0f172a', color: '#94a3b8' }}>
                                     {grp.languages.map(l => (
                                         <option key={l.code} value={l.code} style={{ background: '#0f172a', color: '#fff' }}>
-                                            {l.flag ? `${l.flag} ` : ''}{l.label}
+                                            {l.label}
                                         </option>
                                     ))}
                                 </optgroup>
@@ -651,7 +865,7 @@ export function MeetingCaptionsBanner({
                                 alignItems: 'center',
                                 gap: 3,
                                 padding: '2px 6px',
-                                borderRadius: 6,
+                                borderRadius: 9999,
                                 fontSize: '0.65rem',
                                 fontWeight: 700,
                                 background: isVoiceDubbingEnabled ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.06)',
@@ -665,6 +879,46 @@ export function MeetingCaptionsBanner({
                             <span>{isVoiceDubbingEnabled ? 'Dub ON' : 'Dub'}</span>
                         </button>
                     )}
+
+                    {/* Close Button */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (onClose) {
+                                onClose()
+                            } else {
+                                setDisplayText('')
+                            }
+                        }}
+                        title="Close Captions"
+                        style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: '50%',
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'rgba(255, 255, 255, 0.45)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                            flexShrink: 0
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.color = '#fff'
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.14)'
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.45)'
+                            e.currentTarget.style.background = 'transparent'
+                        }}
+                    >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                    </button>
                 </div>
             </div>
 

@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # Redis cache and multi-node state synchronization
+  redis:
+    image: redis:7-alpine
+    container_name: jts-sfu-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - sfu-redis-data:/data
+    networks:
+      - jts-media-network
+
+  # LiveKit Selective Forwarding Unit (SFU) Media Server
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: jts-sfu-media-server
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    depends_on:
+      - redis
+    ports:
+      # WebSocket signaling & REST API
+      - "7880:7880"
+      # TCP fallback for restrictive corporate firewalls
+      - "7881:7881"
+      # Embedded TURN over UDP
+      - "7882:7882/udp"
+      # WebRTC UDP media port range (selective forwarding)
+      - "50000-50100:50000-50100/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    environment:
+      - LIVEKIT_CONFIG=/etc/livekit.yaml
+    networks:
+      - jts-media-network
+
+volumes:
+  sfu-redis-data:
+
+networks:
+  jts-media-network:
+    driver: bridge

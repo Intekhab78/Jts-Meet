@@ -24,4 +24,7 @@ export const AZURE_CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET || ''
 export const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID || 'common'
 export const BACKEND_API_URL = process.env.BACKEND_API_URL || (isProductionPlatform ? 'https://meetapi.jtsmiddleeast.com' : 'http://localhost:4000')
 export const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@jtsmeet.com'
+export const LIVEKIT_URL = process.env.LIVEKIT_URL || (isProductionPlatform ? 'wss://sfu.jtsmiddleeast.com' : 'ws://localhost:7880')
+export const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey'
+export const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret'
 

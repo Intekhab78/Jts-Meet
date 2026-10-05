@@ -1,6 +1,16 @@
 import bcrypt from 'bcrypt'
 import { Schema, model, Document } from 'mongoose'
 
+export interface IRefreshToken {
+    tokenHash: string
+    familyId: string
+    createdAt: Date
+    expiresAt: Date
+    userAgent?: string
+    ip?: string
+    revokedAt?: Date | null
+}
+
 export interface IUser extends Document {
     fullName: string
     email: string
@@ -17,6 +27,8 @@ export interface IUser extends Document {
     otpCode?: string | null
     otpExpires?: Date | null
     isSuperAdmin?: boolean
+    tokenVersion: number
+    refreshTokens?: IRefreshToken[]
     createdAt: Date
     updatedAt: Date
 }
@@ -35,6 +47,18 @@ const UserSchema = new Schema<IUser>(
         customStatus: { type: String, default: '', maxlength: 100 },
         emailVerified: { type: Boolean, default: false },
         isSuperAdmin: { type: Boolean, default: false },
+        tokenVersion: { type: Number, default: 0 },
+        refreshTokens: [
+            {
+                tokenHash: { type: String, required: true },
+                familyId: { type: String, required: true },
+                createdAt: { type: Date, default: Date.now },
+                expiresAt: { type: Date, required: true },
+                userAgent: { type: String, default: '' },
+                ip: { type: String, default: '' },
+                revokedAt: { type: Date, default: null }
+            }
+        ],
         googleId: { type: String, default: null, index: true },
         microsoftId: { type: String, default: null, index: true },
         tenantId: { type: String, default: null },
@@ -48,6 +72,7 @@ const UserSchema = new Schema<IUser>(
 
 UserSchema.index({ fullName: 1 })
 UserSchema.index({ createdAt: 1 })
+UserSchema.index({ 'refreshTokens.tokenHash': 1 })
 
 UserSchema.pre('save', async function (next) {
     if (!this.isModified('password')) {

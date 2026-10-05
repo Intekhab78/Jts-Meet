@@ -21,6 +21,9 @@ import { cleanupMeetingQA } from './meetingQA'
 import { cleanupPolls } from './poll'
 import { cleanupBreakout } from './breakout'
 import { liveBroadcastService } from '../modules/webrtc/liveBroadcast.service'
+import { liveStreamService } from '../services/livestream.service'
+import { telephonyMediaService } from '../services/telephonyMedia.service'
+import { cloudRecordingWorker } from '../workers/cloudRecording.worker'
 
 // Track backstage participants per meeting room for Virtual Green Room
 const meetingBackstageMap = new Map<string, Set<string>>()
@@ -199,16 +202,58 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         }
     })
 
-    socket.on(SocketEvents.LIVESTREAM_TOGGLE, (payload: { meetingId: string; isStreaming: boolean; platform: string; broadcastTitle?: string; streamUrl?: string }) => {
+    socket.on(SocketEvents.LIVESTREAM_TOGGLE, async (payload: { meetingId: string; isStreaming: boolean; platform: string; broadcastTitle?: string; streamUrl?: string; streamKey?: string; resolution?: '720p' | '1080p'; bitrate?: string }) => {
         if (!userId || !payload?.meetingId) return
-        io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.LIVESTREAM_STATUS, {
-            userId,
-            meetingId: payload.meetingId,
-            isStreaming: payload.isStreaming,
-            platform: payload.platform || 'youtube',
-            broadcastTitle: payload.broadcastTitle || 'Live Conference Broadcast',
-            startedAt: payload.isStreaming ? new Date().toISOString() : null
-        })
+
+        if (payload.isStreaming) {
+            try {
+                await liveStreamService.startStream({
+                    meetingId: payload.meetingId,
+                    userId,
+                    platform: (payload.platform as any) || 'youtube',
+                    serverUrl: payload.streamUrl,
+                    streamKey: payload.streamKey || '',
+                    broadcastTitle: payload.broadcastTitle,
+                    resolution: payload.resolution || '720p',
+                    bitrate: payload.bitrate
+                })
+                io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.LIVESTREAM_STATUS, {
+                    userId,
+                    meetingId: payload.meetingId,
+                    isStreaming: true,
+                    platform: payload.platform || 'youtube',
+                    broadcastTitle: payload.broadcastTitle || 'Live Conference Broadcast',
+                    startedAt: new Date().toISOString()
+                })
+            } catch (err: any) {
+                console.error(`[LiveStream] Failed to start stream for meeting ${payload.meetingId}:`, err)
+                socket.emit('meeting:livestream-error', { message: err?.message || 'Failed to start RTMP stream' })
+            }
+        } else {
+            await liveStreamService.stopStream(payload.meetingId)
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.LIVESTREAM_STATUS, {
+                userId,
+                meetingId: payload.meetingId,
+                isStreaming: false,
+                platform: payload.platform || 'youtube',
+                stoppedAt: new Date().toISOString()
+            })
+        }
+    })
+
+    socket.on(SocketEvents.LIVESTREAM_CHUNK, (payload: { meetingId: string; chunk: any }) => {
+        if (!payload?.meetingId || !payload?.chunk) return
+        liveStreamService.pushChunk(payload.meetingId, payload.chunk)
+    })
+
+    socket.on('meeting:audio-chunk-to-pstn', (payload: { meetingId: string; mulawBase64: string }) => {
+        if (!payload?.meetingId || !payload?.mulawBase64) return
+        telephonyMediaService.sendAudioToPstn(payload.meetingId, payload.mulawBase64)
+    })
+
+    socket.on('meeting:cloud-recording-chunk', (payload: { meetingId: string; chunk: any }) => {
+        if (!payload?.meetingId || !payload?.chunk) return
+        cloudRecordingWorker.pushRecordingChunk(payload.meetingId, payload.chunk)
     })
 
     socket.on(SocketEvents.MEETING_REACTION, (payload: { meetingId: string; emoji: string; senderName?: string }) => {
@@ -556,10 +601,12 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         })
     })
 
-    socket.on('meeting:soundboard', (payload: { meetingId: string; sound: string; senderName?: string }) => {
-        if (!payload?.meetingId || !payload?.sound) return
+    socket.on('meeting:soundboard', (payload: { meetingId: string; sound?: string; soundType?: string; senderName?: string }) => {
+        const sound = payload?.sound || payload?.soundType
+        if (!payload?.meetingId || !sound) return
         io.to(`meeting:${payload.meetingId}`).emit('meeting:soundboard', {
-            sound: payload.sound,
+            sound,
+            soundType: sound,
             senderName: payload.senderName || authSocket.guestName || 'Participant'
         })
     })

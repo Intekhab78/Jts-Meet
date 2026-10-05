@@ -102,6 +102,7 @@ export const SocketEvents = {
     LIVESTREAM_TOGGLE: 'meeting:livestream-toggle',
     LIVESTREAM_STATUS: 'meeting:livestream-status',
     LIVESTREAM_STATS: 'meeting:livestream-stats',
+    LIVESTREAM_CHUNK: 'meeting:livestream-chunk',
 
     // User Live Presence events
     PRESENCE_UPDATE: 'presence:update',

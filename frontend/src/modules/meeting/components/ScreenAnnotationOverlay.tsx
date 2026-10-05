@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
-import { IconEdit, IconTrash, IconX } from '../../../components/common/Icons'
+import { IconEdit, IconTrash, IconX, IconCheck, IconLock, IconUnlock } from '../../../components/common/Icons'
 
 export type AnnotationTool = 'laser' | 'pen' | 'highlighter' | 'eraser'
 
@@ -57,6 +57,7 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
     const [strokes, setStrokes] = useState<Stroke[]>([])
     const [allowAttendeeDrawing, setAllowAttendeeDrawing] = useState(true)
     const [attendeeDrawingActive, setAttendeeDrawingActive] = useState(false)
+    const [isMinimized, setIsMinimized] = useState(false)
     const effectiveAttendeeDrawingActive = isAttendeeDrawingActive !== undefined ? isAttendeeDrawingActive : attendeeDrawingActive
     const canDraw = (isPresenter && isActive) || (!isPresenter && allowAttendeeDrawing && effectiveAttendeeDrawingActive)
     const isDrawing = useRef(false)
@@ -458,257 +459,322 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
 
             {/* Floating Annotation Toolbar Pill (Rendered when canDraw is true) */}
             {canDraw && (
-                <div style={{
-                    position: 'absolute',
-                    top: 16,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '8px 16px',
-                    background: 'rgba(15, 23, 42, 0.92)',
-                    backdropFilter: 'blur(16px)',
-                    WebkitBackdropFilter: 'blur(16px)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    borderRadius: '9999px',
-                    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.6), 0 0 15px rgba(99, 102, 241, 0.25)',
-                    zIndex: 100,
-                    color: '#ffffff'
-                }}>
-                    {/* Laser Pointer */}
+                isMinimized ? (
                     <button
                         type="button"
-                        onClick={() => setTool('laser')}
+                        onClick={() => setIsMinimized(false)}
                         style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            padding: '6px 12px',
-                            borderRadius: '9999px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            border: tool === 'laser' ? '1px solid #ef4444' : '1px solid transparent',
-                            background: tool === 'laser' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.06)',
-                            color: tool === 'laser' ? '#f87171' : '#e2e8f0',
-                            boxShadow: tool === 'laser' ? '0 0 10px rgba(239, 68, 68, 0.4)' : 'none'
-                        }}
-                        title="Laser Pointer (Temporary Glowing Trail)"
-                    >
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 8px #ef4444' }} />
-                        <span>Laser</span>
-                    </button>
-
-                    {/* Pen */}
-                    <button
-                        type="button"
-                        onClick={() => setTool('pen')}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            padding: '6px 12px',
-                            borderRadius: '9999px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            border: tool === 'pen' ? '1px solid #3b82f6' : '1px solid transparent',
-                            background: tool === 'pen' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.06)',
-                            color: tool === 'pen' ? '#60a5fa' : '#e2e8f0',
-                            boxShadow: tool === 'pen' ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none'
-                        }}
-                        title="Freehand Pen"
-                    >
-                        <IconEdit size={13} color="#60a5fa" />
-                        <span>Pen</span>
-                    </button>
-
-                    {/* Highlighter */}
-                    <button
-                        type="button"
-                        onClick={() => setTool('highlighter')}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            padding: '6px 12px',
-                            borderRadius: '9999px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            border: tool === 'highlighter' ? '1px solid #eab308' : '1px solid transparent',
-                            background: tool === 'highlighter' ? 'rgba(234, 179, 8, 0.25)' : 'rgba(255, 255, 255, 0.06)',
-                            color: tool === 'highlighter' ? '#facc15' : '#e2e8f0',
-                            boxShadow: tool === 'highlighter' ? '0 0 10px rgba(234, 179, 8, 0.4)' : 'none'
-                        }}
-                        title="Highlighter"
-                    >
-                        <IconEdit size={13} color="#facc15" />
-                        <span>Highlight</span>
-                    </button>
-
-                    {/* Eraser */}
-                    <button
-                        type="button"
-                        onClick={() => setTool('eraser')}
-                        style={{
+                            position: 'absolute',
+                            top: 12,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
                             display: 'flex',
                             alignItems: 'center',
                             gap: 4,
-                            padding: '6px 10px',
+                            padding: '4px 8px',
+                            background: 'rgba(15, 23, 42, 0.94)',
+                            backdropFilter: 'blur(16px)',
+                            border: '1px solid rgba(99, 102, 241, 0.5)',
                             borderRadius: '9999px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+                            color: '#c7d2fe',
                             cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            border: tool === 'eraser' ? '1px solid rgba(255,255,255,0.4)' : '1px solid transparent',
-                            background: tool === 'eraser' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.06)',
-                            color: '#ffffff'
-                        }}
-                        title="Eraser"
-                    >
-                        <IconTrash size={13} color="#ffffff" />
-                        <span>Eraser</span>
-                    </button>
-
-                    <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
-
-                    {/* Color Picker Palette */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {COLORS.map(c => (
-                            <button
-                                key={c}
-                                type="button"
-                                onClick={() => setColor(c)}
-                                style={{
-                                    width: 18,
-                                    height: 18,
-                                    borderRadius: '50%',
-                                    border: color === c ? '2px solid #ffffff' : '1px solid rgba(0,0,0,0.5)',
-                                    backgroundColor: c,
-                                    cursor: 'pointer',
-                                    transform: color === c ? 'scale(1.2)' : 'scale(1)',
-                                    boxShadow: color === c ? `0 0 8px ${c}` : 'none',
-                                    transition: 'all 0.15s ease'
-                                }}
-                                title={c}
-                            />
-                        ))}
-                    </div>
-
-                    <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
-
-                    {/* Clear All */}
-                    <button
-                        type="button"
-                        onClick={handleClear}
-                        style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: '#94a3b8',
-                            cursor: 'pointer',
-                            fontSize: '0.85rem',
-                            padding: '6px 8px',
-                            borderRadius: '9999px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
+                            zIndex: 100,
                             transition: 'all 0.2s ease'
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.background = 'transparent' }}
-                        title="Clear All Annotations"
+                        title="Show annotation tools"
                     >
-                        <IconTrash size={14} />
+                        <IconEdit size={13} color="#818cf8" />
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
                     </button>
-
-                    {/* Presenter: Allow Attendees Drawing Toggle */}
-                    {isPresenter && (
-                        <>
-                            <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
-                            <button
-                                type="button"
-                                onClick={handleToggleAttendeePermission}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 5,
-                                    padding: '4px 10px',
-                                    borderRadius: '9999px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 700,
-                                    background: allowAttendeeDrawing ? 'rgba(52, 211, 153, 0.18)' : 'rgba(239, 68, 68, 0.18)',
-                                    border: allowAttendeeDrawing ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)',
-                                    color: allowAttendeeDrawing ? '#34d399' : '#f87171',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.18s ease'
-                                }}
-                                title={allowAttendeeDrawing ? "Click to lock annotations (Presenter only)" : "Click to allow attendees to draw on screen"}
-                            >
-                                <span>👥</span>
-                                <span>{allowAttendeeDrawing ? 'Attendees: ON' : 'Attendees: OFF'}</span>
-                            </button>
-                        </>
-                    )}
-
-                    {/* Attendee: Exit Drawing Mode */}
-                    {!isPresenter && (
+                ) : (
+                    <div style={{
+                        position: 'absolute',
+                        top: 12,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '5px 12px',
+                        background: 'rgba(15, 23, 42, 0.94)',
+                        backdropFilter: 'blur(16px)',
+                        WebkitBackdropFilter: 'blur(16px)',
+                        border: '1px solid rgba(255, 255, 255, 0.18)',
+                        borderRadius: '9999px',
+                        boxShadow: '0 8px 30px rgba(0, 0, 0, 0.65), 0 0 15px rgba(99, 102, 241, 0.25)',
+                        zIndex: 100,
+                        color: '#ffffff',
+                        maxWidth: 'calc(100% - 32px)',
+                        overflowX: 'auto',
+                        scrollbarWidth: 'none'
+                    }}>
+                        {/* Laser Pointer */}
                         <button
                             type="button"
-                            onClick={() => {
-                                setAttendeeDrawingActive(false)
-                                onToggleAttendeeDrawing?.(false)
-                            }}
+                            onClick={() => setTool('laser')}
                             style={{
-                                background: 'rgba(255, 255, 255, 0.08)',
-                                border: '1px solid rgba(255, 255, 255, 0.15)',
-                                color: '#e2e8f0',
-                                cursor: 'pointer',
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                padding: '4px 10px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                padding: '4px 9px',
                                 borderRadius: '9999px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                border: tool === 'laser' ? '1px solid #ef4444' : '1px solid transparent',
+                                background: tool === 'laser' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+                                color: tool === 'laser' ? '#f87171' : '#e2e8f0',
+                                boxShadow: tool === 'laser' ? '0 0 10px rgba(239, 68, 68, 0.4)' : 'none'
+                            }}
+                            title="Laser Pointer (Temporary Glowing Trail)"
+                        >
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 8px #ef4444' }} />
+                            <span>Laser</span>
+                        </button>
+
+                        {/* Pen */}
+                        <button
+                            type="button"
+                            onClick={() => setTool('pen')}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                padding: '4px 9px',
+                                borderRadius: '9999px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                border: tool === 'pen' ? '1px solid #3b82f6' : '1px solid transparent',
+                                background: tool === 'pen' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+                                color: tool === 'pen' ? '#60a5fa' : '#e2e8f0',
+                                boxShadow: tool === 'pen' ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none'
+                            }}
+                            title="Freehand Pen"
+                        >
+                            <IconEdit size={12} color="#60a5fa" />
+                            <span>Pen</span>
+                        </button>
+
+                        {/* Highlighter */}
+                        <button
+                            type="button"
+                            onClick={() => setTool('highlighter')}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                padding: '4px 9px',
+                                borderRadius: '9999px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                border: tool === 'highlighter' ? '1px solid #eab308' : '1px solid transparent',
+                                background: tool === 'highlighter' ? 'rgba(234, 179, 8, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+                                color: tool === 'highlighter' ? '#facc15' : '#e2e8f0',
+                                boxShadow: tool === 'highlighter' ? '0 0 10px rgba(234, 179, 8, 0.4)' : 'none'
+                            }}
+                            title="Highlighter"
+                        >
+                            <IconEdit size={12} color="#facc15" />
+                            <span>Highlight</span>
+                        </button>
+
+                        {/* Eraser */}
+                        <button
+                            type="button"
+                            onClick={() => setTool('eraser')}
+                            style={{
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 4,
-                                transition: 'all 0.2s ease'
+                                padding: '4px 8px',
+                                borderRadius: '9999px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                border: tool === 'eraser' ? '1px solid rgba(255,255,255,0.4)' : '1px solid transparent',
+                                background: tool === 'eraser' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.06)',
+                                color: '#ffffff'
                             }}
-                            title="Exit drawing mode"
+                            title="Eraser"
                         >
-                            <span>Done Drawing</span>
+                            <IconTrash size={12} color="#ffffff" />
+                            <span>Eraser</span>
                         </button>
-                    )}
 
-                    {/* Close Annotation Mode */}
-                    {onClose && isPresenter && (
+                        <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+
+                        {/* Color Picker Palette */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {COLORS.map(c => (
+                                <button
+                                    key={c}
+                                    type="button"
+                                    onClick={() => setColor(c)}
+                                    style={{
+                                        width: 15,
+                                        height: 15,
+                                        borderRadius: '50%',
+                                        border: color === c ? '2px solid #ffffff' : '1px solid rgba(0,0,0,0.5)',
+                                        backgroundColor: c,
+                                        cursor: 'pointer',
+                                        transform: color === c ? 'scale(1.2)' : 'scale(1)',
+                                        boxShadow: color === c ? `0 0 8px ${c}` : 'none',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                    title={c}
+                                />
+                            ))}
+                        </div>
+
+                        <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+
+                        {/* Clear All */}
                         <button
                             type="button"
-                            onClick={onClose}
+                            onClick={handleClear}
                             style={{
                                 background: 'transparent',
                                 border: 'none',
                                 color: '#94a3b8',
                                 cursor: 'pointer',
-                                fontSize: '0.85rem',
-                                padding: '6px 8px',
+                                fontSize: '0.8rem',
+                                padding: '4px 6px',
                                 borderRadius: '9999px',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 transition: 'all 0.2s ease'
                             }}
-                            onMouseEnter={(e) => { e.currentTarget.style.color = '#ffffff'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)' }}
                             onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.background = 'transparent' }}
-                            title="Close Annotations"
+                            title="Clear All Annotations"
                         >
-                            <IconX size={14} />
+                            <IconTrash size={13} />
                         </button>
-                    )}
-                </div>
+
+                        {/* Presenter: Allow Attendees Drawing Toggle */}
+                        {/* Presenter: Allow Attendees Drawing Toggle (Sleek Lock/Unlock Icon) */}
+                        {isPresenter && (
+                            <>
+                                <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+                                <button
+                                    type="button"
+                                    onClick={handleToggleAttendeePermission}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '4px 7px',
+                                        borderRadius: '9999px',
+                                        background: allowAttendeeDrawing ? 'rgba(52, 211, 153, 0.18)' : 'rgba(239, 68, 68, 0.18)',
+                                        border: allowAttendeeDrawing ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)',
+                                        color: allowAttendeeDrawing ? '#34d399' : '#f87171',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.18s ease'
+                                    }}
+                                    title={allowAttendeeDrawing
+                                        ? "Audience can draw (Click to Lock: Only you can draw)"
+                                        : "Screen is Locked (Click to Unlock: Allow audience to draw)"}
+                                >
+                                    {allowAttendeeDrawing ? (
+                                        <IconUnlock size={13} strokeWidth={2.2} />
+                                    ) : (
+                                        <IconLock size={13} strokeWidth={2.2} />
+                                    )}
+                                </button>
+                            </>
+                        )}
+
+                        {/* Hide / Minimize Toolbar Toggle */}
+                        <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+                        <button
+                            type="button"
+                            onClick={() => setIsMinimized(true)}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#94a3b8',
+                                cursor: 'pointer',
+                                padding: '4px 6px',
+                                borderRadius: '9999px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'all 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.background = 'transparent' }}
+                            title="Hide toolbar"
+                        >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="18 15 12 9 6 15" />
+                            </svg>
+                        </button>
+
+                        {/* Attendee: Exit Drawing Mode */}
+                        {!isPresenter && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setAttendeeDrawingActive(false)
+                                    onToggleAttendeeDrawing?.(false)
+                                }}
+                                style={{
+                                    background: 'rgba(74, 222, 128, 0.18)',
+                                    border: '1px solid rgba(74, 222, 128, 0.4)',
+                                    color: '#4ade80',
+                                    cursor: 'pointer',
+                                    padding: '4px 7px',
+                                    borderRadius: '9999px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(74, 222, 128, 0.3)'; e.currentTarget.style.color = '#fff' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(74, 222, 128, 0.18)'; e.currentTarget.style.color = '#4ade80' }}
+                                title="Done Drawing"
+                            >
+                                <IconCheck size={13} strokeWidth={2.5} />
+                            </button>
+                        )}
+
+                        {/* Close Annotation Mode */}
+                        {onClose && isPresenter && (
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#94a3b8',
+                                    cursor: 'pointer',
+                                    fontSize: '0.8rem',
+                                    padding: '4px 6px',
+                                    borderRadius: '9999px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = '#ffffff'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.background = 'transparent' }}
+                                title="Close Annotations"
+                            >
+                                <IconX size={13} />
+                            </button>
+                        )}
+                    </div>
+                )
             )}
         </div>
     )

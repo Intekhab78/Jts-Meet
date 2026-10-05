@@ -3,8 +3,16 @@ import app from './app'
 import { PORT } from './config'
 import { initializeSocket } from './socket'
 import { initializeCronJobs } from './jobs/meetingCron'
+import { telephonyMediaService } from './services/telephonyMedia.service'
 
 const server = http.createServer(app)
+
+// Handle raw WebSocket upgrade for Twilio PSTN Phone Call Media Streams
+server.on('upgrade', (req, socket, head) => {
+  if (req.url && req.url.startsWith('/api/telephony/voice/media')) {
+    telephonyMediaService.handleUpgrade(req, socket as any, head)
+  }
+})
 
 async function startServer() {
   try {

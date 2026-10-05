@@ -10,6 +10,7 @@ import {
     resetPassword,
     refreshSessionToken,
     invalidateSession,
+    logoutAllDevices,
     updateUserProfile,
     changeUserPassword,
     listActiveSessions,
@@ -22,6 +23,7 @@ import { Organization } from '../modules/organization/organization.model'
 import { validateRegister, validateLogin } from '../validators/auth.validator'
 import { AuthRequest } from '../middleware/authMiddleware'
 import { updateUserStatus } from '../socket/presence'
+import { getRefreshTokenCookieOptions } from '../utils/tokenHelper'
 
 export const authController = {
     register: async (req: Request, res: Response) => {
@@ -36,7 +38,10 @@ export const authController = {
 
         try {
             const authResult = await registerUser(req.body, deviceInfo, ipAddress)
-            return sendSuccess(res, authResult, 'Registration successful')
+            if (authResult.refreshToken) {
+                res.cookie('refreshToken', authResult.refreshToken, getRefreshTokenCookieOptions())
+            }
+            return sendSuccess(res, { ...authResult, token: authResult.accessToken }, 'Registration successful')
         } catch (err: any) {
             return sendError(res, err.status || 500, err.message || 'Registration failed')
         }
@@ -54,7 +59,10 @@ export const authController = {
 
         try {
             const authResult = await loginUser(req.body, deviceInfo, ipAddress)
-            return sendSuccess(res, authResult, 'Login successful')
+            if (authResult.refreshToken) {
+                res.cookie('refreshToken', authResult.refreshToken, getRefreshTokenCookieOptions())
+            }
+            return sendSuccess(res, { ...authResult, token: authResult.accessToken }, 'Login successful')
         } catch (err: any) {
             return sendError(res, err.status || 500, err.message || 'Login failed')
         }
@@ -80,7 +88,10 @@ export const authController = {
 
         try {
             const authResult = await verifyOtp(email, code, deviceInfo, ipAddress)
-            return sendSuccess(res, authResult, 'OTP verified successfully')
+            if (authResult.refreshToken) {
+                res.cookie('refreshToken', authResult.refreshToken, getRefreshTokenCookieOptions())
+            }
+            return sendSuccess(res, { ...authResult, token: authResult.accessToken }, 'OTP verified successfully')
         } catch (err: any) {
             return sendError(res, err.status || 500, err.message || 'Verification failed')
         }
@@ -126,6 +137,7 @@ export const authController = {
 
         try {
             await resetPassword(email, code, password)
+            res.clearCookie('refreshToken', getRefreshTokenCookieOptions())
             return sendSuccess(res, null, 'Password reset successful')
         } catch (err: any) {
             return sendError(res, err.status || 500, err.message || 'Failed to reset password')
@@ -133,8 +145,8 @@ export const authController = {
     },
 
     refreshToken: async (req: Request, res: Response) => {
-        const { refreshToken } = req.body as { refreshToken?: string }
-        if (!refreshToken) {
+        const incomingRefreshToken = req.cookies?.refreshToken || (req.body as any)?.refreshToken
+        if (!incomingRefreshToken) {
             return sendError(res, 400, 'Refresh token is required')
         }
 
@@ -142,24 +154,36 @@ export const authController = {
         const ipAddress = req.ip || ''
 
         try {
-            const result = await refreshSessionToken(refreshToken, deviceInfo, ipAddress)
-            return sendSuccess(res, result, 'Tokens refreshed successfully')
+            const result = await refreshSessionToken(incomingRefreshToken, deviceInfo, ipAddress)
+            res.cookie('refreshToken', result.refreshToken, getRefreshTokenCookieOptions())
+            return sendSuccess(res, { ...result, token: result.accessToken }, 'Tokens refreshed successfully')
         } catch (err: any) {
+            res.clearCookie('refreshToken', getRefreshTokenCookieOptions())
             return sendError(res, err.status || 401, err.message || 'Failed to refresh token')
         }
     },
 
     logout: async (req: Request, res: Response) => {
-        const { refreshToken } = req.body as { refreshToken?: string }
-        if (!refreshToken) {
-            return sendError(res, 400, 'Refresh token is required')
+        const incomingRefreshToken = req.cookies?.refreshToken || (req.body as any)?.refreshToken
+        if (incomingRefreshToken) {
+            try {
+                await invalidateSession(incomingRefreshToken)
+            } catch (_) {}
         }
+        res.clearCookie('refreshToken', getRefreshTokenCookieOptions())
+        return sendSuccess(res, null, 'Logged out successfully')
+    },
 
+    logoutAll: async (req: AuthRequest, res: Response) => {
+        if (!req.userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
         try {
-            await invalidateSession(refreshToken)
-            return sendSuccess(res, null, 'Logged out successfully')
+            await logoutAllDevices(req.userId)
+            res.clearCookie('refreshToken', getRefreshTokenCookieOptions())
+            return sendSuccess(res, null, 'Logged out from all devices')
         } catch (err: any) {
-            return sendError(res, err.status || 500, err.message || 'Failed to logout')
+            return sendError(res, err.status || 500, err.message || 'Failed to logout from all devices')
         }
     },
 

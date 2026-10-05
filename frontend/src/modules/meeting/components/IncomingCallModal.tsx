@@ -31,6 +31,17 @@ export function IncomingCallModal({ call, onAccept, onDecline }: IncomingCallMod
         }
     }, [call])
 
+    // Auto-dismiss incoming call modal if unanswered after 60 seconds
+    useEffect(() => {
+        if (!call) return
+        const timeout = setTimeout(() => {
+            console.log('[IncomingCallModal] Incoming call ringing timed out after 60s')
+            stopRingtone()
+            onDecline(call)
+        }, 60000)
+        return () => clearTimeout(timeout)
+    }, [call, onDecline])
+
     if (!call) return null
 
     const handleAccept = () => {

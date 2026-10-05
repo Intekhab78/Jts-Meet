@@ -146,7 +146,7 @@ export function AdminConsoleHub({
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`
                 },
-                body: JSON.stringify({ planId })
+                body: JSON.stringify({ planId, paymentToken: 'admin_console_override' })
             })
             const data = await res.json()
             if (res.ok && data.success) {

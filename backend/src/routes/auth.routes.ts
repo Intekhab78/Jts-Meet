@@ -32,7 +32,9 @@ router.post('/forgot-password', authRateLimiter, asyncWrapper(authController.for
 router.post('/reset-password', authRateLimiter, asyncWrapper(authController.resetPassword))
 
 router.post('/refresh-token', asyncWrapper(authController.refreshToken))
+router.post('/refresh', asyncWrapper(authController.refreshToken))
 router.post('/logout', asyncWrapper(authController.logout))
+router.post('/logout-all', authenticate, asyncWrapper(authController.logoutAll))
 
 router.put('/profile', authenticate, asyncWrapper(authController.updateProfile))
 router.put('/status', authenticate, asyncWrapper(authController.updateStatus))

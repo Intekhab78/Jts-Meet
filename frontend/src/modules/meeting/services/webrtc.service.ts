@@ -42,6 +42,18 @@ export function getIceServers(): RTCIceServer[] {
 
     return [
         ...customTurnList,
+        // High-Reliability OpenRelay Global Community TURN servers (UDP, TCP, and Port 443 TLS)
+        // Pierces through Symmetric NAT (Jio 4G/5G, Airtel, Vi), corporate firewalls, and campus networks
+        {
+            urls: [
+                'turn:openrelay.metered.ca:80',
+                'turn:openrelay.metered.ca:443',
+                'turn:openrelay.metered.ca:443?transport=tcp',
+                'turns:openrelay.metered.ca:443?transport=tcp'
+            ],
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
         // High-Reliability Google Public STUN
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },

@@ -571,3 +571,12 @@ export const IconZoomOut: React.FC<IconProps> = ({ size = 18, color = 'currentCo
     </svg>
 )
 
+export const IconCaptions: React.FC<IconProps> = ({ size = 18, color = 'currentColor', strokeWidth = 2, className, style, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style} {...props}>
+        <rect x="2" y="5" width="20" height="14" rx="3" />
+        <path d="M10 10.5a2.5 2.5 0 0 0-2.5-2.5h-1A2.5 2.5 0 0 0 4 10.5v3A2.5 2.5 0 0 0 6.5 16h1a2.5 2.5 0 0 0 2.5-2.5" />
+        <path d="M20 10.5a2.5 2.5 0 0 0-2.5-2.5h-1A2.5 2.5 0 0 0 14 10.5v3A2.5 2.5 0 0 0 16.5 16h1a2.5 2.5 0 0 0 2.5-2.5" />
+    </svg>
+)
+
+

@@ -9,36 +9,64 @@ import { JWT_SECRET, JWT_EXPIRES_IN } from '../config'
 import { LoginPayload, RegisterPayload } from '../validators/auth.validator'
 import { sendOTPEmail, sendResetPasswordEmail } from './email.service'
 import { withTransactionOrDirect } from '../utils/transactionHelper'
+import { generateAccessToken, generateRefreshToken, hashToken, REFRESH_TOKEN_EXPIRY_DAYS } from '../utils/tokenHelper'
 
 interface AuthResult {
     user: Record<string, any>
     accessToken: string
     refreshToken: string
+    token?: string
 }
 
-function createToken(userId: string) {
-    const secret: jwt.Secret = JWT_SECRET as jwt.Secret
-    const options: jwt.SignOptions = {
-        expiresIn: JWT_EXPIRES_IN as jwt.SignOptions['expiresIn']
-    }
-    return jwt.sign({ userId }, secret, options)
-}
+export async function createSession(
+    userId: string,
+    deviceInfo = '',
+    ipAddress = '',
+    session?: mongoose.ClientSession,
+    familyId?: string
+): Promise<{ accessToken: string; refreshToken: string; token: string }> {
+    const userQuery = User.findById(userId)
+    const user = await (session ? userQuery.session(session) : userQuery)
 
-export async function createSession(userId: string, deviceInfo = '', ipAddress = '', session?: mongoose.ClientSession): Promise<{ accessToken: string; refreshToken: string }> {
-    const accessToken = createToken(userId)
-    const refreshToken = crypto.randomBytes(40).toString('hex')
-    const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 365 days
+    const tokenVersion = user?.tokenVersion ?? 0
+    const accessToken = generateAccessToken({
+        userId,
+        tokenVersion,
+        email: user?.email,
+        isSuperAdmin: user?.isSuperAdmin
+    })
+
+    const { token: rawRefreshToken, hash } = generateRefreshToken()
+    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
+    const activeFamilyId = familyId || crypto.randomUUID()
 
     const newSession = new Session({
         userId,
-        refreshToken,
+        refreshToken: rawRefreshToken,
         deviceInfo,
         ipAddress,
         expiresAt
     })
     await newSession.save(session ? { session } : undefined)
 
-    return { accessToken, refreshToken }
+    if (user) {
+        if (!user.refreshTokens) {
+            user.refreshTokens = []
+        }
+        user.refreshTokens = user.refreshTokens.filter(t => t.expiresAt > new Date() && (!t.revokedAt || Date.now() - t.revokedAt.getTime() < 7 * 24 * 60 * 60 * 1000)).slice(-20)
+        user.refreshTokens.push({
+            tokenHash: hash,
+            familyId: activeFamilyId,
+            createdAt: new Date(),
+            expiresAt,
+            userAgent: deviceInfo,
+            ip: ipAddress,
+            revokedAt: null
+        })
+        await user.save(session ? { session } : undefined)
+    }
+
+    return { accessToken, refreshToken: rawRefreshToken, token: accessToken }
 }
 
 function generateOTP(): string {
@@ -194,33 +222,91 @@ export async function resetPassword(email: string, code: string, password: Regis
     user.password = password
     user.otpCode = null
     user.otpExpires = null
+    user.tokenVersion = (user.tokenVersion || 0) + 1
+    user.refreshTokens = []
     await user.save()
 
     await Session.deleteMany({ userId: user._id }).exec()
 }
 
-export async function refreshSessionToken(oldRefreshToken: string, deviceInfo = '', ipAddress = ''): Promise<{ accessToken: string; refreshToken: string }> {
+export async function refreshSessionToken(
+    oldRefreshToken: string,
+    deviceInfo = '',
+    ipAddress = ''
+): Promise<{ accessToken: string; refreshToken: string; token: string }> {
     return withTransactionOrDirect(async (session) => {
-        const query = Session.findOne({ refreshToken: oldRefreshToken })
-        const currentSession = await (session ? query.session(session) : query)
-        if (!currentSession) {
+        const hashedOld = hashToken(oldRefreshToken)
+
+        let userQuery = User.findOne({ 'refreshTokens.tokenHash': hashedOld })
+        let user = await (session ? userQuery.session(session) : userQuery)
+
+        if (!user) {
+            // Check legacy unhashed session
+            const legacyQuery = Session.findOne({ refreshToken: oldRefreshToken })
+            const legacySession = await (session ? legacyQuery.session(session) : legacyQuery)
+            if (legacySession) {
+                if (legacySession.expiresAt < new Date()) {
+                    await legacySession.deleteOne(session ? { session } : undefined)
+                    throw { status: 401, message: 'Refresh token expired' }
+                }
+                const userId = legacySession.userId.toString()
+                await legacySession.deleteOne(session ? { session } : undefined)
+                return await createSession(userId, deviceInfo, ipAddress, session)
+            }
             throw { status: 401, message: 'Invalid refresh token' }
         }
-        if (currentSession.expiresAt < new Date()) {
-            await currentSession.deleteOne(session ? { session } : undefined)
+
+        const tokenEntry = user.refreshTokens?.find(t => t.tokenHash === hashedOld)
+        if (!tokenEntry) {
+            throw { status: 401, message: 'Invalid refresh token' }
+        }
+
+        // Token reuse detection (Security alert):
+        // If an already-revoked token is presented, someone is attempting replay! Invalidate entire family.
+        if (tokenEntry.revokedAt) {
+            const compromisedFamily = tokenEntry.familyId
+            if (user.refreshTokens) {
+                for (const t of user.refreshTokens) {
+                    if (t.familyId === compromisedFamily) {
+                        t.revokedAt = new Date()
+                    }
+                }
+            }
+            await user.save(session ? { session } : undefined)
+            await Session.deleteMany({ userId: user._id }).exec()
+            throw { status: 401, message: 'Refresh token reuse detected. Access revoked.' }
+        }
+
+        if (tokenEntry.expiresAt < new Date()) {
             throw { status: 401, message: 'Refresh token expired' }
         }
 
-        const userId = currentSession.userId.toString()
-        await currentSession.deleteOne(session ? { session } : undefined)
+        // Mark old token as revoked/used
+        tokenEntry.revokedAt = new Date()
+        await user.save(session ? { session } : undefined)
 
-        const tokens = await createSession(userId, deviceInfo, ipAddress, session)
+        await Session.deleteOne({ refreshToken: oldRefreshToken }).catch(() => {})
+
+        const tokens = await createSession(user._id.toString(), deviceInfo, ipAddress, session, tokenEntry.familyId)
         return tokens
     })
 }
 
 export async function invalidateSession(refreshToken: string): Promise<void> {
+    const hashed = hashToken(refreshToken)
+    await User.updateOne(
+        { 'refreshTokens.tokenHash': hashed },
+        { $set: { 'refreshTokens.$.revokedAt': new Date() } }
+    ).exec()
     await Session.deleteOne({ refreshToken }).exec()
+}
+
+export async function logoutAllDevices(userId: string): Promise<void> {
+    await User.findByIdAndUpdate(userId, {
+        $inc: { tokenVersion: 1 },
+        $set: { refreshTokens: [] }
+    }).exec()
+    await Session.deleteMany({ userId }).exec()
 }
 
 export async function updateUserProfile(userId: string, fullName?: string, profileImage?: string): Promise<Record<string, any>> {
@@ -244,6 +330,8 @@ export async function changeUserPassword(userId: string, oldPassword: string, ne
         throw { status: 400, message: 'Incorrect current password' }
     }
     user.password = newPassword
+    user.tokenVersion = (user.tokenVersion || 0) + 1
+    user.refreshTokens = []
     await user.save()
 
     await Session.deleteMany({ userId: user._id }).exec()

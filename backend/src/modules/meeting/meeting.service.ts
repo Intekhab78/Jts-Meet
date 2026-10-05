@@ -55,17 +55,26 @@ export async function createMeeting(hostId: string, options: string | CreateMeet
     if (resolvedOrgId) {
         const org = await Organization.findById(resolvedOrgId).select('planTier').exec()
         if (org?.planTier) {
-            resolvedPlanTier = org.planTier
+            resolvedPlanTier = org.planTier.toLowerCase()
         }
     } else {
         const userOrg = await Organization.findOne({
-            'members.userId': hostObjectId,
-            'members.status': 'active'
-        }).select('planTier').sort({ createdAt: -1 }).exec()
+            $or: [
+                { ownerId: hostObjectId },
+                { 'members.userId': hostObjectId, 'members.status': 'active' }
+            ],
+            planTier: { $in: ['enterprise', 'pro', 'starter'] }
+        }).select('planTier').sort({ updatedAt: -1 }).exec() || await Organization.findOne({
+            $or: [
+                { ownerId: hostObjectId },
+                { 'members.userId': hostObjectId, 'members.status': 'active' }
+            ]
+        }).select('planTier').sort({ updatedAt: -1 }).exec()
+
         if (userOrg) {
             resolvedOrgId = userOrg._id as Types.ObjectId
             if (userOrg.planTier) {
-                resolvedPlanTier = userOrg.planTier
+                resolvedPlanTier = userOrg.planTier.toLowerCase()
             }
         }
     }
@@ -149,28 +158,42 @@ export async function getMeetingByMeetingId(meetingId: string): Promise<IMeeting
         .populate('participants', 'fullName email')
         .populate('waitingRoom', 'fullName email')
         .populate('mutedUsers', 'fullName email')
+        .populate('organizationId', 'name planTier')
         .exec()
 
-    if (meeting && (!meeting.planTier || meeting.planTier === 'free') && meeting.host) {
+    if (meeting) {
         try {
-            const hostId = (meeting.host as any)._id || meeting.host
-            if (Types.ObjectId.isValid(hostId)) {
-                const hostOrg = await Organization.findOne({
-                    $or: [
-                        { ownerId: new Types.ObjectId(hostId) },
-                        { 'members.userId': new Types.ObjectId(hostId), 'members.status': 'active' }
-                    ],
-                    planTier: { $in: ['enterprise', 'pro', 'starter'] }
-                }).select('planTier').exec() || await Organization.findOne({
-                    $or: [
-                        { ownerId: new Types.ObjectId(hostId) },
-                        { 'members.userId': new Types.ObjectId(hostId), 'members.status': 'active' }
-                    ]
-                }).select('planTier').sort({ updatedAt: -1 }).exec()
+            let activeOrg: any = null
+            if (meeting.organizationId) {
+                if (typeof meeting.organizationId === 'object' && (meeting.organizationId as any).planTier) {
+                    activeOrg = meeting.organizationId
+                } else if (Types.ObjectId.isValid(meeting.organizationId as any)) {
+                    activeOrg = await Organization.findById(meeting.organizationId).select('planTier').exec()
+                }
+            }
+            if (!activeOrg && meeting.host) {
+                const hostId = (meeting.host as any)._id || meeting.host
+                if (Types.ObjectId.isValid(hostId)) {
+                    activeOrg = await Organization.findOne({
+                        $or: [
+                            { ownerId: new Types.ObjectId(hostId) },
+                            { 'members.userId': new Types.ObjectId(hostId), 'members.status': 'active' }
+                        ],
+                        planTier: { $in: ['enterprise', 'pro', 'starter'] }
+                    }).select('planTier').sort({ updatedAt: -1 }).exec() || await Organization.findOne({
+                        $or: [
+                            { ownerId: new Types.ObjectId(hostId) },
+                            { 'members.userId': new Types.ObjectId(hostId), 'members.status': 'active' }
+                        ]
+                    }).select('planTier').sort({ updatedAt: -1 }).exec()
+                }
+            }
 
-                if (hostOrg?.planTier && hostOrg.planTier !== 'free') {
-                    meeting.planTier = hostOrg.planTier
-                    Meeting.updateOne({ _id: meeting._id }, { planTier: hostOrg.planTier }).exec().catch(() => {})
+            if (activeOrg?.planTier) {
+                const liveTier = activeOrg.planTier.toLowerCase()
+                if (meeting.planTier !== liveTier) {
+                    meeting.planTier = liveTier
+                    Meeting.updateOne({ _id: meeting._id }, { planTier: liveTier }).exec().catch(() => {})
                 }
             }
         } catch (e) {

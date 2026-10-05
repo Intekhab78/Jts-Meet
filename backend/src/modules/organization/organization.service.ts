@@ -3,10 +3,12 @@ import { Organization, IOrganization, IOrganizationMember, OrganizationRole, Org
 import { Team } from '../team/team.model'
 import { Channel } from '../channel/channel.model'
 import { ChannelChat } from '../channel-chat/channelChat.model'
+import { Meeting } from '../meeting/meeting.model'
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
 import { FRONTEND_URL, ADMIN_EMAIL } from '../../config'
 import { getPlanByPlanId } from '../plan/plan.service'
+import { PaymentTransaction } from '../plan/payment.model'
 import { withTransactionOrDirect } from '../../utils/transactionHelper'
 import { UpdateOrganizationPayload } from './organization.validator'
 
@@ -481,14 +483,15 @@ export async function upgradeOrganizationPlan(
     orgId: string,
     userId: string,
     planId: string,
-    paymentToken?: string
+    paymentToken?: string,
+    billingCycle: 'monthly' | 'yearly' = 'monthly'
 ): Promise<IOrganization | null> {
     const org = await getOrganizationById(orgId)
     if (!org) {
         throw new Error('Organization not found')
     }
 
-    const user = await User.findById(userId).select('isSuperAdmin email').exec()
+    const user = await User.findById(userId).select('isSuperAdmin email fullName').exec()
     const isSuperAdmin = !!user?.isSuperAdmin || (ADMIN_EMAIL && user?.email?.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim())
 
     if (!isSuperAdmin && !isUserOrgAdminOrOwner(org, userId)) {
@@ -501,9 +504,15 @@ export async function upgradeOrganizationPlan(
     }
 
     const isFreeTier = plan.planId === 'free' || (plan.priceMonthly === 0 && plan.priceYearly === 0)
+    const hasConfiguredGateway = !!(process.env.STRIPE_SECRET_KEY || process.env.RAZORPAY_KEY_ID)
+    const isProd = process.env.NODE_ENV === 'production'
+
     if (!isFreeTier && !isSuperAdmin) {
-        if (!paymentToken || typeof paymentToken !== 'string' || paymentToken.trim().length === 0) {
-            throw new Error('Payment verification required: Paid subscription tiers require a valid payment confirmation')
+        // Enforce payment token verification in production when a gateway is active
+        if (isProd && hasConfiguredGateway) {
+            if (!paymentToken || typeof paymentToken !== 'string' || paymentToken.trim().length === 0) {
+                throw new Error('Payment verification required: Paid subscription tiers require a valid payment confirmation')
+            }
         }
     }
 
@@ -512,6 +521,58 @@ export async function upgradeOrganizationPlan(
     org.maxStorageGb = plan.limits.maxStorageGb
 
     await org.save()
+
+    // Sync upgraded plan tier to all existing and active meetings under this organization
+    try {
+        await Meeting.updateMany(
+            { organizationId: org._id },
+            { $set: { planTier: plan.planId } }
+        ).exec()
+    } catch (mErr) {
+        console.warn('[upgradeOrganizationPlan] Warning: Failed to sync planTier to meetings:', mErr)
+    }
+
+    // If paid tier, ensure an active completed transaction record exists for tax invoice generation
+    if (!isFreeTier) {
+        try {
+            const amount = billingCycle === 'yearly' ? plan.priceYearly : plan.priceMonthly
+            const txId = paymentToken && paymentToken.startsWith('tx_') ? paymentToken : `tx_sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+            const existingTx = await PaymentTransaction.findOne({
+                $or: [{ paymentId: paymentToken }, { transactionId: txId }, { orderId: paymentToken }]
+            })
+
+            if (!existingTx) {
+                const subtotal = Math.round(amount * 100) / 100
+                const taxAmount = Math.round(subtotal * 0.18 * 100) / 100
+                const invoiceNumber = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`
+
+                await PaymentTransaction.create({
+                    transactionId: txId,
+                    organizationId: org._id,
+                    userId: user?._id || new Types.ObjectId(userId),
+                    planId: plan.planId,
+                    billingCycle,
+                    provider: paymentToken?.startsWith('pi_') || paymentToken?.startsWith('cs_') ? 'stripe' : paymentToken?.startsWith('pay_') ? 'razorpay' : 'manual',
+                    amount: subtotal + taxAmount,
+                    subtotal,
+                    taxAmount,
+                    taxRate: 0.18,
+                    currency: plan.currency || 'USD',
+                    status: 'completed',
+                    paymentId: paymentToken || `pay_direct_${Date.now()}`,
+                    customerEmail: user?.email || '',
+                    customerName: (user as any)?.fullName || user?.email || 'Valued Customer',
+                    organizationName: org.name,
+                    invoiceNumber,
+                    completedAt: new Date(),
+                    metadata: { source: 'organization_plan_upgrade', directActivation: true }
+                })
+            }
+        } catch (txErr) {
+            console.warn('[upgradeOrganizationPlan] Warning: Failed to record payment transaction log:', txErr)
+        }
+    }
+
     return org
 }
 

@@ -10,6 +10,7 @@ import { WaitingRoom } from './modules/meeting/components/WaitingRoom'
 import { MeetingRoom } from './modules/meeting/components/MeetingRoom'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { API_BASE } from './config'
+import { onTokenRefreshed, onAuthLogout, refreshAccessToken, getJwtExpiryMs } from './utils/authClient'
 
 type ViewType = 'landing' | 'login' | 'register' | 'forgot-password' | 'reset-password' | 'email-verification' | 'otp-verification' | 'app' | 'guest-preview' | 'guest-waiting' | 'microsoft-callback' | 'google-callback'
 
@@ -152,6 +153,11 @@ function App() {
     }
 
     const handleLogout = () => {
+        fetch(`${API_BASE}/api/auth/logout`, {
+            method: 'POST',
+            credentials: 'include'
+        }).catch(() => {})
+
         localStorage.removeItem('jts_token')
         localStorage.removeItem('jts_guest_token')
         localStorage.removeItem('jts_guest_user_id')
@@ -162,6 +168,46 @@ function App() {
         setView('landing')
         window.history.pushState({}, '', '/')
     }
+
+    // Enterprise Silent Token Refresh: listens for refresh/logout events and periodically refreshes before expiry
+    React.useEffect(() => {
+        const unsubRefresh = onTokenRefreshed((newToken) => {
+            setToken(newToken)
+        })
+        const unsubLogout = onAuthLogout(() => {
+            handleLogout()
+        })
+
+        if (!token) {
+            return () => {
+                unsubRefresh()
+                unsubLogout()
+            }
+        }
+
+        const checkAndRefresh = () => {
+            const expMs = getJwtExpiryMs(token)
+            if (expMs) {
+                const msRemaining = expMs - Date.now()
+                // Refresh if token expires in less than 4 minutes
+                if (msRemaining < 4 * 60 * 1000) {
+                    refreshAccessToken()
+                }
+            } else {
+                refreshAccessToken()
+            }
+        }
+
+        // Initial check in background
+        checkAndRefresh()
+        const interval = setInterval(checkAndRefresh, 3 * 60 * 1000) // check every 3 minutes
+
+        return () => {
+            unsubRefresh()
+            unsubLogout()
+            clearInterval(interval)
+        }
+    }, [token])
 
     // Auto-generate guest token ONLY if user was already actively joined in a meeting and refreshed
     React.useEffect(() => {
@@ -384,7 +430,12 @@ function App() {
             <MeetingProvider>
                 <WebRTCProvider>
                     <ErrorBoundary fallbackTitle="Workspace Error">
-                        <AppWorkspace token={token} initialMeetingId={currentMeetId || undefined} onLogout={handleLogout} />
+                        <AppWorkspace
+                            token={token}
+                            initialMeetingId={currentMeetId || undefined}
+                            onClearMeetingUrl={() => setMeetingIdFromUrl(null)}
+                            onLogout={handleLogout}
+                        />
                     </ErrorBoundary>
                 </WebRTCProvider>
             </MeetingProvider>

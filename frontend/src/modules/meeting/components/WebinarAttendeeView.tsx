@@ -22,6 +22,7 @@ interface WebinarAttendeeViewProps {
     onOpenPolls: () => void
     onOpenChat: () => void
     unreadChatCount?: number
+    attendeeCount?: number
 }
 
 export const WebinarAttendeeView: React.FC<WebinarAttendeeViewProps> = ({
@@ -38,12 +39,13 @@ export const WebinarAttendeeView: React.FC<WebinarAttendeeViewProps> = ({
     onOpenQA,
     onOpenPolls,
     onOpenChat,
-    unreadChatCount = 0
+    unreadChatCount = 0,
+    attendeeCount = 1
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null)
     const [handRaised, setHandRaised] = useState<boolean>(false)
-    const [viewerCount, setViewerCount] = useState<number>(1240 + Math.floor(Math.random() * 50))
     const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([])
+    const [copiedRoom, setCopiedRoom] = useState(false)
 
     // Attach media stream to stage video element
     useEffect(() => {
@@ -57,13 +59,13 @@ export const WebinarAttendeeView: React.FC<WebinarAttendeeViewProps> = ({
     useEffect(() => {
         if (!socket) return
 
-        const handleReaction = (data: { reaction: string; userName?: string; id: string }) => {
+        const handleReaction = (data: { reaction: string; userName?: string; id?: string }) => {
             const newReaction: FloatingReaction = {
                 id: data.id || String(Math.random()),
                 emoji: data.reaction,
-                left: 15 + Math.random() * 70 // randomized horizontal position percentage
+                left: 10 + Math.random() * 80
             }
-            setFloatingReactions(prev => [...prev.slice(-20), newReaction])
+            setFloatingReactions(prev => [...prev.slice(-25), newReaction])
 
             setTimeout(() => {
                 setFloatingReactions(prev => prev.filter(r => r.id !== newReaction.id))
@@ -98,195 +100,534 @@ export const WebinarAttendeeView: React.FC<WebinarAttendeeViewProps> = ({
         }
     }
 
+    const handleCopyId = () => {
+        navigator.clipboard.writeText(meetingId)
+        setCopiedRoom(true)
+        setTimeout(() => setCopiedRoom(false), 2000)
+    }
+
     return (
-        <div className="relative w-full h-full bg-neutral-950 flex flex-col select-none overflow-hidden font-sans text-neutral-100">
-            {/* Top Stage Navigation Bar */}
-            <div className="h-14 px-5 bg-neutral-900/80 backdrop-blur-md border-b border-neutral-800/80 flex items-center justify-between z-20">
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold tracking-wider">
-                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+        <div style={{
+            position: 'fixed',
+            inset: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'radial-gradient(ellipse at 50% 20%, #0d1224 0%, #06080e 75%, #030407 100%)',
+            color: '#f8fafc',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 10000,
+            overflow: 'hidden',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+            userSelect: 'none'
+        }}>
+            {/* Top Stage Header */}
+            <header style={{
+                height: 60,
+                padding: '0 24px',
+                background: 'rgba(10, 14, 26, 0.85)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexShrink: 0,
+                zIndex: 20
+            }}>
+                {/* Left: Live Indicator & Title */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '4px 10px',
+                        borderRadius: 20,
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.35)',
+                        color: '#f87171',
+                        fontSize: '0.6875rem',
+                        fontWeight: 800,
+                        letterSpacing: '0.06em'
+                    }}>
+                        <span style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: '50%',
+                            background: '#ef4444',
+                            boxShadow: '0 0 8px #ef4444',
+                            animation: 'pulse 1.8s infinite'
+                        }} />
                         LIVE WEBINAR
                     </div>
-                    <div className="text-sm font-semibold text-neutral-200 truncate max-w-md">
-                        {meetingTitle || `Webinar Broadcast (${meetingId})`}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <h1 style={{
+                            margin: 0,
+                            fontSize: '0.9375rem',
+                            fontWeight: 700,
+                            color: '#fff',
+                            letterSpacing: '-0.01em',
+                            maxWidth: 380,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                        }}>
+                            {meetingTitle || 'Webinar Stage Broadcast'}
+                        </h1>
+
+                        <button
+                            onClick={handleCopyId}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '2px 8px',
+                                background: 'rgba(255, 255, 255, 0.06)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                borderRadius: 6,
+                                color: '#94a3b8',
+                                fontSize: '0.6875rem',
+                                fontFamily: 'monospace',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s'
+                            }}
+                            title="Click to copy Room ID"
+                        >
+                            <span>{meetingId}</span>
+                            <span style={{ color: copiedRoom ? '#34d399' : '#64748b' }}>
+                                {copiedRoom ? '✓' : '📋'}
+                            </span>
+                        </button>
+                    </div>
+
+                    <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '3px 8px',
+                        background: 'rgba(99, 102, 241, 0.12)',
+                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                        borderRadius: 6,
+                        color: '#a5b4fc',
+                        fontSize: '0.6875rem',
+                        fontWeight: 600
+                    }}>
+                        <span>🎙️ HD Studio Audio</span>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                    {/* Viewers counter */}
-                    <div className="flex items-center gap-1.5 text-xs text-neutral-400 bg-neutral-800/60 px-3 py-1.5 rounded-lg border border-neutral-700/50 font-medium">
-                        <svg className="w-3.5 h-3.5 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                            <circle cx="12" cy="12" r="3" />
+                {/* Right: Viewers Count & Leave */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '5px 12px',
+                        borderRadius: 8,
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        fontSize: '0.75rem',
+                        color: '#cbd5e1',
+                        fontWeight: 600
+                    }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                            <circle cx="9" cy="7" r="4" />
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                         </svg>
-                        <span>{viewerCount.toLocaleString()} Attendees</span>
+                        <span>{attendeeCount.toLocaleString()} {attendeeCount === 1 ? 'Attendee' : 'Attendees'}</span>
                     </div>
 
-                    {/* Leave Webinar */}
                     <button
                         onClick={onLeave}
-                        className="px-3.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-rose-400 hover:text-rose-300 text-xs font-bold rounded-lg transition-colors border border-neutral-700/60"
+                        style={{
+                            padding: '6px 16px',
+                            borderRadius: 8,
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid rgba(239, 68, 68, 0.4)',
+                            color: '#fca5a5',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#ef4444'
+                            e.currentTarget.style.color = '#fff'
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'
+                            e.currentTarget.style.color = '#fca5a5'
+                        }}
                     >
-                        Leave
+                        <span>Leave</span>
                     </button>
                 </div>
-            </div>
+            </header>
 
-            {/* Stage Presentation Viewport */}
-            <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
-                {stageStream ? (
-                    <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        className="w-full h-full object-contain"
-                    />
-                ) : (
-                    <div className="flex flex-col items-center justify-center gap-3 text-neutral-500">
-                        <div className="p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800">
-                            <svg className="w-12 h-12 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                                <rect x="2" y="3" width="20" height="14" rx="2" />
-                                <line x1="8" y1="21" x2="16" y2="21" />
-                                <line x1="12" y1="17" x2="12" y2="21" />
-                            </svg>
+            {/* Main Stage Viewport (Cinema Theater) */}
+            <main style={{
+                flex: 1,
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '16px 24px',
+                overflow: 'hidden'
+            }}>
+                <div style={{
+                    width: '100%',
+                    height: '100%',
+                    maxWidth: 1360,
+                    maxHeight: 'calc(100vh - 160px)',
+                    position: 'relative',
+                    borderRadius: 16,
+                    overflow: 'hidden',
+                    background: '#020306',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 40px rgba(99, 102, 241, 0.05)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                }}>
+                    {stageStream ? (
+                        <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'contain',
+                                background: '#020306'
+                            }}
+                        />
+                    ) : (
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 16,
+                            textAlign: 'center',
+                            padding: 32
+                        }}>
+                            <div style={{
+                                width: 72,
+                                height: 72,
+                                borderRadius: '50%',
+                                background: 'radial-gradient(circle, rgba(99,102,241,0.2) 0%, rgba(99,102,241,0.05) 70%)',
+                                border: '1px solid rgba(99, 102, 241, 0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#a5b4fc',
+                                boxShadow: '0 0 30px rgba(99, 102, 241, 0.2)'
+                            }}>
+                                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M23 7l-7 5 7 5V7z" />
+                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 style={{ margin: '0 0 6px 0', fontSize: '1.125rem', fontWeight: 700, color: '#f1f5f9' }}>
+                                    Keynote Stage is Live
+                                </h3>
+                                <p style={{ margin: 0, fontSize: '0.8125rem', color: '#94a3b8', maxWidth: 420, lineHeight: 1.5 }}>
+                                    The stage speaker is setting up presentation audio & video. Sit back and enjoy the broadcast.
+                                </p>
+                            </div>
                         </div>
-                        <div className="text-sm font-medium text-neutral-400">
-                            Stage Keynote Presenter is preparing the broadcast...
+                    )}
+
+                    {/* Presenter Lower-Third Badge */}
+                    {stageSpeakerName && (
+                        <div style={{
+                            position: 'absolute',
+                            bottom: 20,
+                            left: 20,
+                            padding: '8px 14px',
+                            background: 'rgba(10, 15, 28, 0.82)',
+                            backdropFilter: 'blur(16px)',
+                            WebkitBackdropFilter: 'blur(16px)',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                            color: '#fff',
+                            fontSize: '0.8125rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+                            zIndex: 15
+                        }}>
+                            <span style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                background: '#34d399',
+                                boxShadow: '0 0 8px #34d399'
+                            }} />
+                            <span style={{ color: '#cbd5e1' }}>
+                                {isScreenShare ? '🖥️ Presenting Screen' : '🎙️ Stage Keynote'}:
+                            </span>
+                            <strong style={{ color: '#fff', fontWeight: 700 }}>{stageSpeakerName}</strong>
                         </div>
-                        <div className="text-xs text-neutral-500">
-                            Sit back and enjoy the live high-definition webinar stream.
+                    )}
+
+                    {/* Promoted Alert Banner (If Host promoted this attendee to speak) */}
+                    {isPromotedToSpeaker && (
+                        <div style={{
+                            position: 'absolute',
+                            top: 24,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            padding: '12px 24px',
+                            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95))',
+                            borderRadius: 16,
+                            color: '#fff',
+                            boxShadow: '0 20px 40px rgba(16, 185, 129, 0.35)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            zIndex: 30,
+                            border: '1px solid rgba(255, 255, 255, 0.3)'
+                        }}>
+                            <span style={{ fontSize: '1.25rem' }}>🎉</span>
+                            <div>
+                                <div style={{ fontWeight: 800, fontSize: '0.875rem' }}>You've been promoted to Stage Speaker!</div>
+                                <div style={{ fontSize: '0.75rem', opacity: 0.9 }}>Your microphone and camera are now unlocked by the Host.</div>
+                            </div>
                         </div>
+                    )}
+
+                    {/* Floating Reactions Layer */}
+                    <div style={{
+                        position: 'absolute',
+                        inset: 0,
+                        pointerEvents: 'none',
+                        overflow: 'hidden',
+                        zIndex: 20
+                    }}>
+                        {floatingReactions.map(item => (
+                            <div
+                                key={item.id}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: 30,
+                                    left: `${item.left}%`,
+                                    fontSize: '2.25rem',
+                                    filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.5))',
+                                    animation: 'floatUp 2.8s cubic-bezier(0.22, 1, 0.36, 1) forwards'
+                                }}
+                            >
+                                {item.emoji}
+                            </div>
+                        ))}
                     </div>
-                )}
-
-                {/* Stage Speaker Badge Overlay */}
-                {stageSpeakerName && (
-                    <div className="absolute bottom-5 left-5 px-3.5 py-1.5 bg-black/60 backdrop-blur-md rounded-xl border border-white/10 text-xs font-medium text-white flex items-center gap-2 z-10">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                        <span>{isScreenShare ? 'Screen Share' : 'Keynote Presenter'}: <strong className="font-semibold">{stageSpeakerName}</strong></span>
-                    </div>
-                )}
-
-                {/* Floating Reactions Layer */}
-                <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
-                    {floatingReactions.map(item => (
-                        <div
-                            key={item.id}
-                            className="absolute bottom-6 text-3xl animate-float-up"
-                            style={{ left: `${item.left}%` }}
-                        >
-                            {item.emoji}
-                        </div>
-                    ))}
                 </div>
+            </main>
 
-                {/* Speaker Promotion Notification Alert */}
-                {isPromotedToSpeaker && (
-                    <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 px-5 py-3 bg-emerald-950/90 border border-emerald-500/50 rounded-2xl shadow-2xl text-emerald-200 text-xs flex items-center gap-3 backdrop-blur-md animate-bounce">
-                        <svg className="w-5 h-5 text-emerald-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                        </svg>
-                        <div>
-                            <strong>You're now on Stage!</strong> The Host has promoted you to live speaker. Your microphone and camera can now be enabled.
-                        </div>
+            {/* Bottom Dock (Attendee Control Bar) */}
+            <footer style={{
+                height: 72,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 24px',
+                flexShrink: 0,
+                zIndex: 20
+            }}>
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '8px 20px',
+                    borderRadius: 24,
+                    background: 'rgba(15, 23, 42, 0.85)',
+                    backdropFilter: 'blur(20px)',
+                    WebkitBackdropFilter: 'blur(20px)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)'
+                }}>
+                    {/* Reactions Quick Bar */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {['👏', '❤️', '🔥', '🎉', '🚀', '💡'].map(emoji => (
+                            <button
+                                key={emoji}
+                                onClick={() => handleSendReaction(emoji)}
+                                style={{
+                                    width: 36,
+                                    height: 36,
+                                    borderRadius: 10,
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    color: '#fff',
+                                    fontSize: '1.125rem',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'scale(1.2)'
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'scale(1)'
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                                }}
+                                title={`Send ${emoji} to Stage`}
+                            >
+                                {emoji}
+                            </button>
+                        ))}
                     </div>
-                )}
-            </div>
 
-            {/* Bottom Audience Interaction Bar */}
-            <div className="h-16 px-6 bg-neutral-900/90 backdrop-blur-md border-t border-neutral-800/80 flex items-center justify-between z-20">
-                {/* Left: Quick Reactions Bar */}
-                <div className="flex items-center gap-1.5">
-                    {['👏', '❤️', '🚀', '🎉', '💡'].map(emoji => (
-                        <button
-                            key={emoji}
-                            onClick={() => handleSendReaction(emoji)}
-                            className="p-2 hover:scale-125 transition-transform text-lg bg-neutral-800/60 hover:bg-neutral-800 rounded-xl border border-neutral-700/50"
-                            title={`Send ${emoji}`}
-                        >
-                            {emoji}
-                        </button>
-                    ))}
-                </div>
+                    <div style={{ width: 1, height: 28, background: 'rgba(255, 255, 255, 0.12)' }} />
 
-                {/* Center: Request to Speak (Hand Raise) */}
-                <div className="flex items-center gap-3">
+                    {/* Center: Request to Speak (Raise Hand) */}
                     <button
                         onClick={handleToggleHandRaise}
-                        className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg ${
-                            handRaised
-                                ? 'bg-amber-500 text-black shadow-amber-500/30 animate-pulse'
-                                : 'bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-700'
-                        }`}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '8px 18px',
+                            borderRadius: 14,
+                            background: handRaised
+                                ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+                                : 'rgba(255, 255, 255, 0.07)',
+                            border: handRaised
+                                ? '1px solid #fbbf24'
+                                : '1px solid rgba(255, 255, 255, 0.12)',
+                            color: handRaised ? '#000' : '#fff',
+                            fontSize: '0.8125rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            boxShadow: handRaised ? '0 0 20px rgba(245, 158, 11, 0.4)' : 'none'
+                        }}
                     >
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                            <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0" />
-                            <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2" />
-                            <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8" />
-                            <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
-                        </svg>
-                        <span>{handRaised ? 'Hand Raised (Waiting for Host)' : 'Request to Speak'}</span>
+                        <span style={{ fontSize: '1rem' }}>✋</span>
+                        <span>{handRaised ? 'Hand Raised (Host Notified)' : 'Request to Speak'}</span>
                     </button>
+
+                    <div style={{ width: 1, height: 28, background: 'rgba(255, 255, 255, 0.12)' }} />
+
+                    {/* Right: Interactive Panels (Chat, Q&A, Polls) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                            onClick={onOpenChat}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '8px 14px',
+                                borderRadius: 12,
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                color: '#e2e8f0',
+                                fontSize: '0.8125rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                position: 'relative'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                        >
+                            <span>💬</span>
+                            <span>Chat</span>
+                            {unreadChatCount > 0 && (
+                                <span style={{
+                                    width: 7,
+                                    height: 7,
+                                    borderRadius: '50%',
+                                    background: '#38bdf8',
+                                    boxShadow: '0 0 6px #38bdf8'
+                                }} />
+                            )}
+                        </button>
+
+                        <button
+                            onClick={onOpenQA}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '8px 14px',
+                                borderRadius: 12,
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                color: '#e2e8f0',
+                                fontSize: '0.8125rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                        >
+                            <span>❓</span>
+                            <span>Q&A</span>
+                        </button>
+
+                        <button
+                            onClick={onOpenPolls}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '8px 14px',
+                                borderRadius: 12,
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                color: '#e2e8f0',
+                                fontSize: '0.8125rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                        >
+                            <span>📊</span>
+                            <span>Polls</span>
+                        </button>
+                    </div>
                 </div>
+            </footer>
 
-                {/* Right: Interactive Panels (Q&A, Polls, Chat) */}
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={onOpenQA}
-                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold rounded-xl border border-neutral-700/60 transition-colors flex items-center gap-1.5"
-                    >
-                        <svg className="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                            <line x1="12" y1="17" x2="12.01" y2="17" />
-                        </svg>
-                        <span>Q&A</span>
-                    </button>
-
-                    <button
-                        onClick={onOpenPolls}
-                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold rounded-xl border border-neutral-700/60 transition-colors flex items-center gap-1.5"
-                    >
-                        <svg className="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M18 20V10" />
-                            <path d="M12 20V4" />
-                            <path d="M6 20v-6" />
-                        </svg>
-                        <span>Polls</span>
-                    </button>
-
-                    <button
-                        onClick={onOpenChat}
-                        className="relative px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold rounded-xl border border-neutral-700/60 transition-colors flex items-center gap-1.5"
-                    >
-                        <svg className="w-3.5 h-3.5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        </svg>
-                        <span>Chat</span>
-                        {unreadChatCount > 0 && (
-                            <span className="w-2 h-2 rounded-full bg-sky-500" />
-                        )}
-                    </button>
-                </div>
-            </div>
-
-            {/* Keyframe style for floating reaction animations */}
+            {/* Animation Keyframes */}
             <style>{`
                 @keyframes floatUp {
                     0% {
-                        opacity: 1;
-                        transform: translateY(0) scale(0.8);
+                        opacity: 0;
+                        transform: translateY(10px) scale(0.6);
                     }
-                    50% {
-                        transform: translateY(-120px) scale(1.3);
+                    15% {
+                        opacity: 1;
+                        transform: translateY(-40px) scale(1.15);
+                    }
+                    80% {
+                        opacity: 0.9;
+                        transform: translateY(-280px) scale(1);
                     }
                     100% {
                         opacity: 0;
-                        transform: translateY(-240px) scale(1);
+                        transform: translateY(-380px) scale(0.9);
                     }
                 }
-                .animate-float-up {
-                    animation: floatUp 2.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; transform: scale(1); }
+                    50% { opacity: 0.5; transform: scale(0.9); }
                 }
             `}</style>
         </div>

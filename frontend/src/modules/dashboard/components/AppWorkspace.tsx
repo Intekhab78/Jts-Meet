@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react'
 import { useMeetingContext } from '../../meeting/context/MeetingContext'
 import { useSocketContext } from '../../meeting/context/SocketContext'
 import { useWebRTCContext } from '../../meeting/context/WebRTCContext'
@@ -28,6 +28,7 @@ const SuperAdminMasterHub = React.lazy(() => import('../../admin/SuperAdminMaste
 interface AppWorkspaceProps {
     token: string
     initialMeetingId?: string
+    onClearMeetingUrl?: () => void
     onLogout: () => void
 }
 
@@ -48,7 +49,7 @@ function WorkspaceTabSkeleton() {
     )
 }
 
-export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspaceProps) {
+export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLogout }: AppWorkspaceProps) {
     const [activeTab, setActiveTab] = useState<'dashboard' | 'meeting' | 'chat' | 'history' | 'scheduled' | 'organization' | 'team' | 'channel' | 'admin' | 'super-admin' | 'profile'>(() => {
         // If there is an active meeting from URL or props, navigate directly to meeting tab!
         const pathnameMatch = window.location.pathname.match(/^\/(?:meet|join)\/([a-zA-Z0-9\-_]+)/)
@@ -132,8 +133,16 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
     })
     const outgoingCallRef = React.useRef<OutgoingCallData | null>(null)
     outgoingCallRef.current = outgoingCall
+    const outgoingCallTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
     const activeAudioCallRef = React.useRef<ActiveCallData | null>(null)
     activeAudioCallRef.current = activeAudioCall
+
+    const clearOutgoingCallTimeout = () => {
+        if (outgoingCallTimeoutRef.current) {
+            clearTimeout(outgoingCallTimeoutRef.current)
+            outgoingCallTimeoutRef.current = null
+        }
+    }
     const [showNotificationPrompt, setShowNotificationPrompt] = useState<boolean>(false)
 
     // Register Web Push Service Worker and prompt for notifications
@@ -215,8 +224,11 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         }
     })
 
+    const userLeftMeetingRef = useRef(false)
+
     // If initialMeetingId was provided or changes, activate meeting tab
     useEffect(() => {
+        if (userLeftMeetingRef.current) return
         const targetId = initialMeetingId || window.location.pathname.match(/^\/(?:meet|join)\/([a-zA-Z0-9\-_]+)/)?.[1]
         if (targetId) {
             setActiveMeetingRoomId(targetId)
@@ -227,6 +239,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
     }, [initialMeetingId, setMeetingId])
 
     const handleLaunchMeeting = useCallback((targetMeetingId?: string) => {
+        userLeftMeetingRef.current = false
         const cleanId = (targetMeetingId || `room-${Math.random().toString(36).substring(2, 8)}`).trim()
         try {
             sessionStorage.setItem('jts_active_meeting_id', cleanId)
@@ -240,26 +253,19 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
     }, [setMeetingId])
 
     const handleLeaveMeetingRoom = useCallback(() => {
+        userLeftMeetingRef.current = true
         setActiveMeetingRoomId('')
         setMeetingId('')
+        if (onClearMeetingUrl) onClearMeetingUrl()
         try {
             sessionStorage.removeItem('jts_active_meeting_id')
             sessionStorage.removeItem('jts_meeting_joined')
-            localStorage.removeItem('jts_last_meeting_id')
+            // NOTE: Keep localStorage 'jts_last_meeting_id' intact so Lobby can show "Rejoin Room ↗"
         } catch (e) { }
-        window.history.replaceState(null, '', '/#dashboard')
-        window.location.hash = '#dashboard'
-        setActiveTab('dashboard')
-    }, [setMeetingId])
-
-    useEffect(() => {
-        if (!joined) {
-            const stored = sessionStorage.getItem('jts_active_meeting_id')
-            if (!stored && activeMeetingRoomId) {
-                setActiveMeetingRoomId('')
-            }
-        }
-    }, [joined, activeMeetingRoomId])
+        window.history.replaceState(null, '', '/#meeting')
+        window.location.hash = '#meeting'
+        setActiveTab('meeting')
+    }, [setMeetingId, onClearMeetingUrl])
 
     // Automatically release and turn off camera & microphone hardware when switching away from meeting room
     // BUT: do NOT stop media if a direct call is active (it uses the same streams!)
@@ -343,6 +349,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
 
         const handleCallAccepted = async (data: any) => {
             console.log('[AppWorkspace] Outgoing call was accepted by peer:', data)
+            clearOutgoingCallTimeout()
             const target = outgoingCallRef.current
             setOutgoingCall(null)
             const activeMeetingId = data?.meetingId || target?.meetingId
@@ -389,7 +396,8 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         }
 
         const handleCallRejected = (data: any) => {
-            console.log('[AppWorkspace] Outgoing call was declined by peer:', data)
+            console.log('[AppWorkspace] Outgoing call was declined or timed out:', data)
+            clearOutgoingCallTimeout()
             if ((window as any).electronAPI?.dismissIncomingCallAlert) {
                 (window as any).electronAPI.dismissIncomingCallAlert()
             }
@@ -413,10 +421,11 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
             }
             leaveMeeting()
             stopMedia()
-            setOutgoingCall(prev => prev ? { ...prev, status: 'declined' } : null)
+            const finalStatus = data?.reason === 'no_answer' ? 'no_answer' : 'declined'
+            setOutgoingCall(prev => prev ? { ...prev, status: finalStatus } : null)
             setTimeout(() => {
                 setOutgoingCall(null)
-            }, 2500)
+            }, 3000)
         }
 
         const handleCallInitiated = (data: any) => {
@@ -546,6 +555,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
     }
 
     const handleCancelOutgoingCall = () => {
+        clearOutgoingCallTimeout()
         if (pendingScreenStreamRef.current) {
             pendingScreenStreamRef.current.getTracks().forEach(t => {
                 try { t.stop() } catch {}
@@ -625,6 +635,33 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         })
         setShowDirectDialModal(false)
         setDirectDialTarget('')
+
+        // 60-second automatic call ringing timeout
+        clearOutgoingCallTimeout()
+        outgoingCallTimeoutRef.current = setTimeout(() => {
+            const current = outgoingCallRef.current
+            if (current && (current.status === 'calling' || current.status === 'ringing')) {
+                console.log('[AppWorkspace] Outgoing call timed out after 60s (No answer)')
+                if (socket) {
+                    socket.emit(SocketEvents.CALL_CANCELLED, {
+                        targetUserId: current.targetUserId,
+                        targetUserIds: current.targetUserIds,
+                        meetingId: current.meetingId,
+                        reason: 'no_answer'
+                    })
+                }
+                if (pendingScreenStreamRef.current) {
+                    pendingScreenStreamRef.current.getTracks().forEach(t => { try { t.stop() } catch {} })
+                    pendingScreenStreamRef.current = null
+                }
+                leaveMeeting()
+                stopMedia()
+                setOutgoingCall(prev => prev ? { ...prev, status: 'no_answer' } : null)
+                setTimeout(() => {
+                    setOutgoingCall(null)
+                }, 3000)
+            }
+        }, 60000)
     }
 
     const handleStartGroupCall = async (
@@ -660,6 +697,28 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
         } catch (err) {
             console.warn('[AppWorkspace] Audio request error for group call:', err)
         }
+
+        // 60-second automatic group call ringing timeout
+        clearOutgoingCallTimeout()
+        outgoingCallTimeoutRef.current = setTimeout(() => {
+            const current = outgoingCallRef.current
+            if (current && (current.status === 'calling' || current.status === 'ringing')) {
+                console.log('[AppWorkspace] Group call timed out after 60s (No answer)')
+                if (socket) {
+                    socket.emit(SocketEvents.CALL_CANCELLED, {
+                        targetUserIds: current.targetUserIds,
+                        meetingId: current.meetingId,
+                        reason: 'no_answer'
+                    })
+                }
+                leaveMeeting()
+                stopMedia()
+                setOutgoingCall(prev => prev ? { ...prev, status: 'no_answer' } : null)
+                setTimeout(() => {
+                    setOutgoingCall(null)
+                }, 3000)
+            }
+        }, 60000)
     }
 
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -945,7 +1004,7 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                     setOrganizations(data.data)
                     const savedOrgId = localStorage.getItem('jts_current_org_id')
                     const matched = data.data.find((o: any) => o._id === savedOrgId)
-                    const activeOrg = matched || data.data[0]
+                    const activeOrg = matched || data.data.find((o: any) => ['enterprise', 'pro', 'starter'].includes(o?.planTier?.toLowerCase())) || data.data[0]
                     if (activeOrg) {
                         setCurrentOrgId(activeOrg._id)
                         if (activeOrg.planTier) {
@@ -1825,10 +1884,10 @@ export function AppWorkspace({ token, initialMeetingId, onLogout }: AppWorkspace
                     {activeTab === 'meeting' && (
                         <div style={{ width: '100%', height: '100%' }}>
                             <MeetingRoom
-                                key={activeMeetingRoomId || meetingId || 'lobby'}
+                                key={userLeftMeetingRef.current ? 'lobby' : (activeMeetingRoomId || meetingId || 'lobby')}
                                 initialToken={token}
-                                initialMeetingId={activeMeetingRoomId || meetingId || undefined}
-                                autoJoin={Boolean(activeMeetingRoomId || meetingId)}
+                                initialMeetingId={userLeftMeetingRef.current ? undefined : (activeMeetingRoomId || meetingId || undefined)}
+                                autoJoin={Boolean(!userLeftMeetingRef.current && (activeMeetingRoomId || meetingId))}
                                 isAdminOrOwner={isOrgAdminOrOwner}
                                 planTier={currentOrg?.planTier || localStorage.getItem('jts_active_plan_tier') || 'free'}
                                 onUpgradePlanRequest={() => setActiveTab('organization')}

@@ -1,10 +1,14 @@
 import { Server, Socket } from 'socket.io'
 import { SocketEvents } from '../../socket/events'
 import { AuthenticatedSocket } from '../../socket/auth'
-import { addPeerSession, removePeerSessionBySocket, getMeetingParticipantSocketIds, getMeetingPeersInfo, updatePeerSession } from './peer.manager'
+import { addPeerSession, removePeerSessionBySocket, removePeerSessionByUserId, getPeerSessionBySocketId, getMeetingParticipantSocketIds, getMeetingPeersInfo, updatePeerSession } from './peer.manager'
 import { authorizeMeetingJoin } from './webrtc.service'
 import { joinMeeting } from '../meeting/meeting.service'
 import { User } from '../../models/user.model'
+
+// Google Meet / Zoom style Reconnection Grace Period (15 seconds)
+// Prevents meetings from auto-cutting when mobile/Wi-Fi has a momentary connection jitter
+const pendingDisconnectTimeouts = new Map<string, NodeJS.Timeout>()
 
 export function registerWebRTCHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
@@ -62,6 +66,17 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         }
         if (effectiveName) {
             authSocket.guestName = effectiveName
+        }
+
+        const sessionKey = `${userId}:${payload.meetingId}`
+        if (pendingDisconnectTimeouts.has(sessionKey)) {
+            clearTimeout(pendingDisconnectTimeouts.get(sessionKey)!)
+            pendingDisconnectTimeouts.delete(sessionKey)
+            console.log(`[WebRTC Socket] User ${userId} successfully reconnected to meeting ${payload.meetingId} within grace period.`)
+            socket.to(`meeting:${payload.meetingId}`).emit('webrtc:user-reconnected', {
+                userId,
+                meetingId: payload.meetingId
+            })
         }
 
         addPeerSession(userId, payload.meetingId, socket.id, effectiveName, payload.isVideoOff, payload.isMuted)
@@ -200,32 +215,36 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         })
     })
 
-    socket.on(SocketEvents.SCREEN_START, async (payload: { meetingId: string }) => {
-        if (!userId || !payload?.meetingId) {
+    socket.on(SocketEvents.SCREEN_START, async (payload?: { meetingId?: string }) => {
+        const mId = payload?.meetingId || authSocket.meetingId
+        const sUserId = String(userId || authSocket.userId || socket.id || '')
+        if (!sUserId || !mId) {
             socket.emit('error', { message: 'Invalid screen share start payload' })
             return
         }
 
-        updatePeerSession(userId, { isScreenSharing: true })
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_START, { userId, meetingId: payload.meetingId })
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_CHANGED, { userId, meetingId: payload.meetingId, active: true })
+        updatePeerSession(sUserId, { isScreenSharing: true })
+        io.to(`meeting:${mId}`).emit(SocketEvents.SCREEN_START, { userId: sUserId, meetingId: mId })
+        io.to(`meeting:${mId}`).emit(SocketEvents.SCREEN_CHANGED, { userId: sUserId, meetingId: mId, active: true })
     })
 
-    socket.on(SocketEvents.SCREEN_STOP, async (payload: { meetingId: string }) => {
-        if (!userId || !payload?.meetingId) {
+    socket.on(SocketEvents.SCREEN_STOP, async (payload?: { meetingId?: string }) => {
+        const mId = payload?.meetingId || authSocket.meetingId
+        const sUserId = String(userId || authSocket.userId || socket.id || '')
+        if (!sUserId || !mId) {
             socket.emit('error', { message: 'Invalid screen share stop payload' })
             return
         }
 
-        updatePeerSession(userId, { isScreenSharing: false })
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_STOP, { userId, meetingId: payload.meetingId })
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_CHANGED, { userId, meetingId: payload.meetingId, active: false })
+        updatePeerSession(sUserId, { isScreenSharing: false })
+        io.to(`meeting:${mId}`).emit(SocketEvents.SCREEN_STOP, { userId: sUserId, meetingId: mId })
+        io.to(`meeting:${mId}`).emit(SocketEvents.SCREEN_CHANGED, { userId: sUserId, meetingId: mId, active: false })
     })
 
-    const handleLeaveOrDisconnect = (payloadMeetingId?: string) => {
-        const session = removePeerSessionBySocket(socket.id)
+    const handleLeaveOrDisconnect = (payloadMeetingId?: string, forceUserId?: string) => {
+        const session = removePeerSessionBySocket(socket.id) || (forceUserId ? removePeerSessionByUserId(forceUserId) : null)
         const targetMeetingId = payloadMeetingId || session?.meetingId || authSocket.meetingId
-        const sUserId = session?.userId || userId
+        const sUserId = forceUserId || session?.userId || userId
 
         if (targetMeetingId) {
             try {
@@ -233,11 +252,11 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             } catch (e) {}
 
             if (sUserId) {
-                socket.to(`meeting:${targetMeetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
+                io.to(`meeting:${targetMeetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
                     userId: sUserId,
                     meetingId: targetMeetingId
                 })
-                socket.to(`meeting:${targetMeetingId}`).emit(SocketEvents.MEETING_LEAVE, {
+                io.to(`meeting:${targetMeetingId}`).emit(SocketEvents.MEETING_LEAVE, {
                     userId: sUserId,
                     meetingId: targetMeetingId
                 })
@@ -246,14 +265,62 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
     }
 
     socket.on(SocketEvents.MEETING_LEAVE, (payload?: { meetingId?: string }) => {
-        handleLeaveOrDisconnect(payload?.meetingId)
+        const targetMeetingId = payload?.meetingId || authSocket.meetingId
+        const sUserId = userId || authSocket.userId
+        if (sUserId && targetMeetingId) {
+            const sessionKey = `${sUserId}:${targetMeetingId}`
+            if (pendingDisconnectTimeouts.has(sessionKey)) {
+                clearTimeout(pendingDisconnectTimeouts.get(sessionKey)!)
+                pendingDisconnectTimeouts.delete(sessionKey)
+            }
+        }
+        handleLeaveOrDisconnect(payload?.meetingId, sUserId)
     })
 
     socket.on('meeting:leave', (payload?: { meetingId?: string }) => {
-        handleLeaveOrDisconnect(payload?.meetingId)
+        const targetMeetingId = payload?.meetingId || authSocket.meetingId
+        const sUserId = userId || authSocket.userId
+        if (sUserId && targetMeetingId) {
+            const sessionKey = `${sUserId}:${targetMeetingId}`
+            if (pendingDisconnectTimeouts.has(sessionKey)) {
+                clearTimeout(pendingDisconnectTimeouts.get(sessionKey)!)
+                pendingDisconnectTimeouts.delete(sessionKey)
+            }
+        }
+        handleLeaveOrDisconnect(payload?.meetingId, sUserId)
     })
 
     socket.on(SocketEvents.DISCONNECT, () => {
-        handleLeaveOrDisconnect()
+        const session = getPeerSessionBySocketId(socket.id)
+        const targetMeetingId = session?.meetingId || authSocket.meetingId
+        const sUserId = session?.userId || userId
+
+        if (!targetMeetingId || !sUserId) {
+            handleLeaveOrDisconnect()
+            return
+        }
+
+        const sessionKey = `${sUserId}:${targetMeetingId}`
+        // Clear any prior timer for this session key
+        if (pendingDisconnectTimeouts.has(sessionKey)) {
+            clearTimeout(pendingDisconnectTimeouts.get(sessionKey)!)
+        }
+
+        // Notify room participants that the user has a momentary network interruption
+        // Peers will NOT close or destroy their RTCPeerConnection during grace period
+        io.to(`meeting:${targetMeetingId}`).emit('webrtc:user-reconnecting', {
+            userId: sUserId,
+            meetingId: targetMeetingId
+        })
+
+        console.log(`[WebRTC Socket] Socket ${socket.id} (user ${sUserId}) dropped unexpectedly. Starting 15s grace window...`)
+
+        const timer = setTimeout(() => {
+            pendingDisconnectTimeouts.delete(sessionKey)
+            console.log(`[WebRTC Socket] Grace period expired for user ${sUserId} in ${targetMeetingId}. Cleaning up session.`)
+            handleLeaveOrDisconnect(targetMeetingId, sUserId)
+        }, 15000)
+
+        pendingDisconnectTimeouts.set(sessionKey, timer)
     })
 }

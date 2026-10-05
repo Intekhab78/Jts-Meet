@@ -26,6 +26,8 @@ import clipRoutes from './modules/clip/clip.routes'
 import calendarRoutes from './modules/calendar/calendar.routes'
 import telephonyRoutes from './modules/telephony/telephony.routes'
 import webrtcRoutes from './modules/webrtc/webrtc.routes'
+import paymentRoutes from './modules/plan/payment.routes'
+import cookieParser from 'cookie-parser'
 import { seedDefaultPlans } from './modules/plan/plan.model'
 import { connectDB } from './config/db'
 import { rateLimiter } from './middleware/rateLimiter'
@@ -38,8 +40,19 @@ app.set('trust proxy', 1)
 app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" }
 }))
-app.use(cors())
-app.use(json())
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow mobile apps, electron, curl, postman (no origin) or any web frontend
+        callback(null, true)
+    },
+    credentials: true
+}))
+app.use(cookieParser())
+app.use(json({
+    verify: (req: any, _res, buf) => {
+        req.rawBody = buf
+    }
+}))
 app.use(urlencoded({ extended: true }))
 app.use(passport.initialize())
 app.use(requestLogger)
@@ -85,6 +98,7 @@ app.use('/api/clips', clipRoutes)
 app.use('/api/calendar', calendarRoutes)
 app.use('/api/telephony', telephonyRoutes)
 app.use('/api/webrtc', webrtcRoutes)
+app.use('/api/payment', paymentRoutes)
 
 // Global error handler
 app.use(errorHandler)

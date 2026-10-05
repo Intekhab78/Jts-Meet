@@ -6,6 +6,9 @@ import { Meeting } from '../modules/meeting/meeting.model'
 import { createMeeting } from '../modules/meeting/meeting.service'
 import { NotificationService } from '../modules/notification/notification.service'
 
+const activeRingTimeouts = new Map<string, NodeJS.Timeout>()
+const RING_TIMEOUT_MS = 60000 // 60 seconds ring timeout
+
 export function registerDirectCallHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
     const userId = authSocket.userId
@@ -97,6 +100,27 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
                 })
             }
 
+            // 60-second automatic call ringing timeout
+            if (activeRingTimeouts.has(meetingId)) {
+                clearTimeout(activeRingTimeouts.get(meetingId))
+            }
+            const timeoutHandle = setTimeout(() => {
+                activeRingTimeouts.delete(meetingId)
+                console.log(`[DirectCall] Call ${meetingId} timed out after 60s (no answer)`)
+                const timeoutPayload = {
+                    meetingId,
+                    callerId: userId,
+                    calleeId: targetUserIds[0],
+                    reason: 'no_answer'
+                }
+                for (const tId of targetUserIds) {
+                    io.to(`user:${tId}`).emit(SocketEvents.CALL_CANCELLED, timeoutPayload)
+                }
+                io.to(`user:${userId}`).emit(SocketEvents.CALL_REJECTED, timeoutPayload)
+                io.to(`meeting:${meetingId}`).emit(SocketEvents.CALL_CANCELLED, timeoutPayload)
+            }, RING_TIMEOUT_MS)
+            activeRingTimeouts.set(meetingId, timeoutHandle)
+
             // Confirm initiation to caller with the meetingId
             socket.emit('call:initiated', {
                 meetingId,
@@ -113,6 +137,12 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
         callerId?: string
     }) => {
         if (!userId || !payload?.meetingId) return
+
+        // Clear 60s ringing timeout
+        if (payload?.meetingId && activeRingTimeouts.has(payload.meetingId)) {
+            clearTimeout(activeRingTimeouts.get(payload.meetingId))
+            activeRingTimeouts.delete(payload.meetingId)
+        }
 
         const acceptData = {
             meetingId: payload.meetingId,
@@ -147,6 +177,12 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
     }) => {
         if (!userId || !payload?.callerId) return
 
+        // Clear 60s ringing timeout
+        if (payload?.meetingId && activeRingTimeouts.has(payload.meetingId)) {
+            clearTimeout(activeRingTimeouts.get(payload.meetingId))
+            activeRingTimeouts.delete(payload.meetingId)
+        }
+
         const rejectData = {
             calleeId: userId,
             meetingId: payload.meetingId,
@@ -166,6 +202,12 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
         meetingId?: string
     }) => {
         if (!userId) return
+
+        // Clear 60s ringing timeout
+        if (payload?.meetingId && activeRingTimeouts.has(payload.meetingId)) {
+            clearTimeout(activeRingTimeouts.get(payload.meetingId))
+            activeRingTimeouts.delete(payload.meetingId)
+        }
 
         const cancelData = {
             callerId: userId,

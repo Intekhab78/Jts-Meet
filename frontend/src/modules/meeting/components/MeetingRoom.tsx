@@ -63,7 +63,8 @@ import {
     IconCrown,
     IconShield,
     IconRefresh,
-    IconHeart
+    IconHeart,
+    IconCaptions
 } from '../../../components/common/Icons'
 
 const parseJwt = (token: string) => {
@@ -1233,7 +1234,8 @@ function ParticipantsPanel({
                                     gap: 12,
                                     padding: '10px 14px',
                                     animationDelay: `${i * 40}ms`,
-                                    position: 'relative'
+                                    position: 'relative',
+                                    zIndex: activeMenu === p ? 60 : 1
                                 }}
                             >
                                 <div className="avatar avatar-md" style={{ background: avatarBg, color: '#fff', fontWeight: 700 }}>
@@ -1312,14 +1314,27 @@ function ParticipantsPanel({
 
                                 {/* Contextual Host Options Dropdown */}
                                 {activeMenu === p && (
-                                    <div style={{
-                                        position: 'absolute', right: 14, top: 44,
-                                        background: 'rgba(15,17,23,0.95)', border: '1px solid var(--color-border-strong)',
-                                        borderRadius: 'var(--radius-md)', padding: 6, zIndex: 110,
-                                        width: 175, backdropFilter: 'blur(16px)', boxShadow: 'var(--shadow-xl)',
-                                        display: 'flex', flexDirection: 'column', gap: 4,
-                                        animation: 'jts-slide-up 150ms ease-out'
-                                    }}>
+                                    <>
+                                        {/* Invisible backdrop overlay to dismiss dropdown on click outside */}
+                                        <div
+                                            onClick={() => setActiveMenu(null)}
+                                            style={{
+                                                position: 'fixed',
+                                                inset: 0,
+                                                zIndex: 99,
+                                                cursor: 'default'
+                                            }}
+                                        />
+                                        <div style={{
+                                            position: 'absolute', right: 14, top: 44,
+                                            background: '#11131a', border: '1px solid rgba(255, 255, 255, 0.16)',
+                                            borderRadius: 'var(--radius-md)', padding: 6, zIndex: 100,
+                                            width: 185, backdropFilter: 'blur(20px)',
+                                            WebkitBackdropFilter: 'blur(20px)',
+                                            boxShadow: '0 14px 40px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255,255,255,0.06)',
+                                            display: 'flex', flexDirection: 'column', gap: 4,
+                                            animation: 'jts-slide-up 150ms ease-out'
+                                        }}>
                                         <button
                                             onClick={() => handleMute(p)}
                                             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
@@ -1396,7 +1411,8 @@ function ParticipantsPanel({
                                             <span>Rename</span>
                                         </button>
                                     </div>
-                                )}
+                                </>
+                            )}
                             </li>
                         )
                     })}
@@ -2126,12 +2142,13 @@ interface SetupScreenProps {
     replaceLocalStream?: (stream: MediaStream) => void
     initialVideoOff?: boolean
     onToggleVideo?: (isOff: boolean) => void
+    onLeave?: () => void
 }
 
 function SetupScreen({
     token, setToken, meetingInput, setMeetingInput,
     connected, mediaLoading, mediaError, onConnect, onJoin,
-    localStream, replaceLocalStream, initialVideoOff = false, onToggleVideo
+    localStream, replaceLocalStream, initialVideoOff = false, onToggleVideo, onLeave
 }: SetupScreenProps) {
     const [activeTab, setActiveTab] = useState<'join' | 'create'>('join')
     const [isMuted, setIsMuted] = useState(false)
@@ -2153,6 +2170,7 @@ function SetupScreen({
         const rand = Math.random().toString(36).substring(2, 8)
         return `room-${rand}`
     })
+    const [isCopied, setIsCopied] = useState(false)
 
     const [recentMeetingId, setRecentMeetingId] = useState<string | null>(() => {
         try {
@@ -2161,6 +2179,16 @@ function SetupScreen({
             return null
         }
     })
+
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('jts_last_meeting_id')
+            setRecentMeetingId(saved)
+            if (saved && !meetingInput) {
+                setMeetingInput(saved)
+            }
+        } catch { }
+    }, [])
 
     useEffect(() => {
         try {
@@ -2220,6 +2248,8 @@ function SetupScreen({
 
     const handleCopy = () => {
         copyToClipboard(generatedId)
+        setIsCopied(true)
+        setTimeout(() => setIsCopied(false), 2500)
     }
 
     const handleActionClick = () => {
@@ -2311,7 +2341,11 @@ function SetupScreen({
                                     sessionStorage.removeItem('jts_meeting_joined')
                                     localStorage.removeItem('jts_last_meeting_id')
                                 } catch (e) { }
-                                window.location.href = '/'
+                                if (onLeave) {
+                                    onLeave()
+                                } else {
+                                    window.location.hash = '#dashboard'
+                                }
                             }}
                             className="btn btn-secondary"
                             style={{ padding: '8px 20px', fontSize: '0.8125rem' }}
@@ -2721,11 +2755,29 @@ function SetupScreen({
                                             <button
                                                 type="button"
                                                 onClick={handleCopy}
-                                                className="btn btn-secondary"
-                                                style={{ padding: '0 12px' }}
-                                                title="Copy Meeting ID"
+                                                className={isCopied ? "btn btn-success" : "btn btn-secondary"}
+                                                style={{
+                                                    padding: isCopied ? '0 12px' : '0 12px',
+                                                    background: isCopied ? '#16a34a' : undefined,
+                                                    borderColor: isCopied ? '#16a34a' : undefined,
+                                                    color: '#fff',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 6,
+                                                    transition: 'all 0.2s ease'
+                                                }}
+                                                title={isCopied ? "Copied to clipboard!" : "Copy Meeting ID"}
                                             >
-                                                <IconCopy />
+                                                {isCopied ? (
+                                                    <>
+                                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                            <polyline points="20 6 9 17 4 12" />
+                                                        </svg>
+                                                        <span style={{ fontSize: '0.75rem', fontWeight: 700 }}>Copied!</span>
+                                                    </>
+                                                ) : (
+                                                    <IconCopy />
+                                                )}
                                             </button>
                                         </div>
                                     </div>
@@ -2819,6 +2871,7 @@ export function MeetingRoom({
     const [token, setToken] = useState(initialToken)
     const hasLeftRef = useRef(false)
     const hasAutoJoinedRef = useRef(false)
+    const [hasLeft, setHasLeft] = useState(false)
 
     // User identity & guest state
     const localUserId = getUserIdFromToken(token)
@@ -2836,9 +2889,23 @@ export function MeetingRoom({
     const [currentBreakoutSubRoomId, setCurrentBreakoutSubRoomId] = useState<string | null>(null)
     const [toasts, setToasts] = useState<{ id: string, message: string, type: 'info' | 'success' | 'warning' }[]>([])
 
+    const lastToastRef = useRef<{ message: string, time: number }>({ message: '', time: 0 })
+
     const addToast = useCallback((message: string, type: 'info' | 'success' | 'warning' = 'info') => {
-        const id = String(Math.random())
-        setToasts(prev => [...prev, { id, message, type }])
+        const now = Date.now()
+        // Deduplicate identical toasts called within 1000ms (prevents double invocations in React StrictMode & rapid clicks)
+        if (lastToastRef.current.message === message && (now - lastToastRef.current.time) < 1000) {
+            return
+        }
+        lastToastRef.current = { message, time: now }
+
+        const id = String(now) + '_' + String(Math.random())
+        setToasts(prev => {
+            if (prev.some(t => t.message === message)) {
+                return prev
+            }
+            return [...prev, { id, message, type }]
+        })
         setTimeout(() => {
             setToasts(prev => prev.filter(t => t.id !== id))
         }, 4000)
@@ -2872,7 +2939,10 @@ export function MeetingRoom({
             .then(data => {
                 if (isMounted && data?.data && data.data.length > 0) {
                     const savedOrgId = localStorage.getItem('jts_current_org_id')
-                    const matched = data.data.find((o: any) => o._id === savedOrgId) || data.data[0]
+                    // Match saved org, or pick one with an upgraded paid tier, or fallback to first
+                    const matched = data.data.find((o: any) => o._id === savedOrgId)
+                        || data.data.find((o: any) => ['enterprise', 'pro', 'starter'].includes(o?.planTier?.toLowerCase()))
+                        || data.data[0]
                     if (matched?.planTier) {
                         setFetchedOrgPlanTier(matched.planTier.toLowerCase())
                         try { localStorage.setItem('jts_active_plan_tier', matched.planTier) } catch (_) {}
@@ -2885,33 +2955,48 @@ export function MeetingRoom({
     }, [token, initialToken, isGuest])
 
     // Workspace Plan Tier Entitlements
-    // Priority:
-    // 1. Authoritative: Meeting's plan tier set by the meeting host / organization (if paid)
-    // 2. Host's specific plan tier (if paid)
-    // 3. Explicit prop passed to MeetingRoom (if paid)
-    // 4. Live fetched organization tier for logged-in user (if paid)
-    // 5. Cached local tier in localStorage (if paid)
+    // Always resolve the highest active tier available across:
+    // - meetingInfo.planTier
+    // - meetingInfo.organizationId.planTier
+    // - meetingInfo.host.planTier
+    // - planTier prop
+    // - fetchedOrgPlanTier
+    // - localStorage ('jts_active_plan_tier')
     const currentPlanTier = useMemo(() => {
-        if (meetingInfo?.planTier && meetingInfo.planTier.toLowerCase() !== 'free') {
-            return meetingInfo.planTier.toLowerCase()
+        const PLAN_RANK: Record<string, number> = {
+            enterprise: 3,
+            pro: 2,
+            starter: 1,
+            free: 0
         }
-        if (meetingInfo?.host?.planTier && meetingInfo.host.planTier.toLowerCase() !== 'free') {
-            return meetingInfo.host.planTier.toLowerCase()
-        }
-        if (planTier && planTier.toLowerCase() !== 'free') {
-            return planTier.toLowerCase()
-        }
-        if (fetchedOrgPlanTier && fetchedOrgPlanTier.toLowerCase() !== 'free') {
-            return fetchedOrgPlanTier.toLowerCase()
-        }
-        try {
-            const saved = localStorage.getItem('jts_active_plan_tier')
-            if (saved && saved.toLowerCase() !== 'free') return saved.toLowerCase()
-        } catch (_) {}
 
-        if (meetingInfo?.planTier) return meetingInfo.planTier.toLowerCase()
-        if (planTier) return planTier.toLowerCase()
-        return 'free'
+        const orgPlanFromMeeting = typeof meetingInfo?.organizationId === 'object' ? meetingInfo?.organizationId?.planTier : undefined
+
+        const candidates = [
+            meetingInfo?.planTier,
+            orgPlanFromMeeting,
+            meetingInfo?.host?.planTier,
+            planTier,
+            fetchedOrgPlanTier,
+            (() => {
+                try { return localStorage.getItem('jts_active_plan_tier') } catch (_) { return null }
+            })()
+        ]
+            .filter((t): t is string => typeof t === 'string' && !!t.trim())
+            .map(t => t.toLowerCase().trim())
+
+        let bestTier = 'free'
+        let bestRank = 0
+
+        for (const tier of candidates) {
+            const rank = PLAN_RANK[tier] ?? 0
+            if (rank > bestRank) {
+                bestRank = rank
+                bestTier = tier
+            }
+        }
+
+        return bestTier
     }, [planTier, meetingInfo, fetchedOrgPlanTier])
 
     const canAccessRecording = useMemo(() => {
@@ -2919,7 +3004,7 @@ export function MeetingRoom({
     }, [currentPlanTier])
 
     const canAccessCloudRecording = useMemo(() => {
-        return ['enterprise'].includes(currentPlanTier)
+        return ['starter', 'pro', 'enterprise'].includes(currentPlanTier)
     }, [currentPlanTier])
 
     const canAccessAI = useMemo(() => {
@@ -2986,6 +3071,8 @@ export function MeetingRoom({
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const recordedChunksRef = useRef<Blob[]>([])
     const recordingStreamRef = useRef<MediaStream | null>(null)
+    const liveStreamRecorderRef = useRef<MediaRecorder | null>(null)
+    const cloudRecordRecorderRef = useRef<MediaRecorder | null>(null)
 
     const { socket, connectSocket, connected } = useSocketContext()
     const canManageRef = useRef(false)
@@ -3103,15 +3190,95 @@ export function MeetingRoom({
 
         const handleCloudRecordStatus = (data: { isCloudRecording: boolean; recordingUrl?: string; initiatedBy?: string }) => {
             setIsCloudRecording(data.isCloudRecording)
+            const activeMeetingId = meetingId || meetingInput
             if (data.isCloudRecording) {
                 addToast(`Headless Cloud Recording started by ${data.initiatedBy || 'Host'} on server.`, 'success')
+                try {
+                    const streamToRecord = localStream || activeLocalStream
+                    if (streamToRecord && streamToRecord.getTracks().length > 0) {
+                        let mimeType = 'video/webm;codecs=vp8,opus'
+                        if (typeof MediaRecorder !== 'undefined' && !MediaRecorder.isTypeSupported(mimeType)) {
+                            mimeType = 'video/webm'
+                        }
+                        const rec = new MediaRecorder(streamToRecord, { mimeType })
+                        rec.ondataavailable = async (e) => {
+                            if (e.data && e.data.size > 0 && socket) {
+                                try {
+                                    const buffer = await e.data.arrayBuffer()
+                                    socket.emit('meeting:cloud-recording-chunk', {
+                                        meetingId: activeMeetingId,
+                                        chunk: buffer
+                                    })
+                                } catch (_) {}
+                            }
+                        }
+                        rec.start(2000)
+                        cloudRecordRecorderRef.current = rec
+                    }
+                } catch (recErr) {
+                    console.warn('[CloudRecording] Client stream feeder init error:', recErr)
+                }
             } else {
                 addToast('Headless Cloud Recording stopped and finalized on server.', 'info')
+                if (cloudRecordRecorderRef.current && cloudRecordRecorderRef.current.state !== 'inactive') {
+                    try { cloudRecordRecorderRef.current.stop() } catch (_) {}
+                    cloudRecordRecorderRef.current = null
+                }
             }
         }
 
         const handlePstnJoined = (data: { meetingId: string; caller: string }) => {
             addToast(`📞 Phone caller ${data.caller} joined the audio bridge.`, 'info')
+        }
+
+        const handlePstnLeft = (data: { meetingId: string; caller: string }) => {
+            addToast(`📞 Phone caller ${data.caller} disconnected from the audio bridge.`, 'info')
+        }
+
+        // Web Audio Context for playing PSTN phone caller audio stream
+        let pstnAudioCtx: AudioContext | null = null;
+        let pstnNextPlayTime = 0;
+
+        const handlePstnAudio = (data: { payload: string }) => {
+            try {
+                if (!data?.payload) return;
+                const binaryStr = window.atob(data.payload);
+                const len = binaryStr.length;
+                if (len === 0) return;
+
+                const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+                if (!AudioCtxClass) return;
+                if (!pstnAudioCtx || pstnAudioCtx.state === 'closed') {
+                    pstnAudioCtx = new AudioCtxClass();
+                }
+                if (pstnAudioCtx.state === 'suspended') {
+                    pstnAudioCtx.resume().catch(() => {});
+                }
+
+                // Decode G.711 mu-law 8kHz audio samples
+                const buffer = pstnAudioCtx.createBuffer(1, len, 8000);
+                const channelData = buffer.getChannelData(0);
+                for (let i = 0; i < len; i++) {
+                    let byte = ~binaryStr.charCodeAt(i);
+                    const sign = (byte & 0x80) ? -1 : 1;
+                    const exponent = (byte >> 4) & 0x07;
+                    const mantissa = byte & 0x0F;
+                    let sample = ((mantissa << 3) + 0x84) << exponent;
+                    sample -= 0x84;
+                    channelData[i] = (sign * sample) / 32768;
+                }
+
+                const source = pstnAudioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(pstnAudioCtx.destination);
+
+                const currentTime = pstnAudioCtx.currentTime;
+                const startTime = Math.max(currentTime, pstnNextPlayTime);
+                source.start(startTime);
+                pstnNextPlayTime = startTime + buffer.duration;
+            } catch (pstnErr) {
+                console.warn('[PSTN] Audio decode error:', pstnErr);
+            }
         }
 
         const handleWebinarMode = (data: { isWebinarMode: boolean }) => {
@@ -3135,21 +3302,38 @@ export function MeetingRoom({
             }
         }
 
+        const handleWebinarHandRaised = (data: { meetingId: string; userId: string; displayName?: string }) => {
+            addToast(`✋ ${data.displayName || 'An attendee'} requested to speak on Stage. Open Participants to promote.`, 'info')
+        }
+
         socket.on('meeting:record-toggle', handleRecordToggle)
         socket.on('meeting:screen-share-permission-changed', handleScreenSharePolicyChanged)
         socket.on('meeting:cloud-recording-status', handleCloudRecordStatus)
         socket.on('meeting:pstn:joined', handlePstnJoined)
+        socket.on('meeting:pstn:left', handlePstnLeft)
+        socket.on('meeting:pstn:audio', handlePstnAudio)
         socket.on('webinar:mode-changed', handleWebinarMode)
         socket.on('webinar:speaker-promoted', handleSpeakerPromoted)
         socket.on('webinar:speaker-demoted', handleSpeakerDemoted)
+        socket.on('webinar:hand-raised', handleWebinarHandRaised)
         return () => {
             socket.off('meeting:record-toggle', handleRecordToggle)
             socket.off('meeting:screen-share-permission-changed', handleScreenSharePolicyChanged)
             socket.off('meeting:cloud-recording-status', handleCloudRecordStatus)
             socket.off('meeting:pstn:joined', handlePstnJoined)
+            socket.off('meeting:pstn:left', handlePstnLeft)
+            socket.off('meeting:pstn:audio', handlePstnAudio)
             socket.off('webinar:mode-changed', handleWebinarMode)
             socket.off('webinar:speaker-promoted', handleSpeakerPromoted)
             socket.off('webinar:speaker-demoted', handleSpeakerDemoted)
+            socket.off('webinar:hand-raised', handleWebinarHandRaised)
+            if (pstnAudioCtx && pstnAudioCtx.state !== 'closed') {
+                try { pstnAudioCtx.close(); } catch (_) {}
+            }
+            if (cloudRecordRecorderRef.current && cloudRecordRecorderRef.current.state !== 'inactive') {
+                try { cloudRecordRecorderRef.current.stop(); } catch (_) {}
+                cloudRecordRecorderRef.current = null;
+            }
         }
     }, [socket, screenSharingUserId, screenSharingUserIds, stopScreenShare, addToast])
 
@@ -3457,7 +3641,7 @@ export function MeetingRoom({
         if (!activeId) return
         try {
             if (!isCloudRecording) {
-                const token = localStorage.getItem('token')
+                const token = localStorage.getItem('jts_token') || localStorage.getItem('token')
                 const res = await fetch(`${API_BASE}/api/meeting/${activeId}/cloud-record/start`, {
                     method: 'POST',
                     headers: {
@@ -3473,7 +3657,7 @@ export function MeetingRoom({
                     addToast(json.message || 'Failed to start cloud recording', 'warning')
                 }
             } else {
-                const token = localStorage.getItem('token')
+                const token = localStorage.getItem('jts_token') || localStorage.getItem('token')
                 const res = await fetch(`${API_BASE}/api/meeting/${activeId}/cloud-record/stop`, {
                     method: 'POST',
                     headers: {
@@ -3749,7 +3933,16 @@ export function MeetingRoom({
     const [lowBandwidthMode, setLowBandwidthMode] = useState(false)
     const [showMoMModal, setShowMoMModal] = useState(false)
     const [showReactionsPopover, setShowReactionsPopover] = useState(false)
-    const [floatingReactions, setFloatingReactions] = useState<{ id: number, emoji: string, left: number, senderName?: string }[]>([])
+    const [floatingReactions, setFloatingReactions] = useState<{
+        id: number
+        emoji: string
+        left: number
+        scale?: number
+        swayType?: number
+        delayMs?: number
+        senderName?: string
+        isPrimary?: boolean
+    }[]>([])
     const reactionBtnRef = useRef<HTMLButtonElement>(null)
     const reactionsPopoverRef = useRef<HTMLDivElement>(null)
 
@@ -3820,6 +4013,8 @@ export function MeetingRoom({
     const [waitingGuests, setWaitingGuests] = useState<any[]>([])
     const [isWaitingRoomActive, setIsWaitingRoomActive] = useState(true)
     const [isInviteOpen, setIsInviteOpen] = useState(false)
+    const [inviteLinkCopied, setInviteLinkCopied] = useState(false)
+    const [momCopied, setMomCopied] = useState(false)
 
     useEffect(() => {
         if (meetingInfo && meetingInfo.isWaitingRoomEnabled !== undefined) {
@@ -4302,13 +4497,68 @@ export function MeetingRoom({
     }, [socket, meetingId, meetingInput, myDisplayName])
 
     const spawnReaction = (emoji: string, senderName?: string) => {
-        const id = Date.now() + Math.random()
-        const left = 20 + Math.random() * 60
-        setFloatingReactions(prev => [...prev.slice(-15), { id, emoji, left, senderName: senderName || '' }])
+        const cleanName = senderName ? senderName.split(' ')[0] : ''
+
+        // Origin X position: erupt from the Reaction button in the bottom bar, or natural position
+        let baseLeft = 50
+        if (reactionBtnRef.current) {
+            const rect = reactionBtnRef.current.getBoundingClientRect()
+            if (rect && rect.width > 0 && window.innerWidth > 0) {
+                baseLeft = Math.round((rect.left + rect.width / 2) / window.innerWidth * 100)
+            }
+        }
+        if (senderName && senderName !== 'You' && senderName !== myDisplayName) {
+            baseLeft = 25 + Math.random() * 50
+        }
+
+        // Celebratory stream of 4 buoyant particles
+        const batchId = Date.now() + Math.floor(Math.random() * 1000)
+        const particles = [
+            {
+                id: batchId,
+                emoji,
+                left: Math.max(8, Math.min(92, baseLeft)),
+                scale: 1.25,
+                swayType: 1,
+                delayMs: 0,
+                senderName: cleanName,
+                isPrimary: true
+            },
+            {
+                id: batchId + 1,
+                emoji,
+                left: Math.max(6, Math.min(94, baseLeft - 3 + (Math.random() * 2))),
+                scale: 0.85,
+                swayType: 2,
+                delayMs: 80,
+                isPrimary: false
+            },
+            {
+                id: batchId + 2,
+                emoji,
+                left: Math.max(6, Math.min(94, baseLeft + 3 + (Math.random() * 2))),
+                scale: 0.95,
+                swayType: 3,
+                delayMs: 160,
+                isPrimary: false
+            },
+            {
+                id: batchId + 3,
+                emoji,
+                left: Math.max(6, Math.min(94, baseLeft - 1 + (Math.random() * 3))),
+                scale: 0.72,
+                swayType: 1,
+                delayMs: 240,
+                isPrimary: false
+            }
+        ]
+
+        setFloatingReactions(prev => [...prev.slice(-25), ...particles])
         soundEffects.playReactionPop()
+
         setTimeout(() => {
-            setFloatingReactions(prev => prev.filter(r => r.id !== id))
-        }, 2600)
+            setFloatingReactions(prev => prev.filter(r => r.id < batchId || r.id > batchId + 3))
+        }, 3200)
     }
 
     const sendReaction = (emoji: string) => {
@@ -4324,15 +4574,25 @@ export function MeetingRoom({
     }
 
     const handleTriggerSoundboard = (soundType: 'applause' | 'drumroll' | 'cheer' | 'bell') => {
-        if (soundType === 'applause') soundEffects.playApplause()
-        else if (soundType === 'drumroll') soundEffects.playDrumroll()
-        else if (soundType === 'cheer') soundEffects.playCheer()
-        else if (soundType === 'bell') soundEffects.playBell()
+        if (soundType === 'applause') {
+            soundEffects.playApplause()
+            spawnReaction('👏', 'You')
+        } else if (soundType === 'drumroll') {
+            soundEffects.playDrumroll()
+            spawnReaction('🥁', 'You')
+        } else if (soundType === 'cheer') {
+            soundEffects.playCheer()
+            spawnReaction('🎉', 'You')
+        } else if (soundType === 'bell') {
+            soundEffects.playBell()
+            spawnReaction('🔔', 'You')
+        }
 
         const sender = myDisplayName || 'You'
         if (socket && (meetingId || meetingInput)) {
             socket.emit('meeting:soundboard', {
                 meetingId: meetingId || meetingInput,
+                sound: soundType,
                 soundType,
                 senderName: sender
             })
@@ -4347,14 +4607,25 @@ export function MeetingRoom({
             spawnReaction(payload.emoji, payload.senderName)
         }
 
-        const handleSoundboard = (payload: { soundType: string; senderName?: string }) => {
-            if (payload.soundType === 'applause') soundEffects.playApplause()
-            else if (payload.soundType === 'drumroll') soundEffects.playDrumroll()
-            else if (payload.soundType === 'cheer') soundEffects.playCheer()
-            else if (payload.soundType === 'bell') soundEffects.playBell()
+        const handleSoundboard = (payload: { soundType?: string; sound?: string; senderName?: string }) => {
+            const sType = payload.soundType || payload.sound
+            if (sType === 'applause') {
+                soundEffects.playApplause()
+                spawnReaction('👏', payload.senderName)
+            } else if (sType === 'drumroll') {
+                soundEffects.playDrumroll()
+                spawnReaction('🥁', payload.senderName)
+            } else if (sType === 'cheer') {
+                soundEffects.playCheer()
+                spawnReaction('🎉', payload.senderName)
+            } else if (sType === 'bell') {
+                soundEffects.playBell()
+                spawnReaction('🔔', payload.senderName)
+            }
 
-            if (payload.senderName) {
-                addToast(`${payload.senderName} played sound: ${payload.soundType}!`, 'info')
+            if (payload.senderName && payload.senderName !== 'You' && payload.senderName !== myDisplayName) {
+                const label = sType === 'applause' ? 'Clap 👏' : sType === 'cheer' ? 'Cheer 🎉' : sType === 'drumroll' ? 'Drumroll 🥁' : 'Bell 🔔'
+                addToast(`${payload.senderName} played ${label}!`, 'info')
             }
         }
 
@@ -5205,6 +5476,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         localStorage.setItem('jts_last_meeting_id', id)
         window.history.replaceState(null, '', `/#meeting?id=${encodeURIComponent(id)}`)
 
+        hasLeftRef.current = false
+        hasAutoJoinedRef.current = false
+        setHasLeft(false)
         connectToMeeting(id, myName)
         setJoined(true)
     }
@@ -5213,34 +5487,76 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     const autoRejoinAttemptedRef = useRef(false)
 
     useEffect(() => {
-        if (initialMeetingId) {
-            autoRejoinAttemptedRef.current = false
-            hasLeftRef.current = false
-            hasAutoJoinedRef.current = false
-        }
+        autoRejoinAttemptedRef.current = false
+        hasLeftRef.current = false
+        hasAutoJoinedRef.current = false
+        setHasLeft(false)
     }, [initialMeetingId])
 
-    const handleExitMeeting = useCallback(() => {
+    const handleExitMeeting = useCallback((isPermanentEnd: boolean = false) => {
         hasLeftRef.current = true
         hasAutoJoinedRef.current = true
+        setHasLeft(true)
+        const currentMid = (meetingId || meetingInput || sessionStorage.getItem('jts_active_meeting_id') || '').trim()
         try {
             sessionStorage.removeItem('jts_active_meeting_id')
             sessionStorage.removeItem('jts_meeting_joined')
-            localStorage.removeItem('jts_last_meeting_id')
+            if (isPermanentEnd) {
+                localStorage.removeItem('jts_last_meeting_id')
+            } else if (currentMid) {
+                localStorage.setItem('jts_last_meeting_id', currentMid)
+            }
+            if (isGuest || !token) {
+                localStorage.removeItem('jts_guest_token')
+            }
         } catch (e) { }
         leaveMeeting()
-        // If meeting had elapsed, show post-meeting capsule before navigating away
+        try {
+            window.history.replaceState(null, '', '/#meeting')
+        } catch (_) {}
+
+        // If user just left (not ended), preserve meetingInput so it is immediately ready for rejoin
+        if (!isPermanentEnd && currentMid) {
+            setMeetingInput(currentMid)
+        }
+
+        // Guest users: Never expose internal Meeting Capsule with notes & action items.
+        // Cleanly exit to home page or trigger onLeave callback.
+        if (isGuest || !token) {
+            setPostMeetingCapsule(null)
+            if (onLeave) onLeave()
+            else {
+                window.location.hash = ''
+                window.location.href = '/'
+            }
+            return
+        }
+
+        // Authenticated Host / Team members: Show post-meeting capsule if meeting had elapsed
         if (timerStr && timerStr !== '00:00') {
+            const currentMid = (meetingId || meetingInput || '').trim()
+            let panelNotes = ''
+            try {
+                panelNotes = localStorage.getItem(`jts_notes_${currentMid}`) || ''
+                // Ignore default placeholder if user didn't write anything
+                if (panelNotes.includes('- Key Discussion Points:\n  - \n\n- Action Items:\n  - [ ]') && panelNotes.length < 110) {
+                    panelNotes = ''
+                }
+            } catch (_) {}
+
+            const finalNotes = [meetingNotes.trim(), panelNotes.trim()].filter(Boolean).join('\n\n')
+
             setPostMeetingCapsule({
                 duration: timerStr,
                 talkTime: talkTimeMap,
-                notes: meetingNotes,
+                notes: finalNotes,
                 title: meetingInfo?.title || `Meeting ${meetingId || meetingInput}`
             })
-        } else if (onLeave) {
-            onLeave()
+        } else {
+            if (onLeave) onLeave()
+            else window.location.hash = '#dashboard'
         }
-    }, [leaveMeeting, onLeave, timerStr, talkTimeMap, meetingNotes, meetingInfo, meetingId, meetingInput])
+    }, [leaveMeeting, onLeave, timerStr, talkTimeMap, meetingNotes, meetingInfo, meetingId, meetingInput, isGuest, token])
 
     // Direct autoJoin trigger: Only auto-joins ONCE upon entry, never if user has left!
     useEffect(() => {
@@ -5255,49 +5571,56 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     }, [autoJoin, connected, joined, initialMeetingId, meetingInput])
 
     useEffect(() => {
-        if (connected && !joined && !mediaLoading && !autoRejoinAttemptedRef.current) {
-            const decoded = parseJwt(initialToken || token)
-            if (decoded?.isGuest && decoded?.meetingId) {
-                autoRejoinAttemptedRef.current = true
-                handleJoinMeeting(decoded.meetingId)
-                return
-            }
+        // If user has left or auto-rejoin was already handled, never auto-join!
+        if (hasLeftRef.current || hasAutoJoinedRef.current || autoRejoinAttemptedRef.current) return
+        if (!connected || joined || mediaLoading) return
 
-            let urlMeetingId = initialMeetingId || ''
-            if (!urlMeetingId) {
-                try {
-                    const match = window.location.pathname.match(/^\/meet\/([a-zA-Z0-9\-_]+)/)
-                    if (match) urlMeetingId = match[1]
+        const decoded = parseJwt(initialToken || token)
+        if (decoded?.isGuest && decoded?.meetingId) {
+            autoRejoinAttemptedRef.current = true
+            hasAutoJoinedRef.current = true
+            handleJoinMeeting(decoded.meetingId)
+            return
+        }
 
-                    if (!urlMeetingId) {
-                        const hashParts = window.location.hash.split('?')
-                        if (hashParts.length > 1) {
-                            const params = new URLSearchParams(hashParts[1])
-                            urlMeetingId = params.get('id') || params.get('meetingId') || params.get('room') || ''
-                        }
+        // If autoJoin is false, stay in SetupScreen (Lobby) so user can see Rejoin Room card & preview camera
+        if (!autoJoin) return
+
+        let urlMeetingId = initialMeetingId || ''
+        if (!urlMeetingId) {
+            try {
+                const match = window.location.pathname.match(/^\/meet\/([a-zA-Z0-9\-_]+)/)
+                if (match) urlMeetingId = match[1]
+
+                if (!urlMeetingId) {
+                    const hashParts = window.location.hash.split('?')
+                    if (hashParts.length > 1) {
+                        const params = new URLSearchParams(hashParts[1])
+                        urlMeetingId = params.get('id') || params.get('meetingId') || params.get('room') || ''
                     }
-                    if (!urlMeetingId) {
-                        const searchParams = new URLSearchParams(window.location.search)
-                        urlMeetingId = searchParams.get('id') || searchParams.get('meetingId') || searchParams.get('room') || ''
-                    }
-                } catch (e) { }
-            }
+                }
+                if (!urlMeetingId) {
+                    const searchParams = new URLSearchParams(window.location.search)
+                    urlMeetingId = searchParams.get('id') || searchParams.get('meetingId') || searchParams.get('room') || ''
+                }
+            } catch (e) { }
+        }
 
-            const isAudioOnlyParam = Boolean(
-                sessionStorage.getItem('jts_initial_camera_off') === 'true' ||
-                (typeof window !== 'undefined' && (
-                    new URLSearchParams(window.location.hash.split('?')[1] || '').get('audio') === 'true' ||
-                    new URLSearchParams(window.location.search).get('audio') === 'true'
-                ))
-            )
+        const isAudioOnlyParam = Boolean(
+            sessionStorage.getItem('jts_initial_camera_off') === 'true' ||
+            (typeof window !== 'undefined' && (
+                new URLSearchParams(window.location.hash.split('?')[1] || '').get('audio') === 'true' ||
+                new URLSearchParams(window.location.search).get('audio') === 'true'
+            ))
+        )
 
-            const activeSessionId = sessionStorage.getItem('jts_active_meeting_id')
-            const targetId = urlMeetingId || activeSessionId || (autoJoin ? meetingInput : '')
+        const activeSessionId = sessionStorage.getItem('jts_active_meeting_id')
+        const targetId = urlMeetingId || activeSessionId || (autoJoin ? meetingInput : '')
 
-            if (targetId && targetId.trim()) {
-                autoRejoinAttemptedRef.current = true
-                handleJoinMeeting(targetId.trim(), isAudioOnlyParam ? true : undefined)
-            }
+        if (targetId && targetId.trim()) {
+            autoRejoinAttemptedRef.current = true
+            hasAutoJoinedRef.current = true
+            handleJoinMeeting(targetId.trim(), isAudioOnlyParam ? true : undefined)
         }
     }, [connected, joined, initialToken, token, mediaLoading, initialMeetingId, autoJoin, meetingInput])
 
@@ -5359,6 +5682,25 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     const isCoHost = coHostIds.includes(localUserId)
     const canManageParticipants = isLocalHost || isCoHost || isAdminOrOwner
     canManageRef.current = canManageParticipants
+    const isWebinarAttendee = Boolean(isWebinarMode && !canManageParticipants && !isLocalHost && !isPromotedToSpeaker)
+
+    // Automatically force-mute microphone and camera for audience attendees when Webinar Stage Mode is active
+    useEffect(() => {
+        if (isWebinarAttendee) {
+            if (localStream) {
+                localStream.getAudioTracks().forEach(track => {
+                    track.enabled = false
+                })
+                localStream.getVideoTracks().forEach(track => {
+                    track.enabled = false
+                })
+            }
+            setIsMuted(true)
+            setIsVideoOff(true)
+            socket?.emit('meeting:mic-toggle', { meetingId: meetingId || meetingInput.trim(), isMuted: true })
+            socket?.emit('meeting:video-toggle', { meetingId: meetingId || meetingInput.trim(), isVideoOff: true })
+        }
+    }, [isWebinarAttendee, localStream, socket, meetingId, meetingInput])
 
     const canRecord = canManageParticipants || recordingAllowedUserIds.includes(localUserId)
     const canUseWhiteboard = canManageParticipants || showWhiteboard || whiteboardAllowedUserIds.includes(localUserId)
@@ -5384,6 +5726,17 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             setWhiteboardAllowedUserIds(prev => enabled ? [...new Set([...prev, targetUserId])] : prev.filter(id => id !== targetUserId))
         }
         socket?.emit('meeting:permission-update', { meetingId: activeRoom, targetUserId, permission, enabled })
+    }
+
+    const handleStageStatusChange = (targetUserId: string, isBackstage: boolean) => {
+        const activeRoom = meetingId || meetingInput.trim()
+        socket?.emit(SocketEvents.STAGE_STATUS_CHANGE, {
+            meetingId: activeRoom,
+            targetUserId,
+            isBackstage
+        })
+        setBackstageUserIds(prev => isBackstage ? [...new Set([...prev, targetUserId])] : prev.filter(id => id !== targetUserId))
+        addToast(isBackstage ? 'Moved participant to backstage green room' : 'Brought participant to main stage', 'info')
     }
 
     // Host Controls: Mute All & Lock Meeting
@@ -5518,7 +5871,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 localStorage.removeItem('jts_last_meeting_id')
                 localStorage.removeItem('jts_guest_token')
             } catch (e) {}
-            handleExitMeeting()
+            handleExitMeeting(true)
             if (isGuest || !token) {
                 window.location.hash = ''
                 window.location.href = '/'
@@ -5571,6 +5924,101 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
         }
     }, [socket, isLocalHost, isGuest, token, handleExitMeeting])
 
+    const renderPostMeetingCapsuleModal = () => {
+        if (!postMeetingCapsule || isGuest || !token) return null
+        return (
+            <div style={{
+                position: 'fixed', inset: 0, zIndex: 11000,
+                background: 'rgba(10, 11, 16, 0.95)', backdropFilter: 'blur(16px)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+            }}>
+                <div style={{
+                    background: '#13151c', border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 20, width: '100%', maxWidth: 540, padding: 32,
+                    boxShadow: '0 25px 50px rgba(0,0,0,0.7)',
+                    display: 'flex', flexDirection: 'column', gap: 20
+                }}>
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '2rem', marginBottom: 8 }}>📦</div>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', margin: '0 0 6px 0' }}>
+                            Meeting Capsule
+                        </h2>
+                        <div style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
+                            Session completed • Duration: <span style={{ color: '#fff', fontWeight: 700 }}>{postMeetingCapsule.duration}</span>
+                        </div>
+                    </div>
+
+                    {/* Meeting Highlights Summary Card */}
+                    <div style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: 12, padding: '16px 20px',
+                        display: 'flex', flexDirection: 'column', gap: 10
+                    }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Session Notes & Action Items
+                        </div>
+                        <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', lineHeight: 1.5, maxHeight: 140, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                            {postMeetingCapsule.notes || 'No manual action items logged during this session.'}
+                        </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const content = `# ${postMeetingCapsule.title}\nDuration: ${postMeetingCapsule.duration}\nDate: ${new Date().toLocaleString()}\n\n## Action Items & Notes\n${postMeetingCapsule.notes || 'None logged.'}\n`
+                                const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' })
+                                const url = URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url
+                                a.download = `Meeting_Capsule_${Date.now()}.md`
+                                a.click()
+                                URL.revokeObjectURL(url)
+                            }}
+                            style={{
+                                flex: 1, padding: '10px 16px', borderRadius: 10,
+                                background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
+                                color: '#fff', fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer'
+                            }}
+                        >
+                            💾 Download Capsule (.md)
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setPostMeetingCapsule(null)
+                                setHasLeft(true)
+                                if (isGuest || !token) {
+                                    window.location.hash = ''
+                                    window.location.href = '/'
+                                } else if (onLeave) {
+                                    onLeave()
+                                } else {
+                                    window.location.hash = '#dashboard'
+                                }
+                            }}
+                            className="btn btn-primary"
+                            style={{
+                                flex: 1, padding: '10px 16px', borderRadius: 10,
+                                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                                border: 'none', color: '#fff', fontWeight: 700, fontSize: '0.8125rem', cursor: 'pointer'
+                            }}
+                        >
+                            Done
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    /* ── If the user has left the meeting and there is a capsule, show it ── */
+    if (postMeetingCapsule) {
+        return renderPostMeetingCapsuleModal()
+    }
+
     /* ── Pre-join lobby ── */
     if (!joined) {
         return (
@@ -5588,21 +6036,58 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 replaceLocalStream={replaceLocalStream}
                 initialVideoOff={isVideoOff}
                 onToggleVideo={setIsVideoOff}
+                onLeave={onLeave}
             />
         )
     }
 
     /* ── Meeting Room ── */
-    // Calculate primary presenter and layout modes
-    const isScreenShareActive = !!screenSharingUserId
+    // Self-healing check: verify if screenSharingUserId actually has an active live video track.
+    // Plain evaluation (no React hook) to strictly adhere to Rules of Hooks after early return!
+    let isScreenSharerLive = false
+    if (screenSharingUserId) {
+        if (screenSharingUserId === 'me') {
+            const vTracks = localStream?.getVideoTracks() || []
+            isScreenSharerLive = vTracks.length > 0 && vTracks.some(t => t.readyState === 'live' && !(t as any).isDummy)
+        } else {
+            const rStream = remoteStreams[screenSharingUserId]
+            if (rStream) {
+                const vTracks = rStream.getVideoTracks()
+                isScreenSharerLive = vTracks.length > 0 && vTracks.some(t => t.readyState === 'live')
+            }
+        }
+    }
+
+    const activePresenterId = isScreenSharerLive ? screenSharingUserId : null
+    const isScreenShareActive = !!activePresenterId
+
+    // If screen sharer is backstage, only Host/Co-host or the sharer can see the shared screen
+    const effectiveScreenSharer = activePresenterId && (!backstageUserIds.includes(activePresenterId) || canManageParticipants || isLocalHost || activePresenterId === localUserId || activePresenterId === 'me')
+        ? activePresenterId
+        : null
+    const effectiveScreenShareActive = isScreenShareActive && !!effectiveScreenSharer
+
+    // All active users in the room
+    const allUsers = ['me', ...participants]
+
+    // Backstage Virtual Green Room filter: Audience attendees (!canManageParticipants)
+    // cannot see backstage presenters until Host brings them live to the stage.
+    const visibleUsers = allUsers.filter(u => {
+        const actualUid = u === 'me' ? (localUserId || 'me') : u
+        const isUserBackstage = backstageUserIds.includes(actualUid)
+        if (!isUserBackstage) return true
+        // If user is backstage: only Host, Co-hosts, or the user themselves can see them
+        return canManageParticipants || isLocalHost || u === 'me' || actualUid === localUserId
+    })
+
     const isStageLayoutActive = layoutMode === 'tiled'
         ? !!fullScreenUserId
         : layoutMode === 'spotlight' || layoutMode === 'sidebar'
             ? true
-            : (isScreenShareActive || !!pinnedUserId || !!fullScreenUserId)
+            : (effectiveScreenShareActive || !!pinnedUserId || !!fullScreenUserId)
 
     // The main participant shown enlarged in focus zone
-    const primaryUser = fullScreenUserId || screenSharingUserId || pinnedUserId || (activeSpeaker && activeSpeaker !== 'me' ? activeSpeaker : (participants.length > 0 ? participants[0] : 'me'))
+    const primaryUser = fullScreenUserId || effectiveScreenSharer || pinnedUserId || (activeSpeaker && activeSpeaker !== 'me' ? activeSpeaker : (visibleUsers.length > 0 ? visibleUsers[0] : 'me'))
 
     // Stream to display in the main enlarged slot
     const isLocalSharing = screenSharingUserId === 'me' || screenSharingUserIds.includes('me')
@@ -5611,12 +6096,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     // Presenter details
     const presenterName = primaryUser === 'me' ? 'You' : getUserDisplayName(primaryUser)
 
-    // All active users in the room
-    const allUsers = ['me', ...participants]
-    const displayedUsers = layoutMode === 'tiled' ? allUsers.slice(0, maxGridTiles) : allUsers
+    const displayedUsers = layoutMode === 'tiled' ? visibleUsers.slice(0, maxGridTiles) : visibleUsers
 
     // All other users rendered in the right filmstrip when in presenter mode
-    const stripUsers = allUsers
+    const stripUsers = visibleUsers
         .filter(u => u !== primaryUser)
         // Sort active speaker to the top of the strip
         .sort((a, b) => {
@@ -5765,19 +6248,84 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
     const handleStartLiveStream = (config: LiveStreamConfig) => {
         setLiveStreamConfig(config);
         setIsLiveStreaming(true);
+        const activeMeetingId = meetingId || meetingInput;
+
         socket?.emit('meeting:livestream-toggle', {
-            meetingId: meetingId || meetingInput,
+            meetingId: activeMeetingId,
             isStreaming: true,
             platform: config.platform,
             broadcastTitle: config.broadcastTitle,
-            streamUrl: config.serverUrl
+            streamUrl: config.serverUrl,
+            streamKey: config.streamKey,
+            resolution: config.resolution,
+            bitrate: config.bitrate
         });
+
+        // Capture best available stream (screen or camera + audio)
+        try {
+            const baseStream = localStream || activeLocalStream;
+            if (baseStream && baseStream.getTracks().length > 0) {
+                const combinedStream = new MediaStream();
+                baseStream.getVideoTracks().forEach(t => combinedStream.addTrack(t));
+
+                if (baseStream.getAudioTracks().length > 0) {
+                    baseStream.getAudioTracks().forEach(t => combinedStream.addTrack(t));
+                } else {
+                    try {
+                        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                        const osc = audioCtx.createConstantSource();
+                        const dest = audioCtx.createMediaStreamDestination();
+                        osc.connect(dest);
+                        osc.start();
+                        dest.stream.getAudioTracks().forEach(t => combinedStream.addTrack(t));
+                    } catch (_) {}
+                }
+
+                let mimeType = 'video/webm;codecs=vp8,opus';
+                if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm;codecs=h264,opus')) {
+                    mimeType = 'video/webm;codecs=h264,opus';
+                } else if (typeof MediaRecorder !== 'undefined' && !MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'video/webm';
+                }
+
+                const recorder = new MediaRecorder(combinedStream, {
+                    mimeType,
+                    videoBitsPerSecond: config.resolution === '1080p' ? 4500000 : 2500000
+                });
+
+                recorder.ondataavailable = async (e) => {
+                    if (e.data && e.data.size > 0 && socket) {
+                        try {
+                            const buffer = await e.data.arrayBuffer();
+                            socket.emit('meeting:livestream-chunk', {
+                                meetingId: activeMeetingId,
+                                chunk: buffer
+                            });
+                        } catch (chunkErr) {
+                            console.warn('[LiveStream] Chunk buffer conversion failed:', chunkErr);
+                        }
+                    }
+                };
+
+                recorder.start(1000); // 1-second chunks for real-time streaming
+                liveStreamRecorderRef.current = recorder;
+            }
+        } catch (streamErr) {
+            console.warn('[LiveStream] Client recorder error:', streamErr);
+        }
+
         addToast(`Broadcast initiated for ${config.platform.toUpperCase()} (${config.resolution})!`, 'success');
     };
 
     const handleStopLiveStream = () => {
         setIsLiveStreaming(false);
         setLiveStreamConfig(null);
+        if (liveStreamRecorderRef.current && liveStreamRecorderRef.current.state !== 'inactive') {
+            try {
+                liveStreamRecorderRef.current.stop();
+            } catch (_) {}
+            liveStreamRecorderRef.current = null;
+        }
         socket?.emit('meeting:livestream-toggle', {
             meetingId: meetingId || meetingInput,
             isStreaming: false
@@ -5842,6 +6390,31 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     isActiveSpeaker={isUserSpeaking}
                     isMutedProp={isMutedUser}
                 />
+
+                {/* Backstage Indicator Badge on Video Tile */}
+                {(backstageUserIds.includes(userId) || (userId === 'me' && isCurrentUserBackstage)) && (
+                    <div style={{
+                        position: 'absolute',
+                        top: isCompact ? 6 : 10,
+                        left: isCompact ? 6 : 10,
+                        zIndex: 10,
+                        background: 'rgba(6, 78, 59, 0.92)',
+                        border: '1px solid rgba(52, 211, 153, 0.6)',
+                        borderRadius: 6,
+                        padding: '2px 8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+                        fontSize: '0.65rem',
+                        fontWeight: 700,
+                        color: '#6ee7b7'
+                    }}>
+                        <span>🎭</span>
+                        <span>Backstage (Green Room)</span>
+                    </div>
+                )}
 
                 {/* Hover Actions Controls */}
                 {hoveredTile === userId && (
@@ -5992,7 +6565,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             {showTalkingWhileMuted && isMuted && (
                 <div style={{
                     position: 'fixed',
-                    bottom: 86,
+                    bottom: showCaptions ? 134 : 86,
                     left: '50%',
                     transform: 'translateX(-50%)',
                     zIndex: 99999,
@@ -6035,61 +6608,77 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             )}
 
             {/* ── Header Bar ── */}
+            {!isWebinarAttendee && (
             <header style={{
-                position: 'fixed', top: 0, left: 0, right: 0,
-                height: 56,
+                position: 'absolute', top: 0, left: 0, right: 0,
+                height: 52,
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '0 24px',
-                background: 'rgba(10,11,15,0.85)',
-                backdropFilter: 'blur(20px) saturate(1.5)',
-                WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
-                borderBottom: '1px solid var(--color-border)',
+                padding: '0 18px',
+                background: 'rgba(10, 11, 15, 0.88)',
+                backdropFilter: 'blur(24px) saturate(1.6)',
+                WebkitBackdropFilter: 'blur(24px) saturate(1.6)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
                 zIndex: 'var(--z-header)' as any,
-                boxShadow: '0 1px 0 rgba(255,255,255,0.04)',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
             }}>
                 {/* Brand & Recording indicator */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{
                             width: 32, height: 32,
                             background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                            borderRadius: 'var(--radius-sm)',
+                            borderRadius: '8px',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            boxShadow: 'var(--shadow-glow-accent)',
+                            boxShadow: '0 0 12px rgba(99, 102, 241, 0.4)',
                             flexShrink: 0,
                         }}>
-                            <IconVideo />
+                            <IconVideo size={16} />
                         </div>
                         <span className="hidden sm:inline" style={{
-                            fontSize: '1rem', fontWeight: 800,
+                            fontSize: '0.95rem', fontWeight: 800,
                             letterSpacing: '-0.02em',
-                            color: 'var(--color-text-primary)',
+                            color: '#ffffff',
                         }}>
                             JTS<span className="gradient-text">Meet</span>
                         </span>
                     </div>
 
-                    <div style={{ width: 1, height: 16, background: 'var(--color-border)' }} className="hidden sm:block" />
+                    <div style={{ width: 1, height: 16, background: 'rgba(255, 255, 255, 0.1)' }} className="hidden sm:block" />
 
                     {/* Recording Badge */}
                     {(isRecording || isRemoteRecording || isCloudRecording) && (
-                        <span className="badge badge-danger anim-fade-in" style={{ display: 'inline-flex', gap: 6, padding: '4px 10px', fontSize: '0.6875rem' }}>
+                        <span style={{
+                            height: 30,
+                            borderRadius: '9999px',
+                            padding: '0 10px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid rgba(239, 68, 68, 0.35)',
+                            color: '#f87171',
+                            fontSize: '0.6875rem',
+                            fontWeight: 700
+                        }} className="anim-fade-in">
                             <span className="badge-dot danger pulse" style={{ width: 6, height: 6 }} />
                             {isCloudRecording ? 'CLOUD REC' : 'REC'}
                         </span>
                     )}
                 </div>
 
-                {/* Center: meeting details */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span className="hidden md:inline-block" style={{
-                        fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-primary)',
-                        fontFamily: 'monospace', background: 'rgba(255,255,255,0.04)',
-                        padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)'
+                {/* Center: meeting details & actions */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="hidden md:inline-flex" style={{
+                        height: 30,
+                        alignItems: 'center',
+                        fontSize: '0.78rem', fontWeight: 600, color: '#94a3b8',
+                        fontFamily: 'monospace', background: 'rgba(255, 255, 255, 0.04)',
+                        padding: '0 10px', borderRadius: '9999px', border: '1px solid rgba(255, 255, 255, 0.08)'
                     }}>
                         {meetingId || meetingInput}
                     </span>
                     <button
+                        type="button"
                         onClick={() => {
                             if (!canAccessE2EE) {
                                 setUpgradeModalFeature({
@@ -6104,11 +6693,14 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         }}
                         title={isE2EEActive ? "End-to-End Encrypted (AES-GCM-128)" : "E2EE Security Settings"}
                         style={{
-                            padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700,
-                            borderRadius: 'var(--radius-sm)', display: 'inline-flex', alignItems: 'center', gap: 5,
-                            background: isE2EEActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                            height: 30,
+                            padding: '0 10px',
+                            fontSize: '0.72rem', fontWeight: 700,
+                            borderRadius: '9999px',
+                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                            background: isE2EEActive ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.04)',
                             color: isE2EEActive ? '#34d399' : '#94a3b8',
-                            border: `1px solid ${isE2EEActive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                            border: `1px solid ${isE2EEActive ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.08)'}`,
                             cursor: 'pointer', transition: 'all 0.15s ease'
                         }}
                     >
@@ -6135,6 +6727,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     </button>
                     {/* Phone Audio Dial-In Button */}
                     <button
+                        type="button"
                         onClick={() => {
                             if (!canAccessDialIn) {
                                 setUpgradeModalFeature({
@@ -6149,10 +6742,11 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         }}
                         title="Join by Phone (Dial-In & PIN)"
                         style={{
-                            padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700,
-                            borderRadius: 'var(--radius-sm)', display: 'inline-flex', alignItems: 'center', gap: 5,
-                            background: 'rgba(14, 165, 233, 0.12)', color: '#38bdf8',
-                            border: '1px solid rgba(14, 165, 233, 0.3)',
+                            height: 30,
+                            padding: '0 10px', fontSize: '0.72rem', fontWeight: 700,
+                            borderRadius: '9999px', display: 'inline-flex', alignItems: 'center', gap: 5,
+                            background: 'rgba(14, 165, 233, 0.1)', color: '#38bdf8',
+                            border: '1px solid rgba(14, 165, 233, 0.25)',
                             cursor: 'pointer', transition: 'all 0.15s ease'
                         }}
                     >
@@ -6179,16 +6773,20 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     </button>
                     {!isGuest && (
                         <button
+                            type="button"
                             onClick={() => setIsInviteOpen(true)}
                             style={{
-                                padding: '4px 10px', fontSize: '0.75rem', fontWeight: 700,
-                                borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: 6,
-                                background: 'rgba(99, 102, 241, 0.12)', color: 'var(--color-accent)',
-                                border: '1px solid rgba(99, 102, 241, 0.25)', cursor: 'pointer',
+                                height: 30,
+                                padding: '0 12px', fontSize: '0.72rem', fontWeight: 700,
+                                borderRadius: '9999px', display: 'flex', alignItems: 'center', gap: 5,
+                                background: 'rgba(99, 102, 241, 0.15)', color: '#c7d2fe',
+                                border: '1px solid rgba(99, 102, 241, 0.35)', cursor: 'pointer',
                                 transition: 'all 0.15s ease'
                             }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.25)' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)' }}
                         >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                                 <circle cx="8.5" cy="7" r="4" />
                                 <line x1="20" y1="8" x2="20" y2="14" />
@@ -6199,18 +6797,20 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     )}
                     {canManageParticipants && (
                         <button
+                            type="button"
                             onClick={() => handleToggleWaitingRoom(!isWaitingRoomActive)}
                             title={isWaitingRoomActive
                                 ? "Waiting Room: ON (Host approval required for participants). Click to allow everyone directly without approval."
                                 : "Waiting Room: OFF (Everyone joins directly without approval). Click to require approval."}
                             style={{
-                                padding: '4px 10px',
-                                fontSize: '0.75rem',
+                                height: 30,
+                                padding: '0 10px',
+                                fontSize: '0.72rem',
                                 fontWeight: 700,
-                                borderRadius: 'var(--radius-sm)',
+                                borderRadius: '9999px',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 6,
+                                gap: 5,
                                 background: isWaitingRoomActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
                                 color: isWaitingRoomActive ? '#34d399' : '#fbbf24',
                                 border: `1px solid ${isWaitingRoomActive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
@@ -6219,31 +6819,33 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             }}
                         >
                             {isWaitingRoomActive ? (
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                                     <path d="m9 12 2 2 4-4" />
                                 </svg>
                             ) : (
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                                     <path d="M7 11V7a5 5 0 0 1 9.9-1" />
                                 </svg>
                             )}
-                            <span className="hidden sm:inline">{isWaitingRoomActive ? 'Waiting Room: ON' : 'Open: ON'}</span>
+                            <span>{isWaitingRoomActive ? 'Waiting Room' : 'Open Room'}</span>
                         </button>
                     )}
                     {canManageParticipants && waitingGuests.length > 0 && (
                         <button
+                            type="button"
                             onClick={() => setActivePanel('participants')}
                             title={`${waitingGuests.length} participant(s) waiting for host admission. Click to open Participants list.`}
                             style={{
-                                padding: '4px 10px',
-                                fontSize: '0.75rem',
+                                height: 30,
+                                padding: '0 10px',
+                                fontSize: '0.72rem',
                                 fontWeight: 700,
-                                borderRadius: 'var(--radius-sm)',
+                                borderRadius: '9999px',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 6,
+                                gap: 5,
                                 background: 'rgba(239, 68, 68, 0.2)',
                                 color: '#f87171',
                                 border: '1px solid rgba(239, 68, 68, 0.4)',
@@ -6251,23 +6853,96 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                 transition: 'all 0.15s ease'
                             }}
                         >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                                 <circle cx="12" cy="12" r="10" />
                                 <polyline points="12 6 12 12 16 14" />
                             </svg>
                             <span>{waitingGuests.length} Waiting</span>
                         </button>
                     )}
-                    {isScreenShareActive && (
-                        <span className="badge badge-accent anim-fade-in" style={{ padding: '4px 10px' }}>
-                            <span className="badge-dot accent pulse" />
-                            {screenSharingUserId === 'me' ? 'Sharing screen' : `${getUserDisplayName(screenSharingUserId)} presenting`}
-                        </span>
+                    {/* Multi-Presenter or Single Presenter Badge in Header */}
+                    {isScreenShareActive && activePresenterId && (
+                        screenSharingUserIds && screenSharingUserIds.length > 1 ? (
+                            <div style={{
+                                height: 30,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                background: 'rgba(15, 23, 42, 0.85)',
+                                backdropFilter: 'blur(10px)',
+                                padding: '0 6px',
+                                borderRadius: '9999px',
+                                border: '1px solid rgba(99, 102, 241, 0.35)',
+                                fontSize: '0.72rem'
+                            }}>
+                                <span style={{ color: '#818cf8', fontWeight: 700, padding: '0 4px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <IconMonitor size={12} />
+                                    <span>Screens:</span>
+                                </span>
+                                {screenSharingUserIds.map((uId) => {
+                                    const isViewing = primaryUser === uId || (screenSharingUserId === uId && !pinnedUserId)
+                                    const name = uId === 'me' ? 'You' : getUserDisplayName(uId).split(' ')[0]
+                                    return (
+                                        <button
+                                            key={uId}
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                switchActivePresenter(uId)
+                                                setPinnedUserId(uId === 'me' ? 'me' : uId)
+                                                addToast(`Viewing ${uId === 'me' ? 'Your' : name}'s screen`, 'info')
+                                            }}
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 4,
+                                                padding: '2px 8px',
+                                                borderRadius: '9999px',
+                                                border: isViewing ? '1px solid #818cf8' : '1px solid transparent',
+                                                background: isViewing ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.9), rgba(139, 92, 246, 0.9))' : 'rgba(255, 255, 255, 0.08)',
+                                                color: '#fff',
+                                                fontSize: '0.7rem',
+                                                fontWeight: isViewing ? 700 : 500,
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease',
+                                                whiteSpace: 'nowrap'
+                                            }}
+                                            title={`Switch to ${uId === 'me' ? 'your' : name}'s screen`}
+                                        >
+                                            <span style={{
+                                                width: 6,
+                                                height: 6,
+                                                borderRadius: '50%',
+                                                background: isViewing ? '#4ade80' : '#94a3b8'
+                                            }} />
+                                            <span>{name}</span>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        ) : (
+                            <span style={{
+                                height: 30,
+                                padding: '0 10px',
+                                borderRadius: '9999px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                background: 'rgba(99, 102, 241, 0.12)',
+                                border: '1px solid rgba(99, 102, 241, 0.3)',
+                                color: '#c7d2fe',
+                                fontSize: '0.72rem',
+                                fontWeight: 700
+                            }} className="anim-fade-in">
+                                <span className="badge-dot accent pulse" />
+                                <span>{activePresenterId === 'me' ? 'Sharing screen' : `${getUserDisplayName(activePresenterId)} presenting`}</span>
+                            </span>
+                        )
                     )}
                 </div>
 
                 {/* Right: status & participant count */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {/* Plan Duration / Free Plan Countdown Pill */}
                     {currentPlanTier === 'free' ? (
                         <div
@@ -6282,13 +6957,14 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             }}
                             title="Free Plan: 45-minute meeting limit. Click to upgrade for unlimited duration."
                             style={{
+                                height: 30,
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 6,
-                                padding: '4px 10px',
-                                borderRadius: 'var(--radius-sm)',
-                                background: freeTimeRemaining <= 600 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(245, 158, 11, 0.12)',
-                                border: `1px solid ${freeTimeRemaining <= 600 ? 'rgba(239, 68, 68, 0.45)' : 'rgba(245, 158, 11, 0.3)'}`,
+                                padding: '0 10px',
+                                borderRadius: '9999px',
+                                background: freeTimeRemaining <= 600 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.12)',
+                                border: `1px solid ${freeTimeRemaining <= 600 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(245, 158, 11, 0.25)'}`,
                                 color: freeTimeRemaining <= 600 ? '#f87171' : '#fbbf24',
                                 fontSize: '0.72rem',
                                 fontWeight: 700,
@@ -6298,20 +6974,20 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             }}
                         >
                             {freeTimeRemaining <= 600 ? (
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
                                     <line x1="12" y1="9" x2="12" y2="13" />
                                     <line x1="12" y1="17" x2="12.01" y2="17" />
                                 </svg>
                             ) : (
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                                     <circle cx="12" cy="12" r="10" />
                                     <polyline points="12 6 12 12 16 14" />
                                 </svg>
                             )}
                             <span>{formatRemainingTime(freeTimeRemaining)} left</span>
                             <span style={{
-                                fontSize: '0.62rem',
+                                fontSize: '0.6rem',
                                 background: 'linear-gradient(135deg, #6366f1, #a855f7)',
                                 color: '#fff',
                                 padding: '1px 5px',
@@ -6323,14 +6999,15 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     ) : (
                         <div
                             style={{
+                                height: 30,
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 6,
-                                padding: '4px 10px',
-                                borderRadius: 'var(--radius-sm)',
+                                padding: '0 10px',
+                                borderRadius: '9999px',
                                 background: 'rgba(255, 255, 255, 0.04)',
-                                border: '1px solid var(--color-border)',
-                                color: 'var(--color-text-secondary)',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                color: '#94a3b8',
                                 fontSize: '0.72rem',
                                 fontWeight: 600
                             }}
@@ -6339,10 +7016,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
                             <span>{timerStr}</span>
                             <span style={{
-                                fontSize: '0.6rem',
-                                background: currentPlanTier === 'enterprise' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(99, 102, 241, 0.2)',
+                                fontSize: '0.58rem',
+                                background: currentPlanTier === 'enterprise' ? 'rgba(168, 85, 247, 0.18)' : 'rgba(99, 102, 241, 0.18)',
                                 color: currentPlanTier === 'enterprise' ? '#c084fc' : '#818cf8',
-                                border: `1px solid ${currentPlanTier === 'enterprise' ? 'rgba(168, 85, 247, 0.4)' : 'rgba(99, 102, 241, 0.4)'}`,
+                                border: `1px solid ${currentPlanTier === 'enterprise' ? 'rgba(168, 85, 247, 0.35)' : 'rgba(99, 102, 241, 0.35)'}`,
                                 padding: '1px 5px',
                                 borderRadius: 4,
                                 fontWeight: 700,
@@ -6353,22 +7030,35 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         </div>
                     )}
 
-                    <span className={`badge ${connected ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem', padding: '4px 10px' }}>
+                    <span style={{
+                        height: 30,
+                        padding: '0 10px',
+                        borderRadius: '9999px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        background: connected ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                        border: connected ? '1px solid rgba(34, 197, 94, 0.25)' : '1px solid rgba(239, 68, 68, 0.25)',
+                        color: connected ? '#4ade80' : '#f87171',
+                        fontSize: '0.7rem',
+                        fontWeight: 700
+                    }}>
                         <span className={`badge-dot ${connected ? 'success pulse' : 'danger'}`} />
-                        {connected ? 'Live' : 'Offline'}
+                        <span>{connected ? 'Live' : 'Offline'}</span>
                     </span>
 
                     {/* CONFIDENTIAL ANTI-LEAK BADGE */}
                     {isConfidentialMode && (
                         <div
                             style={{
+                                height: 30,
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: 5,
-                                padding: '4px 10px',
-                                borderRadius: 'var(--radius-sm)',
-                                background: 'rgba(239, 68, 68, 0.2)',
-                                border: '1px solid rgba(239, 68, 68, 0.4)',
+                                padding: '0 10px',
+                                borderRadius: '9999px',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
                                 color: '#f87171',
                                 fontSize: '0.7rem',
                                 fontWeight: 800,
@@ -6385,18 +7075,22 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         type="button"
                         onClick={() => setShowAnalyticsModal(true)}
                         style={{
+                            height: 30,
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 5,
-                            padding: '4px 10px',
-                            borderRadius: 'var(--radius-sm)',
-                            background: 'rgba(99, 102, 241, 0.15)',
-                            border: '1px solid rgba(99, 102, 241, 0.35)',
-                            color: '#a5b4fc',
+                            padding: '0 10px',
+                            borderRadius: '9999px',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            color: '#cbd5e1',
                             fontSize: '0.72rem',
                             fontWeight: 700,
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
                         }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)' }}
                         title="View Talk-Time Distribution and Meeting Analytics"
                     >
                         <span>📊 Analytics</span>
@@ -6407,29 +7101,35 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         type="button"
                         onClick={() => setShowCatchUpModal(true)}
                         style={{
+                            height: 30,
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 5,
-                            padding: '4px 10px',
-                            borderRadius: 'var(--radius-sm)',
-                            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(99, 102, 241, 0.2) 100%)',
-                            border: '1px solid rgba(168, 85, 247, 0.45)',
+                            padding: '0 11px',
+                            borderRadius: '9999px',
+                            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.22) 0%, rgba(99, 102, 241, 0.18) 100%)',
+                            border: '1px solid rgba(168, 85, 247, 0.35)',
                             color: '#e9d5ff',
                             fontSize: '0.72rem',
                             fontWeight: 700,
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
                         }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(168, 85, 247, 0.32) 0%, rgba(99, 102, 241, 0.28) 100%)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(168, 85, 247, 0.22) 0%, rgba(99, 102, 241, 0.18) 100%)' }}
                         title="Instant AI Recap of ongoing meeting discussions"
                     >
                         <span>⚡ Catch Me Up</span>
                     </button>
                     <div style={{
-                        fontSize: '0.8125rem', color: 'var(--color-text-secondary)',
+                        height: 30,
+                        fontSize: '0.75rem', color: '#cbd5e1',
                         display: 'flex', alignItems: 'center', gap: 6,
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)',
-                        padding: '4px 10px', borderRadius: 'var(--radius-sm)'
+                        background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)',
+                        padding: '0 10px', borderRadius: '9999px',
+                        fontWeight: 600
                     }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                             <circle cx="9" cy="7" r="4" />
                             <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -6439,56 +7139,215 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     </div>
                 </div>
             </header>
+            )}
+
+            {/* Webinar Stage Active Banner for Host & Speakers */}
+            {isWebinarMode && !isWebinarAttendee && (
+                <div style={{
+                    position: 'absolute',
+                    top: 56,
+                    left: 0,
+                    right: 0,
+                    height: 38,
+                    background: 'linear-gradient(90deg, rgba(225, 29, 72, 0.95), rgba(190, 18, 60, 0.95))',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0 20px',
+                    zIndex: 998,
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    boxShadow: '0 4px 15px rgba(225, 29, 72, 0.35)',
+                    gap: 12
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, overflow: 'hidden' }}>
+                        <span style={{
+                            width: 8, height: 8, borderRadius: '50%', background: '#fff',
+                            boxShadow: '0 0 8px #fff',
+                            animation: 'pulse 1.5s infinite',
+                            flexShrink: 0
+                        }} />
+                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <strong>WEBINAR STAGE MODE ACTIVE</strong> — You are live on the keynote stage. Attendees are in view-only broadcast mode.
+                        </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                            type="button"
+                            onClick={() => setActivePanel('participants')}
+                            style={{
+                                padding: '3px 12px',
+                                borderRadius: 6,
+                                background: 'rgba(255,255,255,0.2)',
+                                border: '1px solid rgba(255,255,255,0.35)',
+                                color: '#fff',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            View Attendees ({participants.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsWebinarMode(false)
+                                socket?.emit('webinar:toggle-mode', {
+                                    meetingId: meetingId || meetingInput.trim(),
+                                    enabled: false
+                                })
+                            }}
+                            style={{
+                                padding: '3px 12px',
+                                borderRadius: 6,
+                                background: 'rgba(0,0,0,0.4)',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                color: '#fff',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Exit Webinar Mode
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Global Persistent Remote Audio Bridge: Guarantees continuous voice for all remote users */}
             <div style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, opacity: 0.001, pointerEvents: 'none' }} aria-hidden="true">
                 {Object.entries(remoteStreams).map(([peerId, rStream]) => {
                     if (!rStream || peerId === 'me' || peerId === localUserId) return null
+                    const isPeerBackstage = backstageUserIds.includes(peerId)
+                    const shouldMuteAudio = remoteMuteStates[peerId] === true || (isPeerBackstage && !canManageParticipants && !isLocalHost)
                     return (
                         <PersistentAudioTile
                             key={`global-audio-${peerId}`}
                             peerId={peerId}
                             stream={rStream}
-                            isMuted={remoteMuteStates[peerId] === true}
+                            isMuted={shouldMuteAudio}
                         />
                     )
                 })}
             </div>
 
             {/* Webinar View-Only Mode for Attendees */}
-            {isWebinarMode && !canManageParticipants && !isLocalHost && !isPromotedToSpeaker ? (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 9999 }}>
-                    <WebinarAttendeeView
-                        meetingId={meetingId || meetingInput.trim()}
-                        meetingTitle={meetingInfo?.title}
-                        stageStream={screenSharingUserId ? (screenSharingUserId === 'me' ? localStream : remoteStreams[screenSharingUserId]) : (activeSpeaker ? remoteStreams[activeSpeaker] : Object.values(remoteStreams)[0] || localStream)}
-                        stageSpeakerName={screenSharingUserId ? getUserDisplayName(screenSharingUserId) : (activeSpeaker ? getUserDisplayName(activeSpeaker) : myDisplayName)}
-                        isScreenShare={Boolean(screenSharingUserId)}
-                        socket={socket}
-                        myUserId={localUserId || 'me'}
-                        myDisplayName={myDisplayName}
-                        isPromotedToSpeaker={isPromotedToSpeaker}
-                        onLeave={() => leaveMeeting()}
-                        onOpenQA={() => setActivePanel('qa')}
-                        onOpenPolls={() => setShowPolls(true)}
-                        onOpenChat={() => {
-                            if (activePanel === 'chat') {
-                                setActivePanel(null)
-                            } else {
-                                setActivePanel('chat')
-                                setUnreadChatCount(0)
-                            }
-                        }}
-                        unreadChatCount={unreadChatCount}
-                    />
-                </div>
+            {isWebinarAttendee ? (
+                <WebinarAttendeeView
+                    meetingId={meetingId || meetingInput.trim()}
+                    meetingTitle={meetingInfo?.title}
+                    stageStream={screenSharingUserId ? (screenSharingUserId === 'me' ? localStream : remoteStreams[screenSharingUserId]) : (activeSpeaker ? remoteStreams[activeSpeaker] : Object.values(remoteStreams)[0] || localStream)}
+                    stageSpeakerName={screenSharingUserId ? getUserDisplayName(screenSharingUserId) : (activeSpeaker ? getUserDisplayName(activeSpeaker) : myDisplayName)}
+                    isScreenShare={Boolean(screenSharingUserId)}
+                    socket={socket}
+                    myUserId={localUserId || 'me'}
+                    myDisplayName={myDisplayName}
+                    isPromotedToSpeaker={isPromotedToSpeaker}
+                    onLeave={() => leaveMeeting()}
+                    onOpenQA={() => setActivePanel(activePanel === 'qa' ? null : 'qa')}
+                    onOpenPolls={() => setShowPolls(true)}
+                    onOpenChat={() => {
+                        if (activePanel === 'chat') {
+                            setActivePanel(null)
+                        } else {
+                            setActivePanel('chat')
+                            setUnreadChatCount(0)
+                        }
+                    }}
+                    unreadChatCount={unreadChatCount}
+                    attendeeCount={participants.length + 1}
+                />
             ) : null}
 
-            {/* Ambient Free Tier Warning Pill (Compact floating Zoom/Meet style) */}
-            {isLowTimeWarning && !isWarningDismissed && (
+            {/* Slide-over panel for Webinar Attendee (Chat & Q&A) */}
+            {isWebinarAttendee && activePanel && (
                 <div style={{
                     position: 'fixed',
-                    top: (isNetworkOffline || networkStatus === 'offline' || networkStatus === 'reconnecting' || isReconnecting || showRestoredNotice) ? 112 : 64,
+                    top: 60,
+                    right: 0,
+                    bottom: 72,
+                    width: 380,
+                    maxWidth: '92vw',
+                    background: 'rgba(10, 14, 26, 0.96)',
+                    backdropFilter: 'blur(24px)',
+                    WebkitBackdropFilter: 'blur(24px)',
+                    borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
+                    boxShadow: '-10px 0 35px rgba(0,0,0,0.6)',
+                    zIndex: 10002,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    borderTopLeftRadius: 16,
+                    borderBottomLeftRadius: 16
+                }}>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px 18px',
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                        background: 'rgba(255, 255, 255, 0.03)'
+                    }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#fff' }}>
+                            {activePanel === 'chat' ? '💬 Webinar Chat' : activePanel === 'qa' ? '❓ Live Q&A' : activePanel}
+                        </span>
+                        <button
+                            onClick={() => setActivePanel(null)}
+                            style={{
+                                background: 'rgba(255,255,255,0.08)',
+                                border: 'none',
+                                borderRadius: '50%',
+                                width: 28,
+                                height: 28,
+                                color: '#fff',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                        >
+                            <IconX size={14} />
+                        </button>
+                    </div>
+                    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        {activePanel === 'chat' && (
+                            <MeetingChatPanel
+                                messages={messages}
+                                typingUsers={typingUsers}
+                                onSendMessage={sendMessage}
+                                onTyping={emitTyping}
+                                onStopTyping={emitStopTyping}
+                                disabled={!connected || !joined}
+                                onToggleChatReaction={toggleChatReaction}
+                                currentUserId={parseJwt(token)?.userId || 'me'}
+                                renamedUsers={renamedUsers}
+                                participants={participants}
+                                meetingId={meetingId || meetingInput.trim()}
+                                token={token}
+                            />
+                        )}
+                        {activePanel === 'qa' && (
+                            <MeetingQAPanel
+                                meetingId={meetingId || meetingInput.trim()}
+                                socket={socket}
+                                isHost={canManageParticipants || isLocalHost}
+                                currentUserId={localUserId || 'me'}
+                                currentUserName={myDisplayName}
+                                onClose={() => setActivePanel(null)}
+                            />
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Ambient Free Tier Warning Pill (Compact floating Zoom/Meet style) */}
+            {!isWebinarAttendee && isLowTimeWarning && !isWarningDismissed && (
+                <div style={{
+                    position: 'absolute',
+                    top: isWebinarMode
+                        ? ((isNetworkOffline || networkStatus === 'offline' || networkStatus === 'reconnecting' || isReconnecting || showRestoredNotice) ? 150 : 102)
+                        : ((isNetworkOffline || networkStatus === 'offline' || networkStatus === 'reconnecting' || isReconnecting || showRestoredNotice) ? 112 : 64),
                     left: '50%',
                     transform: 'translateX(-50%)',
                     zIndex: 9990,
@@ -6568,9 +7427,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             )}
 
             {/* ── Main Content Area ── */}
+            {!isWebinarAttendee && (
             <main style={{
                 flex: 1,
-                paddingTop: isLowTimeWarning ? 104 : 64,
+                paddingTop: isWebinarMode ? (isLowTimeWarning ? 142 : 102) : (isLowTimeWarning ? 104 : 64),
                 paddingBottom: 20,
                 display: 'flex',
                 overflow: 'hidden',
@@ -6637,7 +7497,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             stream={primaryStream}
                                             label={primaryUser === 'me' ? 'You' : getUserDisplayName(primaryUser)}
                                             muted={primaryUser === 'me'}
-                                            isScreenShare={isScreenShareActive && primaryUser === screenSharingUserId}
+                                            isScreenShare={isScreenShareActive && primaryUser === activePresenterId}
                                             isPrimary={true}
                                             isHandRaised={primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser]}
                                             isHost={primaryUser === 'me' ? isLocalHost : !!(meetingInfo && meetingInfo.host && (meetingInfo.host._id === primaryUser || meetingInfo.host === primaryUser))}
@@ -6651,80 +7511,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             isMutedProp={primaryUser === 'me' ? isMuted : (remoteMuteStates[primaryUser] !== undefined ? remoteMuteStates[primaryUser] : !primaryStream?.getAudioTracks()[0]?.enabled)}
                                         />
 
-                                        {/* Multi-Presenter Floating Switcher Bar (Google Meet Style) */}
-                                        {screenSharingUserIds && screenSharingUserIds.length > 1 && (
-                                            <div style={{
-                                                position: 'absolute',
-                                                top: 14,
-                                                left: '50%',
-                                                transform: 'translateX(-50%)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 8,
-                                                zIndex: 48,
-                                                background: 'rgba(15, 23, 42, 0.88)',
-                                                backdropFilter: 'blur(16px)',
-                                                WebkitBackdropFilter: 'blur(16px)',
-                                                padding: '5px 10px',
-                                                borderRadius: 'var(--radius-full)',
-                                                border: '1px solid rgba(99, 102, 241, 0.45)',
-                                                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6), 0 0 16px rgba(99, 102, 241, 0.3)',
-                                                maxWidth: '90%',
-                                                overflowX: 'auto',
-                                                scrollbarWidth: 'none'
-                                            }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 4px', fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>
-                                                    <IconMonitor size={14} color="#818cf8" />
-                                                    <span>Presenters:</span>
-                                                </div>
-                                                {screenSharingUserIds.map((uId) => {
-                                                    const isViewing = primaryUser === uId || (screenSharingUserId === uId && !pinnedUserId)
-                                                    const name = uId === 'me' ? 'You' : getUserDisplayName(uId)
-                                                    return (
-                                                        <button
-                                                            key={uId}
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation()
-                                                                switchActivePresenter(uId)
-                                                                setPinnedUserId(uId === 'me' ? 'me' : uId)
-                                                                addToast(`Viewing ${name}'s presentation`, 'info')
-                                                            }}
-                                                            style={{
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: 6,
-                                                                padding: '5px 12px',
-                                                                borderRadius: 'var(--radius-full)',
-                                                                border: isViewing ? '1px solid #818cf8' : '1px solid rgba(255, 255, 255, 0.12)',
-                                                                background: isViewing ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.95), rgba(139, 92, 246, 0.95))' : 'rgba(255, 255, 255, 0.08)',
-                                                                color: '#fff',
-                                                                fontSize: '0.75rem',
-                                                                fontWeight: isViewing ? 800 : 500,
-                                                                cursor: 'pointer',
-                                                                transition: 'all 0.2s ease',
-                                                                boxShadow: isViewing ? '0 0 16px rgba(99, 102, 241, 0.6)' : 'none',
-                                                                whiteSpace: 'nowrap'
-                                                            }}
-                                                        >
-                                                            <span style={{
-                                                                width: 7,
-                                                                height: 7,
-                                                                borderRadius: '50%',
-                                                                background: isViewing ? '#4ade80' : '#94a3b8',
-                                                                boxShadow: isViewing ? '0 0 8px #4ade80' : 'none'
-                                                            }} />
-                                                            <span>{name}&apos;s Screen</span>
-                                                            {isViewing && (
-                                                                <span style={{ fontSize: '0.62rem', background: 'rgba(0,0,0,0.35)', padding: '1px 5px', borderRadius: 4, fontWeight: 800, textTransform: 'uppercase' }}>
-                                                                    Viewing
-                                                                </span>
-                                                            )}
-                                                        </button>
-                                                    )
-                                                })}
-                                            </div>
-                                        )}
+
 
                                         {/* Top-Left Action Toolbar (Unpin Screen & Screen Share Controls in one clean row) */}
                                         {(pinnedUserId || isScreenShareActive) && (() => {
@@ -6780,37 +7567,39 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                     )}
 
                                                     {/* Live Annotation & Laser Pointer Trigger (Presenter only) */}
-                                                    {isScreenShareActive && screenSharingUserId === 'me' && (
+                                                    {isScreenShareActive && activePresenterId === 'me' && !isAnnotationActive && (
                                                         <button
                                                             type="button"
-                                                            onClick={() => setIsAnnotationActive(prev => !prev)}
+                                                            onClick={() => setIsAnnotationActive(true)}
                                                             style={{
-                                                                background: isAnnotationActive ? 'rgba(139, 92, 246, 0.95)' : 'rgba(10, 11, 15, 0.85)',
+                                                                background: 'rgba(10, 11, 15, 0.85)',
                                                                 backdropFilter: 'blur(10px)',
                                                                 WebkitBackdropFilter: 'blur(10px)',
-                                                                border: isAnnotationActive ? '1px solid #c4b5fd' : '1px solid rgba(255,255,255,0.18)',
+                                                                border: '1px solid rgba(255,255,255,0.18)',
                                                                 borderRadius: 'var(--radius-full)',
-                                                                padding: '6px 14px',
+                                                                padding: '5px 11px',
                                                                 color: '#fff',
-                                                                fontSize: '0.75rem',
+                                                                fontSize: '0.72rem',
                                                                 fontWeight: 700,
                                                                 cursor: 'pointer',
                                                                 display: 'inline-flex',
                                                                 alignItems: 'center',
-                                                                gap: 6,
-                                                                boxShadow: isAnnotationActive ? '0 0 16px rgba(139, 92, 246, 0.5)' : 'var(--shadow-md)',
+                                                                gap: 5,
+                                                                boxShadow: 'var(--shadow-md)',
                                                                 transition: 'all 0.2s ease',
                                                                 whiteSpace: 'nowrap'
                                                             }}
+                                                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.9)'; e.currentTarget.style.borderColor = 'transparent' }}
+                                                            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(10, 11, 15, 0.85)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)' }}
                                                             title="Toggle interactive drawing & laser pointer on screen"
                                                         >
-                                                            <IconEdit size={14} />
-                                                            <span>{isAnnotationActive ? 'Drawing Active' : 'Annotate & Laser'}</span>
+                                                            <IconEdit size={13} />
+                                                            <span>Annotate & Laser</span>
                                                         </button>
                                                     )}
 
                                                     {/* Remote Control Trigger (For Viewers) */}
-                                                    {isScreenShareActive && screenSharingUserId !== 'me' && (
+                                                    {isScreenShareActive && activePresenterId !== 'me' && (
                                                         <button
                                                             type="button"
                                                             onClick={activeControllerId === (parseJwt(token)?.userId || 'me') ? handleReleaseRemoteControl : handleRequestRemoteControl}
@@ -6827,21 +7616,21 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                                     ? '1px solid #93c5fd'
                                                                     : '1px solid rgba(255,255,255,0.18)',
                                                                 borderRadius: 'var(--radius-full)',
-                                                                padding: '6px 14px',
+                                                                padding: '5px 11px',
                                                                 color: '#fff',
-                                                                fontSize: '0.75rem',
+                                                                fontSize: '0.72rem',
                                                                 fontWeight: 700,
                                                                 cursor: isRequestingControl ? 'not-allowed' : 'pointer',
                                                                 display: 'inline-flex',
                                                                 alignItems: 'center',
-                                                                gap: 6,
+                                                                gap: 5,
                                                                 boxShadow: activeControllerId === (parseJwt(token)?.userId || 'me') ? '0 0 16px rgba(59, 130, 246, 0.5)' : 'var(--shadow-md)',
                                                                 transition: 'all 0.2s ease',
                                                                 whiteSpace: 'nowrap'
                                                             }}
                                                             title={activeControllerId === (parseJwt(token)?.userId || 'me') ? 'Release Remote Control' : 'Request Remote Control of this screen'}
                                                         >
-                                                            <IconMonitor size={14} />
+                                                            <IconMonitor size={13} />
                                                             <span>
                                                                 {activeControllerId === (parseJwt(token)?.userId || 'me')
                                                                     ? 'Release Control'
@@ -6853,32 +7642,34 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                                     )}
 
                                                     {/* Viewer Annotation Trigger (Attendee drawing on screen) */}
-                                                    {isScreenShareActive && screenSharingUserId !== 'me' && (
+                                                    {isScreenShareActive && activePresenterId !== 'me' && !isAttendeeAnnotationActive && (
                                                         <button
                                                             type="button"
-                                                            onClick={() => setIsAttendeeAnnotationActive(prev => !prev)}
+                                                            onClick={() => setIsAttendeeAnnotationActive(true)}
                                                             style={{
-                                                                background: isAttendeeAnnotationActive ? 'rgba(99, 102, 241, 0.95)' : 'rgba(10, 11, 15, 0.85)',
+                                                                background: 'rgba(10, 11, 15, 0.85)',
                                                                 backdropFilter: 'blur(10px)',
                                                                 WebkitBackdropFilter: 'blur(10px)',
-                                                                border: isAttendeeAnnotationActive ? '1px solid #818cf8' : '1px solid rgba(255, 255, 255, 0.18)',
+                                                                border: '1px solid rgba(255, 255, 255, 0.18)',
                                                                 borderRadius: 'var(--radius-full)',
-                                                                padding: '6px 14px',
+                                                                padding: '5px 11px',
                                                                 color: '#fff',
-                                                                fontSize: '0.75rem',
+                                                                fontSize: '0.72rem',
                                                                 fontWeight: 700,
                                                                 cursor: 'pointer',
                                                                 display: 'inline-flex',
                                                                 alignItems: 'center',
-                                                                gap: 6,
-                                                                boxShadow: isAttendeeAnnotationActive ? '0 0 16px rgba(99, 102, 241, 0.5)' : 'var(--shadow-md)',
+                                                                gap: 5,
+                                                                boxShadow: 'var(--shadow-md)',
                                                                 transition: 'all 0.2s ease',
                                                                 whiteSpace: 'nowrap'
                                                             }}
+                                                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.9)'; e.currentTarget.style.borderColor = 'transparent' }}
+                                                            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(10, 11, 15, 0.85)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)' }}
                                                             title="Toggle drawing and annotations on screen"
                                                         >
-                                                            <IconEdit size={14} />
-                                                            <span>{isAttendeeAnnotationActive ? 'Drawing Active' : 'Annotate'}</span>
+                                                            <IconEdit size={13} />
+                                                            <span>Annotate</span>
                                                         </button>
                                                     )}
                                                 </div>
@@ -6954,8 +7745,8 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                         {/* Screen Share Live Annotation Canvas Overlay */}
                                         {isScreenShareActive && (
                                             <ScreenAnnotationOverlay
-                                                isActive={screenSharingUserId === 'me' ? isAnnotationActive : true}
-                                                isPresenter={screenSharingUserId === 'me'}
+                                                isActive={activePresenterId === 'me' ? isAnnotationActive : true}
+                                                isPresenter={activePresenterId === 'me'}
                                                 socket={socket}
                                                 meetingId={meetingInfo?.customId || meetingInfo?.id || meetingId || initialMeetingId}
                                                 onClose={() => {
@@ -7096,6 +7887,15 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             onApproveAllGuests={handleApproveAllGuests}
                             isWaitingRoomActive={isWaitingRoomActive}
                             onToggleWaitingRoom={handleToggleWaitingRoom}
+                            backstageUserIds={backstageUserIds}
+                            canUseBackstage={canUseBackstage}
+                            onStageStatusChange={handleStageStatusChange}
+                            onUpgradeRequired={(feature) => setUpgradeModalFeature({
+                                title: feature,
+                                requiredPlan: 'Enterprise Tier',
+                                icon: <IconRocket size={20} color="#34d399" />,
+                                description: 'Virtual Green Room (Backstage) allows hosts to prep speakers privately before bringing them live to the audience.'
+                            })}
                         />
                     )}
                     {activePanel === 'chat' && (
@@ -7213,8 +8013,10 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     )}
                 </div>
             </main>
+            )}
 
             {/* ── Bottom Control Bar ── */}
+            {!isWebinarAttendee && (
             <footer
                 ref={footerToolbarRef}
                 className="meeting-toolbar"
@@ -7228,7 +8030,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     isToolbarHoveredRef.current = false
                 }}
                 style={{
-                    position: 'fixed',
+                    position: 'absolute',
                     bottom: windowWidth < 640 ? 12 : 20,
                     left: '50%',
                     transform: `translateX(-50%) translateY(${isToolbarActuallyVisible ? '0px' : '100px'})`,
@@ -7444,14 +8246,31 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     )}
                 </button>
 
-                {/* Q&A drawer toggle */}
+                {/* Live Captions (CC) toggle */}
                 <button
-                    className={`btn-icon ${activePanel === 'qa' ? 'active' : ''}`}
-                    onClick={() => togglePanel('qa')}
-                    title="Q&A with Upvoting"
-                    style={{ width: windowWidth < 640 ? 36 : 40, height: windowWidth < 640 ? 36 : 40, border: 'none', borderRadius: '50%', background: activePanel === 'qa' ? 'var(--color-accent-light)' : 'transparent', color: activePanel === 'qa' ? 'var(--color-accent)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}
+                    className={`btn-icon ${showCaptions ? 'active' : ''}`}
+                    onClick={() => {
+                        const next = !showCaptions
+                        setShowCaptions(next)
+                        addToast(next ? 'Live Captions (CC) turned ON: Speak to see real-time subtitles' : 'Live Captions (CC) turned OFF', 'info')
+                    }}
+                    title={showCaptions ? "Turn off captions (CC)" : "Turn on captions (CC)"}
+                    style={{
+                        width: windowWidth < 640 ? 36 : 40,
+                        height: windowWidth < 640 ? 36 : 40,
+                        border: 'none',
+                        borderRadius: '50%',
+                        background: showCaptions ? 'var(--color-accent-light)' : 'transparent',
+                        color: showCaptions ? 'var(--color-accent)' : '#fff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        position: 'relative',
+                        flexShrink: 0
+                    }}
                 >
-                    <IconHelp size={windowWidth < 640 ? 18 : 20} />
+                    <IconCaptions size={windowWidth < 640 ? 18 : 20} strokeWidth={2} />
                 </button>
 
                 <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
@@ -7522,6 +8341,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     </span>
                 </button>
             </footer>
+            )}
 
             {/* Google Meet Style Dynamic "More Options" Floating Popover */}
             {showMoreMenu && (() => {
@@ -7823,36 +8643,36 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             )}
                         </button>
 
-                        {/* Live Captions (CC) */}
+                        {/* Q&A with Upvoting */}
                         <button
                             onClick={() => {
                                 setShowMoreMenu(false)
-                                setShowCaptions(prev => {
-                                    const next = !prev
-                                    addToast(next ? 'Live Captions (CC) turned ON: Speak to see real-time subtitles' : 'Live Captions (CC) turned OFF', 'info')
-                                    return next
-                                })
+                                togglePanel('qa')
                             }}
                             style={{
                                 display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
-                                background: 'transparent', border: 'none', borderRadius: '10px',
-                                color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                                background: activePanel === 'qa' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                                border: 'none', borderRadius: '10px',
+                                color: activePanel === 'qa' ? 'var(--color-accent)' : '#fff',
+                                fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
                                 transition: 'background 0.15s ease'
                             }}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = activePanel === 'qa' ? 'rgba(99, 102, 241, 0.15)' : 'transparent'}
                         >
                             <div style={{
                                 width: 28, height: 28, borderRadius: 7,
-                                background: 'rgba(34, 197, 94, 0.12)',
-                                color: '#4ade80', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                background: 'rgba(99, 102, 241, 0.15)',
+                                color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
                             }}>
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M7 15h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2H7v6z"/><path d="M15 15h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-2v6z"/></svg>
+                                <IconHelp size={16} />
                             </div>
-                            <span style={{ flex: 1, textAlign: 'left' }}>Live Captions (Subtitles)</span>
-                            <span style={{ fontSize: '0.7rem', color: showCaptions ? '#34d399' : 'var(--color-text-muted)', fontWeight: 600 }}>
-                                {showCaptions ? 'ON' : 'OFF'}
-                            </span>
+                            <span style={{ flex: 1, textAlign: 'left' }}>Q&A with Upvoting</span>
+                            {activePanel === 'qa' && (
+                                <span style={{ fontSize: '0.7rem', color: 'var(--color-accent)', fontWeight: 600 }}>
+                                    OPEN
+                                </span>
+                            )}
                         </button>
 
                         {/* AI Minutes of Meeting (Host only) */}
@@ -8254,11 +9074,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                         <button
                             onClick={() => {
                                 setShowMoreMenu(false)
-                                setIsStudioLightingEnabled(prev => {
-                                    const next = !prev
-                                    addToast(next ? 'Studio soft lighting enabled' : 'Studio lighting disabled', 'info')
-                                    return next
-                                })
+                                const next = !isStudioLightingEnabled
+                                setIsStudioLightingEnabled(next)
+                                addToast(next ? 'Studio soft lighting enabled' : 'Studio lighting disabled', 'info')
                             }}
                             style={{
                                 display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
@@ -8730,7 +9548,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 onClose={() => setShowEndMeetingModal(false)}
                 onLeaveOnly={() => {
                     setShowEndMeetingModal(false)
-                    handleExitMeeting()
+                    handleExitMeeting(false)
                 }}
                 onEndForAll={(sendSummaryEmail) => {
                     setShowEndMeetingModal(false)
@@ -8801,7 +9619,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                     }
                     setMeetingInput('')
                     socket?.emit('meeting:end-all', { meetingId: meetingId || meetingInput.trim() })
-                    handleExitMeeting()
+                    handleExitMeeting(true)
                 }}
                 onDownloadAttendance={() => {
                     exportAttendanceCSV()
@@ -8817,16 +9635,17 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 socket={socket}
                 isLocalMuted={isMuted}
                 onTranscriptUpdate={(newTranscripts) => setTranscripts(newTranscripts)}
+                onClose={() => setShowCaptions(false)}
             />
 
             {/* ── Virtual Green Room: Backstage Banner (shown to backstage user) ── */}
             {isCurrentUserBackstage && (
                 <div style={{
                     position: 'absolute',
-                    top: 16,
+                    top: isWebinarMode ? 104 : 68,
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    zIndex: 200,
+                    zIndex: 250,
                     background: 'linear-gradient(135deg, rgba(6,78,59,0.97), rgba(4,120,87,0.93))',
                     border: '1.5px solid rgba(52,211,153,0.7)',
                     borderRadius: 14,
@@ -8864,9 +9683,9 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             {isLocalHost && canUseBackstage && backstageUserIds.length > 0 && (
                 <div style={{
                     position: 'absolute',
-                    top: 16,
-                    right: 20,
-                    zIndex: 200,
+                    top: isWebinarMode ? 104 : 68,
+                    right: activePanel ? (windowWidth < 768 ? 16 : 380) : 20,
+                    zIndex: 250,
                     background: 'rgba(15,17,23,0.95)',
                     border: '1px solid rgba(52,211,153,0.4)',
                     borderRadius: 12,
@@ -9240,85 +10059,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
             )}
 
             {/* Next-Gen Feature 7: Post-Meeting Interactive Capsule Hub */}
-            {postMeetingCapsule && (
-                <div style={{
-                    position: 'fixed', inset: 0, zIndex: 11000,
-                    background: 'rgba(10, 11, 16, 0.95)', backdropFilter: 'blur(16px)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-                }}>
-                    <div style={{
-                        background: '#13151c', border: '1px solid rgba(255,255,255,0.12)',
-                        borderRadius: 20, width: '100%', maxWidth: 540, padding: 32,
-                        boxShadow: '0 25px 50px rgba(0,0,0,0.7)',
-                        display: 'flex', flexDirection: 'column', gap: 20
-                    }}>
-                        <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '2rem', marginBottom: 8 }}>📦</div>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', margin: '0 0 6px 0' }}>
-                                Meeting Capsule
-                            </h2>
-                            <div style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
-                                Session completed • Duration: <span style={{ color: '#fff', fontWeight: 700 }}>{postMeetingCapsule.duration}</span>
-                            </div>
-                        </div>
-
-                        {/* Meeting Highlights Summary Card */}
-                        <div style={{
-                            background: 'rgba(255,255,255,0.03)',
-                            border: '1px solid rgba(255,255,255,0.08)',
-                            borderRadius: 12, padding: '16px 20px',
-                            display: 'flex', flexDirection: 'column', gap: 10
-                        }}>
-                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Session Notes & Action Items
-                            </div>
-                            <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', lineHeight: 1.5, maxHeight: 140, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
-                                {postMeetingCapsule.notes || 'No manual action items logged during this session.'}
-                            </div>
-                        </div>
-
-                        {/* Action buttons */}
-                        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    const content = `# ${postMeetingCapsule.title}\nDuration: ${postMeetingCapsule.duration}\nDate: ${new Date().toLocaleString()}\n\n## Action Items & Notes\n${postMeetingCapsule.notes || 'None logged.'}\n`
-                                    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' })
-                                    const url = URL.createObjectURL(blob)
-                                    const a = document.createElement('a')
-                                    a.href = url
-                                    a.download = `Meeting_Capsule_${Date.now()}.md`
-                                    a.click()
-                                    URL.revokeObjectURL(url)
-                                }}
-                                style={{
-                                    flex: 1, padding: '10px 16px', borderRadius: 10,
-                                    background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
-                                    color: '#fff', fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer'
-                                }}
-                            >
-                                💾 Download Capsule (.md)
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setPostMeetingCapsule(null)
-                                    if (onLeave) onLeave()
-                                    else window.location.hash = '#'
-                                }}
-                                className="btn btn-primary"
-                                style={{
-                                    flex: 1, padding: '10px 16px', borderRadius: 10,
-                                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                                    border: 'none', color: '#fff', fontWeight: 700, fontSize: '0.8125rem', cursor: 'pointer'
-                                }}
-                            >
-                                Exit to Workspace
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {renderPostMeetingCapsuleModal()}
 
             {/* Google Meet Layout Switcher Modal */}
             <LayoutSwitcherModal
@@ -9781,7 +10522,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 )
             })()}
 
-            {/* Real-time Floating Reactions Container (Zoom Style) */}
+            {/* Real-time Celebratory Floating Reactions Container (Teams / Zoom Physics Stream) */}
             <div style={{
                 position: 'fixed', inset: 0,
                 pointerEvents: 'none', zIndex: 99999, overflow: 'hidden'
@@ -9789,13 +10530,21 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                 {floatingReactions.map(r => (
                     <div
                         key={r.id}
-                        className="floating-reaction-item"
+                        className={`floating-reaction-item sway-${r.swayType || 1}`}
                         style={{
                             left: `${r.left}%`,
+                            animationDelay: `${r.delayMs || 0}ms`,
                         }}
                     >
-                        <span className="floating-reaction-emoji">{r.emoji}</span>
-                        {r.senderName && (
+                        <span
+                            className="floating-reaction-emoji"
+                            style={{
+                                fontSize: `${(r.scale || 1) * 2.2}rem`
+                            }}
+                        >
+                            {r.emoji}
+                        </span>
+                        {r.isPrimary && r.senderName && (
                             <span className="floating-reaction-name">{r.senderName}</span>
                         )}
                     </div>
@@ -9940,14 +10689,35 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             </span>
                             <div style={{ display: 'flex', gap: 10 }}>
                                 <button
+                                    type="button"
                                     onClick={async () => {
                                         await copyToClipboard(generateMoMContent())
+                                        setMomCopied(true)
                                         addToast('MoM copied to clipboard!', 'success')
+                                        setTimeout(() => setMomCopied(false), 2500)
                                     }}
-                                    className="btn btn-secondary"
-                                    style={{ padding: '8px 14px', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: 6 }}
+                                    className={momCopied ? "btn btn-success" : "btn btn-secondary"}
+                                    style={{
+                                        padding: '8px 14px',
+                                        fontSize: '0.8125rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        background: momCopied ? '#16a34a' : undefined,
+                                        borderColor: momCopied ? '#16a34a' : undefined,
+                                        color: '#fff',
+                                        transition: 'all 0.2s ease'
+                                    }}
                                 >
-                                    <IconCopy size={14} /> Copy Text
+                                    {momCopied ? (
+                                        <>
+                                            <IconCheck size={14} color="#fff" /> Copied!
+                                        </>
+                                    ) : (
+                                        <>
+                                            <IconCopy size={14} /> Copy Text
+                                        </>
+                                    )}
                                 </button>
                                 <button
                                     onClick={() => {
@@ -9976,7 +10746,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
 
             {/* Toasts Notification Container */}
             <div style={{
-                position: 'fixed', top: 24, right: 24, zIndex: 10000,
+                position: 'fixed', top: 24, right: 24, zIndex: 12000,
                 display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none'
             }}>
                 {toasts.map(t => (
@@ -10153,17 +10923,59 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                                             type="text"
                                             readOnly
                                             value={meetLink}
-                                            style={{ flex: 1, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', color: '#a5b4fc', fontFamily: 'monospace', fontSize: '0.8125rem', outline: 'none' }}
+                                            onFocus={(e) => e.target.select()}
+                                            style={{
+                                                flex: 1,
+                                                background: 'var(--color-surface-2)',
+                                                border: inviteLinkCopied ? '1px solid #22c55e' : '1px solid var(--color-border)',
+                                                boxShadow: inviteLinkCopied ? '0 0 10px rgba(34, 197, 94, 0.25)' : 'none',
+                                                borderRadius: 'var(--radius-sm)',
+                                                padding: '10px 12px',
+                                                color: inviteLinkCopied ? '#86efac' : '#a5b4fc',
+                                                fontFamily: 'monospace',
+                                                fontSize: '0.8125rem',
+                                                outline: 'none',
+                                                transition: 'all 0.2s ease'
+                                            }}
                                         />
                                         <button
+                                            type="button"
                                             onClick={async () => {
                                                 await copyToClipboard(meetLink)
+                                                setInviteLinkCopied(true)
                                                 addToast('Meeting link copied to clipboard!', 'success')
+                                                setTimeout(() => setInviteLinkCopied(false), 2500)
                                             }}
-                                            className="btn btn-secondary"
-                                            style={{ padding: '0 16px', fontSize: '0.8125rem', fontWeight: 600 }}
+                                            className={inviteLinkCopied ? "btn btn-success" : "btn btn-secondary"}
+                                            style={{
+                                                padding: '0 16px',
+                                                fontSize: '0.8125rem',
+                                                fontWeight: 700,
+                                                background: inviteLinkCopied ? '#16a34a' : undefined,
+                                                borderColor: inviteLinkCopied ? '#16a34a' : undefined,
+                                                color: '#fff',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 6,
+                                                transition: 'all 0.2s ease'
+                                            }}
                                         >
-                                            Copy Link
+                                            {inviteLinkCopied ? (
+                                                <>
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                        <polyline points="20 6 9 17 4 12" />
+                                                    </svg>
+                                                    <span>Copied!</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                                    </svg>
+                                                    <span>Copy Link</span>
+                                                </>
+                                            )}
                                         </button>
                                     </div>
                                 </div>
@@ -10379,7 +11191,7 @@ ${chatNotes || '_No public chat notes recorded during this session._'}
                             color: '#fbbf24',
                             marginBottom: 12
                         }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><IconLock size={12} color="#fbbf24" /> Locked on Free Plan • Requires {upgradeModalFeature.requiredPlan}</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><IconLock size={12} color="#fbbf24" /> Current Plan: {currentPlanTier.charAt(0).toUpperCase() + currentPlanTier.slice(1)} • Requires {upgradeModalFeature.requiredPlan}</span>
                         </div>
 
                         <h3 style={{ margin: '0 0 10px', fontSize: '1.25rem', fontWeight: 800, color: '#fff' }}>
