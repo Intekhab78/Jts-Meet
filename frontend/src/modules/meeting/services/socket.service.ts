@@ -50,6 +50,8 @@ export const SocketEvents = {
     MEETING_WATERMARK_TOGGLE: 'meeting:toggle-watermark',
     MEETING_COHOST_PROMOTE: 'meeting:cohost-promote',
     MEETING_COHOST_DEMOTE: 'meeting:cohost-demote',
+    MEETING_MUTE_USER: 'meeting:mute-user',
+    MEETING_REMOVE_USER: 'meeting:remove-user',
 
     // Screen Share Live Annotation events
     SCREEN_ANNOTATION_STROKE_START: 'screen:annotation:stroke-start',

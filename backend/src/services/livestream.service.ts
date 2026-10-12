@@ -1,5 +1,7 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import { EventEmitter } from 'events'
+import fs from 'fs'
+import path from 'path'
 
 // Resolve cross-platform FFmpeg executable
 let resolvedFfmpegPath = 'ffmpeg'
@@ -34,10 +36,32 @@ export interface ActiveStreamSession {
     lastChunkAt: number
     status: 'starting' | 'live' | 'error' | 'stopped'
     errorMessage?: string
+    isExplicitlyStopped?: boolean
+    reconnectAttempts?: number
+    pendingBuffer?: Buffer[]
+    initHeader?: Buffer
 }
 
 class LiveStreamService extends EventEmitter {
     private sessions: Map<string, ActiveStreamSession> = new Map()
+
+    constructor() {
+        super()
+        // Automatic watchdog to terminate abandoned FFmpeg streams if host disconnects or crashes (60s grace window)
+        setInterval(() => {
+            const now = Date.now()
+            for (const [mId, s] of this.sessions.entries()) {
+                if (s.status === 'live' && s.lastChunkAt && (now - s.lastChunkAt > 60000)) {
+                    console.log(`[LiveStream][${mId}] Stream inactivity watchdog: no chunks for 60s, stopping FFmpeg process.`)
+                    this.stopStream(mId).catch(() => {})
+                }
+            }
+        }, 10000)
+    }
+
+    public getSessions(): Map<string, ActiveStreamSession> {
+        return this.sessions
+    }
 
     /**
      * Resolves the full RTMP target destination URL based on platform and stream key
@@ -69,70 +93,75 @@ class LiveStreamService extends EventEmitter {
     }
 
     /**
-     * Start a new live stream pipeline for a meeting
+     * Spawns an FFmpeg child process for an active stream session with full error handling and auto-reconnect
      */
-    public async startStream(options: LiveStreamOptions): Promise<ActiveStreamSession> {
-        const { meetingId } = options
-
-        // If a stream is already active for this meeting, stop it first
-        if (this.sessions.has(meetingId)) {
-            await this.stopStream(meetingId)
+    private spawnFfmpegProcess(session: ActiveStreamSession): ChildProcessWithoutNullStreams {
+        const { meetingId, options, targetRtmpUrl } = session
+        const is1080p = options.resolution === '1080p'
+        let rawBitrate = options.bitrate ? String(options.bitrate).trim() : (is1080p ? '4500k' : '2500k')
+        if (!rawBitrate.toLowerCase().endsWith('k') && !rawBitrate.toLowerCase().endsWith('m')) {
+            rawBitrate = `${rawBitrate}k`
         }
+        const videoBitrate = rawBitrate
+        const numericKbps = parseInt(rawBitrate.replace(/[^0-9]/g, ''), 10) || (is1080p ? 4500 : 2500)
+        const bufSize = `${numericKbps * 2}k`
+        const scaleFilter = is1080p
+            ? 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:-1:-1:color=black'
+            : 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:-1:-1:color=black'
 
-        const targetRtmpUrl = this.resolveRtmpUrl(options)
-        const videoBitrate = options.bitrate || (options.resolution === '1080p' ? '4500k' : '2500k')
-        const scaleFilter = options.resolution === '1080p' ? 'scale=1920:1080' : 'scale=1280:720'
+        console.log(`[LiveStream] Spawning FFmpeg for meeting ${meetingId} -> ${options.platform.toUpperCase()} (${options.resolution || '720p'}) @ ${videoBitrate} (buf: ${bufSize})`)
 
-        console.log(`[LiveStream] Spawning FFmpeg for meeting ${meetingId} -> ${options.platform.toUpperCase()} (${options.resolution || '720p'})`)
-
-        // High performance FFmpeg flags: read webm from stdin and push FLV to RTMP destination
         const ffmpegArgs = [
-            '-fflags', '+genpts+nobuffer',
-            '-flags', '+low_delay',
-            '-i', '-',                  // Read WebM/Matroska stream from STDIN
-            '-vf', scaleFilter,         // Enforce output resolution
-            '-c:v', 'libx264',          // Encode H.264 video
-            '-preset', 'veryfast',      // Low CPU overhead preset
-            '-tune', 'zerolatency',     // Real-time zero latency tuning
-            '-b:v', videoBitrate,       // Target video bitrate
-            '-maxrate', videoBitrate,   // Constrain max bitrate
-            '-bufsize', '5000k',        // Buffer size
-            '-pix_fmt', 'yuv420p',      // Standard color space for RTMP
-            '-g', '60',                 // 2-second keyframe GOP (30fps * 2)
-            '-c:a', 'aac',              // AAC audio
-            '-b:a', '128k',             // 128 kbps audio
-            '-ar', '44100',             // 44.1 kHz sample rate
-            '-f', 'flv',                // Flash Video format for RTMP ingest
+            '-f', 'matroska',
+            '-analyzeduration', '1000000',
+            '-probesize', '65536',
+            '-fflags', '+genpts+nobuffer+igndts+discardcorrupt',
+            '-i', 'pipe:0',
+            '-max_muxing_queue_size', '4096',
+            '-max_interleave_delta', '0',
+            '-vf', scaleFilter,
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-tune', 'zerolatency',
+            '-profile:v', 'baseline',
+            '-bf', '0',
+            '-b:v', videoBitrate,
+            '-minrate', videoBitrate,
+            '-maxrate', videoBitrate,
+            '-bufsize', bufSize,
+            '-pix_fmt', 'yuv420p',
+            '-r', '30',
+            '-vsync', '1',
+            '-g', '60',
+            '-keyint_min', '60',
+            '-sc_threshold', '0',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-ar', '44100',
+            '-ac', '2',
+            '-af', 'aresample=async=1:first_pts=0',
+            '-avoid_negative_ts', 'make_zero',
+            '-f', 'flv',
             '-flvflags', 'no_duration_filesize',
             targetRtmpUrl
         ]
 
-        let ffmpegProcess: ChildProcessWithoutNullStreams
-        try {
-            ffmpegProcess = spawn(resolvedFfmpegPath, ffmpegArgs, {
-                stdio: ['pipe', 'pipe', 'pipe']
-            })
-        } catch (err: any) {
-            console.error(`[LiveStream] Failed to spawn FFmpeg at path "${resolvedFfmpegPath}":`, err)
-            throw new Error(`Failed to initialize streaming engine: ${err?.message || 'FFmpeg spawn error'}`)
-        }
+        const ffmpegProcess = spawn(resolvedFfmpegPath, ffmpegArgs, {
+            stdio: ['pipe', 'pipe', 'pipe']
+        })
 
-        const session: ActiveStreamSession = {
-            meetingId,
-            userId: options.userId,
-            options,
-            targetRtmpUrl,
-            process: ffmpegProcess,
-            startedAt: new Date(),
-            bytesIngested: 0,
-            lastChunkAt: Date.now(),
-            status: 'starting'
+        // Replay cached container header if this is a reconnect
+        if (session.initHeader && session.reconnectAttempts && session.reconnectAttempts > 0) {
+            setTimeout(() => {
+                if (ffmpegProcess.stdin && ffmpegProcess.stdin.writable && session.initHeader) {
+                    try {
+                        ffmpegProcess.stdin.write(session.initHeader)
+                    } catch (_) {}
+                }
+            }, 100)
         }
-
-        this.sessions.set(meetingId, session)
 
         ffmpegProcess.stdin.on('error', (err: any) => {
-            // Ignore broken pipe when process stops
             if (err.code !== 'EPIPE') {
                 console.warn(`[LiveStream][${meetingId}] stdin error:`, err.message)
             }
@@ -140,8 +169,15 @@ class LiveStreamService extends EventEmitter {
 
         ffmpegProcess.stderr.on('data', (data: Buffer) => {
             const logStr = data.toString()
+            try {
+                fs.appendFileSync(path.join(__dirname, '../../../ffmpeg_live.log'), logStr)
+            } catch (_) {}
+            if (logStr.includes('frame=') || logStr.includes('Publishing to') || logStr.includes('Stream #0')) {
+                console.log(`[LiveStream][FFmpeg][${meetingId}]`, logStr.trim())
+            }
             if (session.status === 'starting' && (logStr.includes('frame=') || logStr.includes('Publishing to'))) {
                 session.status = 'live'
+                session.reconnectAttempts = 0
                 this.emit('stream:status', { meetingId, status: 'live' })
             }
             if (logStr.includes('error') || logStr.includes('Error') || logStr.includes('failed') || logStr.includes('Connection reset')) {
@@ -151,6 +187,27 @@ class LiveStreamService extends EventEmitter {
 
         ffmpegProcess.on('close', (code, signal) => {
             console.log(`[LiveStream][${meetingId}] FFmpeg process closed with code ${code}, signal: ${signal}`)
+
+            // Auto-reconnect if unexpectedly closed (e.g. network reset / YouTube abort) and not stopped by user
+            if (!session.isExplicitlyStopped) {
+                const attempts = (session.reconnectAttempts || 0) + 1
+                session.reconnectAttempts = attempts
+                if (attempts <= 15) {
+                    console.log(`[LiveStream][${meetingId}] Auto-reconnecting live stream (attempt ${attempts}/15)...`)
+                    session.status = 'starting'
+                    setTimeout(() => {
+                        if (!session.isExplicitlyStopped && this.sessions.has(meetingId)) {
+                            try {
+                                session.process = this.spawnFfmpegProcess(session)
+                            } catch (spawnErr) {
+                                console.error(`[LiveStream][${meetingId}] Auto-reconnect spawn error:`, spawnErr)
+                            }
+                        }
+                    }, 1200)
+                    return
+                }
+            }
+
             session.status = 'stopped'
             this.sessions.delete(meetingId)
             this.emit('stream:status', { meetingId, status: 'stopped', code })
@@ -163,6 +220,61 @@ class LiveStreamService extends EventEmitter {
             this.emit('stream:status', { meetingId, status: 'error', error: err.message })
         })
 
+        // Flush any buffered chunks upon new process start
+        if (session.pendingBuffer && session.pendingBuffer.length > 0) {
+            setTimeout(() => {
+                if (session.process && session.process.stdin && session.process.stdin.writable) {
+                    while (session.pendingBuffer && session.pendingBuffer.length > 0) {
+                        const queued = session.pendingBuffer.shift()
+                        if (queued) {
+                            try {
+                                session.process.stdin.write(queued)
+                            } catch (_) {}
+                        }
+                    }
+                }
+            }, 500)
+        }
+
+        return ffmpegProcess
+    }
+
+    /**
+     * Start a new live stream pipeline for a meeting
+     */
+    public async startStream(options: LiveStreamOptions): Promise<ActiveStreamSession> {
+        const { meetingId } = options
+
+        // If a stream is already active for this meeting, stop it first
+        if (this.sessions.has(meetingId)) {
+            await this.stopStream(meetingId)
+        }
+
+        const targetRtmpUrl = this.resolveRtmpUrl(options)
+
+        const session: ActiveStreamSession = {
+            meetingId,
+            userId: options.userId,
+            options,
+            targetRtmpUrl,
+            process: null as any,
+            startedAt: new Date(),
+            bytesIngested: 0,
+            lastChunkAt: Date.now(),
+            status: 'starting',
+            isExplicitlyStopped: false,
+            reconnectAttempts: 0,
+            pendingBuffer: []
+        }
+
+        try {
+            session.process = this.spawnFfmpegProcess(session)
+        } catch (err: any) {
+            console.error(`[LiveStream] Failed to spawn FFmpeg at path "${resolvedFfmpegPath}":`, err)
+            throw new Error(`Failed to initialize streaming engine: ${err?.message || 'FFmpeg spawn error'}`)
+        }
+
+        this.sessions.set(meetingId, session)
         return session
     }
 
@@ -171,19 +283,38 @@ class LiveStreamService extends EventEmitter {
      */
     public pushChunk(meetingId: string, chunk: Buffer | ArrayBuffer): boolean {
         const session = this.sessions.get(meetingId)
-        if (!session || !session.process || session.status === 'stopped' || session.status === 'error') {
+        if (!session || session.isExplicitlyStopped) {
             return false
         }
 
         try {
             const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-            if (session.process.stdin.writable) {
+            session.lastChunkAt = Date.now()
+
+            // Cache initial container header for reconnect resilience
+            if (!session.initHeader) {
+                session.initHeader = buf
+            }
+
+            if (session.process && session.process.stdin && session.process.stdin.writable) {
+                // If there are pending queued chunks from a brief reconnect, flush them first
+                if (session.pendingBuffer && session.pendingBuffer.length > 0) {
+                    while (session.pendingBuffer.length > 0) {
+                        const queued = session.pendingBuffer.shift()
+                        if (queued) session.process.stdin.write(queued)
+                    }
+                }
                 session.process.stdin.write(buf)
                 session.bytesIngested += buf.length
-                session.lastChunkAt = Date.now()
+                return true
+            } else {
+                // Buffer incoming chunks while reconnecting or starting (keep up to ~45 chunks)
+                if (!session.pendingBuffer) session.pendingBuffer = []
+                if (session.pendingBuffer.length < 45) {
+                    session.pendingBuffer.push(buf)
+                }
                 return true
             }
-            return false
         } catch (err: any) {
             console.warn(`[LiveStream][${meetingId}] Error writing chunk to stdin:`, err.message)
             return false
@@ -197,10 +328,10 @@ class LiveStreamService extends EventEmitter {
         const session = this.sessions.get(meetingId)
         if (!session) return false
 
+        session.isExplicitlyStopped = true
         session.status = 'stopped'
         try {
             if (session.process && !session.process.killed) {
-                // Try graceful close of stdin first
                 session.process.stdin.end()
                 setTimeout(() => {
                     try {
@@ -229,7 +360,7 @@ class LiveStreamService extends EventEmitter {
      */
     public isStreaming(meetingId: string): boolean {
         const session = this.sessions.get(meetingId)
-        return !!session && (session.status === 'starting' || session.status === 'live')
+        return !!session && !session.isExplicitlyStopped && (session.status === 'starting' || session.status === 'live')
     }
 }
 

@@ -64,8 +64,8 @@ export function LiveStreamModal({
     const [serverUrl, setServerUrl] = useState(PLATFORM_DEFAULTS.youtube.defaultUrl)
     const [streamKey, setStreamKey] = useState('')
     const [broadcastTitle, setBroadcastTitle] = useState(meetingTitle)
-    const [resolution, setResolution] = useState<'1080p' | '720p' | '480p'>('1080p')
-    const [bitrate, setBitrate] = useState<number>(4500)
+    const [resolution, setResolution] = useState<'1080p' | '720p' | '480p'>('720p')
+    const [bitrate, setBitrate] = useState<number>(2500)
     const [showKey, setShowKey] = useState(false)
     const [liveTimerSeconds, setLiveTimerSeconds] = useState(0)
 
@@ -244,6 +244,19 @@ export function LiveStreamModal({
                                 </p>
                             </div>
 
+                            {/* Resilient Engine Badges */}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                                <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: 6, background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                                    🛡️ Auto-Reconnect Protected
+                                </span>
+                                <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: 6, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+                                    🔄 Page Reload Resilient
+                                </span>
+                                <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: 6, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
+                                    🎚️ Broadcast Audio Limiter
+                                </span>
+                            </div>
+
                             <button
                                 onClick={onStopStream}
                                 style={{
@@ -305,6 +318,24 @@ export function LiveStreamModal({
                                     })}
                                 </div>
                             </div>
+
+                            {/* YouTube Auto-Stop Guidance Callout */}
+                            {platform === 'youtube' && (
+                                <div style={{
+                                    padding: '10px 14px',
+                                    borderRadius: 10,
+                                    background: 'rgba(239, 68, 68, 0.08)',
+                                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                                    display: 'flex',
+                                    alignItems: 'flex-start',
+                                    gap: 10
+                                }}>
+                                    <span style={{ fontSize: '1.05rem', lineHeight: 1 }}>💡</span>
+                                    <div style={{ fontSize: '0.78rem', color: '#fca5a5', lineHeight: 1.45 }}>
+                                        <strong>YouTube Studio Best Practice:</strong> In YouTube Studio Stream Settings, keep <strong>"Enable Auto-stop" OFF</strong>. This ensures your stream never stops automatically if internet fluctuates.
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Stream Server URL */}
                             <div>
@@ -409,8 +440,8 @@ export function LiveStreamModal({
                                             outline: 'none'
                                         }}
                                     >
-                                        <option value="1080p">1080p Full HD (60 FPS)</option>
-                                        <option value="720p">720p HD (30 FPS)</option>
+                                        <option value="720p">720p HD (Recommended • Stable 30 FPS)</option>
+                                        <option value="1080p">1080p Full HD (High Performance • 30 FPS)</option>
                                         <option value="480p">480p SD (Low Bandwidth)</option>
                                     </select>
                                 </div>

@@ -34,16 +34,35 @@ async function verifyIsHostOrCoHost(meetingId: string, checkUserId: string): Pro
     try {
         const meeting = await getMeetingByMeetingId(meetingId)
         if (!meeting) return false
-        const hostId = String(meeting.host)
+        const hostId = (meeting.host as any)?._id ? String((meeting.host as any)._id) : String(meeting.host)
         if (hostId === String(checkUserId)) return true
-        if (Array.isArray(meeting.coHosts) && meeting.coHosts.some(id => String(id) === String(checkUserId))) return true
+        if (Array.isArray(meeting.coHosts) && meeting.coHosts.some(id => {
+            const coHostId = (id as any)?._id ? String((id as any)._id) : String(id)
+            return coHostId === String(checkUserId)
+        })) return true
         return false
     } catch {
         return false
     }
 }
 
+let liveStreamStatusListenerInitialized = false
+function ensureLiveStreamStatusListener(io: Server) {
+    if (liveStreamStatusListenerInitialized) return
+    liveStreamStatusListenerInitialized = true
+    liveStreamService.on('stream:status', ({ meetingId, status, error, code }: any) => {
+        io.to(`meeting:${meetingId}`).emit(SocketEvents.LIVESTREAM_STATUS, {
+            meetingId,
+            isStreaming: status === 'live',
+            status,
+            error,
+            code
+        })
+    })
+}
+
 export function registerMeetingHandlers(io: Server, socket: Socket) {
+    ensureLiveStreamStatusListener(io)
     const authSocket = socket as AuthenticatedSocket
     const userId = authSocket.userId
 
@@ -94,6 +113,19 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                 meetingId: payload.meetingId,
                 backstageUsers: Array.from(currentBackstage || [])
             })
+
+            // Sync live stream state to user on join or page refresh
+            const activeLiveSession = liveStreamService.getStreamSession(payload.meetingId)
+            if (activeLiveSession && !activeLiveSession.isExplicitlyStopped && activeLiveSession.status !== 'stopped') {
+                socket.emit(SocketEvents.LIVESTREAM_STATUS, {
+                    userId: activeLiveSession.userId,
+                    meetingId: payload.meetingId,
+                    isStreaming: true,
+                    platform: activeLiveSession.options.platform || 'youtube',
+                    broadcastTitle: activeLiveSession.options.broadcastTitle || 'Live Conference Broadcast',
+                    startedAt: activeLiveSession.startedAt.toISOString()
+                })
+            }
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Failed to join meeting' })
         }
@@ -168,7 +200,8 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
             return
         }
 
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_MUTE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+        io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_MUTE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+        io.to(`user:${payload.targetUserId}`).emit(SocketEvents.MEETING_MUTE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
     })
 
     socket.on(SocketEvents.MEETING_REMOVE_USER, async (payload: { meetingId: string; targetUserId: string }) => {
@@ -180,7 +213,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
             return
         }
 
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_REMOVE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+        io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_REMOVE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId, kicked: true })
         io.to(`user:${payload.targetUserId}`).emit(SocketEvents.MEETING_REMOVE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId, kicked: true })
     })
 
@@ -577,6 +610,9 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                     endedByHost: true
                 })
             }
+            if (baseMeetId) {
+                await liveStreamService.stopStream(baseMeetId).catch(() => {})
+            }
             io.serverSideEmit("internal:meeting:end-cluster", payload.meetingId)
         } catch (err) {
             console.error('Failed to end meeting for all:', err)
@@ -742,5 +778,17 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     socket.on('webinar:reaction', (payload: { meetingId: string; reaction: string; userName?: string }) => {
         if (!payload?.meetingId || !payload?.reaction) return
         liveBroadcastService.broadcastReaction(payload.meetingId, payload.reaction, payload.userName)
+    })
+
+    // Disconnect cleanup for active RTMP livestream
+    socket.on('disconnect', async () => {
+        if (userId) {
+            for (const [mId, session] of liveStreamService.getSessions().entries()) {
+                if (session.userId === userId) {
+                    console.log(`[LiveStream] Host ${userId} disconnected. Stopping active stream for meeting ${mId}.`)
+                    await liveStreamService.stopStream(mId).catch(() => {})
+                }
+            }
+        }
     })
 }
