@@ -59,6 +59,9 @@ function ensureLiveStreamStatusListener(io: Server) {
             code
         })
     })
+    liveStreamService.on('stream:request-keyframe', ({ meetingId }: any) => {
+        io.to(`meeting:${meetingId}`).emit('meeting:livestream-request-keyframe', { meetingId })
+    })
 }
 
 export function registerMeetingHandlers(io: Server, socket: Socket) {

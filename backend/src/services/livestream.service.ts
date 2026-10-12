@@ -112,10 +112,10 @@ class LiveStreamService extends EventEmitter {
         console.log(`[LiveStream] Spawning FFmpeg for meeting ${meetingId} -> ${options.platform.toUpperCase()} (${options.resolution || '720p'}) @ ${videoBitrate} (buf: ${bufSize})`)
 
         const ffmpegArgs = [
+            '-analyzeduration', '3000000',
+            '-probesize', '5000000',
+            '-fflags', '+genpts+nobuffer+discardcorrupt',
             '-f', 'matroska',
-            '-analyzeduration', '1000000',
-            '-probesize', '65536',
-            '-fflags', '+genpts+nobuffer+igndts+discardcorrupt',
             '-i', 'pipe:0',
             '-max_muxing_queue_size', '4096',
             '-max_interleave_delta', '0',
@@ -192,9 +192,11 @@ class LiveStreamService extends EventEmitter {
             if (!session.isExplicitlyStopped) {
                 const attempts = (session.reconnectAttempts || 0) + 1
                 session.reconnectAttempts = attempts
-                if (attempts <= 15) {
-                    console.log(`[LiveStream][${meetingId}] Auto-reconnecting live stream (attempt ${attempts}/15)...`)
+                if (attempts <= 5) {
+                    console.log(`[LiveStream][${meetingId}] Auto-reconnecting live stream (attempt ${attempts}/5)...`)
                     session.status = 'starting'
+                    // Request client browser to produce fresh EBML header & keyframe
+                    this.emit('stream:request-keyframe', { meetingId })
                     setTimeout(() => {
                         if (!session.isExplicitlyStopped && this.sessions.has(meetingId)) {
                             try {
@@ -203,7 +205,7 @@ class LiveStreamService extends EventEmitter {
                                 console.error(`[LiveStream][${meetingId}] Auto-reconnect spawn error:`, spawnErr)
                             }
                         }
-                    }, 1200)
+                    }, 1000)
                     return
                 }
             }

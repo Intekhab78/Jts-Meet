@@ -586,7 +586,10 @@ export function useMeetingRecording({
 
         // Master Dynamics Compressor prevents voice clipping and volume surges
         let compressor = liveStreamCompressorRef.current
-        if (!compressor) {
+        if (!compressor || (compressor as any).context !== audioCtx) {
+            try {
+                if (compressor) compressor.disconnect()
+            } catch (_) {}
             compressor = audioCtx.createDynamicsCompressor()
             compressor.threshold.setValueAtTime(-20, audioCtx.currentTime)
             compressor.knee.setValueAtTime(20, audioCtx.currentTime)
@@ -634,7 +637,7 @@ export function useMeetingRecording({
 
             const existing = activeSources.get(id)
             if (existing) {
-                if (existing.trackId !== track.id) {
+                if (existing.trackId !== track.id || (existing.node as any).context !== audioCtx) {
                     try {
                         existing.node.disconnect()
                     } catch (_) {}
@@ -664,6 +667,32 @@ export function useMeetingRecording({
             syncLiveStreamAudio()
         }
     }, [isLiveStreaming, syncLiveStreamAudio, localStream, remoteStreams])
+
+    // Respond to server reconnection request to emit fresh EBML header & keyframe
+    useEffect(() => {
+        if (!socket) return
+
+        const handleRequestKeyframe = () => {
+            console.log('[LiveStream] Server requested fresh stream keyframe & EBML header')
+            if (liveStreamRecorderRef.current && liveStreamRecorderRef.current.state === 'recording') {
+                try {
+                    liveStreamRecorderRef.current.stop()
+                    setTimeout(() => {
+                        if (isLiveStreaming && liveStreamCombinedStreamRef.current) {
+                            try {
+                                liveStreamRecorderRef.current?.start(500)
+                            } catch (_) {}
+                        }
+                    }, 80)
+                } catch (_) {}
+            }
+        }
+
+        socket.on('meeting:livestream-request-keyframe', handleRequestKeyframe)
+        return () => {
+            socket.off('meeting:livestream-request-keyframe', handleRequestKeyframe)
+        }
+    }, [socket, isLiveStreaming])
 
     // Cleanup resources on unmount
     useEffect(() => {
@@ -759,6 +788,15 @@ export function useMeetingRecording({
 
         try {
             // 1. Audio Pipeline: Master Web Audio API Mixer
+            if (liveStreamCompressorRef.current) {
+                try { liveStreamCompressorRef.current.disconnect() } catch (_) {}
+                liveStreamCompressorRef.current = null
+            }
+            if (liveStreamAudioCtxRef.current && liveStreamAudioCtxRef.current.state !== 'closed') {
+                try { liveStreamAudioCtxRef.current.close() } catch (_) {}
+            }
+            liveStreamAudioSourcesRef.current.clear()
+
             const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
             if (audioCtx.state === 'suspended') {
                 audioCtx.resume().catch(() => {})
@@ -884,17 +922,15 @@ export function useMeetingRecording({
             if (audioTrack) combinedStream.addTrack(audioTrack)
             liveStreamCombinedStreamRef.current = combinedStream
 
-            // Codecs: Prioritize hardware-accelerated H.264 if supported, fallback to VP8
+            // Standard WebM VP8 Codec: Linux FFmpeg native compatibility (prevents H.264 WebM SIGSEGV crashes)
             let mimeType = 'video/webm;codecs=vp8,opus'
             if (typeof MediaRecorder !== 'undefined') {
-                if (MediaRecorder.isTypeSupported('video/webm;codecs=h264,opus')) {
-                    mimeType = 'video/webm;codecs=h264,opus'
-                } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+                if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
                     mimeType = 'video/webm;codecs=vp8,opus'
-                } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
-                    mimeType = 'video/webm;codecs=vp9,opus'
                 } else if (MediaRecorder.isTypeSupported('video/webm')) {
                     mimeType = 'video/webm'
+                } else if (MediaRecorder.isTypeSupported('video/webm;codecs=h264,opus')) {
+                    mimeType = 'video/webm;codecs=h264,opus'
                 }
             }
 
@@ -996,6 +1032,13 @@ export function useMeetingRecording({
             } catch (_) {}
         }
         liveStreamAudioSourcesRef.current.clear()
+
+        if (liveStreamCompressorRef.current) {
+            try {
+                liveStreamCompressorRef.current.disconnect()
+            } catch (_) {}
+            liveStreamCompressorRef.current = null
+        }
 
         if (liveStreamAudioCtxRef.current && liveStreamAudioCtxRef.current.state !== 'closed') {
             try {
