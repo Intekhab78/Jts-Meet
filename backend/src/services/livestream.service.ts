@@ -4,15 +4,26 @@ import fs from 'fs'
 import path from 'path'
 
 // Resolve cross-platform FFmpeg executable
-let resolvedFfmpegPath = 'ffmpeg'
-try {
-    const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
-    if (ffmpegInstaller && ffmpegInstaller.path) {
-        resolvedFfmpegPath = ffmpegInstaller.path
+// Prefer FFMPEG_PATH env or system 'ffmpeg' if available, falling back to bundled @ffmpeg-installer
+function getFfmpegPath(): string {
+    if (process.env.FFMPEG_PATH) {
+        return process.env.FFMPEG_PATH
     }
-} catch (_) {
-    resolvedFfmpegPath = process.env.FFMPEG_PATH || 'ffmpeg'
+    // Prefer modern system-installed FFmpeg if present on Linux
+    if (process.platform === 'linux') {
+        if (fs.existsSync('/usr/bin/ffmpeg')) return '/usr/bin/ffmpeg'
+        if (fs.existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg'
+    }
+    try {
+        const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
+        if (ffmpegInstaller && ffmpegInstaller.path && fs.existsSync(ffmpegInstaller.path)) {
+            return ffmpegInstaller.path
+        }
+    } catch (_) {}
+    return 'ffmpeg'
 }
+
+let resolvedFfmpegPath = getFfmpegPath()
 
 export interface LiveStreamOptions {
     meetingId: string
@@ -40,6 +51,7 @@ export interface ActiveStreamSession {
     reconnectAttempts?: number
     pendingBuffer?: Buffer[]
     initHeader?: Buffer
+    headerFlushedOnReconnect?: boolean
 }
 
 class LiveStreamService extends EventEmitter {
@@ -106,14 +118,15 @@ class LiveStreamService extends EventEmitter {
         const numericKbps = parseInt(rawBitrate.replace(/[^0-9]/g, ''), 10) || (is1080p ? 4500 : 2500)
         const bufSize = `${numericKbps * 2}k`
         const scaleFilter = is1080p
-            ? 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:-1:-1:color=black'
-            : 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:-1:-1:color=black'
+            ? 'format=yuv420p,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:-1:-1:color=black'
+            : 'format=yuv420p,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:-1:-1:color=black'
 
         console.log(`[LiveStream] Spawning FFmpeg for meeting ${meetingId} -> ${options.platform.toUpperCase()} (${options.resolution || '720p'}) @ ${videoBitrate} (buf: ${bufSize})`)
 
         const ffmpegArgs = [
-            '-analyzeduration', '3000000',
-            '-probesize', '5000000',
+            '-analyzeduration', '2000000',
+            '-probesize', '2000000',
+            '-thread_queue_size', '4096',
             '-fflags', '+genpts+nobuffer+discardcorrupt',
             '-f', 'matroska',
             '-i', 'pipe:0',
@@ -131,7 +144,6 @@ class LiveStreamService extends EventEmitter {
             '-bufsize', bufSize,
             '-pix_fmt', 'yuv420p',
             '-r', '30',
-            '-vsync', '1',
             '-g', '60',
             '-keyint_min', '60',
             '-sc_threshold', '0',
@@ -150,15 +162,15 @@ class LiveStreamService extends EventEmitter {
             stdio: ['pipe', 'pipe', 'pipe']
         })
 
-        // Replay cached container header if this is a reconnect
+        // Replay cached container header immediately if this is a reconnect
+        session.headerFlushedOnReconnect = false
         if (session.initHeader && session.reconnectAttempts && session.reconnectAttempts > 0) {
-            setTimeout(() => {
-                if (ffmpegProcess.stdin && ffmpegProcess.stdin.writable && session.initHeader) {
-                    try {
-                        ffmpegProcess.stdin.write(session.initHeader)
-                    } catch (_) {}
+            try {
+                if (ffmpegProcess.stdin && ffmpegProcess.stdin.writable) {
+                    ffmpegProcess.stdin.write(session.initHeader)
+                    session.headerFlushedOnReconnect = true
                 }
-            }, 100)
+            } catch (_) {}
         }
 
         ffmpegProcess.stdin.on('error', (err: any) => {
@@ -299,6 +311,14 @@ class LiveStreamService extends EventEmitter {
             }
 
             if (session.process && session.process.stdin && session.process.stdin.writable) {
+                // Ensure cached EBML header is piped first on reconnect before any chunk data
+                if (session.reconnectAttempts && session.reconnectAttempts > 0 && session.initHeader && !session.headerFlushedOnReconnect) {
+                    try {
+                        session.process.stdin.write(session.initHeader)
+                        session.headerFlushedOnReconnect = true
+                    } catch (_) {}
+                }
+
                 // If there are pending queued chunks from a brief reconnect, flush them first
                 if (session.pendingBuffer && session.pendingBuffer.length > 0) {
                     while (session.pendingBuffer.length > 0) {

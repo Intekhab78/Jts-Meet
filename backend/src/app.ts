@@ -1,6 +1,6 @@
 import path from 'path'
 import fs from 'fs'
-import express from 'express'
+import express, { Request, Response } from 'express'
 import helmet from 'helmet'
 import cors from 'cors'
 import passport from 'passport'
@@ -33,6 +33,8 @@ import { connectDB } from './config/db'
 import { rateLimiter } from './middleware/rateLimiter'
 import { authenticate } from './middleware/authMiddleware'
 
+import { FRONTEND_URL, ALLOWED_ORIGINS, NODE_ENV } from './config'
+
 const app = express()
 
 app.set('trust proxy', 1)
@@ -40,16 +42,58 @@ app.set('trust proxy', 1)
 app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" }
 }))
+
+const defaultAllowedOrigins = [
+    FRONTEND_URL,
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5173',
+    'https://meet.jtsmiddleeast.com',
+    ...ALLOWED_ORIGINS
+].filter(Boolean)
+
 app.use(cors({
-    origin: (origin, callback) => {
-        // Allow mobile apps, electron, curl, postman (no origin) or any web frontend
-        callback(null, true)
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+        // Allow mobile apps, electron, curl, postman (no origin)
+        if (!origin) {
+            return callback(null, true)
+        }
+
+        // Allow Electron custom schemes and local file origin
+        if (origin.startsWith('vscode-webview://') || origin.startsWith('electron://') || origin === 'null') {
+            return callback(null, true)
+        }
+
+        // In development, allow localhost, 127.0.0.1 and private network IPs (LAN testing)
+        if (NODE_ENV !== 'production') {
+            const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d+|192\.168\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+)(:\d+)?$/.test(origin)
+            if (isLocal) {
+                return callback(null, true)
+            }
+        }
+
+        // Check against configured allowed origins
+        const isWhitelisted = defaultAllowedOrigins.some((allowed) => {
+            const normAllowed = allowed.replace(/\/$/, '')
+            const normOrigin = origin.replace(/\/$/, '')
+            return normOrigin === normAllowed
+        })
+
+        if (isWhitelisted) {
+            return callback(null, true)
+        }
+
+        return callback(new Error(`CORS blocked: Origin ${origin} is not allowed.`))
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }))
+
 app.use(cookieParser())
 app.use(json({
-    verify: (req: any, _res, buf) => {
+    verify: (req: any, _res: any, buf: any) => {
         req.rawBody = buf
     }
 }))
@@ -75,7 +119,7 @@ connectDB()
     })
 
 // Health check endpoint for dev-environment detection
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (req: Request, res: Response) => {
     res.status(200).send('OK')
 })
 

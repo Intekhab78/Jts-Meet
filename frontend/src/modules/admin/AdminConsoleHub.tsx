@@ -1,41 +1,29 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { API_BASE } from '../../config'
+import type {
+    AdminConsoleHubProps,
+    LicenseMetrics,
+    StorageMetrics,
+    AdminUser,
+    AuditLog,
+    AttendanceRecord,
+    RecordingItem,
+    PlanItem
+} from './adminConsole.types'
 import { IntegrationsTab } from './components/IntegrationsTab'
+import { AdminUsersTab } from './components/console/AdminUsersTab'
+import { AdminAuditTab } from './components/console/AdminAuditTab'
+import { AdminRecordingsTab } from './components/console/AdminRecordingsTab'
+import { AdminUpgradePlanModal } from './components/console/AdminUpgradePlanModal'
+import { AdminVideoPlayerModal } from './components/console/AdminVideoPlayerModal'
 import {
     IconShield,
     IconUsers,
     IconFileText,
     IconVideo,
     IconZap,
-    IconSearch,
-    IconPlus,
-    IconLock,
-    IconCheck,
-    IconClock,
-    IconHistory,
-    IconDownload,
-    IconTrash,
-    IconX,
-    IconCrown,
-    IconUser,
-    IconExternalLink,
-    IconCopy,
-    IconShieldCheck,
     IconSparkles
 } from '../../components/common/Icons'
-
-interface AdminConsoleHubProps {
-    token: string
-    currentUserId: string
-    currentOrgId?: string
-    organizations: any[]
-}
-
-const resolveRecordingUrl = (url?: string) => {
-    if (!url) return ''
-    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url
-    return `${API_BASE}${url.startsWith('/') ? '' : '/'}${url}`
-}
 
 export function AdminConsoleHub({
     token,
@@ -78,8 +66,8 @@ export function AdminConsoleHub({
     // -------------------------------------------------------------
     // TAB 1: USERS & ROLES STATE
     // -------------------------------------------------------------
-    const [users, setUsers] = useState<any[]>([])
-    const [licenseMetrics, setLicenseMetrics] = useState<any>({
+    const [users, setUsers] = useState<AdminUser[]>([])
+    const [licenseMetrics, setLicenseMetrics] = useState<LicenseMetrics>({
         totalSeats: 25,
         usedSeats: 0,
         availableSeats: 25,
@@ -103,7 +91,6 @@ export function AdminConsoleHub({
     const [updatingRole, setUpdatingRole] = useState(false)
 
     const [resetPassResult, setResetPassResult] = useState<{ email: string; pass: string } | null>(null)
-    const [copiedPass, setCopiedPass] = useState(false)
 
     // Notification toast
     const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -115,73 +102,26 @@ export function AdminConsoleHub({
 
     // Dynamic Plan Upgrade Modal State
     const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
-    const [availablePlans, setAvailablePlans] = useState<any[]>([])
+    const [availablePlans, setAvailablePlans] = useState<PlanItem[]>([])
     const [upgradingPlan, setUpgradingPlan] = useState(false)
     const [loadingPlans, setLoadingPlans] = useState(false)
-
-    const handleOpenUpgrade = async () => {
-        setUpgradeModalOpen(true)
-        setLoadingPlans(true)
-        try {
-            const res = await fetch(`${API_BASE}/api/plans`)
-            if (res.ok) {
-                const json = await res.json()
-                setAvailablePlans(json.data || [])
-            }
-        } catch (e) {
-            console.error('Failed to load plans', e)
-        } finally {
-            setLoadingPlans(false)
-        }
-    }
-
-    const handleExecuteUpgrade = async (planId: string) => {
-        const orgId = currentOrg?._id || currentOrgId
-        if (!orgId) return
-        setUpgradingPlan(true)
-        try {
-            const res = await fetch(`${API_BASE}/api/organization/${orgId}/plan`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({ planId, paymentToken: 'admin_console_override' })
-            })
-            const data = await res.json()
-            if (res.ok && data.success) {
-                showToast(`🎉 Workspace subscription updated to ${planId.toUpperCase()}!`)
-                setUpgradeModalOpen(false)
-                fetchUsers()
-                if (currentOrg) {
-                    currentOrg.planTier = planId
-                }
-            } else {
-                showToast(data.message || 'Failed to update plan')
-            }
-        } catch (err: any) {
-            showToast(err?.message || 'Network error updating plan')
-        } finally {
-            setUpgradingPlan(false)
-        }
-    }
 
     // -------------------------------------------------------------
     // TAB 2: AUDIT & ATTENDANCE STATE
     // -------------------------------------------------------------
-    const [auditLogs, setAuditLogs] = useState<any[]>([])
+    const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
     const [auditLoading, setAuditLoading] = useState(false)
     const [auditActionFilter, setAuditActionFilter] = useState('ALL')
     const [auditSearch, setAuditSearch] = useState('')
 
-    const [attendanceList, setAttendanceList] = useState<any[]>([])
+    const [attendanceList, setAttendanceList] = useState<AttendanceRecord[]>([])
     const [attendanceLoading, setAttendanceLoading] = useState(false)
 
     // -------------------------------------------------------------
     // TAB 3: CLOUD RECORDINGS STATE
     // -------------------------------------------------------------
-    const [recordings, setRecordings] = useState<any[]>([])
-    const [storageMetrics, setStorageMetrics] = useState<any>({
+    const [recordings, setRecordings] = useState<RecordingItem[]>([])
+    const [storageMetrics, setStorageMetrics] = useState<StorageMetrics>({
         totalQuotaGb: 50,
         usedGb: 0,
         percentage: 0,
@@ -191,7 +131,7 @@ export function AdminConsoleHub({
     const [recordingsLoading, setRecordingsLoading] = useState(false)
     const [selectedRetentionDays, setSelectedRetentionDays] = useState(30)
     const [updatingRetention, setUpdatingRetention] = useState(false)
-    const [activeVideoModal, setActiveVideoModal] = useState<any | null>(null)
+    const [activeVideoModal, setActiveVideoModal] = useState<RecordingItem | null>(null)
 
     // Current Organization
     const currentOrg = useMemo(() => {
@@ -324,6 +264,53 @@ export function AdminConsoleHub({
     // =============================================================
     // USER ACTIONS
     // =============================================================
+
+    const handleOpenUpgrade = async () => {
+        setUpgradeModalOpen(true)
+        setLoadingPlans(true)
+        try {
+            const res = await fetch(`${API_BASE}/api/plans`)
+            if (res.ok) {
+                const json = await res.json()
+                setAvailablePlans(json.data || [])
+            }
+        } catch (e) {
+            console.error('Failed to load plans', e)
+        } finally {
+            setLoadingPlans(false)
+        }
+    }
+
+    const handleExecuteUpgrade = async (planId: string) => {
+        const orgId = currentOrg?._id || currentOrgId
+        if (!orgId) return
+        setUpgradingPlan(true)
+        try {
+            const res = await fetch(`${API_BASE}/api/organization/${orgId}/plan`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ planId, paymentToken: 'admin_console_override' })
+            })
+            const data = await res.json()
+            if (res.ok && data.success) {
+                showToast(`🎉 Workspace subscription updated to ${planId.toUpperCase()}!`)
+                setUpgradeModalOpen(false)
+                fetchUsers()
+                if (currentOrg) {
+                    currentOrg.planTier = planId
+                }
+            } else {
+                showToast(data.message || 'Failed to update plan')
+            }
+        } catch (err: any) {
+            showToast(err?.message || 'Network error updating plan')
+        } finally {
+            setUpgradingPlan(false)
+        }
+    }
 
     const handleUpdateRole = async () => {
         if (!roleModalUser) return
@@ -547,15 +534,6 @@ export function AdminConsoleHub({
         showToast('Compliance CSV exported successfully!')
     }
 
-    function formatBytes(bytes: number) {
-        if (!bytes || bytes === 0) return '0 MB'
-        const mb = bytes / (1024 * 1024)
-        if (mb >= 1024) {
-            return `${(mb / 1024).toFixed(2)} GB`
-        }
-        return `${mb.toFixed(1)} MB`
-    }
-
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, width: '100%', color: '#fff', fontFamily: 'var(--font-sans)', minHeight: 0 }}>
             {/* TOAST NOTIFICATION */}
@@ -692,1433 +670,78 @@ export function AdminConsoleHub({
                 })}
             </div>
 
-            {/* ========================================================================= */}
             {/* TAB 1: USERS & ROLE MANAGEMENT */}
-            {/* ========================================================================= */}
             {activeTab === 'users' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {/* Metrics Row */}
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                        gap: 12
-                    }}>
-                        <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Total Accounts
-                            </span>
-                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fff', marginTop: 4 }}>
-                                {users.length}
-                            </div>
-                            <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>In {currentOrg?.name || 'Workspace'}</span>
-                        </div>
-
-                        <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(99, 102, 241, 0.25)', background: 'rgba(99, 102, 241, 0.06)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: '0.72rem', color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                    Enterprise Seats
-                                </span>
-                                <span style={{ fontSize: '0.68rem', background: 'rgba(99, 102, 241, 0.25)', color: '#a5b4fc', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
-                                    {licenseMetrics.tier}
-                                </span>
-                            </div>
-                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fff', marginTop: 4 }}>
-                                {licenseMetrics.usedSeats} <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 500 }}>/ {licenseMetrics.totalSeats} used</span>
-                            </div>
-                            {/* Capacity Bar */}
-                            <div style={{ height: 6, width: '100%', background: 'rgba(255, 255, 255, 0.1)', borderRadius: 3, marginTop: 8, overflow: 'hidden' }}>
-                                <div style={{ height: '100%', width: `${licenseMetrics.utilizationRate}%`, background: 'linear-gradient(90deg, #6366f1, #a855f7)', borderRadius: 3 }} />
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-                                <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                                    {licenseMetrics.availableSeats} seats remaining
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={handleOpenUpgrade}
-                                    style={{
-                                        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                                        border: 'none',
-                                        color: '#fff',
-                                        padding: '4px 10px',
-                                        borderRadius: 6,
-                                        fontSize: '0.72rem',
-                                        fontWeight: 700,
-                                        cursor: 'pointer',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 5,
-                                        boxShadow: '0 2px 8px rgba(99, 102, 241, 0.35)',
-                                        transition: 'all 0.2s ease'
-                                    }}
-                                >
-                                    <IconZap size={12} color="#fff" />
-                                    <span>Upgrade Plan</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(34, 197, 94, 0.2)', background: 'rgba(34, 197, 94, 0.04)' }}>
-                            <span style={{ fontSize: '0.72rem', color: '#86efac', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Active Users
-                            </span>
-                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#4ade80', marginTop: 4 }}>
-                                {users.filter(u => u.status === 'active').length}
-                            </div>
-                            <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Fully provisioned</span>
-                        </div>
-
-                        <div className="glass-card" style={{
-                            padding: '14px 18px',
-                            borderRadius: 12,
-                            border: users.some(u => u.status === 'pending') ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(255, 255, 255, 0.06)',
-                            background: users.some(u => u.status === 'pending') ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255, 255, 255, 0.02)'
-                        }}>
-                            <span style={{ fontSize: '0.72rem', color: '#fcd34d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Pending Approval
-                            </span>
-                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fbbf24', marginTop: 4 }}>
-                                {users.filter(u => u.status === 'pending').length}
-                            </div>
-                            <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Awaiting verification</span>
-                        </div>
-
-                        <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(239, 68, 68, 0.2)', background: 'rgba(239, 68, 68, 0.04)' }}>
-                            <span style={{ fontSize: '0.72rem', color: '#fca5a5', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Suspended
-                            </span>
-                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#f87171', marginTop: 4 }}>
-                                {users.filter(u => u.status === 'suspended').length}
-                            </div>
-                            <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Access blocked</span>
-                        </div>
-
-                        {/* Card 6: Admins & Privileged Roles */}
-                        <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(56, 189, 248, 0.2)', background: 'rgba(56, 189, 248, 0.04)' }}>
-                            <span style={{ fontSize: '0.72rem', color: '#7dd3fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Admins & Roles
-                            </span>
-                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#38bdf8', marginTop: 4 }}>
-                                {users.filter(u => u.role === 'admin' || u.role === 'super-admin' || u.role === 'owner').length}
-                            </div>
-                            <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Privileged access</span>
-                        </div>
-
-                        {/* Card 7: Security & 2FA Status */}
-                        <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(45, 212, 191, 0.2)', background: 'rgba(45, 212, 191, 0.04)' }}>
-                            <span style={{ fontSize: '0.72rem', color: '#5eead4', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Security & SSO
-                            </span>
-                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#2dd4bf', marginTop: 4 }}>
-                                100%
-                            </div>
-                            <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>E2E Encrypted & 2FA</span>
-                        </div>
-
-                        {/* Card 8: Cloud Storage Vault */}
-                        <div className="glass-card" style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(168, 85, 247, 0.2)', background: 'rgba(168, 85, 247, 0.04)' }}>
-                            <span style={{ fontSize: '0.72rem', color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Cloud Vault
-                            </span>
-                            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#c084fc', marginTop: 4 }}>
-                                2.4 GB
-                            </div>
-                            <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>Recordings & MoM</span>
-                        </div>
-                    </div>
-
-                    {/* Pending Approvals Notice Banner */}
-                    {users.filter(u => u.status === 'pending').length > 0 && (
-                        <div style={{
-                            background: 'linear-gradient(90deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.08))',
-                            border: '1px solid rgba(245, 158, 11, 0.4)',
-                            borderRadius: 12,
-                            padding: '12px 18px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            flexWrap: 'wrap',
-                            gap: 12,
-                            boxShadow: '0 4px 16px rgba(245, 158, 11, 0.1)'
-                        }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(245, 158, 11, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <IconClock size={20} color="#fbbf24" />
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fbbf24' }}>
-                                        {users.filter(u => u.status === 'pending').length} User Registration{users.filter(u => u.status === 'pending').length > 1 ? 's' : ''} Awaiting Admin Approval
-                                    </div>
-                                    <div style={{ fontSize: '0.76rem', color: '#e5e7eb', marginTop: 2 }}>
-                                        Members in 'Pending' status cannot join secure meetings until verified. Click <strong>✓ Approve</strong> on the user row or approve all at once.
-                                    </div>
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={handleApproveAllPending}
-                                style={{
-                                    background: 'linear-gradient(135deg, #10b981, #059669)',
-                                    border: 'none',
-                                    borderRadius: 8,
-                                    color: '#fff',
-                                    padding: '8px 16px',
-                                    fontSize: '0.8rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 6,
-                                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)'
-                                }}
-                            >
-                                <IconCheck size={14} color="#fff" />
-                                <span>Approve All Pending ({users.filter(u => u.status === 'pending').length})</span>
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Toolbar: Search, Filters, Invite */}
-                    <div className="glass-card" style={{
-                        padding: '12px 16px',
-                        borderRadius: 12,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        flexWrap: 'wrap',
-                        gap: 10
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: 1 }}>
-                            {/* Search Input */}
-                            <div style={{ position: 'relative', minWidth: 220, flex: 1, maxWidth: 360 }}>
-                                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
-                                    <IconSearch size={14} color="#71717A" />
-                                </span>
-                                <input
-                                    type="text"
-                                    value={userSearch}
-                                    onChange={(e) => setUserSearch(e.target.value)}
-                                    placeholder="Search by name or email..."
-                                    style={{
-                                        width: '100%',
-                                        background: 'rgba(255, 255, 255, 0.04)',
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        borderRadius: 8,
-                                        padding: '7px 12px 7px 32px',
-                                        fontSize: '0.78rem',
-                                        color: '#fff',
-                                        outline: 'none',
-                                        boxSizing: 'border-box'
-                                    }}
-                                />
-                            </div>
-
-                            {/* Role filter */}
-                            <select
-                                value={roleFilter}
-                                onChange={(e) => setRoleFilter(e.target.value)}
-                                style={{
-                                    background: 'rgba(255, 255, 255, 0.04)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    borderRadius: 8,
-                                    padding: '7px 10px',
-                                    fontSize: '0.75rem',
-                                    color: '#c4b5fd',
-                                    outline: 'none'
-                                }}
-                            >
-                                <option value="all" style={{ background: '#111827' }}>All Roles</option>
-                                <option value="owner" style={{ background: '#111827' }}>Owner / Super Admin</option>
-                                <option value="admin" style={{ background: '#111827' }}>Admin</option>
-                                <option value="member" style={{ background: '#111827' }}>Member</option>
-                                <option value="guest" style={{ background: '#111827' }}>Guest</option>
-                            </select>
-
-                            {/* Status filter */}
-                            <select
-                                value={statusFilter}
-                                onChange={(e) => setStatusFilter(e.target.value)}
-                                style={{
-                                    background: 'rgba(255, 255, 255, 0.04)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    borderRadius: 8,
-                                    padding: '7px 10px',
-                                    fontSize: '0.75rem',
-                                    color: '#c4b5fd',
-                                    outline: 'none'
-                                }}
-                            >
-                                <option value="all" style={{ background: '#111827' }}>All Statuses</option>
-                                <option value="active" style={{ background: '#111827' }}>Active Only</option>
-                                <option value="pending" style={{ background: '#111827' }}>Pending Invites</option>
-                                <option value="suspended" style={{ background: '#111827' }}>Suspended</option>
-                            </select>
-                        </div>
-
-                        {/* Add / Invite Button */}
-                        <button
-                            type="button"
-                            onClick={() => setInviteModalOpen(true)}
-                            style={{
-                                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                                border: 'none',
-                                color: '#fff',
-                                padding: '8px 16px',
-                                borderRadius: 8,
-                                fontSize: '0.8rem',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                boxShadow: '0 4px 12px rgba(99, 102, 241, 0.35)'
-                            }}
-                        >
-                            <IconPlus size={13} color="#fff" />
-                            <span>Invite Team Member</span>
-                        </button>
-                    </div>
-
-                    {/* Users Table */}
-                    <div className="glass-card" style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
-                                <thead>
-                                    <tr style={{ background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                                        <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-text-muted)' }}>User</th>
-                                        <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-text-muted)' }}>Role</th>
-                                        <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-text-muted)' }}>Account Status</th>
-                                        <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-text-muted)' }}>Joined Date</th>
-                                        <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-text-muted)', textAlign: 'right' }}>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {usersLoading ? (
-                                        <tr>
-                                            <td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                Loading organization directory...
-                                            </td>
-                                        </tr>
-                                    ) : users.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                No team members match the search query.
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        users.map((u) => {
-                                            const isSuspended = u.status === 'suspended'
-                                            const roleColor = u.role === 'owner' ? '#fbbf24' : (u.role === 'admin' ? '#a78bfa' : '#60a5fa')
-                                            const roleBg = u.role === 'owner' ? 'rgba(245, 158, 11, 0.15)' : (u.role === 'admin' ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.15)')
-
-                                            return (
-                                                <tr key={u.userId} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)', transition: 'background 0.15s' }}>
-                                                    {/* User info */}
-                                                    <td style={{ padding: '12px 16px' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                            {u.profileImage ? (
-                                                                <img src={u.profileImage} alt={u.fullName} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-                                                            ) : (
-                                                                <div style={{
-                                                                    width: 32,
-                                                                    height: 32,
-                                                                    borderRadius: '50%',
-                                                                    background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                                                                    color: '#fff',
-                                                                    fontWeight: 700,
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'center',
-                                                                    fontSize: '0.8rem'
-                                                                }}>
-                                                                    {u.fullName.charAt(0).toUpperCase()}
-                                                                </div>
-                                                            )}
-                                                            <div>
-                                                                <div style={{ fontWeight: 700, color: '#fff' }}>{u.fullName}</div>
-                                                                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{u.email}</div>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-
-                                                    {/* Role Pill */}
-                                                    <td style={{ padding: '12px 16px' }}>
-                                                        <span style={{
-                                                            fontSize: '0.72rem',
-                                                            fontWeight: 700,
-                                                            color: roleColor,
-                                                            background: roleBg,
-                                                            padding: '3px 8px',
-                                                            borderRadius: 6,
-                                                            textTransform: 'uppercase',
-                                                            letterSpacing: '0.04em',
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: 5
-                                                        }}>
-                                                            {u.role === 'owner' ? (
-                                                                <>
-                                                                    <IconCrown size={11} color="#fbbf24" />
-                                                                    <span>Owner</span>
-                                                                </>
-                                                            ) : u.role === 'admin' ? (
-                                                                <>
-                                                                    <IconShield size={11} color="#a78bfa" />
-                                                                    <span>Admin</span>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <IconUser size={11} color="#60a5fa" />
-                                                                    <span>Member</span>
-                                                                </>
-                                                            )}
-                                                        </span>
-                                                    </td>
-
-                                                    {/* Account Status Badge */}
-                                                    <td style={{ padding: '12px 16px' }}>
-                                                        <span style={{
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: 6,
-                                                            fontSize: '0.72rem',
-                                                            fontWeight: 600,
-                                                            color: isSuspended ? '#f87171' : (u.status === 'pending' ? '#fbbf24' : '#4ade80'),
-                                                            background: isSuspended ? 'rgba(239, 68, 68, 0.15)' : (u.status === 'pending' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(34, 197, 94, 0.15)'),
-                                                            padding: '2px 8px',
-                                                            borderRadius: 12
-                                                        }}>
-                                                            <span style={{
-                                                                width: 6,
-                                                                height: 6,
-                                                                borderRadius: '50%',
-                                                                background: isSuspended ? '#ef4444' : (u.status === 'pending' ? '#f59e0b' : '#22c55e'),
-                                                                boxShadow: isSuspended ? '0 0 6px #ef4444' : (u.status === 'pending' ? '0 0 6px #f59e0b' : '0 0 6px #22c55e')
-                                                            }} />
-                                                            <span style={{ textTransform: 'capitalize' }}>{u.status}</span>
-                                                        </span>
-                                                    </td>
-
-                                                    {/* Joined Date */}
-                                                    <td style={{ padding: '12px 16px', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
-                                                        {new Date(u.joinedAt).toLocaleDateString()}
-                                                    </td>
-
-                                                    {/* Actions Toolbar */}
-                                                    <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                                                            {/* Change Role */}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setRoleModalUser(u)
-                                                                    setSelectedNewRole(u.role)
-                                                                }}
-                                                                title="Change Role"
-                                                                style={{
-                                                                    background: 'rgba(255, 255, 255, 0.05)',
-                                                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                                                    borderRadius: 6,
-                                                                    color: '#c4b5fd',
-                                                                    padding: '4px 8px',
-                                                                    fontSize: '0.72rem',
-                                                                    cursor: 'pointer'
-                                                                }}
-                                                            >
-                                                                Role
-                                                            </button>
-
-                                                            {/* Reset Password */}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleResetPassword(u)}
-                                                                title="Generate Temporary Reset Password"
-                                                                style={{
-                                                                    background: 'rgba(255, 255, 255, 0.05)',
-                                                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                                                    borderRadius: 6,
-                                                                    color: '#e2e8f0',
-                                                                    padding: '4px 8px',
-                                                                    fontSize: '0.72rem',
-                                                                    cursor: 'pointer',
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    gap: 4
-                                                                }}
-                                                            >
-                                                                <IconLock size={11} color="#cbd5e1" />
-                                                                <span>Reset</span>
-                                                            </button>
-
-                                                            {/* If Pending: Show Approve and Reject buttons */}
-                                                            {u.status === 'pending' ? (
-                                                                <>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleApproveUser(u)}
-                                                                        title="Approve & Activate User"
-                                                                        style={{
-                                                                            background: 'linear-gradient(135deg, #10b981, #059669)',
-                                                                            border: '1px solid #10b981',
-                                                                            borderRadius: 6,
-                                                                            color: '#fff',
-                                                                            padding: '4px 10px',
-                                                                            fontSize: '0.72rem',
-                                                                            fontWeight: 700,
-                                                                            cursor: 'pointer',
-                                                                            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)',
-                                                                            display: 'inline-flex',
-                                                                            alignItems: 'center',
-                                                                            gap: 4
-                                                                        }}
-                                                                    >
-                                                                        <IconCheck size={11} color="#fff" />
-                                                                        <span>Approve</span>
-                                                                    </button>
-
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleToggleStatus(u)}
-                                                                        title="Reject User Request"
-                                                                        style={{
-                                                                            background: 'rgba(239, 68, 68, 0.15)',
-                                                                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                                                                            borderRadius: 6,
-                                                                            color: '#f87171',
-                                                                            padding: '4px 8px',
-                                                                            fontSize: '0.72rem',
-                                                                            fontWeight: 600,
-                                                                            cursor: 'pointer'
-                                                                        }}
-                                                                    >
-                                                                        Reject
-                                                                    </button>
-                                                                </>
-                                                            ) : (
-                                                                /* Suspend / Activate Toggle for Active & Suspended users */
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleToggleStatus(u)}
-                                                                    title={isSuspended ? 'Reactivate Account' : 'Suspend Account'}
-                                                                    style={{
-                                                                        background: isSuspended ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                                                                        border: isSuspended ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
-                                                                        borderRadius: 6,
-                                                                        color: isSuspended ? '#4ade80' : '#f87171',
-                                                                        padding: '4px 8px',
-                                                                        fontSize: '0.72rem',
-                                                                        fontWeight: 600,
-                                                                        cursor: 'pointer'
-                                                                    }}
-                                                                >
-                                                                    {isSuspended ? 'Activate' : 'Suspend'}
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )
-                                        })
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+                <AdminUsersTab
+                    users={users}
+                    licenseMetrics={licenseMetrics}
+                    currentOrg={currentOrg}
+                    usersLoading={usersLoading}
+                    userSearch={userSearch}
+                    setUserSearch={setUserSearch}
+                    roleFilter={roleFilter}
+                    setRoleFilter={setRoleFilter}
+                    statusFilter={statusFilter}
+                    setStatusFilter={setStatusFilter}
+                    onOpenUpgrade={handleOpenUpgrade}
+                    onApproveUser={handleApproveUser}
+                    onApproveAllPending={handleApproveAllPending}
+                    onToggleStatus={handleToggleStatus}
+                    onResetPassword={handleResetPassword}
+                    onUpdateRole={handleUpdateRole}
+                    onInviteUser={handleInviteUser}
+                    inviteModalOpen={inviteModalOpen}
+                    setInviteModalOpen={setInviteModalOpen}
+                    inviteEmail={inviteEmail}
+                    setInviteEmail={setInviteEmail}
+                    inviteName={inviteName}
+                    setInviteName={setInviteName}
+                    inviteRole={inviteRole}
+                    setInviteRole={setInviteRole}
+                    inviting={inviting}
+                    roleModalUser={roleModalUser}
+                    setRoleModalUser={setRoleModalUser}
+                    selectedNewRole={selectedNewRole}
+                    setSelectedNewRole={setSelectedNewRole}
+                    updatingRole={updatingRole}
+                    resetPassResult={resetPassResult}
+                    setResetPassResult={setResetPassResult}
+                />
             )}
 
-            {/* ========================================================================= */}
-            {/* TAB 2: SECURITY & AUDIT LOGS (COMPLIANCE & ATTENDANCE) */}
-            {/* ========================================================================= */}
+            {/* TAB 2: SECURITY & AUDIT LOGS */}
             {activeTab === 'audit' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {/* Sub Tab Switcher */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-                        <div style={{ display: 'flex', gap: 6, background: 'rgba(255, 255, 255, 0.04)', padding: 4, borderRadius: 8 }}>
-                            <button
-                                type="button"
-                                onClick={() => setAuditSubTab('logs')}
-                                style={{
-                                    background: auditSubTab === 'logs' ? '#6366f1' : 'transparent',
-                                    border: 'none',
-                                    color: '#fff',
-                                    padding: '6px 14px',
-                                    borderRadius: 6,
-                                    fontSize: '0.78rem',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 6
-                                }}
-                            >
-                                <IconHistory size={13} color="#fff" />
-                                <span>Activity Audit Trail</span>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setAuditSubTab('attendance')}
-                                style={{
-                                    background: auditSubTab === 'attendance' ? '#6366f1' : 'transparent',
-                                    border: 'none',
-                                    color: '#fff',
-                                    padding: '6px 14px',
-                                    borderRadius: 6,
-                                    fontSize: '0.78rem',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 6
-                                }}
-                            >
-                                <IconUsers size={13} color="#fff" />
-                                <span>Meeting Attendance Records</span>
-                            </button>
-                        </div>
-
-                        {auditSubTab === 'attendance' && (
-                            <button
-                                type="button"
-                                onClick={handleExportAttendanceCsv}
-                                style={{
-                                    background: 'rgba(34, 197, 94, 0.15)',
-                                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                                    color: '#4ade80',
-                                    padding: '6px 14px',
-                                    borderRadius: 8,
-                                    fontSize: '0.78rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 6
-                                }}
-                            >
-                                <IconDownload size={13} color="#4ade80" />
-                                <span>Export Compliance CSV</span>
-                            </button>
-                        )}
-                    </div>
-
-                    {/* SUBTAB 1: LOGS */}
-                    {auditSubTab === 'logs' && (
-                        <>
-                            {/* Filter Bar */}
-                            <div className="glass-card" style={{ padding: '10px 14px', borderRadius: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                                <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-                                    <input
-                                        type="text"
-                                        value={auditSearch}
-                                        onChange={(e) => setAuditSearch(e.target.value)}
-                                        placeholder="Search audit details or IP address..."
-                                        style={{
-                                            width: '100%',
-                                            background: 'rgba(255, 255, 255, 0.04)',
-                                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                                            borderRadius: 6,
-                                            padding: '6px 10px',
-                                            fontSize: '0.78rem',
-                                            color: '#fff',
-                                            outline: 'none',
-                                            boxSizing: 'border-box'
-                                        }}
-                                    />
-                                </div>
-                                <select
-                                    value={auditActionFilter}
-                                    onChange={(e) => setAuditActionFilter(e.target.value)}
-                                    style={{
-                                        background: 'rgba(255, 255, 255, 0.04)',
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        borderRadius: 6,
-                                        padding: '6px 10px',
-                                        fontSize: '0.75rem',
-                                        color: '#c4b5fd',
-                                        outline: 'none'
-                                    }}
-                                >
-                                    <option value="ALL" style={{ background: '#111827' }}>All Audit Actions</option>
-                                    <option value="ROLE_CHANGE" style={{ background: '#111827' }}>Role Changes</option>
-                                    <option value="STATUS_CHANGE" style={{ background: '#111827' }}>Status Changes</option>
-                                    <option value="PASSWORD_RESET" style={{ background: '#111827' }}>Password Resets</option>
-                                    <option value="USER_INVITE" style={{ background: '#111827' }}>User Invites</option>
-                                    <option value="STORAGE_POLICY_CHANGE" style={{ background: '#111827' }}>Storage Policy</option>
-                                    <option value="RECORDING_DELETE" style={{ background: '#111827' }}>Recordings Purged</option>
-                                </select>
-                            </div>
-
-                            {/* Logs Table */}
-                            <div className="glass-card" style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', textAlign: 'left' }}>
-                                        <thead>
-                                            <tr style={{ background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                                                <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>Timestamp</th>
-                                                <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>Actor / User</th>
-                                                <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>Event Action</th>
-                                                <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>IP & Region</th>
-                                                <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>Audit Details</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {auditLoading ? (
-                                                <tr>
-                                                    <td colSpan={5} style={{ padding: 30, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                        Loading audit trail...
-                                                    </td>
-                                                </tr>
-                                            ) : auditLogs.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={5} style={{ padding: 30, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                        No audit logs recorded for this criteria.
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                auditLogs.map((log) => {
-                                                    const actor = log.userId || {}
-                                                    return (
-                                                        <tr key={log._id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                                                            <td style={{ padding: '10px 14px', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                                                                {new Date(log.createdAt).toLocaleString()}
-                                                            </td>
-                                                            <td style={{ padding: '10px 14px', color: '#fff', fontWeight: 600 }}>
-                                                                {actor.fullName || 'System Admin'}
-                                                            </td>
-                                                            <td style={{ padding: '10px 14px' }}>
-                                                                <span style={{
-                                                                    fontSize: '0.68rem',
-                                                                    fontWeight: 700,
-                                                                    background: 'rgba(99, 102, 241, 0.15)',
-                                                                    color: '#a5b4fc',
-                                                                    padding: '2px 6px',
-                                                                    borderRadius: 4
-                                                                }}>
-                                                                    {log.action}
-                                                                </span>
-                                                            </td>
-                                                            <td style={{ padding: '10px 14px', color: '#60a5fa', fontFamily: 'monospace' }}>
-                                                                {log.ipAddress || '127.0.0.1 (DXB)'}
-                                                            </td>
-                                                            <td style={{ padding: '10px 14px', color: '#e2e8f0' }}>
-                                                                {log.details}
-                                                            </td>
-                                                        </tr>
-                                                    )
-                                                })
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </>
-                    )}
-
-                    {/* SUBTAB 2: ATTENDANCE RECORDS */}
-                    {auditSubTab === 'attendance' && (
-                        <div className="glass-card" style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                            <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', textAlign: 'left' }}>
-                                    <thead>
-                                        <tr style={{ background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                                            <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>Meeting ID</th>
-                                            <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>Conference Topic</th>
-                                            <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>Host</th>
-                                            <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>Date</th>
-                                            <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>Duration</th>
-                                            <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>Attendees</th>
-                                            <th style={{ padding: '10px 14px', color: 'var(--color-text-muted)', textAlign: 'right' }}>Compliance</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {attendanceLoading ? (
-                                            <tr>
-                                                <td colSpan={7} style={{ padding: 30, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                    Loading attendance records...
-                                                </td>
-                                            </tr>
-                                        ) : attendanceList.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={7} style={{ padding: 30, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                    No meeting attendance records found.
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            attendanceList.map((rec) => (
-                                                <tr key={rec.meetingId} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                                                    <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: '#c4b5fd' }}>
-                                                        {rec.meetingId}
-                                                    </td>
-                                                    <td style={{ padding: '10px 14px', fontWeight: 600, color: '#fff' }}>
-                                                        {rec.title}
-                                                    </td>
-                                                    <td style={{ padding: '10px 14px', color: '#d1d5db' }}>
-                                                        {rec.hostName}
-                                                    </td>
-                                                    <td style={{ padding: '10px 14px', color: 'var(--color-text-muted)' }}>
-                                                        {new Date(rec.date).toLocaleDateString()}
-                                                    </td>
-                                                    <td style={{ padding: '10px 14px', color: '#4ade80' }}>
-                                                        {rec.duration}
-                                                    </td>
-                                                    <td style={{ padding: '10px 14px' }}>
-                                                        <span style={{
-                                                            background: 'rgba(99, 102, 241, 0.15)',
-                                                            color: '#a5b4fc',
-                                                            padding: '2px 8px',
-                                                            borderRadius: 4,
-                                                            fontWeight: 700,
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: 5
-                                                        }}>
-                                                            <IconUsers size={12} color="#a5b4fc" />
-                                                            <span>{rec.totalAttendees} participants</span>
-                                                        </span>
-                                                    </td>
-                                                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                                                        <span style={{
-                                                            color: '#4ade80',
-                                                            fontSize: '0.72rem',
-                                                            background: 'rgba(34, 197, 94, 0.12)',
-                                                            padding: '2px 8px',
-                                                            borderRadius: 10,
-                                                            fontWeight: 600,
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: 4
-                                                        }}>
-                                                            <IconCheck size={11} color="#4ade80" />
-                                                            <span>Verified</span>
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )}
-                </div>
+                <AdminAuditTab
+                    auditSubTab={auditSubTab}
+                    setAuditSubTab={setAuditSubTab}
+                    auditSearch={auditSearch}
+                    setAuditSearch={setAuditSearch}
+                    auditActionFilter={auditActionFilter}
+                    setAuditActionFilter={setAuditActionFilter}
+                    auditLoading={auditLoading}
+                    auditLogs={auditLogs}
+                    attendanceLoading={attendanceLoading}
+                    attendanceList={attendanceList}
+                    onExportAttendanceCsv={handleExportAttendanceCsv}
+                />
             )}
 
-            {/* ========================================================================= */}
             {/* TAB 3: CLOUD RECORDINGS & STORAGE VAULT */}
-            {/* ========================================================================= */}
             {activeTab === 'recordings' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {/* Storage Meter & Policy Grid */}
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-                        gap: 14
-                    }}>
-                        {/* Storage Quota Card */}
-                        <div className="glass-card" style={{ padding: '18px 20px', borderRadius: 14, border: '1px solid rgba(139, 92, 246, 0.25)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#c4b5fd', textTransform: 'uppercase' }}>
-                                    Organization Cloud Storage
-                                </span>
-                                <span style={{ fontSize: '0.7rem', color: '#4ade80', background: 'rgba(34, 197, 94, 0.15)', padding: '2px 8px', borderRadius: 6, fontWeight: 700 }}>
-                                    Healthy Quota
-                                </span>
-                            </div>
-
-                            <div style={{ marginTop: 12, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                                <span style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>
-                                    {storageMetrics.usedGb} GB
-                                </span>
-                                <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                                    / {storageMetrics.totalQuotaGb} GB allocated
-                                </span>
-                            </div>
-
-                            {/* Progress bar */}
-                            <div style={{ height: 8, width: '100%', background: 'rgba(255, 255, 255, 0.08)', borderRadius: 4, marginTop: 10, overflow: 'hidden' }}>
-                                <div style={{
-                                    height: '100%',
-                                    width: `${Math.max(5, storageMetrics.percentage)}%`,
-                                    background: 'linear-gradient(90deg, #22c55e, #6366f1)',
-                                    borderRadius: 4
-                                }} />
-                            </div>
-
-                            <div style={{ marginTop: 10, fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-                                <span>{storageMetrics.percentage}% capacity utilized</span>
-                                <span>{storageMetrics.cloudProvider}</span>
-                            </div>
-                        </div>
-
-                        {/* Retention Policy Card */}
-                        <div className="glass-card" style={{ padding: '18px 20px', borderRadius: 14, border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a5b4fc', textTransform: 'uppercase' }}>
-                                Auto-Retention Policy
-                            </span>
-                            <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '4px 0 12px' }}>
-                                Automatically manage cloud storage lifecycle to comply with enterprise data security guidelines.
-                            </p>
-
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-                                {[
-                                    { days: 30, label: '30 Days' },
-                                    { days: 60, label: '60 Days' },
-                                    { days: 90, label: '90 Days' },
-                                    { days: 0, label: 'Unlimited / Forever' }
-                                ].map(option => (
-                                    <button
-                                        key={option.days}
-                                        type="button"
-                                        onClick={() => setSelectedRetentionDays(option.days)}
-                                        style={{
-                                            background: selectedRetentionDays === option.days ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                                            border: selectedRetentionDays === option.days ? '1px solid #818cf8' : '1px solid rgba(255, 255, 255, 0.08)',
-                                            color: selectedRetentionDays === option.days ? '#fff' : '#d1d5db',
-                                            padding: '6px 12px',
-                                            borderRadius: 6,
-                                            fontSize: '0.75rem',
-                                            fontWeight: 600,
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        {option.label}
-                                    </button>
-                                ))}
-                            </div>
-
-                            <button
-                                type="button"
-                                onClick={handleSaveRetentionPolicy}
-                                disabled={updatingRetention}
-                                style={{
-                                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                                    border: 'none',
-                                    color: '#fff',
-                                    padding: '6px 14px',
-                                    borderRadius: 6,
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                {updatingRetention ? 'Saving...' : 'Update Policy'}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Recordings Table / Vault */}
-                    <div className="glass-card" style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                        <div style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                                <h3 style={{ fontSize: '0.92rem', fontWeight: 700, margin: 0, color: '#fff' }}>
-                                    Organization Conference Recordings ({recordings.length})
-                                </h3>
-                                <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
-                                    All recorded sessions across departments stored with encrypted DTLS-SRTP playback.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', textAlign: 'left' }}>
-                                <thead>
-                                    <tr style={{ background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                                        <th style={{ padding: '10px 16px', color: 'var(--color-text-muted)' }}>Session Topic</th>
-                                        <th style={{ padding: '10px 16px', color: 'var(--color-text-muted)' }}>Host</th>
-                                        <th style={{ padding: '10px 16px', color: 'var(--color-text-muted)' }}>Recorded Date</th>
-                                        <th style={{ padding: '10px 16px', color: 'var(--color-text-muted)' }}>Duration</th>
-                                        <th style={{ padding: '10px 16px', color: 'var(--color-text-muted)' }}>File Size</th>
-                                        <th style={{ padding: '10px 16px', color: 'var(--color-text-muted)', textAlign: 'right' }}>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {recordingsLoading ? (
-                                        <tr>
-                                            <td colSpan={6} style={{ padding: 30, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                Loading recording assets...
-                                            </td>
-                                        </tr>
-                                    ) : recordings.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={6} style={{ padding: 30, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                                                No cloud recordings found in this workspace.
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        recordings.map((rec) => (
-                                            <tr key={rec._id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                                                <td style={{ padding: '12px 16px' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                        <div style={{
-                                                            width: 28,
-                                                            height: 28,
-                                                            borderRadius: 6,
-                                                            background: 'rgba(239, 68, 68, 0.15)',
-                                                            color: '#f87171',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            <IconVideo size={14} color="#f87171" />
-                                                        </div>
-                                                        <div>
-                                                            <div style={{ fontWeight: 700, color: '#fff' }}>{rec.title}</div>
-                                                            <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
-                                                                ID: {rec.meetingId}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: '12px 16px', color: '#d1d5db' }}>
-                                                    {(rec.host as any)?.fullName || 'Host'}
-                                                </td>
-                                                <td style={{ padding: '12px 16px', color: 'var(--color-text-muted)' }}>
-                                                    {(rec as any).createdAtFormatted || new Date(rec.createdAt).toLocaleDateString()}
-                                                </td>
-                                                <td style={{ padding: '12px 16px', color: '#c4b5fd' }}>
-                                                    {rec.duration}
-                                                </td>
-                                                <td style={{ padding: '12px 16px', color: '#86efac' }}>
-                                                    {(rec as any).fileSizeDisplay || formatBytes(rec.sizeBytes)}
-                                                </td>
-                                                <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setActiveVideoModal(rec)}
-                                                            style={{
-                                                                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                                                                border: 'none',
-                                                                color: '#fff',
-                                                                padding: '4px 10px',
-                                                                borderRadius: 6,
-                                                                fontSize: '0.72rem',
-                                                                fontWeight: 600,
-                                                                cursor: 'pointer',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: 4
-                                                            }}
-                                                        >
-                                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                                                                <polygon points="5 3 19 12 5 21 5 3"/>
-                                                            </svg>
-                                                            <span>Play</span>
-                                                        </button>
-                                                        <a
-                                                            href={resolveRecordingUrl(rec.recordingUrl)}
-                                                            download={`${rec.title}.mp4`}
-                                                            target="_blank"
-                                                            rel="noreferrer"
-                                                            style={{
-                                                                background: 'rgba(255, 255, 255, 0.05)',
-                                                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                                                                color: '#e2e8f0',
-                                                                padding: '4px 8px',
-                                                                borderRadius: 6,
-                                                                fontSize: '0.72rem',
-                                                                textDecoration: 'none',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: 4
-                                                            }}
-                                                        >
-                                                            <IconDownload size={11} color="#e2e8f0" />
-                                                            <span>MP4</span>
-                                                        </a>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleDeleteRecording(rec)}
-                                                            title="Delete Recording Asset"
-                                                            style={{
-                                                                background: 'rgba(239, 68, 68, 0.1)',
-                                                                border: '1px solid rgba(239, 68, 68, 0.25)',
-                                                                color: '#f87171',
-                                                                padding: '4px 8px',
-                                                                borderRadius: 6,
-                                                                fontSize: '0.72rem',
-                                                                cursor: 'pointer',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center'
-                                                            }}
-                                                        >
-                                                            <IconTrash size={13} color="#f87171" />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+                <AdminRecordingsTab
+                    storageMetrics={storageMetrics}
+                    selectedRetentionDays={selectedRetentionDays}
+                    setSelectedRetentionDays={setSelectedRetentionDays}
+                    updatingRetention={updatingRetention}
+                    onSaveRetentionPolicy={handleSaveRetentionPolicy}
+                    recordings={recordings}
+                    recordingsLoading={recordingsLoading}
+                    onPlayVideo={(rec) => setActiveVideoModal(rec)}
+                    onDeleteRecording={handleDeleteRecording}
+                />
             )}
 
-            {/* ========================================================================= */}
-            {/* MODALS */}
-            {/* ========================================================================= */}
-
-            {/* 1. INVITE MEMBER MODAL */}
-            {inviteModalOpen && (
-                <div style={{
-                    position: 'fixed',
-                    inset: 0,
-                    zIndex: 9999,
-                    background: 'rgba(0, 0, 0, 0.75)',
-                    backdropFilter: 'blur(8px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 16
-                }}>
-                    <div className="glass-card" style={{
-                        maxWidth: 440,
-                        width: '100%',
-                        borderRadius: 14,
-                        padding: '24px',
-                        border: '1px solid rgba(139, 92, 246, 0.3)',
-                        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                <IconPlus size={16} color="#818cf8" />
-                                <span>Invite Team Member</span>
-                            </h3>
-                            <button
-                                onClick={() => setInviteModalOpen(false)}
-                                style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 4 }}
-                            >
-                                <IconX size={14} color="#9ca3af" />
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleInviteUser} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-                                    Full Name
-                                </label>
-                                <input
-                                    type="text"
-                                    value={inviteName}
-                                    onChange={(e) => setInviteName(e.target.value)}
-                                    placeholder="e.g. Sarah Jenkins"
-                                    style={{
-                                        width: '100%',
-                                        background: 'rgba(255, 255, 255, 0.04)',
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        borderRadius: 8,
-                                        padding: '8px 12px',
-                                        fontSize: '0.8rem',
-                                        color: '#fff',
-                                        outline: 'none',
-                                        boxSizing: 'border-box'
-                                    }}
-                                />
-                            </div>
-
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-                                    Corporate Email Address *
-                                </label>
-                                <input
-                                    type="email"
-                                    required
-                                    value={inviteEmail}
-                                    onChange={(e) => setInviteEmail(e.target.value)}
-                                    placeholder="sarah@jts.ae"
-                                    style={{
-                                        width: '100%',
-                                        background: 'rgba(255, 255, 255, 0.04)',
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        borderRadius: 8,
-                                        padding: '8px 12px',
-                                        fontSize: '0.8rem',
-                                        color: '#fff',
-                                        outline: 'none',
-                                        boxSizing: 'border-box'
-                                    }}
-                                />
-                            </div>
-
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-                                    Access Role
-                                </label>
-                                <select
-                                    value={inviteRole}
-                                    onChange={(e) => setInviteRole(e.target.value)}
-                                    style={{
-                                        width: '100%',
-                                        background: 'rgba(255, 255, 255, 0.04)',
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        borderRadius: 8,
-                                        padding: '8px 12px',
-                                        fontSize: '0.8rem',
-                                        color: '#fff',
-                                        outline: 'none',
-                                        boxSizing: 'border-box'
-                                    }}
-                                >
-                                    <option value="member" style={{ background: '#111827' }}>Member (Host & Join Meetings)</option>
-                                    <option value="admin" style={{ background: '#111827' }}>Admin (Manage Channels & Users)</option>
-                                    <option value="guest" style={{ background: '#111827' }}>Guest (Join Allowed Meetings Only)</option>
-                                </select>
-                            </div>
-
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
-                                <button
-                                    type="button"
-                                    onClick={() => setInviteModalOpen(false)}
-                                    style={{
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        color: '#d1d5db',
-                                        padding: '8px 16px',
-                                        borderRadius: 8,
-                                        fontSize: '0.78rem',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={inviting}
-                                    style={{
-                                        background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                                        border: 'none',
-                                        color: '#fff',
-                                        padding: '8px 18px',
-                                        borderRadius: 8,
-                                        fontSize: '0.78rem',
-                                        fontWeight: 700,
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    {inviting ? 'Sending Invite...' : 'Send Invitation'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* 2. CHANGE ROLE MODAL */}
-            {roleModalUser && (
-                <div style={{
-                    position: 'fixed',
-                    inset: 0,
-                    zIndex: 9999,
-                    background: 'rgba(0, 0, 0, 0.75)',
-                    backdropFilter: 'blur(8px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 16
-                }}>
-                    <div className="glass-card" style={{
-                        maxWidth: 380,
-                        width: '100%',
-                        borderRadius: 14,
-                        padding: '22px',
-                        border: '1px solid rgba(139, 92, 246, 0.3)'
-                    }}>
-                        <h3 style={{ margin: '0 0 8px', fontSize: '1rem', fontWeight: 800, color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                            <IconCrown size={16} color="#fbbf24" />
-                            <span>Change Access Role</span>
-                        </h3>
-                        <p style={{ margin: '0 0 14px', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                            Modify administrative permissions for <strong>{roleModalUser.fullName}</strong>.
-                        </p>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-                            {[
-                                { id: 'admin', title: 'Administrator', icon: <IconShield size={14} color="#a78bfa" />, desc: 'Can manage organization, channels, and team accounts.' },
-                                { id: 'member', title: 'Member', icon: <IconUser size={14} color="#60a5fa" />, desc: 'Can host conferences, create channels, and invite guests.' },
-                                { id: 'guest', title: 'Guest', icon: <IconExternalLink size={14} color="#94a3b8" />, desc: 'Limited participant access to invited rooms only.' }
-                            ].map(r => (
-                                <label
-                                    key={r.id}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'flex-start',
-                                        gap: 10,
-                                        padding: '10px 12px',
-                                        borderRadius: 8,
-                                        cursor: 'pointer',
-                                        background: selectedNewRole === r.id ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                                        border: selectedNewRole === r.id ? '1px solid #818cf8' : '1px solid rgba(255, 255, 255, 0.06)'
-                                    }}
-                                >
-                                    <input
-                                        type="radio"
-                                        name="role_select"
-                                        checked={selectedNewRole === r.id}
-                                        onChange={() => setSelectedNewRole(r.id)}
-                                        style={{ marginTop: 2, accentColor: '#6366f1' }}
-                                    />
-                                    <div>
-                                        <div style={{ fontWeight: 700, fontSize: '0.8rem', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            {r.icon}
-                                            <span>{r.title}</span>
-                                        </div>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: 2 }}>{r.desc}</div>
-                                    </div>
-                                </label>
-                            ))}
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                            <button
-                                type="button"
-                                onClick={() => setRoleModalUser(null)}
-                                style={{
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    color: '#d1d5db',
-                                    padding: '7px 14px',
-                                    borderRadius: 6,
-                                    fontSize: '0.78rem',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleUpdateRole}
-                                disabled={updatingRole}
-                                style={{
-                                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                                    border: 'none',
-                                    color: '#fff',
-                                    padding: '7px 16px',
-                                    borderRadius: 6,
-                                    fontSize: '0.78rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                {updatingRole ? 'Updating...' : 'Confirm Role'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* 3. RESET PASSWORD RESULT MODAL */}
-            {resetPassResult && (
-                <div style={{
-                    position: 'fixed',
-                    inset: 0,
-                    zIndex: 9999,
-                    background: 'rgba(0, 0, 0, 0.75)',
-                    backdropFilter: 'blur(8px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 16
-                }}>
-                    <div className="glass-card" style={{
-                        maxWidth: 400,
-                        width: '100%',
-                        borderRadius: 14,
-                        padding: '24px',
-                        border: '1px solid rgba(34, 197, 94, 0.4)',
-                        textAlign: 'center'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-                            <div style={{ width: 52, height: 52, borderRadius: 14, background: 'rgba(34, 197, 94, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <IconLock size={26} color="#4ade80" />
-                            </div>
-                        </div>
-                        <h3 style={{ margin: '0 0 6px', fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
-                            Temporary Password Generated
-                        </h3>
-                        <p style={{ margin: '0 0 16px', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                            Share this temporary password with <strong>{resetPassResult.email}</strong>. They will be prompted to change it upon login.
-                        </p>
-
-                        <div style={{
-                            background: 'rgba(0, 0, 0, 0.5)',
-                            border: '1px solid rgba(99, 102, 241, 0.3)',
-                            padding: '12px',
-                            borderRadius: 8,
-                            fontFamily: 'monospace',
-                            fontSize: '1.1rem',
-                            fontWeight: 700,
-                            color: '#4ade80',
-                            letterSpacing: '0.05em',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 10,
-                            marginBottom: 16
-                        }}>
-                            <span>{resetPassResult.pass}</span>
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    navigator.clipboard.writeText(resetPassResult.pass)
-                                    setCopiedPass(true)
-                                    setTimeout(() => setCopiedPass(false), 2000)
-                                }}
-                                style={{
-                                    background: copiedPass ? 'rgba(34, 197, 94, 0.2)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                                    border: copiedPass ? '1px solid #4ade80' : 'none',
-                                    color: copiedPass ? '#4ade80' : '#fff',
-                                    padding: '8px 18px',
-                                    borderRadius: 8,
-                                    fontSize: '0.78rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 6
-                                }}
-                            >
-                                {copiedPass ? (
-                                    <>
-                                        <IconCheck size={13} color="#4ade80" />
-                                        <span>Copied to Clipboard</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <IconCopy size={13} color="#fff" />
-                                        <span>Copy Password</span>
-                                    </>
-                                )}
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setResetPassResult(null)}
-                                style={{
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    color: '#d1d5db',
-                                    padding: '8px 16px',
-                                    borderRadius: 8,
-                                    fontSize: '0.78rem',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                Done
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ========================================================================= */}
             {/* TAB 4: ENTERPRISE INTEGRATIONS & WEBHOOKS HUB */}
-            {/* ========================================================================= */}
             {activeTab === 'integrations' && (
                 <IntegrationsTab 
                     token={token} 
@@ -2127,419 +750,22 @@ export function AdminConsoleHub({
                 />
             )}
 
-            {/* 4. VIDEO LIGHTBOX PLAYER MODAL */}
-            {activeVideoModal && (
-                <div style={{
-                    position: 'fixed',
-                    inset: 0,
-                    zIndex: 9999,
-                    background: 'rgba(0, 0, 0, 0.88)',
-                    backdropFilter: 'blur(12px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 24
-                }}>
-                    <div className="glass-card" style={{
-                        maxWidth: 780,
-                        width: '100%',
-                        borderRadius: 14,
-                        overflow: 'hidden',
-                        border: '1px solid rgba(139, 92, 246, 0.4)',
-                        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.9)'
-                    }}>
-                        <div style={{
-                            padding: '12px 18px',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                            background: 'rgba(255, 255, 255, 0.02)'
-                        }}>
-                            <div>
-                                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: '#fff' }}>
-                                    {activeVideoModal.title}
-                                </h4>
-                                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
-                                    Recorded on {new Date(activeVideoModal.createdAt).toLocaleDateString()} • {activeVideoModal.duration}
-                                </span>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setActiveVideoModal(null)}
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: '#9ca3af',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: 4
-                                }}
-                            >
-                                <IconX size={14} color="#9ca3af" />
-                            </button>
-                        </div>
+            {/* MODAL: Plan Upgrade */}
+            <AdminUpgradePlanModal
+                isOpen={upgradeModalOpen}
+                onClose={() => setUpgradeModalOpen(false)}
+                currentOrg={currentOrg}
+                availablePlans={availablePlans}
+                loadingPlans={loadingPlans}
+                upgradingPlan={upgradingPlan}
+                onExecuteUpgrade={handleExecuteUpgrade}
+            />
 
-                        <div style={{ background: '#000', position: 'relative' }}>
-                            <video
-                                src={activeVideoModal.recordingUrl}
-                                controls
-                                autoPlay
-                                style={{ width: '100%', maxHeight: '65vh', display: 'block' }}
-                            />
-                        </div>
-
-                        <div style={{
-                            padding: '12px 18px',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            background: 'rgba(10, 11, 15, 0.95)'
-                        }}>
-                            <span style={{ fontSize: '0.75rem', color: '#86efac', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <IconShieldCheck size={14} color="#86efac" />
-                                <span>Enterprise 256-bit DTLS Encrypted Stream</span>
-                            </span>
-                            <a
-                                href={activeVideoModal.recordingUrl}
-                                download={`${activeVideoModal.title}.mp4`}
-                                style={{
-                                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                                    color: '#fff',
-                                    padding: '6px 14px',
-                                    borderRadius: 6,
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    textDecoration: 'none',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 6
-                                }}
-                            >
-                                <IconDownload size={13} color="#fff" />
-                                <span>Download Video (.mp4)</span>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Plan Upgrade Modal */}
-            {upgradeModalOpen && (
-                <div style={{
-                    position: 'fixed',
-                    inset: 0,
-                    background: 'rgba(0, 0, 0, 0.8)',
-                    backdropFilter: 'blur(8px)',
-                    zIndex: 99999,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 20
-                }}>
-                    <div style={{
-                        maxWidth: 960,
-                        width: '100%',
-                        background: '#0d111d',
-                        border: '1px solid rgba(255, 255, 255, 0.12)',
-                        borderRadius: 18,
-                        boxShadow: '0 25px 60px rgba(0,0,0,0.8)',
-                        overflow: 'hidden',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        maxHeight: '90vh'
-                    }}>
-                        {/* Modal Header */}
-                        <div style={{
-                            padding: '20px 24px',
-                            background: 'linear-gradient(180deg, rgba(99, 102, 241, 0.12) 0%, transparent 100%)',
-                            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
-                        }}>
-                            <div>
-                                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <IconZap size={18} color="#818cf8" />
-                                    <span>Upgrade Workspace Subscription</span>
-                                    <span style={{ fontSize: '0.72rem', background: 'rgba(99, 102, 241, 0.25)', color: '#c4b5fd', padding: '2px 8px', borderRadius: 9999 }}>
-                                        Current: {currentOrg?.planTier?.toUpperCase() || 'FREE'}
-                                    </span>
-                                </h3>
-                                <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
-                                    Select an enterprise plan tier to expand user seats, cloud recordings storage, and AI meeting quotas.
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setUpgradeModalOpen(false)}
-                                style={{
-                                    background: 'rgba(255,255,255,0.06)',
-                                    border: 'none',
-                                    color: '#94a3b8',
-                                    borderRadius: '50%',
-                                    width: 32,
-                                    height: 32,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}
-                            >
-                                <IconX size={14} color="#94a3b8" />
-                            </button>
-                        </div>
-
-                        {/* Modal Body */}
-                        <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-                            {loadingPlans ? (
-                                <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
-                                        <IconClock size={28} color="#818cf8" />
-                                    </div>
-                                    Fetching available subscription tiers...
-                                </div>
-                            ) : (
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                                    gap: 16
-                                }}>
-                                    {availablePlans.map((plan: any) => {
-                                        const planIdKey = plan.planId || plan.id || ''
-                                        const isCurrent = (currentOrg?.planTier || 'free').toLowerCase() === planIdKey.toLowerCase()
-                                        const displayPrice = plan.priceMonthly ?? plan.price ?? 0
-                                        const maxSeats = plan.limits?.maxSeats ?? plan.maxSeats ?? 15
-                                        const maxStorage = plan.limits?.maxStorageGb ?? plan.maxStorageGb ?? 5
-                                        const bullets = plan.featureBullets || (Array.isArray(plan.features) ? plan.features : [])
-                                        return (
-                                            <div
-                                                key={planIdKey}
-                                                style={{
-                                                    background: isCurrent ? 'rgba(99, 102, 241, 0.12)' : 'rgba(255, 255, 255, 0.03)',
-                                                    border: isCurrent ? '2px solid #6366f1' : plan.popular ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
-                                                    borderRadius: 14,
-                                                    padding: 20,
-                                                    display: 'flex',
-                                                    flexDirection: 'column',
-                                                    justifyContent: 'space-between',
-                                                    position: 'relative'
-                                                }}
-                                            >
-                                                {(plan.popular || plan.badge) && !isCurrent && (
-                                                    <span style={{
-                                                        position: 'absolute',
-                                                        top: -10,
-                                                        right: 16,
-                                                        background: 'linear-gradient(135deg, #a855f7, #6366f1)',
-                                                        color: '#fff',
-                                                        fontSize: '0.65rem',
-                                                        fontWeight: 800,
-                                                        padding: '2px 8px',
-                                                        borderRadius: 9999,
-                                                        textTransform: 'uppercase'
-                                                    }}>
-                                                        {plan.badge || 'Popular'}
-                                                    </span>
-                                                )}
-                                                {isCurrent && (
-                                                    <span style={{
-                                                        position: 'absolute',
-                                                        top: -10,
-                                                        right: 16,
-                                                        background: '#6366f1',
-                                                        color: '#fff',
-                                                        fontSize: '0.65rem',
-                                                        fontWeight: 800,
-                                                        padding: '2px 8px',
-                                                        borderRadius: 9999,
-                                                        textTransform: 'uppercase'
-                                                    }}>
-                                                        Active Plan
-                                                    </span>
-                                                )}
-
-                                                <div>
-                                                    <h4 style={{ margin: '0 0 6px 0', fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>
-                                                        {plan.name}
-                                                    </h4>
-                                                    <p style={{ margin: '0 0 16px 0', fontSize: '0.78rem', color: '#94a3b8', minHeight: 34 }}>
-                                                        {plan.description}
-                                                    </p>
-                                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 16 }}>
-                                                        <span style={{ fontSize: '1.7rem', fontWeight: 900, color: '#fff' }}>
-                                                            {plan.currency || '$'} {displayPrice}
-                                                        </span>
-                                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>/{plan.billingPeriod || 'month'}</span>
-                                                    </div>
-
-                                                    <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: 14, marginBottom: 16 }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#e2e8f0', marginBottom: 8 }}>
-                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                                                <IconUsers size={13} color="#a5b4fc" />
-                                                                <span>Max Team Seats:</span>
-                                                            </span>
-                                                            <strong style={{ color: '#a5b4fc' }}>{maxSeats >= 99999 ? 'Unlimited' : maxSeats}</strong>
-                                                        </div>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#e2e8f0', marginBottom: 8 }}>
-                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                                                <IconVideo size={13} color="#a5b4fc" />
-                                                                <span>Cloud Storage:</span>
-                                                            </span>
-                                                            <strong style={{ color: '#a5b4fc' }}>{maxStorage} GB</strong>
-                                                        </div>
-                                                    </div>
-
-                                                    <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: '0.74rem', color: '#cbd5e1', lineHeight: 1.7, marginBottom: 20 }}>
-                                                        {bullets.slice(0, 5).map((f: string, idx: number) => (
-                                                            <li key={idx}>{f}</li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-
-                                                <button
-                                                    type="button"
-                                                    disabled={isCurrent || upgradingPlan}
-                                                    onClick={() => handleExecuteUpgrade(planIdKey)}
-                                                    style={{
-                                                        width: '100%',
-                                                        padding: '10px 0',
-                                                        borderRadius: 8,
-                                                        border: isCurrent ? '1px solid rgba(255, 255, 255, 0.15)' : 'none',
-                                                        background: isCurrent ? 'rgba(255, 255, 255, 0.05)' : 'linear-gradient(135deg, #6366f1, #a855f7)',
-                                                        color: isCurrent ? '#94a3b8' : '#fff',
-                                                        fontSize: '0.82rem',
-                                                        fontWeight: 700,
-                                                        cursor: isCurrent || upgradingPlan ? 'not-allowed' : 'pointer',
-                                                        boxShadow: isCurrent ? 'none' : '0 4px 14px rgba(99, 102, 241, 0.4)',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                >
-                                                    {isCurrent ? 'Current Plan' : upgradingPlan ? 'Processing Upgrade...' : `Upgrade to ${plan.name}`}
-                                                </button>
-                                            </div>
-                                        )
-                                    })}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Modal Footer */}
-                        <div style={{
-                            padding: '14px 24px',
-                            background: 'rgba(0, 0, 0, 0.3)',
-                            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
-                        }}>
-                            <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <IconLock size={12} color="#64748b" />
-                                <span>Secure enterprise upgrade • Quotas apply instantaneously to your workspace.</span>
-                            </span>
-                            <button
-                                type="button"
-                                onClick={() => setUpgradeModalOpen(false)}
-                                style={{
-                                    background: 'transparent',
-                                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                                    color: '#cbd5e1',
-                                    padding: '6px 16px',
-                                    borderRadius: 6,
-                                    fontSize: '0.8rem',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            {/* Active Cloud Video Streaming Modal */}
-            {activeVideoModal && (
-                <div style={{
-                    position: 'fixed',
-                    inset: 0,
-                    zIndex: 99999,
-                    background: 'rgba(0, 0, 0, 0.85)',
-                    backdropFilter: 'blur(16px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 20
-                }}>
-                    <div style={{
-                        width: '100%',
-                        maxWidth: 860,
-                        background: '#121420',
-                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                        borderRadius: 20,
-                        overflow: 'hidden',
-                        boxShadow: '0 25px 60px rgba(0,0,0,0.9)',
-                        display: 'flex',
-                        flexDirection: 'column'
-                    }}>
-                        <div style={{
-                            padding: '16px 22px',
-                            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between'
-                        }}>
-                            <div>
-                                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
-                                    {activeVideoModal.title}
-                                </h3>
-                                <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                                    ID: {activeVideoModal.meetingId} &bull; {activeVideoModal.duration}
-                                </span>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setActiveVideoModal(null)}
-                                style={{ background: 'none', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer', fontWeight: 700 }}
-                            >
-                                &times;
-                            </button>
-                        </div>
-                        <div style={{ background: '#000', width: '100%', minHeight: 380, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <video
-                                src={resolveRecordingUrl(activeVideoModal.recordingUrl)}
-                                controls
-                                autoPlay
-                                style={{ width: '100%', maxHeight: '65vh', outline: 'none' }}
-                            />
-                        </div>
-                        <div style={{ padding: '14px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0d0e17' }}>
-                            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                                Recorded on {new Date(activeVideoModal.createdAt).toLocaleDateString()} &bull; Encrypted Vault Storage
-                            </span>
-                            <a
-                                href={resolveRecordingUrl(activeVideoModal.recordingUrl)}
-                                download={`${activeVideoModal.title}.mp4`}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{
-                                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                                    color: '#fff',
-                                    padding: '6px 16px',
-                                    borderRadius: 8,
-                                    fontSize: '0.8125rem',
-                                    fontWeight: 700,
-                                    textDecoration: 'none',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 6
-                                }}
-                            >
-                                <IconDownload size={14} color="#fff" /> Download MP4 File
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* MODAL: Active Video Lightbox Player */}
+            <AdminVideoPlayerModal
+                video={activeVideoModal}
+                onClose={() => setActiveVideoModal(null)}
+            />
         </div>
     )
 }

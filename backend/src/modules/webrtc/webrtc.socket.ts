@@ -1,7 +1,7 @@
 import { Server, Socket } from 'socket.io'
 import { SocketEvents } from '../../socket/events'
 import { AuthenticatedSocket } from '../../socket/auth'
-import { addPeerSession, removePeerSessionBySocket, removePeerSessionByUserId, getPeerSessionBySocketId, getMeetingParticipantSocketIds, getMeetingPeersInfo, updatePeerSession } from './peer.manager'
+import { addPeerSession, removePeerSessionBySocket, removePeerSessionByUserId, getPeerSessionBySocketId, getMeetingParticipantSocketIds, getMeetingPeersInfo, getMeetingPeersInfoCluster, updatePeerSession } from './peer.manager'
 import { authorizeMeetingJoin } from './webrtc.service'
 import { joinMeeting } from '../meeting/meeting.service'
 import { User } from '../../models/user.model'
@@ -91,14 +91,15 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         })
 
         // Get total participants in the meeting room and existing peer roster (excluding the joining user themselves)
+        const clusterPeers = await getMeetingPeersInfoCluster(payload.meetingId)
         let participantCount = 1
         try {
             const sockets = await io.in(`meeting:${payload.meetingId}`).allSockets()
-            participantCount = sockets.size
+            participantCount = Math.max(sockets.size, clusterPeers.length)
         } catch (_) {
-            participantCount = getMeetingPeersInfo(payload.meetingId).length
+            participantCount = clusterPeers.length
         }
-        const peers = getMeetingPeersInfo(payload.meetingId).filter((p) => p.userId !== userId)
+        const peers = clusterPeers.filter((p) => p.userId !== userId)
 
         socket.emit(SocketEvents.WEBRTC_JOIN, { 
             meetingId: payload.meetingId, 

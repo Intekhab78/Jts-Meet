@@ -25,6 +25,7 @@ interface WebRTCContextValue {
     replaceLocalStream: (stream: MediaStream) => void
     networkStatus: 'online' | 'offline' | 'reconnecting'
     isReconnecting: boolean
+    retryConnection: () => Promise<void>
     switchAudioDevice: (deviceId: string, onTrackSwapped?: (track: MediaStreamTrack) => void) => Promise<void>
     switchVideoDevice: (deviceId: string, onTrackSwapped?: (track: MediaStreamTrack) => void) => Promise<void>
 }
@@ -35,7 +36,7 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     const { socket } = useSocketContext()
     const { meetingId, setJoined, addParticipant, removeParticipant } = useMeetingContext()
     const { localStream, cameraStream, mediaError, mediaLoading, requestMedia, stopMedia, replaceLocalStream, restoreCameraStream, switchAudioDevice, switchVideoDevice } = useMediaDevices()
-    const { remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenSharingUserIds, switchActivePresenter, screenError, clearScreenError, replaceTrackOnPeers, networkStatus, isReconnecting } = useWebRTC(
+    const { remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenSharingUserIds, switchActivePresenter, screenError, clearScreenError, replaceTrackOnPeers, networkStatus, isReconnecting, retryConnection } = useWebRTC(
         socket,
         localStream,
         cameraStream,
@@ -83,6 +84,7 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
             replaceLocalStream,
             networkStatus,
             isReconnecting,
+            retryConnection,
             switchAudioDevice,
             switchVideoDevice
         }}>

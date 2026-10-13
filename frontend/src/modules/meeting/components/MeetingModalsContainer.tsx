@@ -101,6 +101,7 @@ export interface MeetingModalsContainerProps {
     isNetworkOffline: boolean
     networkStatus: string
     isReconnecting: boolean
+    retryConnection?: () => Promise<void>
     showRestoredNotice: boolean
     lowBandwidthMode: boolean
     connectToMeetingRef: React.RefObject<any>
@@ -225,6 +226,7 @@ export function MeetingModalsContainer({
     isNetworkOffline,
     networkStatus,
     isReconnecting,
+    retryConnection,
     showRestoredNotice,
     lowBandwidthMode,
     connectToMeetingRef,
@@ -542,8 +544,10 @@ export function MeetingModalsContainer({
                 isReconnecting={isReconnecting}
                 showRestoredNotice={showRestoredNotice}
                 lowBandwidthMode={lowBandwidthMode}
-                onRetryConnection={() => {
-                    if (socket) {
+                onRetryConnection={async () => {
+                    if (retryConnection) {
+                        await retryConnection()
+                    } else if (socket) {
                         socket.connect()
                         const currentId = meetingId || meetingInput.trim()
                         if (currentId) {

@@ -1,16 +1,37 @@
-import React, { useState } from 'react'
+import React, { useState, Suspense } from 'react'
 import { SocketProvider } from './modules/meeting/context/SocketContext'
 import { MeetingProvider } from './modules/meeting/context/MeetingContext'
 import { WebRTCProvider } from './modules/meeting/context/WebRTCContext'
-import { AppWorkspace } from './modules/dashboard/components/AppWorkspace'
 import { LandingPage } from './modules/landing/components/LandingPage'
-import { AuthPages } from './modules/auth/components/AuthPages'
-import { GuestJoinPage } from './modules/meeting/components/GuestJoinPage'
-import { WaitingRoom } from './modules/meeting/components/WaitingRoom'
-import { MeetingRoom } from './modules/meeting/components/MeetingRoom'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { API_BASE } from './config'
 import { onTokenRefreshed, onAuthLogout, refreshAccessToken, getJwtExpiryMs } from './utils/authClient'
+
+const AppWorkspace = React.lazy(() => import('./modules/dashboard/components/AppWorkspace').then(m => ({ default: m.AppWorkspace })))
+const MeetingRoom = React.lazy(() => import('./modules/meeting/components/MeetingRoom').then(m => ({ default: m.MeetingRoom })))
+const AuthPages = React.lazy(() => import('./modules/auth/components/AuthPages').then(m => ({ default: m.AuthPages })))
+const GuestJoinPage = React.lazy(() => import('./modules/meeting/components/GuestJoinPage').then(m => ({ default: m.GuestJoinPage })))
+const WaitingRoom = React.lazy(() => import('./modules/meeting/components/WaitingRoom').then(m => ({ default: m.WaitingRoom })))
+
+function AppLoadingFallback() {
+    return (
+        <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            height: '100dvh',
+            background: 'var(--color-bg-base)',
+            color: 'var(--color-text-secondary)',
+            gap: 16
+        }}>
+            <div className="skeleton" style={{ width: 44, height: 44, borderRadius: '50%' }} />
+            <span style={{ fontSize: '0.875rem' }}>Loading workspace...</span>
+        </div>
+    )
+}
+
 
 type ViewType = 'landing' | 'login' | 'register' | 'forgot-password' | 'reset-password' | 'email-verification' | 'otp-verification' | 'app' | 'guest-preview' | 'guest-waiting' | 'microsoft-callback' | 'google-callback'
 
@@ -339,57 +360,63 @@ function App() {
 
     if (view === 'guest-preview' && meetingIdFromUrl) {
         return (
-            <GuestJoinPage
-                meetingId={meetingIdFromUrl}
-                onNavigate={setView}
-                onGuestRequestSuccess={(tokenVal, userIdVal, isPending, details) => {
-                    setGuestToken(tokenVal)
-                    setGuestUserId(userIdVal)
-                    setGuestDetails(details)
-                    try {
-                        localStorage.setItem('jts_guest_token', tokenVal)
-                        if (details?.guestName) {
-                            localStorage.setItem('jts_guest_name', details.guestName)
+            <Suspense fallback={<AppLoadingFallback />}>
+                <GuestJoinPage
+                    meetingId={meetingIdFromUrl}
+                    onNavigate={setView}
+                    onGuestRequestSuccess={(tokenVal, userIdVal, isPending, details) => {
+                        setGuestToken(tokenVal)
+                        setGuestUserId(userIdVal)
+                        setGuestDetails(details)
+                        try {
+                            localStorage.setItem('jts_guest_token', tokenVal)
+                            if (details?.guestName) {
+                                localStorage.setItem('jts_guest_name', details.guestName)
+                            }
+                        } catch (e) { }
+                        if (isPending) {
+                            setView('guest-waiting')
+                        } else {
+                            setView('app')
                         }
-                    } catch (e) { }
-                    if (isPending) {
-                        setView('guest-waiting')
-                    } else {
-                        setView('app')
-                    }
-                }}
-            />
+                    }}
+                />
+            </Suspense>
         )
     }
 
     if (view === 'guest-waiting' && meetingIdFromUrl && guestToken) {
         return (
-            <WaitingRoom
-                meetingId={meetingIdFromUrl}
-                guestToken={guestToken}
-                guestName={guestDetails?.guestName || 'Guest'}
-                meetingTitle={guestDetails?.meetingTitle || 'Meeting'}
-                hostName={guestDetails?.hostName || 'Organizer'}
-                onApproved={(approvedToken) => {
-                    if (approvedToken) {
-                        setGuestToken(approvedToken)
-                    }
-                    setView('app')
-                }}
-                onLeave={() => {
-                    handleLogout()
-                }}
-            />
+            <Suspense fallback={<AppLoadingFallback />}>
+                <WaitingRoom
+                    meetingId={meetingIdFromUrl}
+                    guestToken={guestToken}
+                    guestName={guestDetails?.guestName || 'Guest'}
+                    meetingTitle={guestDetails?.meetingTitle || 'Meeting'}
+                    hostName={guestDetails?.hostName || 'Organizer'}
+                    onApproved={(approvedToken) => {
+                        if (approvedToken) {
+                            setGuestToken(approvedToken)
+                        }
+                        setView('app')
+                    }}
+                    onLeave={() => {
+                        handleLogout()
+                    }}
+                />
+            </Suspense>
         )
     }
 
     if (view !== 'app') {
         return (
-            <AuthPages
-                view={view as any}
-                onNavigate={setView}
-                onAuthSuccess={handleAuthSuccess}
-            />
+            <Suspense fallback={<AppLoadingFallback />}>
+                <AuthPages
+                    view={view as any}
+                    onNavigate={setView}
+                    onAuthSuccess={handleAuthSuccess}
+                />
+            </Suspense>
         )
     }
 
@@ -403,16 +430,18 @@ function App() {
                 <MeetingProvider>
                     <WebRTCProvider>
                         <ErrorBoundary fallbackTitle="Meeting Room Error">
-                            <div style={{ width: '100%', height: '100dvh', background: 'var(--color-bg-base)' }}>
-                                <MeetingRoom
-                                    initialToken={guestToken}
-                                    initialMeetingId={currentMeetId || undefined}
-                                    autoJoin={true}
-                                    isAdminOrOwner={false}
-                                    planTier={guestDetails?.planTier}
-                                    onLeave={handleLogout}
-                                />
-                            </div>
+                            <Suspense fallback={<AppLoadingFallback />}>
+                                <div style={{ width: '100%', height: '100dvh', background: 'var(--color-bg-base)' }}>
+                                    <MeetingRoom
+                                        initialToken={guestToken}
+                                        initialMeetingId={currentMeetId || undefined}
+                                        autoJoin={true}
+                                        isAdminOrOwner={false}
+                                        planTier={guestDetails?.planTier}
+                                        onLeave={handleLogout}
+                                    />
+                                </div>
+                            </Suspense>
                         </ErrorBoundary>
                     </WebRTCProvider>
                 </MeetingProvider>
@@ -430,12 +459,14 @@ function App() {
             <MeetingProvider>
                 <WebRTCProvider>
                     <ErrorBoundary fallbackTitle="Workspace Error">
-                        <AppWorkspace
-                            token={token}
-                            initialMeetingId={currentMeetId || undefined}
-                            onClearMeetingUrl={() => setMeetingIdFromUrl(null)}
-                            onLogout={handleLogout}
-                        />
+                        <Suspense fallback={<AppLoadingFallback />}>
+                            <AppWorkspace
+                                token={token}
+                                initialMeetingId={currentMeetId || undefined}
+                                onClearMeetingUrl={() => setMeetingIdFromUrl(null)}
+                                onLogout={handleLogout}
+                            />
+                        </Suspense>
                     </ErrorBoundary>
                 </WebRTCProvider>
             </MeetingProvider>

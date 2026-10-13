@@ -276,7 +276,7 @@ export function useMeetingRecording({
         const video = liveStreamVideoElemRef.current
         const camVideo = liveStreamCamVideoElemRef.current
         if (!canvas) return
-        const ctx = canvas.getContext('2d')
+        const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
         if (!ctx) return
 
         const activeStream = getActiveLiveStream()
@@ -676,14 +676,11 @@ export function useMeetingRecording({
             console.log('[LiveStream] Server requested fresh stream keyframe & EBML header')
             if (liveStreamRecorderRef.current && liveStreamRecorderRef.current.state === 'recording') {
                 try {
-                    liveStreamRecorderRef.current.stop()
-                    setTimeout(() => {
-                        if (isLiveStreaming && liveStreamCombinedStreamRef.current) {
-                            try {
-                                liveStreamRecorderRef.current?.start(500)
-                            } catch (_) {}
-                        }
-                    }, 80)
+                    const videoTrack = liveStreamCombinedStreamRef.current?.getVideoTracks()[0]
+                    if (videoTrack && (videoTrack as any).requestFrame) {
+                        (videoTrack as any).requestFrame()
+                    }
+                    liveStreamRecorderRef.current.requestData()
                 } catch (_) {}
             }
         }
@@ -821,6 +818,11 @@ export function useMeetingRecording({
             const canvas = document.createElement('canvas')
             canvas.width = width
             canvas.height = height
+            const initCtx = canvas.getContext('2d', { alpha: false, desynchronized: true })
+            if (initCtx) {
+                initCtx.fillStyle = '#0b0f19'
+                initCtx.fillRect(0, 0, width, height)
+            }
             liveStreamCanvasRef.current = canvas
 
             // CRITICAL: Append video to DOM (hidden offscreen) so Chromium enables full hardware decoding

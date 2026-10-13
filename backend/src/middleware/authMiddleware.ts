@@ -12,7 +12,14 @@ export interface AuthRequest extends Request {
 export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization
     let token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
-    if (!token && req.query?.token && typeof req.query.token === 'string') {
+
+    // Optional httpOnly cookie token
+    if (!token && (req as any).cookies?.accessToken) {
+        token = (req as any).cookies.accessToken
+    }
+
+    // Query token allowed ONLY on read-only GET requests (e.g. invoice downloads, media exports)
+    if (!token && req.method === 'GET' && req.query?.token && typeof req.query.token === 'string') {
         token = req.query.token
     }
 
@@ -41,7 +48,12 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
 export const optionalAuthenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization
     let token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
-    if (!token && req.query?.token && typeof req.query.token === 'string') {
+
+    if (!token && (req as any).cookies?.accessToken) {
+        token = (req as any).cookies.accessToken
+    }
+
+    if (!token && req.method === 'GET' && req.query?.token && typeof req.query.token === 'string') {
         token = req.query.token
     }
 

@@ -121,7 +121,7 @@ const {
         startScreenShare, stopScreenShare, screenSharingUserId,
         screenSharingUserIds, switchActivePresenter,
         screenError, clearScreenError, mediaError, mediaLoading, replaceTrackOnPeers,
-        requestMedia, stopMedia, replaceLocalStream, networkStatus, isReconnecting
+        requestMedia, stopMedia, replaceLocalStream, networkStatus, isReconnecting, retryConnection
     } = useWebRTCContext()
     const { messages, typingUsers, sendMessage, emitTyping, emitStopTyping, toggleChatReaction } = useMeetingChat()
 
@@ -1253,6 +1253,7 @@ const activeRoomKey = meetingId || meetingInput.trim()
                 isNetworkOffline={isNetworkOffline}
                 networkStatus={networkStatus}
                 isReconnecting={isReconnecting}
+                retryConnection={retryConnection}
                 showRestoredNotice={showRestoredNotice}
                 lowBandwidthMode={lowBandwidthMode}
                 connectToMeetingRef={connectToMeetingRef}

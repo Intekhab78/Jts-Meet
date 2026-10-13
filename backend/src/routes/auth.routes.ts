@@ -1,8 +1,10 @@
 import { Router } from 'express'
+import passport from 'passport'
 import { authController } from '../controllers/auth.controller'
 import { asyncWrapper } from '../utils/asyncWrapper'
 import { authenticate } from '../middleware/authMiddleware'
 import { authRateLimiter } from '../middleware/rateLimiter'
+import { FRONTEND_URL } from '../config'
 
 const router = Router()
 
@@ -11,12 +13,10 @@ router.post('/login', authRateLimiter, asyncWrapper(authController.login))
 router.get('/me', authenticate, asyncWrapper(authController.getCurrentUser))
 router.get('/sso/login/:orgSlug', asyncWrapper(authController.ssoLogin))
 router.post('/sso/callback', asyncWrapper(authController.ssoCallback))
-import passport from 'passport'
-import { FRONTEND_URL } from '../config'
 
 router.post('/google', asyncWrapper(authController.googleLogin))
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }))
-router.get('/google/callback', passport.authenticate('google', { session: false }), (req, res) => {
+router.get('/google/callback', passport.authenticate('google', { session: false }), (req: any, res: any) => {
     try {
         const { accessToken } = req.user as any
         res.redirect(`${FRONTEND_URL}/?token=${accessToken}`)

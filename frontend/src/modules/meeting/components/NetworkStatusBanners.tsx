@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { IconInfo, IconCheck, IconZap } from '../../../components/common/Icons'
 
 export interface NetworkStatusBannersProps {
@@ -7,7 +7,7 @@ export interface NetworkStatusBannersProps {
     isReconnecting: boolean
     showRestoredNotice: boolean
     lowBandwidthMode: boolean
-    onRetryConnection: () => void
+    onRetryConnection: () => void | Promise<void>
 }
 
 export function NetworkStatusBanners({
@@ -19,11 +19,52 @@ export function NetworkStatusBanners({
     onRetryConnection
 }: NetworkStatusBannersProps) {
     const isOfflineOrReconnecting = isNetworkOffline || networkStatus === 'offline' || networkStatus === 'reconnecting' || isReconnecting
+    const [dismissed, setDismissed] = useState(false)
+    const [isRetrying, setIsRetrying] = useState(false)
+
+    // Reset dismissed state when a genuine offline state occurs
+    useEffect(() => {
+        if (isNetworkOffline || networkStatus === 'offline') {
+            setDismissed(false)
+        }
+    }, [isNetworkOffline, networkStatus])
+
+    // Reset dismissed state when network returns to completely healthy
+    useEffect(() => {
+        if (!isOfflineOrReconnecting) {
+            setDismissed(false)
+            setIsRetrying(false)
+        }
+    }, [isOfflineOrReconnecting])
+
+    // Auto-dismiss transient reconnect warning banners after 8 seconds if local device is still online
+    useEffect(() => {
+        if (isOfflineOrReconnecting && !isNetworkOffline && networkStatus !== 'offline') {
+            const timer = setTimeout(() => {
+                setDismissed(true)
+            }, 8000)
+            return () => clearTimeout(timer)
+        }
+    }, [isOfflineOrReconnecting, isNetworkOffline, networkStatus])
+
+    const handleRetry = async () => {
+        if (isRetrying) return
+        setIsRetrying(true)
+        try {
+            await onRetryConnection()
+        } catch (err) {
+            console.error('[NetworkStatusBanners] Error during connection retry:', err)
+        } finally {
+            setTimeout(() => {
+                setIsRetrying(false)
+            }, 1200)
+        }
+    }
 
     return (
         <>
             {/* Network Offline / Reconnection Banner (Unified Single Source of Truth) */}
-            {isOfflineOrReconnecting && (
+            {isOfflineOrReconnecting && !dismissed && (
                 <div style={{
                     position: 'fixed',
                     top: 66,
@@ -34,7 +75,7 @@ export function NetworkStatusBanners({
                     backdropFilter: 'blur(16px)',
                     WebkitBackdropFilter: 'blur(16px)',
                     color: '#fff',
-                    padding: '6px 18px',
+                    padding: '6px 14px 6px 16px',
                     borderRadius: 30,
                     fontSize: '0.8125rem',
                     fontWeight: 600,
@@ -43,33 +84,75 @@ export function NetworkStatusBanners({
                     gap: 10,
                     boxShadow: '0 8px 32px rgba(239, 68, 68, 0.45)',
                     border: '1px solid rgba(255,255,255,0.25)',
-                    whiteSpace: 'nowrap'
+                    maxWidth: 'calc(100vw - 24px)',
+                    boxSizing: 'border-box'
                 }}>
-                    <span className="spinner-sm" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <IconInfo size={15} color="#fff" />
-                        <span>
+                    <span className="spinner-sm" style={{ width: 14, height: 14, borderWidth: 2, flexShrink: 0 }} />
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0, flexShrink: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <IconInfo size={15} color="#fff" style={{ flexShrink: 0 }} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {isNetworkOffline || networkStatus === 'offline'
                                 ? 'Network offline. Re-establishing connection…'
                                 : 'Connection interrupted. Auto-reconnecting call…'}
                         </span>
                     </span>
-                    <button
-                        onClick={onRetryConnection}
-                        style={{
-                            background: '#fff',
-                            color: '#ef4444',
-                            border: 'none',
-                            borderRadius: 20,
-                            padding: '3px 12px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            transition: 'opacity 0.15s ease'
-                        }}
-                    >
-                        Retry Now
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <button
+                            onClick={handleRetry}
+                            disabled={isRetrying}
+                            style={{
+                                background: '#fff',
+                                color: '#ef4444',
+                                border: 'none',
+                                borderRadius: 20,
+                                padding: '4px 12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: isRetrying ? 'not-allowed' : 'pointer',
+                                opacity: isRetrying ? 0.8 : 1,
+                                transition: 'all 0.15s ease',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                whiteSpace: 'nowrap'
+                            }}
+                        >
+                            {isRetrying ? (
+                                <>
+                                    <span className="spinner-sm" style={{ width: 10, height: 10, borderWidth: 2, borderColor: '#ef4444', borderTopColor: 'transparent' }} />
+                                    <span>Retrying…</span>
+                                </>
+                            ) : (
+                                'Retry Now'
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setDismissed(true)}
+                            title="Dismiss notification"
+                            aria-label="Dismiss notification"
+                            style={{
+                                background: 'rgba(255, 255, 255, 0.22)',
+                                border: 'none',
+                                borderRadius: '50%',
+                                width: 22,
+                                height: 22,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#fff',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                padding: 0,
+                                lineHeight: 1,
+                                transition: 'background 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.38)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.22)')}
+                        >
+                            ✕
+                        </button>
+                    </div>
                 </div>
             )}
 
