@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { API_BASE } from '../../../config'
 
 interface AsyncClipRecorderModalProps {
     isOpen: boolean
@@ -192,7 +193,6 @@ export const AsyncClipRecorderModal: React.FC<AsyncClipRecorderModalProps> = ({
             if (channelId) formData.append('channelId', channelId)
             if (recipientId) formData.append('recipientId', recipientId)
 
-            const API_BASE = (import.meta.env.VITE_API_URL as string) || (window.location.hostname === 'localhost' ? 'http://localhost:4000' : '')
             const res = await fetch(`${API_BASE}/api/clips/upload`, {
                 method: 'POST',
                 headers: {

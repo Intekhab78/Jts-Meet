@@ -36,7 +36,10 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
             origin: '*',
             methods: ['GET', 'POST'],
             credentials: true
-        }
+        },
+        maxHttpBufferSize: 1e8, // 100MB buffer for media/livestream streaming chunks
+        pingTimeout: 60000,
+        pingInterval: 25000
     })
     ioInstance = io
 

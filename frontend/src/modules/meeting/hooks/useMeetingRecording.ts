@@ -228,6 +228,7 @@ export function useMeetingRecording({
     const liveStreamActiveTrackIdRef = useRef<string | null>(null)
     const liveStreamCamActiveTrackIdRef = useRef<string | null>(null)
     const liveStreamCombinedStreamRef = useRef<MediaStream | null>(null)
+    const renderLiveCanvasFrameRef = useRef<(() => void) | null>(null)
 
     // Master Web Audio API Multi-Source Mixer refs with Broadcast Dynamics Compressor
     const liveStreamAudioCtxRef = useRef<AudioContext | null>(null)
@@ -238,24 +239,32 @@ export function useMeetingRecording({
     // Dynamically pick the active broadcast stream: screen share vs camera
     const getActiveLiveStream = useCallback(() => {
         // 1. If screen sharing is active:
-        if (screenSharingUserId) {
-            if (screenSharingUserId === 'me') {
+        const isScreenSharing = !!screenSharingUserId ||
+            (localStream?.getVideoTracks().some(t => t.contentHint === 'detail' || t.label.toLowerCase().includes('screen') || t.label.toLowerCase().includes('tab') || t.label.toLowerCase().includes('window')) ?? false)
+
+        if (isScreenSharing) {
+            if (screenSharingUserId === 'me' || !screenSharingUserId) {
                 const screenCandidate = localStream || activeLocalStream
-                if (screenCandidate && screenCandidate.getVideoTracks().length > 0) {
+                const track = screenCandidate?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy)
+                if (screenCandidate && track) {
                     return screenCandidate
                 }
-            } else if (remoteStreams && remoteStreams[screenSharingUserId]) {
+            } else if (screenSharingUserId && remoteStreams && remoteStreams[screenSharingUserId]) {
                 const remoteScreen = remoteStreams[screenSharingUserId]
-                if (remoteScreen.getVideoTracks().length > 0) {
+                const track = remoteScreen?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy)
+                if (remoteScreen && track) {
                     return remoteScreen
                 }
             }
         }
 
-        // 2. Fallback to Camera
-        const camCandidate = cameraStream || localStream || activeLocalStream
-        if (camCandidate && camCandidate.getVideoTracks().length > 0) {
-            return camCandidate
+        // 2. Camera streams: check cameraStream, then localStream, then activeLocalStream
+        const candidates = [cameraStream, localStream, activeLocalStream].filter(Boolean) as MediaStream[]
+        for (const cand of candidates) {
+            const track = cand.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy)
+            if (track) {
+                return cand
+            }
         }
 
         return null
@@ -263,9 +272,12 @@ export function useMeetingRecording({
 
     // Get secondary camera stream for Picture-in-Picture (PiP) when screenshare is active
     const getCameraOnlyStream = useCallback(() => {
-        const camCandidate = cameraStream || localStream || activeLocalStream
-        if (camCandidate && camCandidate.getVideoTracks().length > 0) {
-            return camCandidate
+        const candidates = [cameraStream, localStream, activeLocalStream].filter(Boolean) as MediaStream[]
+        for (const cand of candidates) {
+            const track = cand.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy && t.contentHint !== 'detail')
+            if (track) {
+                return cand
+            }
         }
         return null
     }, [cameraStream, localStream, activeLocalStream])
@@ -280,7 +292,7 @@ export function useMeetingRecording({
         if (!ctx) return
 
         const activeStream = getActiveLiveStream()
-        const currentVideoTrack = activeStream?.getVideoTracks()[0] || null
+        const currentVideoTrack = activeStream?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy) || activeStream?.getVideoTracks()[0] || null
 
         // Sync hidden main video element with active track
         if (video) {
@@ -294,12 +306,16 @@ export function useMeetingRecording({
                 liveStreamActiveTrackIdRef.current = null
                 video.srcObject = null
             }
+            if (video.srcObject && video.paused) {
+                video.play().catch(() => {})
+            }
         }
 
         // Sync hidden PiP camera element when screenshare is active
-        const isSharing = !!screenSharingUserId
+        const isSharing = !!screenSharingUserId ||
+            (localStream?.getVideoTracks().some(t => t.contentHint === 'detail' || t.label.toLowerCase().includes('screen') || t.label.toLowerCase().includes('tab') || t.label.toLowerCase().includes('window')) ?? false)
         const camStream = isSharing ? getCameraOnlyStream() : null
-        const camTrack = camStream?.getVideoTracks()[0] || null
+        const camTrack = camStream?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy) || null
 
         if (camVideo) {
             if (camTrack && camStream) {
@@ -312,14 +328,17 @@ export function useMeetingRecording({
                 liveStreamCamActiveTrackIdRef.current = null
                 camVideo.srcObject = null
             }
+            if (camVideo.srcObject && camVideo.paused) {
+                camVideo.play().catch(() => {})
+            }
         }
 
         // Sync hidden remote participant video elements for multi-person studio broadcasts
         const activeRemoteVideos: { id: string; video: HTMLVideoElement }[] = []
         if (!isSharing && remoteStreams) {
             for (const [rId, rStream] of Object.entries(remoteStreams)) {
-                const rTrack = rStream?.getVideoTracks()[0]
-                if (rTrack && rTrack.enabled && !rTrack.muted) {
+                const rTrack = rStream?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy)
+                if (rTrack && rTrack.enabled) {
                     let entry = liveStreamRemoteVideosRef.current.get(rId)
                     if (!entry) {
                         const elem = document.createElement('video')
@@ -327,13 +346,15 @@ export function useMeetingRecording({
                         elem.playsInline = true
                         elem.autoplay = true
                         elem.setAttribute('playsinline', 'true')
+                        elem.setAttribute('webkit-playsinline', 'true')
                         elem.style.position = 'fixed'
-                        elem.style.top = '-9999px'
-                        elem.style.left = '-9999px'
-                        elem.style.width = '320px'
-                        elem.style.height = '180px'
-                        elem.style.opacity = '0'
+                        elem.style.top = '0px'
+                        elem.style.left = '0px'
+                        elem.style.width = '16px'
+                        elem.style.height = '16px'
+                        elem.style.opacity = '0.001'
                         elem.style.pointerEvents = 'none'
+                        elem.style.zIndex = '-9999'
                         document.body.appendChild(elem)
                         elem.srcObject = rStream
                         elem.play().catch(() => {})
@@ -342,6 +363,9 @@ export function useMeetingRecording({
                     } else if (entry.trackId !== rTrack.id) {
                         entry.trackId = rTrack.id
                         entry.video.srcObject = rStream
+                        entry.video.play().catch(() => {})
+                    }
+                    if (entry.video.paused && entry.video.srcObject) {
                         entry.video.play().catch(() => {})
                     }
                     if (entry.video.readyState >= 2 && entry.video.videoWidth > 0) {
@@ -353,22 +377,43 @@ export function useMeetingRecording({
 
         const width = canvas.width
         const height = canvas.height
-        const isMainVideoReady = video && video.readyState >= 2 && video.videoWidth > 0 && currentVideoTrack && currentVideoTrack.enabled && !currentVideoTrack.muted
 
-        if (isSharing && isMainVideoReady) {
+        // Determine primary video drawSource: prefer video ref, fallback to any active video element in the DOM
+        let drawSource: HTMLVideoElement | null = null
+        if (video && video.readyState >= 2 && video.videoWidth > 0) {
+            drawSource = video
+        } else {
+            const domVideos = Array.from(document.querySelectorAll('video'))
+            const activeTileVideo = domVideos.find(v =>
+                v !== video &&
+                v !== camVideo &&
+                v.readyState >= 2 &&
+                v.videoWidth > 0 &&
+                !v.paused &&
+                v.style.display !== 'none'
+            )
+            if (activeTileVideo) {
+                drawSource = activeTileVideo
+            }
+        }
+
+        const isTrackActive = currentVideoTrack ? (currentVideoTrack.readyState === 'live' && currentVideoTrack.enabled !== false && !(currentVideoTrack as any).isDummy) : false
+        const isMainVideoReady = (!!drawSource && drawSource.videoWidth > 0 && drawSource.readyState >= 2) || (isTrackActive && !!drawSource && drawSource.videoWidth > 0)
+
+        if (isSharing && isMainVideoReady && drawSource) {
             // ── Mode A: Presentation Screenshare with Picture-in-Picture Inset ──
             ctx.fillStyle = '#0b0f19'
             ctx.fillRect(0, 0, width, height)
 
-            const vWidth = video.videoWidth
-            const vHeight = video.videoHeight
+            const vWidth = drawSource.videoWidth
+            const vHeight = drawSource.videoHeight
             const scale = Math.min(width / vWidth, height / vHeight)
             const drawW = vWidth * scale
             const drawH = vHeight * scale
             const drawX = (width - drawW) / 2
             const drawY = (height - drawH) / 2
 
-            ctx.drawImage(video, drawX, drawY, drawW, drawH)
+            ctx.drawImage(drawSource, drawX, drawY, drawW, drawH)
 
             // Presentation indicator pill (Top Left)
             ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
@@ -393,7 +438,26 @@ export function useMeetingRecording({
             ctx.fillText('SCREEN SHARING', 56, 46)
 
             // Picture-in-Picture (PiP) Presenter Camera Inset (Bottom Right)
-            if (camVideo && camVideo.readyState >= 2 && camTrack && camTrack.enabled && !camTrack.muted) {
+            let camSource: HTMLVideoElement | null = null
+            if (camVideo && camVideo.readyState >= 2 && camVideo.videoWidth > 0) {
+                camSource = camVideo
+            } else {
+                const domVideos = Array.from(document.querySelectorAll('video'))
+                const activeCam = domVideos.find(v =>
+                    v !== video &&
+                    v !== camVideo &&
+                    v !== drawSource &&
+                    v.readyState >= 2 &&
+                    v.videoWidth > 0 &&
+                    !v.paused &&
+                    v.style.display !== 'none'
+                )
+                if (activeCam) {
+                    camSource = activeCam
+                }
+            }
+
+            if (camSource && camSource.readyState >= 2 && camSource.videoWidth > 0) {
                 const pipW = Math.round(width * 0.22)
                 const pipH = Math.round(pipW * (9 / 16))
                 const pipX = width - pipW - 28
@@ -409,7 +473,7 @@ export function useMeetingRecording({
                     ctx.rect(pipX, pipY, pipW, pipH)
                 }
                 ctx.clip()
-                ctx.drawImage(camVideo, pipX, pipY, pipW, pipH)
+                ctx.drawImage(camSource, pipX, pipY, pipW, pipH)
                 ctx.restore()
 
                 ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)'
@@ -422,7 +486,7 @@ export function useMeetingRecording({
                 }
                 ctx.stroke()
             }
-        } else if (!isSharing && isMainVideoReady && activeRemoteVideos.length === 1) {
+        } else if (!isSharing && isMainVideoReady && drawSource && activeRemoteVideos.length === 1) {
             // ── Mode B: Studio Interview Split-Screen (Host + Guest side-by-side) ──
             ctx.fillStyle = '#070b14'
             ctx.fillRect(0, 0, width, height)
@@ -441,7 +505,7 @@ export function useMeetingRecording({
             if (ctx.roundRect) ctx.roundRect(boxX1, boxY, boxW, boxH, 14)
             else ctx.rect(boxX1, boxY, boxW, boxH)
             ctx.clip()
-            ctx.drawImage(video, boxX1, boxY, boxW, boxH)
+            ctx.drawImage(drawSource, boxX1, boxY, boxW, boxH)
             ctx.restore()
 
             ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)'
@@ -488,20 +552,20 @@ export function useMeetingRecording({
             ctx.font = '600 11px system-ui, sans-serif'
             ctx.fillText('👤 Guest Speaker', boxX2 + 22, boxY + boxH - 19)
 
-        } else if (isMainVideoReady) {
+        } else if (isMainVideoReady && drawSource) {
             // ── Mode C: Solo Centered Camera Broadcast ──
             ctx.fillStyle = '#0b0f19'
             ctx.fillRect(0, 0, width, height)
 
-            const vWidth = video.videoWidth
-            const vHeight = video.videoHeight
+            const vWidth = drawSource.videoWidth
+            const vHeight = drawSource.videoHeight
             const scale = Math.min(width / vWidth, height / vHeight)
             const drawW = vWidth * scale
             const drawH = vHeight * scale
             const drawX = (width - drawW) / 2
             const drawY = (height - drawH) / 2
 
-            ctx.drawImage(video, drawX, drawY, drawW, drawH)
+            ctx.drawImage(drawSource, drawX, drawY, drawW, drawH)
         } else {
             // ── Mode D: Elegant Standby Broadcast Graphic ──
             const gradient = ctx.createLinearGradient(0, 0, width, height)
@@ -540,12 +604,12 @@ export function useMeetingRecording({
         ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
         ctx.beginPath()
         if (ctx.roundRect) {
-            ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 17)
+            ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 8)
         } else {
             ctx.rect(badgeX, badgeY, badgeW, badgeH)
         }
         ctx.fill()
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)'
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)'
         ctx.lineWidth = 1.2
         ctx.stroke()
 
@@ -572,7 +636,12 @@ export function useMeetingRecording({
         ctx.fillStyle = '#e2e8f0'
         ctx.font = '600 12px system-ui, -apple-system, sans-serif'
         ctx.fillText(`🎙️ ${meetingTitle.slice(0, 28)}`, 38, height - 34)
-    }, [getActiveLiveStream, getCameraOnlyStream, meetingInfo, screenSharingUserId, remoteStreams])
+    }, [getActiveLiveStream, getCameraOnlyStream, meetingInfo, screenSharingUserId, remoteStreams, localStream])
+
+    // Keep live broadcast canvas renderer ref synced across every render & stream update
+    useEffect(() => {
+        renderLiveCanvasFrameRef.current = renderLiveCanvasFrame
+    })
 
     // Master Audio Mixer with Studio Dynamics Compressor: Host Mic + All Remote Participants
     const syncLiveStreamAudio = useCallback(() => {
@@ -825,7 +894,7 @@ export function useMeetingRecording({
             }
             liveStreamCanvasRef.current = canvas
 
-            // CRITICAL: Append video to DOM (hidden offscreen) so Chromium enables full hardware decoding
+            // CRITICAL: Append video elements to DOM (rendered in viewport but invisible) so Chromium keeps hardware decoding active even when tab is backgrounded
             if (liveStreamVideoElemRef.current) {
                 liveStreamVideoElemRef.current.remove()
             }
@@ -836,18 +905,39 @@ export function useMeetingRecording({
             videoElem.setAttribute('playsinline', 'true')
             videoElem.setAttribute('webkit-playsinline', 'true')
             videoElem.style.position = 'fixed'
-            videoElem.style.top = '-9999px'
-            videoElem.style.left = '-9999px'
-            videoElem.style.width = '320px'
-            videoElem.style.height = '180px'
-            videoElem.style.opacity = '0'
+            videoElem.style.top = '0px'
+            videoElem.style.left = '0px'
+            videoElem.style.width = '16px'
+            videoElem.style.height = '16px'
+            videoElem.style.opacity = '0.001'
             videoElem.style.pointerEvents = 'none'
+            videoElem.style.zIndex = '-9999'
             document.body.appendChild(videoElem)
             liveStreamVideoElemRef.current = videoElem
 
-            // Pre-warm the video element with active track BEFORE starting recorder
+            if (liveStreamCamVideoElemRef.current) {
+                liveStreamCamVideoElemRef.current.remove()
+            }
+            const camVideoElem = document.createElement('video')
+            camVideoElem.muted = true
+            camVideoElem.playsInline = true
+            camVideoElem.autoplay = true
+            camVideoElem.setAttribute('playsinline', 'true')
+            camVideoElem.setAttribute('webkit-playsinline', 'true')
+            camVideoElem.style.position = 'fixed'
+            camVideoElem.style.top = '0px'
+            camVideoElem.style.left = '0px'
+            camVideoElem.style.width = '16px'
+            camVideoElem.style.height = '16px'
+            camVideoElem.style.opacity = '0.001'
+            camVideoElem.style.pointerEvents = 'none'
+            camVideoElem.style.zIndex = '-9999'
+            document.body.appendChild(camVideoElem)
+            liveStreamCamVideoElemRef.current = camVideoElem
+
+            // Pre-warm the video elements with active tracks BEFORE starting recorder
             const activeStream = getActiveLiveStream()
-            const initialTrack = activeStream?.getVideoTracks()[0]
+            const initialTrack = activeStream?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy) || activeStream?.getVideoTracks()[0]
             if (activeStream && initialTrack) {
                 liveStreamActiveTrackIdRef.current = initialTrack.id
                 videoElem.srcObject = activeStream
@@ -870,8 +960,18 @@ export function useMeetingRecording({
                 }
             }
 
+            const initialCamStream = getCameraOnlyStream()
+            const initialCamTrack = initialCamStream?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy) || initialCamStream?.getVideoTracks()[0]
+            if (initialCamStream && initialCamTrack) {
+                liveStreamCamActiveTrackIdRef.current = initialCamTrack.id
+                camVideoElem.srcObject = initialCamStream
+                try {
+                    await camVideoElem.play()
+                } catch (_) {}
+            }
+
             // Draw initial frame onto canvas before starting recorder
-            renderLiveCanvasFrame()
+            renderLiveCanvasFrameRef.current ? renderLiveCanvasFrameRef.current() : renderLiveCanvasFrame()
 
             // Start unthrottled background Web Worker timer so rendering never pauses when tab is in background
             let workerStarted = false
@@ -894,7 +994,9 @@ export function useMeetingRecording({
                 const workerUrl = URL.createObjectURL(blob)
                 const worker = new Worker(workerUrl)
                 worker.onmessage = () => {
-                    renderLiveCanvasFrame()
+                    if (renderLiveCanvasFrameRef.current) {
+                        renderLiveCanvasFrameRef.current()
+                    }
                 }
                 worker.postMessage('start')
                 liveStreamWorkerRef.current = worker
@@ -906,7 +1008,9 @@ export function useMeetingRecording({
             // Only use setInterval fallback if Web Worker failed to start (avoid double 60fps choking)
             if (!workerStarted) {
                 const intervalId = setInterval(() => {
-                    renderLiveCanvasFrame()
+                    if (renderLiveCanvasFrameRef.current) {
+                        renderLiveCanvasFrameRef.current()
+                    }
                 }, 1000 / 30)
                 liveStreamIntervalRef.current = intervalId
             }

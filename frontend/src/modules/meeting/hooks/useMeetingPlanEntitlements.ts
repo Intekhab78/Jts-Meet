@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+import { API_BASE } from '../../../config'
 
 interface UseMeetingPlanEntitlementsProps {
     token: string
@@ -42,8 +41,14 @@ export const useMeetingPlanEntitlements = ({
         fetch(`${API_BASE}/api/organization/mine`, {
             headers: { 'Authorization': `Bearer ${activeToken}` }
         })
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) return null
+                const ct = res.headers.get('content-type') || ''
+                if (!ct.includes('application/json')) return null
+                return res.json()
+            })
             .then(data => {
+                if (!data) return
                 if (isMounted && data?.data && data.data.length > 0) {
                     const savedOrgId = localStorage.getItem('jts_current_org_id')
                     const matched = data.data.find((o: any) => o._id === savedOrgId)
