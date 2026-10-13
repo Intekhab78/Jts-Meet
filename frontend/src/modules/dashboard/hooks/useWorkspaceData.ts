@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { API_BASE } from '../../../config'
 import { useSocketContext } from '../../meeting/context/SocketContext'
 import { BroadcastNotice, WorkspaceTab } from '../workspace.types'
+import { refreshAccessToken } from '../../../utils/authClient'
 
 interface UseWorkspaceDataProps {
     token: string
@@ -128,6 +129,12 @@ export function useWorkspaceData({ token, activeTab }: UseWorkspaceDataProps) {
                             localStorage.setItem('jts_user_name', data.data.fullName)
                         }
                     } catch (e) {}
+                }
+            } else if (response.status === 401) {
+                const refreshed = await refreshAccessToken()
+                if (!refreshed) {
+                    localStorage.removeItem('jts_token')
+                    window.location.hash = '#login'
                 }
             }
         } catch (err) {

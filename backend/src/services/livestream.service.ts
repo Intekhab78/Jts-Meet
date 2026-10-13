@@ -9,10 +9,18 @@ function getFfmpegPath(): string {
     if (process.env.FFMPEG_PATH) {
         return process.env.FFMPEG_PATH
     }
-    // Prefer modern system-installed FFmpeg if present on Linux
+    // Prefer modern system-installed FFmpeg if present on Linux (e.g. apt install ffmpeg)
     if (process.platform === 'linux') {
+        try {
+            const { execSync } = require('child_process')
+            const sysPath = execSync('which ffmpeg', { encoding: 'utf8' }).trim()
+            if (sysPath && fs.existsSync(sysPath)) {
+                return sysPath
+            }
+        } catch (_) {}
         if (fs.existsSync('/usr/bin/ffmpeg')) return '/usr/bin/ffmpeg'
         if (fs.existsSync('/usr/local/bin/ffmpeg')) return '/usr/local/bin/ffmpeg'
+        if (fs.existsSync('/snap/bin/ffmpeg')) return '/snap/bin/ffmpeg'
     }
     try {
         const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
@@ -22,8 +30,6 @@ function getFfmpegPath(): string {
     } catch (_) {}
     return 'ffmpeg'
 }
-
-let resolvedFfmpegPath = getFfmpegPath()
 
 export interface LiveStreamOptions {
     meetingId: string
@@ -121,12 +127,14 @@ class LiveStreamService extends EventEmitter {
             ? 'format=yuv420p,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:-1:-1:color=black'
             : 'format=yuv420p,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:-1:-1:color=black'
 
-        console.log(`[LiveStream] Spawning FFmpeg for meeting ${meetingId} -> ${options.platform.toUpperCase()} (${options.resolution || '720p'}) @ ${videoBitrate} (buf: ${bufSize})`)
+        const currentFfmpegPath = getFfmpegPath()
+        console.log(`[LiveStream] Spawning FFmpeg (${currentFfmpegPath}) for meeting ${meetingId} -> ${options.platform.toUpperCase()} (${options.resolution || '720p'}) @ ${videoBitrate} (buf: ${bufSize})`)
 
         const ffmpegArgs = [
-            '-analyzeduration', '2000000',
-            '-probesize', '2000000',
+            '-analyzeduration', '3000000',
+            '-probesize', '3000000',
             '-thread_queue_size', '4096',
+            '-err_detect', 'ignore_err',
             '-fflags', '+genpts+nobuffer+discardcorrupt',
             '-f', 'matroska',
             '-i', 'pipe:0',
@@ -158,11 +166,11 @@ class LiveStreamService extends EventEmitter {
             targetRtmpUrl
         ]
 
-        const ffmpegProcess = spawn(resolvedFfmpegPath, ffmpegArgs, {
+        const ffmpegProcess = spawn(currentFfmpegPath, ffmpegArgs, {
             stdio: ['pipe', 'pipe', 'pipe']
         })
 
-        // Replay cached container header immediately if this is a reconnect
+        // On reconnect, only write initial header if client has not already been instructed to emit a fresh one
         session.headerFlushedOnReconnect = false
         if (session.initHeader && session.reconnectAttempts && session.reconnectAttempts > 0) {
             try {
@@ -207,6 +215,11 @@ class LiveStreamService extends EventEmitter {
                 if (attempts <= 5) {
                     console.log(`[LiveStream][${meetingId}] Auto-reconnecting live stream (attempt ${attempts}/5)...`)
                     session.status = 'starting'
+                    // Clear stale container headers and buffers so client browser keyframe feeds cleanly from byte 0
+                    session.initHeader = undefined
+                    session.pendingBuffer = []
+                    session.headerFlushedOnReconnect = false
+
                     // Request client browser to produce fresh EBML header & keyframe
                     this.emit('stream:request-keyframe', { meetingId })
                     setTimeout(() => {
@@ -217,7 +230,7 @@ class LiveStreamService extends EventEmitter {
                                 console.error(`[LiveStream][${meetingId}] Auto-reconnect spawn error:`, spawnErr)
                             }
                         }
-                    }, 1000)
+                    }, 800)
                     return
                 }
             }
@@ -284,7 +297,7 @@ class LiveStreamService extends EventEmitter {
         try {
             session.process = this.spawnFfmpegProcess(session)
         } catch (err: any) {
-            console.error(`[LiveStream] Failed to spawn FFmpeg at path "${resolvedFfmpegPath}":`, err)
+            console.error(`[LiveStream] Failed to spawn FFmpeg at path "${getFfmpegPath()}":`, err)
             throw new Error(`Failed to initialize streaming engine: ${err?.message || 'FFmpeg spawn error'}`)
         }
 
@@ -305,20 +318,13 @@ class LiveStreamService extends EventEmitter {
             const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
             session.lastChunkAt = Date.now()
 
-            // Cache initial container header for reconnect resilience
-            if (!session.initHeader) {
+            // Detect fresh EBML container header (magic bytes 0x1A45DFA3)
+            const isHeader = buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3
+            if (isHeader || !session.initHeader) {
                 session.initHeader = buf
             }
 
             if (session.process && session.process.stdin && session.process.stdin.writable) {
-                // Ensure cached EBML header is piped first on reconnect before any chunk data
-                if (session.reconnectAttempts && session.reconnectAttempts > 0 && session.initHeader && !session.headerFlushedOnReconnect) {
-                    try {
-                        session.process.stdin.write(session.initHeader)
-                        session.headerFlushedOnReconnect = true
-                    } catch (_) {}
-                }
-
                 // If there are pending queued chunks from a brief reconnect, flush them first
                 if (session.pendingBuffer && session.pendingBuffer.length > 0) {
                     while (session.pendingBuffer.length > 0) {

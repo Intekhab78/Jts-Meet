@@ -29,7 +29,7 @@ export function DirectChatEmptyState({
                 <IconMessage size={30} />
             </div>
             <h3 style={{ fontSize: '1.125rem', fontWeight: 800, color: '#fff', margin: '0 0 6px 0' }}>
-                Microsoft Teams Chat
+                JTS Meet Chat
             </h3>
             <p style={{ fontSize: '0.8125rem', lineHeight: 1.5, margin: '0 0 16px 0' }}>
                 Select an existing chat from the left or click below to start a new chat with any team member.

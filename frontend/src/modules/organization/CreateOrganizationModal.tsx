@@ -197,7 +197,7 @@ export function CreateOrganizationModal({ open, onClose, onCreate }: CreateOrgan
                                 Create Organization Workspace
                             </h2>
                             <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: '#a1a4c9', lineHeight: 1.2 }}>
-                                Microsoft Teams-grade collaborative hub
+                                Enterprise collaborative hub
                             </p>
                         </div>
                     </div>

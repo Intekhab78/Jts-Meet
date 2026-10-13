@@ -693,7 +693,7 @@ export function OrganizationProfileTab({
             {activeSection === 'policies' && (
                 <div className="glass-card" style={{ padding: '22px 24px', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 20 }}>
                     <div>
-                        <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', margin: 0 }}>Microsoft Teams-Style Meeting Governance</h3>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', margin: 0 }}>Enterprise Meeting Governance</h3>
                         <p style={{ fontSize: '0.78125rem', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
                             Enforce enterprise-wide security policies, waiting room rules, guest participant access, and encryption standards.
                         </p>

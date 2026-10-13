@@ -924,17 +924,25 @@ export function useMeetingRecording({
             if (audioTrack) combinedStream.addTrack(audioTrack)
             liveStreamCombinedStreamRef.current = combinedStream
 
-            // Standard WebM VP8 Codec: Linux FFmpeg native compatibility (prevents H.264 WebM SIGSEGV crashes)
-            let mimeType = 'video/webm;codecs=vp8,opus'
+            // Codecs: Prioritize H.264 in WebM container (prevents VP8 canvas alpha_mode:1 SIGSEGV crash in FFmpeg)
+            let mimeType = 'video/webm;codecs=h264,opus'
             if (typeof MediaRecorder !== 'undefined') {
-                if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
-                    mimeType = 'video/webm;codecs=vp8,opus'
-                } else if (MediaRecorder.isTypeSupported('video/webm')) {
-                    mimeType = 'video/webm'
-                } else if (MediaRecorder.isTypeSupported('video/webm;codecs=h264,opus')) {
-                    mimeType = 'video/webm;codecs=h264,opus'
+                const candidates = [
+                    'video/webm;codecs=h264,opus',
+                    'video/webm;codecs=h264',
+                    'video/webm;codecs=avc1,opus',
+                    'video/webm;codecs=vp8,opus',
+                    'video/webm;codecs=vp8',
+                    'video/webm'
+                ]
+                for (const cand of candidates) {
+                    if (MediaRecorder.isTypeSupported(cand)) {
+                        mimeType = cand
+                        break
+                    }
                 }
             }
+            console.log('[LiveStream] Selected MediaRecorder MIME type:', mimeType)
 
             const streamBitrate = config.bitrate ? config.bitrate * 1000 : (config.resolution === '1080p' ? 4000000 : 2500000)
             let recorder: MediaRecorder

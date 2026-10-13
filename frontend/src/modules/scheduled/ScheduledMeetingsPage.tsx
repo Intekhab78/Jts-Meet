@@ -402,7 +402,7 @@ export function ScheduledMeetingsPage({
                             borderRadius: 12,
                             border: '1px solid rgba(99, 102, 241, 0.3)'
                         }}>
-                            Microsoft Teams Hub
+                            Enterprise Conference Hub
                         </span>
                     </div>
                     <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>

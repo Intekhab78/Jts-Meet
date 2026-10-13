@@ -41,10 +41,11 @@ export async function refreshAccessToken(): Promise<string | null> {
                 credentials: 'include'
             })
 
-            const data = await res.json()
+            const data = await res.json().catch(() => null)
             if (!res.ok || !data?.success) {
-                // If token was revoked or refresh expired, broadcast logout
-                if (res.status === 401) {
+                // If token was revoked, missing (400), or refresh expired (401), broadcast logout
+                if (res.status === 401 || res.status === 400) {
+                    localStorage.removeItem('jts_token')
                     logoutListeners.forEach(listener => listener())
                 }
                 return null

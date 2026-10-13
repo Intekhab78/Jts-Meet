@@ -247,6 +247,19 @@ export function SetupScreen({
         }, 150)
     }
 
+    const [connectTimedOut, setConnectTimedOut] = useState(false)
+
+    useEffect(() => {
+        if (!connected) {
+            const timer = setTimeout(() => {
+                setConnectTimedOut(true)
+            }, 7000)
+            return () => clearTimeout(timer)
+        } else {
+            setConnectTimedOut(false)
+        }
+    }, [connected])
+
     // Render 1. Connecting screen (if not connected yet)
     if (!connected) {
         return (
@@ -276,40 +289,106 @@ export function SetupScreen({
                     </div>
 
                     <div className="glass-card" style={{ padding: 40, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                        <div style={{
-                            width: 54, height: 54, borderRadius: '50%',
-                            border: '3.5px solid rgba(99,102,241,0.2)',
-                            borderTopColor: 'var(--color-accent)',
-                            animation: 'spin 1s linear infinite',
-                            marginBottom: 20
-                        }} />
-                        <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 8px', color: '#fff' }}>
-                            Connecting to Meeting Room...
-                        </h2>
-                        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', margin: '0 0 24px', maxWidth: 300, lineHeight: 1.5 }}>
-                            Establishing secure encrypted signaling connection
-                        </p>
-                        <button
-                            onClick={() => {
-                                try {
-                                    localStorage.removeItem('jts_guest_token')
-                                    localStorage.removeItem('jts_guest_user_id')
-                                    localStorage.removeItem('jts_guest_details')
-                                    sessionStorage.removeItem('jts_active_meeting_id')
-                                    sessionStorage.removeItem('jts_meeting_joined')
-                                    localStorage.removeItem('jts_last_meeting_id')
-                                } catch (e) { }
-                                if (onLeave) {
-                                    onLeave()
-                                } else {
-                                    window.location.hash = '#dashboard'
-                                }
-                            }}
-                            className="btn btn-secondary"
-                            style={{ padding: '8px 20px', fontSize: '0.8125rem' }}
-                        >
-                            Back to Home
-                        </button>
+                        {connectTimedOut ? (
+                            <>
+                                <div style={{
+                                    width: 54, height: 54, borderRadius: '50%',
+                                    background: 'rgba(239, 68, 68, 0.15)',
+                                    border: '2px solid rgba(239, 68, 68, 0.4)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    marginBottom: 20, color: '#ef4444'
+                                }}>
+                                    <IconInfo size={28} />
+                                </div>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 8px', color: '#fff' }}>
+                                    Signaling Connection Failed
+                                </h2>
+                                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', margin: '0 0 24px', maxWidth: 320, lineHeight: 1.5 }}>
+                                    Unable to establish real-time socket connection. Your login session may have expired or network is unreachable.
+                                </p>
+                                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                    <button
+                                        onClick={() => {
+                                            localStorage.removeItem('jts_token')
+                                            localStorage.removeItem('jts_guest_token')
+                                            sessionStorage.removeItem('jts_active_meeting_id')
+                                            sessionStorage.removeItem('jts_meeting_joined')
+                                            window.location.hash = '#login'
+                                            window.location.reload()
+                                        }}
+                                        className="btn btn-primary"
+                                        style={{ padding: '8px 20px', fontSize: '0.8125rem' }}
+                                    >
+                                        Log In Again
+                                    </button>
+                                    <button
+                                        onClick={() => window.location.reload()}
+                                        className="btn btn-secondary"
+                                        style={{ padding: '8px 16px', fontSize: '0.8125rem' }}
+                                    >
+                                        Retry
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            try {
+                                                localStorage.removeItem('jts_guest_token')
+                                                localStorage.removeItem('jts_guest_user_id')
+                                                localStorage.removeItem('jts_guest_details')
+                                                sessionStorage.removeItem('jts_active_meeting_id')
+                                                sessionStorage.removeItem('jts_meeting_joined')
+                                                localStorage.removeItem('jts_last_meeting_id')
+                                            } catch (e) { }
+                                            if (onLeave) {
+                                                onLeave()
+                                            } else {
+                                                window.location.hash = '#dashboard'
+                                            }
+                                        }}
+                                        className="btn btn-secondary"
+                                        style={{ padding: '8px 16px', fontSize: '0.8125rem' }}
+                                    >
+                                        Back to Home
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div style={{
+                                    width: 54, height: 54, borderRadius: '50%',
+                                    border: '3.5px solid rgba(99,102,241,0.2)',
+                                    borderTopColor: 'var(--color-accent)',
+                                    animation: 'spin 1s linear infinite',
+                                    marginBottom: 20
+                                }} />
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 8px', color: '#fff' }}>
+                                    Connecting to Meeting Room...
+                                </h2>
+                                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', margin: '0 0 24px', maxWidth: 300, lineHeight: 1.5 }}>
+                                    Establishing secure encrypted signaling connection
+                                </p>
+                                <button
+                                    onClick={() => {
+                                        try {
+                                            localStorage.removeItem('jts_guest_token')
+                                            localStorage.removeItem('jts_guest_user_id')
+                                            localStorage.removeItem('jts_guest_details')
+                                            sessionStorage.removeItem('jts_active_meeting_id')
+                                            sessionStorage.removeItem('jts_meeting_joined')
+                                            localStorage.removeItem('jts_last_meeting_id')
+                                        } catch (e) { }
+                                        if (onLeave) {
+                                            onLeave()
+                                        } else {
+                                            window.location.hash = '#dashboard'
+                                        }
+                                    }}
+                                    className="btn btn-secondary"
+                                    style={{ padding: '8px 20px', fontSize: '0.8125rem' }}
+                                >
+                                    Back to Home
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
