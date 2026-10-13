@@ -285,7 +285,7 @@ export function DirectMessagesHub({
         return () => clearTimeout(timer)
     }, [searchQuery])
 
-    // Load conversation when active contact changes
+    // Load conversation when active contact changes & live auto-sync fallback
     useEffect(() => {
         if (!activeContact) {
             setMessages([])
@@ -294,60 +294,88 @@ export function DirectMessagesHub({
         }
 
         let isMounted = true
-        setLoadingMessages(true)
+        const contactId = String(activeContact._id || (activeContact as any).id || '').trim()
+        if (!contactId) return
 
-        fetch(`${API_BASE}/api/chat/conversation?userId=${activeContact._id}&limit=50`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        })
-            .then(res => res.json())
-            .then(json => {
-                if (!isMounted) return
-                const data = json.data?.messages || json.data || json
-                if (Array.isArray(data)) {
-                    const rev = [...data].reverse()
-                    const uniqueMap = new Map<string, ChatMessage>()
-                    for (const m of rev) {
-                        if (m && m._id && !uniqueMap.has(m._id)) {
-                            uniqueMap.set(m._id, m)
+        const fetchConversation = (silent = false) => {
+            if (!silent) setLoadingMessages(true)
+
+            fetch(`${API_BASE}/api/chat/conversation?userId=${contactId}&limit=50`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+                .then(res => res.json())
+                .then(json => {
+                    if (!isMounted) return
+                    const data = json.data?.messages || json.data || json
+                    if (Array.isArray(data)) {
+                        const rev = [...data].reverse()
+                        const uniqueMap = new Map<string, ChatMessage>()
+                        for (const m of rev) {
+                            if (m && m._id && !uniqueMap.has(String(m._id))) {
+                                uniqueMap.set(String(m._id), m)
+                            }
+                        }
+                        const uniqueMsgs = Array.from(uniqueMap.values())
+                        setMessages(prev => {
+                            if (silent) {
+                                // In silent poll, only update if message count or latest ID changed
+                                if (prev.length === uniqueMsgs.length &&
+                                    prev[prev.length - 1]?._id === uniqueMsgs[uniqueMsgs.length - 1]?._id) {
+                                    return prev
+                                }
+                            }
+                            return uniqueMsgs
+                        })
+
+                        if (uniqueMsgs.length > 0) {
+                            const lastMsg = uniqueMsgs[uniqueMsgs.length - 1]
+                            setRecentChats(prev => {
+                                const exists = prev.some(c => String(c.conversationWith) === contactId)
+                                if (exists) return prev
+                                return [{
+                                    conversationWith: contactId,
+                                    latestMessage: lastMsg,
+                                    user: activeContact
+                                }, ...prev]
+                            })
                         }
                     }
-                    const uniqueMsgs = Array.from(uniqueMap.values())
-                    setMessages(uniqueMsgs)
-                    if (uniqueMsgs.length > 0) {
-                        const lastMsg = uniqueMsgs[uniqueMsgs.length - 1]
-                        setRecentChats(prev => {
-                            const targetId = String(activeContact._id)
-                            const exists = prev.some(c => String(c.conversationWith) === targetId)
-                            if (exists) return prev
-                            return [{
-                                conversationWith: targetId,
-                                latestMessage: lastMsg,
-                                user: activeContact
-                            }, ...prev]
-                        })
+
+                    // Mark messages as seen
+                    if (!silent) {
+                        fetch(`${API_BASE}/api/chat/seen`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ senderId: contactId })
+                        }).catch(() => {})
                     }
-                }
-                // Mark messages as seen
-                fetch(`${API_BASE}/api/chat/seen`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ senderId: activeContact._id })
-                }).catch(() => {})
-            })
-            .catch(err => {
-                console.warn('[DM Hub] Failed to fetch conversation:', err)
-            })
-            .finally(() => {
-                if (isMounted) setLoadingMessages(false)
-            })
+                })
+                .catch(err => {
+                    if (!silent) console.warn('[DM Hub] Failed to fetch conversation:', err)
+                })
+                .finally(() => {
+                    if (!silent && isMounted) setLoadingMessages(false)
+                })
+        }
+
+        // Initial fetch
+        fetchConversation(false)
+
+        // Live fallback sync every 3.5s so open chat is always fresh even if WebSocket packets were delayed
+        const syncTimer = setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                fetchConversation(true)
+            }
+        }, 3500)
 
         return () => {
             isMounted = false
+            clearInterval(syncTimer)
         }
-    }, [activeContact, token])
+    }, [activeContact?._id, token])
 
     // Scroll chat to bottom
     useEffect(() => {

@@ -111,7 +111,7 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
                     isPending: false
                 },
                 JWT_SECRET,
-                { expiresIn: '6h' }
+                { expiresIn: '24h' }
             )
             
             guestSocket.emit('guest:approved', { token })
@@ -230,19 +230,24 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
 
         socket.on(SocketEvents.CHAT_SEND, async (payload: { receiverId: string; message: string; parentMessageId?: string }) => {
             const chatMessage = await createMessage(userId, payload)
-            const receiver = await User.findById(payload.receiverId).select('status').lean().exec()
-            const isOnline = receiver?.status === 'online'
             let delivered = false
+
+            const populatedMessage = await Message.findById(chatMessage._id)
+                .populate('sender', 'fullName email profileImage')
+                .populate('receiver', 'fullName email profileImage')
+                .lean()
+                .exec() || chatMessage
 
             if (payload.parentMessageId) {
                 const parentMsg = await Message.findById(payload.parentMessageId).exec()
-                io.to(`user:${userId}`).to(`user:${payload.receiverId}`).emit(SocketEvents.THREAD_CREATED, chatMessage)
+                io.to(`user:${userId}`).to(`user:${payload.receiverId}`).emit(SocketEvents.THREAD_CREATED, populatedMessage)
                 if (parentMsg) {
                     io.to(`user:${userId}`).to(`user:${payload.receiverId}`).emit(SocketEvents.THREAD_UPDATED, parentMsg)
                 }
                 delivered = true
-            } else if (isOnline) {
-                io.to(`user:${payload.receiverId}`).emit(SocketEvents.CHAT_RECEIVE, chatMessage)
+            } else {
+                io.to(`user:${payload.receiverId}`).emit(SocketEvents.CHAT_RECEIVE, populatedMessage)
+                io.to(`user:${userId}`).emit(SocketEvents.CHAT_RECEIVE, populatedMessage)
                 const deliveredMessage = await markMessageDelivered(chatMessage._id.toString())
                 delivered = !!deliveredMessage
             }

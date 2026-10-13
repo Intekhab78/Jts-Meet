@@ -86,7 +86,7 @@ router.post('/request', rateLimiter(60 * 1000, 60), async (req: Request, res: Re
                         isPending: isWaitingRoom
                     },
                     JWT_SECRET,
-                    { expiresIn: '6h' }
+                    { expiresIn: '24h' }
                 )
                 res.json({
                     success: true,
@@ -134,7 +134,7 @@ router.post('/request', rateLimiter(60 * 1000, 60), async (req: Request, res: Re
                 isPending
             },
             JWT_SECRET,
-            { expiresIn: '6h' }
+            { expiresIn: '24h' }
         )
 
         res.json({

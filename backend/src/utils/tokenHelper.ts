@@ -2,8 +2,8 @@ import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 import { JWT_SECRET } from '../config'
 
-export const ACCESS_TOKEN_EXPIRY = '15m'
-export const REFRESH_TOKEN_EXPIRY_DAYS = 30
+export const ACCESS_TOKEN_EXPIRY = '30d'
+export const REFRESH_TOKEN_EXPIRY_DAYS = 90
 
 export interface JwtAccessTokenPayload {
     userId: string
@@ -41,7 +41,7 @@ export function getRefreshTokenCookieOptions() {
     return {
         httpOnly: true,
         secure: isProd,
-        sameSite: 'lax' as const,
+        sameSite: isProd ? ('none' as const) : ('lax' as const),
         path: '/',
         maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
     }

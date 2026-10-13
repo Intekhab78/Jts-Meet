@@ -379,7 +379,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                     isPending: false
                 },
                 JWT_SECRET,
-                { expiresIn: '6h' }
+                { expiresIn: '24h' }
             )
             guestSocket.emit('guest:approved', { token })
             io.to(`user:${guestSocket.userId}`).emit('guest:approved', { token })
@@ -463,7 +463,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                             isPending: false
                         },
                         JWT_SECRET,
-                        { expiresIn: '6h' }
+                        { expiresIn: '24h' }
                     )
                     guestSocket.emit('guest:approved', { token })
                 }
@@ -505,7 +505,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                                 isPending: false
                             },
                             JWT_SECRET,
-                            { expiresIn: '6h' }
+                            { expiresIn: '24h' }
                         )
                         guestSocket.emit('guest:approved', { token })
                     }

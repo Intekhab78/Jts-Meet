@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { API_BASE } from '../../../config'
 import { useSocketContext } from '../../meeting/context/SocketContext'
 import { BroadcastNotice, WorkspaceTab } from '../workspace.types'
-import { refreshAccessToken } from '../../../utils/authClient'
+import { refreshAccessToken, isUserInActiveMeeting } from '../../../utils/authClient'
 
 interface UseWorkspaceDataProps {
     token: string
@@ -133,8 +133,15 @@ export function useWorkspaceData({ token, activeTab }: UseWorkspaceDataProps) {
             } else if (response.status === 401) {
                 const refreshed = await refreshAccessToken()
                 if (!refreshed) {
-                    localStorage.removeItem('jts_token')
-                    window.location.hash = '#login'
+                    if (isUserInActiveMeeting()) {
+                        console.warn('[WorkspaceData] Token refresh deferred because user is in an active meeting')
+                        try {
+                            sessionStorage.setItem('jts_pending_logout', 'true')
+                        } catch (_) {}
+                    } else {
+                        localStorage.removeItem('jts_token')
+                        window.location.hash = '#login'
+                    }
                 }
             }
         } catch (err) {

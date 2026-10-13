@@ -319,9 +319,21 @@ class LiveStreamService extends EventEmitter {
             session.lastChunkAt = Date.now()
 
             // Detect fresh EBML container header (magic bytes 0x1A45DFA3)
-            const isHeader = buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3
-            if (isHeader || !session.initHeader) {
-                session.initHeader = buf
+            const ebmlMagic = Buffer.from([0x1a, 0x45, 0xdf, 0xa3])
+            const headerIdx = buf.indexOf(ebmlMagic)
+
+            if (headerIdx !== -1) {
+                const headerSlice = headerIdx === 0 ? buf : buf.subarray(headerIdx)
+                session.initHeader = headerSlice
+
+                if (session.process && session.process.stdin && session.process.stdin.writable) {
+                    session.process.stdin.write(headerSlice)
+                    session.bytesIngested += headerSlice.length
+                    return true
+                }
+            } else if (!session.initHeader) {
+                // Drop initial non-EBML orphan bytes before container header arrives so FFmpeg stdin is never corrupted
+                return false
             }
 
             if (session.process && session.process.stdin && session.process.stdin.writable) {

@@ -12,6 +12,7 @@ export interface UseMeetingRecordingProps {
     cameraStream?: MediaStream | null
     remoteStreams?: Record<string, MediaStream>
     screenSharingUserId?: string | null
+    screenSharingUserIds?: string[]
     meetingInfo: any
     socket: any
     addToast: (msg: string, type?: any) => void
@@ -27,6 +28,7 @@ export function useMeetingRecording({
     cameraStream,
     remoteStreams,
     screenSharingUserId,
+    screenSharingUserIds,
     meetingInfo,
     socket,
     addToast
@@ -238,27 +240,40 @@ export function useMeetingRecording({
 
     // Dynamically pick the active broadcast stream: screen share vs camera
     const getActiveLiveStream = useCallback(() => {
-        // 1. If screen sharing is active:
-        const isScreenSharing = !!screenSharingUserId ||
-            (localStream?.getVideoTracks().some(t => t.contentHint === 'detail' || t.label.toLowerCase().includes('screen') || t.label.toLowerCase().includes('tab') || t.label.toLowerCase().includes('window')) ?? false)
+        // 1. If local screen sharing is active:
+        const hasLocalScreen = localStream?.getVideoTracks().some(t =>
+            t.readyState === 'live' && !(t as any).isDummy &&
+            (t.contentHint === 'detail' || t.label.toLowerCase().includes('screen') || t.label.toLowerCase().includes('tab') || t.label.toLowerCase().includes('window'))
+        )
+        const isLocalSharing = screenSharingUserId === 'me' || (screenSharingUserIds && screenSharingUserIds.includes('me')) || !!hasLocalScreen
 
-        if (isScreenSharing) {
-            if (screenSharingUserId === 'me' || !screenSharingUserId) {
-                const screenCandidate = localStream || activeLocalStream
-                const track = screenCandidate?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy)
-                if (screenCandidate && track) {
-                    return screenCandidate
-                }
-            } else if (screenSharingUserId && remoteStreams && remoteStreams[screenSharingUserId]) {
-                const remoteScreen = remoteStreams[screenSharingUserId]
-                const track = remoteScreen?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy)
-                if (remoteScreen && track) {
-                    return remoteScreen
+        if (isLocalSharing) {
+            const screenCandidate = localStream || activeLocalStream
+            const track = screenCandidate?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy)
+            if (screenCandidate && track) {
+                return screenCandidate
+            }
+        }
+
+        // 2. Check if any remote participant is sharing screen:
+        if (screenSharingUserId && remoteStreams && remoteStreams[screenSharingUserId]) {
+            const remoteScreen = remoteStreams[screenSharingUserId]
+            const track = remoteScreen?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy)
+            if (remoteScreen && track) {
+                return remoteScreen
+            }
+        }
+        if (screenSharingUserIds && remoteStreams) {
+            for (const sId of screenSharingUserIds) {
+                if (sId !== 'me' && remoteStreams[sId]) {
+                    const rStream = remoteStreams[sId]
+                    const track = rStream.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy)
+                    if (track) return rStream
                 }
             }
         }
 
-        // 2. Camera streams: check cameraStream, then localStream, then activeLocalStream
+        // 3. Fallback to Camera streams: check cameraStream, then localStream, then activeLocalStream
         const candidates = [cameraStream, localStream, activeLocalStream].filter(Boolean) as MediaStream[]
         for (const cand of candidates) {
             const track = cand.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy)
@@ -268,7 +283,7 @@ export function useMeetingRecording({
         }
 
         return null
-    }, [screenSharingUserId, remoteStreams, cameraStream, localStream, activeLocalStream])
+    }, [screenSharingUserId, screenSharingUserIds, remoteStreams, cameraStream, localStream, activeLocalStream])
 
     // Get secondary camera stream for Picture-in-Picture (PiP) when screenshare is active
     const getCameraOnlyStream = useCallback(() => {
@@ -312,8 +327,14 @@ export function useMeetingRecording({
         }
 
         // Sync hidden PiP camera element when screenshare is active
-        const isSharing = !!screenSharingUserId ||
-            (localStream?.getVideoTracks().some(t => t.contentHint === 'detail' || t.label.toLowerCase().includes('screen') || t.label.toLowerCase().includes('tab') || t.label.toLowerCase().includes('window')) ?? false)
+        const hasLocalScreen = localStream?.getVideoTracks().some(t =>
+            t.readyState === 'live' && !(t as any).isDummy &&
+            (t.contentHint === 'detail' || t.label.toLowerCase().includes('screen') || t.label.toLowerCase().includes('tab') || t.label.toLowerCase().includes('window'))
+        )
+        const isLocalSharing = screenSharingUserId === 'me' || (screenSharingUserIds && screenSharingUserIds.includes('me')) || !!hasLocalScreen
+        const isRemoteSharing = (!!screenSharingUserId && screenSharingUserId !== 'me') || (screenSharingUserIds && screenSharingUserIds.some(id => id !== 'me'))
+        const isSharing = isLocalSharing || isRemoteSharing
+
         const camStream = isSharing ? getCameraOnlyStream() : null
         const camTrack = camStream?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy) || null
 
@@ -378,22 +399,48 @@ export function useMeetingRecording({
         const width = canvas.width
         const height = canvas.height
 
-        // Determine primary video drawSource: prefer video ref, fallback to any active video element in the DOM
+        // Determine primary video drawSource:
+        // When sharing screen, ALWAYS prioritize the actual screen sharing video element
         let drawSource: HTMLVideoElement | null = null
-        if (video && video.readyState >= 2 && video.videoWidth > 0) {
-            drawSource = video
-        } else {
+        if (isSharing) {
             const domVideos = Array.from(document.querySelectorAll('video'))
-            const activeTileVideo = domVideos.find(v =>
+            const screenTileVideo = domVideos.find(v =>
+                v.getAttribute('data-screen-share') === 'true' &&
+                v.readyState >= 2 &&
+                v.videoWidth > 0 &&
+                !v.paused
+            ) || domVideos.find(v =>
+                v.style.objectFit === 'contain' &&
                 v !== video &&
                 v !== camVideo &&
                 v.readyState >= 2 &&
                 v.videoWidth > 0 &&
-                !v.paused &&
-                v.style.display !== 'none'
+                !v.paused
             )
-            if (activeTileVideo) {
-                drawSource = activeTileVideo
+
+            if (screenTileVideo) {
+                drawSource = screenTileVideo
+            } else if (video && video.readyState >= 2 && video.videoWidth > 0) {
+                drawSource = video
+            } else if (domVideos.length > 0) {
+                drawSource = domVideos.find(v => v !== video && v !== camVideo && v.readyState >= 2 && v.videoWidth > 0 && !v.paused) || null
+            }
+        } else {
+            if (video && video.readyState >= 2 && video.videoWidth > 0) {
+                drawSource = video
+            } else {
+                const domVideos = Array.from(document.querySelectorAll('video'))
+                const activeTileVideo = domVideos.find(v =>
+                    v !== video &&
+                    v !== camVideo &&
+                    v.readyState >= 2 &&
+                    v.videoWidth > 0 &&
+                    !v.paused &&
+                    v.style.display !== 'none'
+                )
+                if (activeTileVideo) {
+                    drawSource = activeTileVideo
+                }
             }
         }
 
@@ -447,6 +494,8 @@ export function useMeetingRecording({
                     v !== video &&
                     v !== camVideo &&
                     v !== drawSource &&
+                    v.getAttribute('data-screen-share') !== 'true' &&
+                    v.style.objectFit !== 'contain' &&
                     v.readyState >= 2 &&
                     v.videoWidth > 0 &&
                     !v.paused &&
@@ -636,7 +685,7 @@ export function useMeetingRecording({
         ctx.fillStyle = '#e2e8f0'
         ctx.font = '600 12px system-ui, -apple-system, sans-serif'
         ctx.fillText(`🎙️ ${meetingTitle.slice(0, 28)}`, 38, height - 34)
-    }, [getActiveLiveStream, getCameraOnlyStream, meetingInfo, screenSharingUserId, remoteStreams, localStream])
+    }, [getActiveLiveStream, getCameraOnlyStream, meetingInfo, screenSharingUserId, screenSharingUserIds, remoteStreams, localStream])
 
     // Keep live broadcast canvas renderer ref synced across every render & stream update
     useEffect(() => {

@@ -294,6 +294,7 @@ export const VideoTile = React.memo(function VideoTile({
                 autoPlay
                 muted={true}
                 playsInline
+                data-screen-share={isScreenShare ? 'true' : 'false'}
                 style={{
                     width: '100%',
                     height: '100%',

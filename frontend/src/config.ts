@@ -1,4 +1,6 @@
-const ONLINE_URL = typeof window !== 'undefined' ? window.location.origin : 'https://meetapi.jtsmiddleeast.com'
+const ONLINE_URL = typeof window !== 'undefined' && window.location.hostname.includes('jtsmiddleeast.com')
+    ? 'https://meetapi.jtsmiddleeast.com'
+    : (typeof window !== 'undefined' ? window.location.origin : 'https://meetapi.jtsmiddleeast.com')
 
 const envUrl = import.meta.env.VITE_API_URL
 
@@ -27,10 +29,13 @@ if (typeof window !== 'undefined') {
         detectedUrl = dynamicLocalUrl
     } else {
         // Online production (e.g. https://meet.jtsmiddleeast.com, vercel, etc.)
-        // Never allow a localhost URL in online environment
-        detectedUrl = (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1'))
-            ? envUrl
-            : window.location.origin
+        if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+            detectedUrl = envUrl
+        } else if (window.location.hostname.includes('jtsmiddleeast.com')) {
+            detectedUrl = 'https://meetapi.jtsmiddleeast.com'
+        } else {
+            detectedUrl = window.location.origin
+        }
     }
 } else {
     detectedUrl = import.meta.env.PROD ? ONLINE_URL : (envUrl || 'http://localhost:4000')

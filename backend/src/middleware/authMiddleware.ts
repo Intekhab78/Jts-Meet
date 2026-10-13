@@ -28,7 +28,17 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
     }
 
     try {
-        const payload = jwt.verify(token, JWT_SECRET) as { userId: string; tokenVersion?: number }
+        let payload: { userId: string; tokenVersion?: number }
+        try {
+            payload = jwt.verify(token, JWT_SECRET) as { userId: string; tokenVersion?: number }
+        } catch (err: any) {
+            const isMeetingOrAiPath = req.baseUrl?.includes('/meeting') || req.path?.includes('/meeting') || req.originalUrl?.includes('/meeting') || req.originalUrl?.includes('/ai')
+            if (err?.name === 'TokenExpiredError' && isMeetingOrAiPath) {
+                payload = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true }) as { userId: string; tokenVersion?: number }
+            } else {
+                throw err
+            }
+        }
         req.userId = payload.userId
 
         // Fast token revocation check: if tokenVersion is present, ensure it hasn't been bumped/revoked

@@ -5,7 +5,7 @@ import { WebRTCProvider } from './modules/meeting/context/WebRTCContext'
 import { LandingPage } from './modules/landing/components/LandingPage'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { API_BASE } from './config'
-import { onTokenRefreshed, onAuthLogout, refreshAccessToken, getJwtExpiryMs } from './utils/authClient'
+import { onTokenRefreshed, onAuthLogout, refreshAccessToken, getJwtExpiryMs, isUserInActiveMeeting } from './utils/authClient'
 
 const AppWorkspace = React.lazy(() => import('./modules/dashboard/components/AppWorkspace').then(m => ({ default: m.AppWorkspace })))
 const MeetingRoom = React.lazy(() => import('./modules/meeting/components/MeetingRoom').then(m => ({ default: m.MeetingRoom })))
@@ -196,6 +196,13 @@ function App() {
             setToken(newToken)
         })
         const unsubLogout = onAuthLogout(() => {
+            if (isUserInActiveMeeting()) {
+                console.warn('[App] User is currently in a meeting. Deferring logout until meeting ends.')
+                try {
+                    sessionStorage.setItem('jts_pending_logout', 'true')
+                } catch (_) {}
+                return
+            }
             handleLogout()
         })
 

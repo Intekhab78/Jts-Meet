@@ -3,6 +3,7 @@ import { Types } from 'mongoose'
 import { Message, IMessage } from './chat.model'
 import { sendError, sendSuccess } from '../../utils/responseHelper'
 import { SocketEvents } from '../../socket/events'
+import { getIO } from '../../socket'
 import {
     createMessage,
     getConversationBetweenUsers,
@@ -38,9 +39,16 @@ export const chatController = {
             parentMessageId: req.body.parentMessageId
         })
 
-        const io = req.app.get('io') || (global as any).io
+        const io = req.app.get('io') || (global as any).io || getIO()
         if (io) {
-            io.to(`user:${req.body.receiverId}`).emit(SocketEvents.CHAT_RECEIVE, message)
+            const populated = await Message.findById(message._id)
+                .populate('sender', 'fullName email profileImage')
+                .populate('receiver', 'fullName email profileImage')
+                .lean()
+                .exec() || message
+
+            io.to(`user:${req.body.receiverId}`).emit(SocketEvents.CHAT_RECEIVE, populated)
+            io.to(`user:${userId}`).emit(SocketEvents.CHAT_RECEIVE, populated)
             io.to(`user:${userId}`).emit(SocketEvents.CHAT_DELIVERED, {
                 messageId: message._id,
                 receiverId: req.body.receiverId,

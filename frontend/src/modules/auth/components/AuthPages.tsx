@@ -109,6 +109,9 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
             }
 
             setSuccess('Login successful! Connecting...')
+            if (data.data?.refreshToken) {
+                localStorage.setItem('jts_refresh_token', data.data.refreshToken)
+            }
             setTimeout(() => {
                 onAuthSuccess(data.data.accessToken)
             }, 1000)

@@ -193,7 +193,15 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
         window.history.replaceState(null, '', '/#meeting')
         window.location.hash = '#meeting'
         setActiveTab('meeting')
-    }, [setMeetingId, onClearMeetingUrl])
+
+        // If a logout was deferred while the user was inside the meeting, process it now
+        try {
+            if (sessionStorage.getItem('jts_pending_logout') === 'true') {
+                sessionStorage.removeItem('jts_pending_logout')
+                if (onLogout) onLogout()
+            }
+        } catch (_) {}
+    }, [setMeetingId, onClearMeetingUrl, onLogout])
 
     // Sidebar state
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {

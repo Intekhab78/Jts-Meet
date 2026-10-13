@@ -17,6 +17,20 @@ export function onAuthLogout(listener: LogoutListener) {
     return () => logoutListeners.delete(listener)
 }
 
+export function isUserInActiveMeeting(): boolean {
+    if (typeof window === 'undefined') return false
+    try {
+        const hasMeetingHash = window.location.hash.startsWith('#meeting') || window.location.hash.includes('meeting')
+        const hasMeetingPath = window.location.pathname.startsWith('/meet') || window.location.pathname.startsWith('/join')
+        const hasMeetingJoined = sessionStorage.getItem('jts_meeting_joined') === 'true'
+        const hasActiveMeetingId = !!sessionStorage.getItem('jts_active_meeting_id')
+        const hasQueryId = window.location.search.includes('id=room-') || window.location.hash.includes('id=room-')
+        return hasMeetingHash || hasMeetingPath || hasMeetingJoined || hasActiveMeetingId || hasQueryId
+    } catch (_) {
+        return false
+    }
+}
+
 let isRefreshing = false
 let refreshPromise: Promise<string | null> | null = null
 
@@ -32,28 +46,46 @@ export async function refreshAccessToken(): Promise<string | null> {
     refreshPromise = (async () => {
         try {
             const currentToken = localStorage.getItem('jts_token') || ''
+            const localRefreshToken = localStorage.getItem('jts_refresh_token') || ''
             const res = await fetch(`${API_BASE}/api/auth/refresh`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {})
                 },
+                body: JSON.stringify({
+                    refreshToken: localRefreshToken
+                }),
                 credentials: 'include'
             })
 
             const data = await res.json().catch(() => null)
             if (!res.ok || !data?.success) {
+                // If user is currently in a meeting, NEVER log out or remove tokens mid-meeting!
+                if (isUserInActiveMeeting()) {
+                    console.warn('[AuthClient] Token refresh failed but user is currently in an active meeting. Deferring logout until meeting finishes.')
+                    try {
+                        sessionStorage.setItem('jts_pending_logout', 'true')
+                    } catch (_) {}
+                    return null
+                }
+
                 // If token was revoked, missing (400), or refresh expired (401), broadcast logout
                 if (res.status === 401 || res.status === 400) {
                     localStorage.removeItem('jts_token')
+                    localStorage.removeItem('jts_refresh_token')
                     logoutListeners.forEach(listener => listener())
                 }
                 return null
             }
 
             const newToken = data.data?.accessToken || data.data?.token
+            const newRefreshToken = data.data?.refreshToken
             if (newToken) {
                 localStorage.setItem('jts_token', newToken)
+                if (newRefreshToken) {
+                    localStorage.setItem('jts_refresh_token', newRefreshToken)
+                }
                 refreshListeners.forEach(listener => listener(newToken))
                 return newToken
             }

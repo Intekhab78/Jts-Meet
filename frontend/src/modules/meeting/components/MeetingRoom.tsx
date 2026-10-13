@@ -452,6 +452,7 @@ const [activePanel, setActivePanel] = useState<ActivePanel>(null)
         cameraStream,
         remoteStreams,
         screenSharingUserId,
+        screenSharingUserIds,
         meetingInfo,
         socket,
         addToast

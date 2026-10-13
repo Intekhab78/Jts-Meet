@@ -34,6 +34,11 @@ export function useDirectChatSocket({
     const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({})
     const typingTimeoutRef = useRef<any>(null)
 
+    const activeContactRef = useRef<ChatContact | null>(activeContact)
+    useEffect(() => {
+        activeContactRef.current = activeContact
+    }, [activeContact])
+
     // Setup Socket connection
     useEffect(() => {
         if (!token) return
@@ -42,7 +47,7 @@ export function useDirectChatSocket({
             auth: { token },
             transports: ['polling', 'websocket'],
             reconnection: true,
-            reconnectionAttempts: 5,
+            reconnectionAttempts: 10,
             reconnectionDelay: 1000
         })
         socketRef.current = socket
@@ -65,49 +70,57 @@ export function useDirectChatSocket({
 
         // Real-time Chat message received
         socket.on('chat:receive', (msg: ChatMessage) => {
-            const senderId = typeof msg.sender === 'object' ? msg.sender._id : msg.sender
-            const receiverId = typeof msg.receiver === 'object' ? msg.receiver._id : msg.receiver
-            const otherPartyId = senderId === currentUserId ? receiverId : senderId
+            if (!msg || !msg._id) return
 
-            setActiveContact(currentActive => {
-                if (currentActive && (currentActive._id === senderId || currentActive._id === receiverId)) {
-                    setMessages(prev => {
-                        if (prev.some(m => m._id === msg._id)) return prev
-                        return [...prev, msg]
-                    })
+            const senderId = String(typeof msg.sender === 'object' ? (msg.sender?._id || (msg.sender as any)?.id || '') : (msg.sender || '')).trim()
+            const receiverId = String(typeof msg.receiver === 'object' ? (msg.receiver?._id || (msg.receiver as any)?.id || '') : (msg.receiver || '')).trim()
+            const myId = String(currentUserId || '').trim()
+            const otherPartyId = (senderId && senderId === myId) ? receiverId : senderId
 
-                    // Stop typing status if sender was active contact
+            const currentActive = activeContactRef.current
+            const activeId = currentActive ? String(currentActive._id || (currentActive as any).id || '').trim() : ''
+
+            // If received message belongs to current active conversation, append immediately to feed
+            if (activeId && (activeId === senderId || activeId === receiverId)) {
+                setMessages(prev => {
+                    const msgIdStr = String(msg._id)
+                    if (prev.some(m => String(m._id) === msgIdStr)) return prev
+                    return [...prev, msg]
+                })
+
+                // Stop typing status if sender was active contact
+                if (senderId) {
                     setTypingUsers(prev => {
+                        if (!prev[senderId]) return prev
                         const next = { ...prev }
                         delete next[senderId]
                         return next
                     })
-
-                    // If received from active contact, mark seen immediately
-                    if (senderId === currentActive._id) {
-                        fetch(`${API_BASE}/api/chat/seen`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`
-                            },
-                            body: JSON.stringify({ senderId: currentActive._id })
-                        }).catch(() => {})
-                    }
                 }
-                return currentActive
-            })
+
+                // If received from active contact, mark seen immediately
+                if (senderId && senderId === activeId) {
+                    fetch(`${API_BASE}/api/chat/seen`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ senderId: activeId })
+                    }).catch(() => {})
+                }
+            }
 
             // Update Recent Chats optimistically
             setRecentChats(prev => {
                 const otherIdStr = String(otherPartyId)
-                const existingIdx = prev.findIndex(c => String(c.conversationWith) === otherIdStr)
+                const existingIdx = prev.findIndex(c => String(c.conversationWith || c.user?._id) === otherIdStr)
                 const senderObj = typeof msg.sender === 'object' ? msg.sender : undefined
                 const contactObj = contactsRef.current.find(c => String(c._id) === otherIdStr) || (senderObj ? {
                     _id: senderObj._id,
-                    fullName: senderObj.fullName,
+                    fullName: (senderObj as any).fullName || 'Colleague',
                     email: '',
-                    profileImage: senderObj.profileImage
+                    profileImage: (senderObj as any).profileImage
                 } : undefined)
 
                 const updatedItem: RecentChat = {
