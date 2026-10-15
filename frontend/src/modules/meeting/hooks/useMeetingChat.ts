@@ -37,6 +37,11 @@ export function useMeetingChat() {
     const [messages, setMessages] = useState<MeetingChatMessage[]>([])
     const [typingUsers, setTypingUsers] = useState<string[]>([])
 
+    // Clear messages when meetingId changes (e.g., switching into/out of breakout rooms)
+    useEffect(() => {
+        setMessages([])
+    }, [meetingId])
+
     const sendMessage = useCallback(
         (message: string, recipientId?: string, recipientName?: string, attachment?: ChatAttachment, messageType: 'text' | 'file' | 'code' = 'text') => {
             if (!socket || !meetingId || (!message.trim() && !attachment)) {

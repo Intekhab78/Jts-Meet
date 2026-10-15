@@ -1,5 +1,6 @@
 import { Server, Socket } from 'socket.io'
 import { AuthenticatedSocket } from './auth'
+import { verifyIsHostOrCoHost } from './meeting'
 
 export interface BreakoutRoom {
     id: string
@@ -18,14 +19,21 @@ const activeBreakoutSessions: Map<string, BreakoutSession> = new Map()
 
 export function registerBreakoutHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
+    const userId = authSocket.userId
 
     // Host starts breakout rooms
-    socket.on('breakout:create', (payload: {
+    socket.on('breakout:create', async (payload: {
         meetingId: string
         rooms: Array<{ name: string; participantIds: string[] }>
         timerMinutes?: number
     }) => {
-        if (!payload?.meetingId || !Array.isArray(payload.rooms)) return
+        if (!userId || !payload?.meetingId || !Array.isArray(payload.rooms)) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can create breakout rooms' })
+            return
+        }
 
         const rooms: BreakoutRoom[] = payload.rooms.map((r, index) => ({
             id: `breakout_${index + 1}_${Math.random().toString(36).substring(2, 6)}`,
@@ -53,8 +61,14 @@ export function registerBreakoutHandlers(io: Server, socket: Socket) {
     })
 
     // Host broadcasts an announcement message to all breakout rooms
-    socket.on('breakout:broadcast', (payload: { meetingId: string; message: string }) => {
-        if (!payload?.meetingId || !payload?.message) return
+    socket.on('breakout:broadcast', async (payload: { meetingId: string; message: string }) => {
+        if (!userId || !payload?.meetingId || !payload?.message) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can broadcast announcements' })
+            return
+        }
         io.to(`meeting:${payload.meetingId}`).emit('breakout:announcement', {
             message: payload.message,
             senderName: authSocket.guestName || 'Host',
@@ -63,8 +77,14 @@ export function registerBreakoutHandlers(io: Server, socket: Socket) {
     })
 
     // Host closes breakout rooms (all participants return to main room)
-    socket.on('breakout:close', (payload: { meetingId: string }) => {
-        if (!payload?.meetingId) return
+    socket.on('breakout:close', async (payload: { meetingId: string }) => {
+        if (!userId || !payload?.meetingId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can close breakout rooms' })
+            return
+        }
         activeBreakoutSessions.delete(payload.meetingId)
         io.to(`meeting:${payload.meetingId}`).emit('breakout:ended', {
             meetingId: payload.meetingId

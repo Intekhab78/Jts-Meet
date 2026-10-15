@@ -1,6 +1,7 @@
 import { Server, Socket } from 'socket.io'
 import { AuthenticatedSocket } from './auth'
 import { SocketEvents } from './events'
+import { verifyIsHostOrCoHost } from './meeting'
 
 interface PollOption {
     id: string
@@ -97,7 +98,7 @@ export function registerPollHandlers(io: Server, socket: Socket) {
         })
     })
 
-    socket.on(SocketEvents.POLL_CLOSE, (payload: {
+    socket.on(SocketEvents.POLL_CLOSE, async (payload: {
         meetingId: string
         pollId: string
     }) => {
@@ -107,9 +108,16 @@ export function registerPollHandlers(io: Server, socket: Socket) {
         if (!polls) return
 
         const poll = polls.find(p => p.id === payload.pollId)
-        if (poll) {
-            poll.active = false
+        if (!poll) return
+
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const isHost = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (poll.creatorId !== userId && !isHost) {
+            socket.emit('error', { message: 'Forbidden: Only the poll creator or meeting host can close this poll' })
+            return
         }
+
+        poll.active = false
 
         io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.POLL_UPDATE, {
             meetingId: payload.meetingId,

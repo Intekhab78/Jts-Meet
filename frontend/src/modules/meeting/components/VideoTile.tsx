@@ -20,28 +20,76 @@ export const PersistentAudioTile = React.memo(function PersistentAudioTile({
 
     useEffect(() => {
         const el = audioRef.current
-        if (!el) return
-        if (stream) {
-            if (el.srcObject !== stream) {
+        if (!el || !stream) return
+
+        if (el.srcObject !== stream) {
+            el.srcObject = stream
+        }
+        el.muted = isMuted
+        el.volume = 1.0
+
+        const tryPlay = () => {
+            if (!el) return
+            // If the element has paused or stalled, resume playback immediately
+            if (el.paused && !el.muted) {
+                el.play().catch(() => {})
+            }
+        }
+
+        tryPlay()
+
+        const handleAudioHalt = () => {
+            tryPlay()
+        }
+
+        el.addEventListener('pause', handleAudioHalt)
+        el.addEventListener('stalled', handleAudioHalt)
+        el.addEventListener('waiting', handleAudioHalt)
+        el.addEventListener('suspend', handleAudioHalt)
+
+        const handleTrackUpdate = () => {
+            if (el && el.srcObject !== stream) {
                 el.srcObject = stream
             }
-            // Control audio output via muted flag without tearing down the media stream pipeline
-            el.muted = isMuted
+            tryPlay()
+        }
 
-            const playPromise = el.play()
-            if (playPromise !== undefined) {
-                playPromise.catch(() => {
-                    const unlock = () => {
-                        el.play().catch(() => {})
-                        window.removeEventListener('click', unlock)
-                        window.removeEventListener('keydown', unlock)
-                        window.removeEventListener('touchstart', unlock)
-                    }
-                    window.addEventListener('click', unlock, { once: true })
-                    window.addEventListener('keydown', unlock, { once: true })
-                    window.addEventListener('touchstart', unlock, { once: true })
-                })
-            }
+        stream.addEventListener('addtrack', handleTrackUpdate)
+        stream.addEventListener('removetrack', handleTrackUpdate)
+        const aTracks = stream.getAudioTracks()
+        aTracks.forEach(t => {
+            t.addEventListener('unmute', handleTrackUpdate)
+        })
+
+        // Periodic watchdog: checks every 2.5s to ensure long meetings (20+ mins) never have silent stalls
+        const watchdogTimer = setInterval(tryPlay, 2500)
+
+        // Gesture and focus unlocks to defeat browser autoplay blocks & background tab throttling
+        const unlock = () => {
+            tryPlay()
+        }
+        window.addEventListener('click', unlock)
+        window.addEventListener('keydown', unlock)
+        window.addEventListener('touchstart', unlock)
+        window.addEventListener('focus', unlock)
+        document.addEventListener('visibilitychange', unlock)
+
+        return () => {
+            clearInterval(watchdogTimer)
+            el.removeEventListener('pause', handleAudioHalt)
+            el.removeEventListener('stalled', handleAudioHalt)
+            el.removeEventListener('waiting', handleAudioHalt)
+            el.removeEventListener('suspend', handleAudioHalt)
+            stream.removeEventListener('addtrack', handleTrackUpdate)
+            stream.removeEventListener('removetrack', handleTrackUpdate)
+            aTracks.forEach(t => {
+                t.removeEventListener('unmute', handleTrackUpdate)
+            })
+            window.removeEventListener('click', unlock)
+            window.removeEventListener('keydown', unlock)
+            window.removeEventListener('touchstart', unlock)
+            window.removeEventListener('focus', unlock)
+            document.removeEventListener('visibilitychange', unlock)
         }
     }, [stream, isMuted])
 

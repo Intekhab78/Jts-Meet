@@ -1,7 +1,7 @@
 import { Server, Socket } from 'socket.io'
 import { SocketEvents } from '../../socket/events'
 import { AuthenticatedSocket } from '../../socket/auth'
-import { addPeerSession, removePeerSessionBySocket, removePeerSessionByUserId, getPeerSessionBySocketId, getMeetingParticipantSocketIds, getMeetingPeersInfo, getMeetingPeersInfoCluster, updatePeerSession } from './peer.manager'
+import { addPeerSession, removePeerSessionBySocket, removePeerSessionByUserId, getPeerSessionBySocketId, getPeerSessionByUserId, getMeetingParticipantSocketIds, getMeetingPeersInfo, getMeetingPeersInfoCluster, updatePeerSession } from './peer.manager'
 import { authorizeMeetingJoin } from './webrtc.service'
 import { joinMeeting } from '../meeting/meeting.service'
 import { User } from '../../models/user.model'
@@ -298,6 +298,14 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
 
         if (!targetMeetingId || !sUserId) {
             handleLeaveOrDisconnect()
+            return
+        }
+
+        // Check if the user is already connected with a newer active socket (e.g. mobile reconnect)
+        const activeSession = getPeerSessionByUserId(sUserId)
+        if (activeSession && activeSession.socketId !== socket.id) {
+            console.log(`[WebRTC Socket] Ignoring disconnect on stale socket ${socket.id}; user ${sUserId} is already active on socket ${activeSession.socketId}`)
+            removePeerSessionBySocket(socket.id)
             return
         }
 

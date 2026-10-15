@@ -41,9 +41,16 @@ export function getIceServers(): RTCIceServer[] {
     }
 
     return [
+        // 1. High-Reliability Google Public STUN (Primary P2P - zero limits, zero timeouts)
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        // 2. High-Reliability Cloudflare STUN
+        { urls: 'stun:stun.cloudflare.com:3478' },
         ...customTurnList,
-        // High-Reliability OpenRelay Global Community TURN servers (UDP, TCP, and Port 443 TLS)
-        // Pierces through Symmetric NAT (Jio 4G/5G, Airtel, Vi), corporate firewalls, and campus networks
+        // 3. High-Reliability OpenRelay Global Community TURN servers (Fallback for Symmetric NAT & strict firewalls)
         {
             urls: [
                 'turn:openrelay.metered.ca:80',
@@ -53,15 +60,7 @@ export function getIceServers(): RTCIceServer[] {
             ],
             username: 'openrelayproject',
             credential: 'openrelayproject'
-        },
-        // High-Reliability Google Public STUN
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
-        // High-Reliability Cloudflare STUN
-        { urls: 'stun:stun.cloudflare.com:3478' }
+        }
     ]
 }
 
@@ -120,7 +119,9 @@ export function optimizePeerConnectionForHd(pc: RTCPeerConnection, peerCount: nu
 export function createPeerConnection(userId: string, localStream: MediaStream | null, handlers: PeerHandlers, peerCount: number = 2) {
     const pc = new RTCPeerConnection({
         iceServers: getIceServers(),
-        iceCandidatePoolSize: 10
+        iceCandidatePoolSize: 10,
+        bundlePolicy: 'max-bundle', // CRITICAL: Bundles audio + video onto a single UDP port to prevent router NAT audio port drops
+        rtcpMuxPolicy: 'require'    // Multiplexes RTP and RTCP on the same port
     })
 
     // Debug logging & handler hooks for WebRTC connection states
@@ -176,6 +177,10 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
         event.track.onunmute = () => {
             console.log(`[WebRTC] track unmuted: kind=${event.track.kind} from user ${userId}`)
             notify()
+        }
+
+        event.track.onmute = () => {
+            console.log(`[WebRTC] track muted (buffer/jitter): kind=${event.track.kind} from user ${userId}`)
         }
 
         event.track.onended = () => {

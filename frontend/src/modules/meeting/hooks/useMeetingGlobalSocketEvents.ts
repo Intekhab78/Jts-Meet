@@ -46,6 +46,12 @@ export const useMeetingGlobalSocketEvents = ({
                     localStream.getAudioTracks().forEach(t => { t.enabled = false })
                     setIsMuted(true)
                     addToast('The host has muted all participants', 'warning')
+                    if (socket && meetingId) {
+                        socket.emit('meeting:mic-toggle', {
+                            meetingId,
+                            isMuted: true
+                        })
+                    }
                 }
             }
         }

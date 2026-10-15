@@ -30,7 +30,7 @@ const meetingBackstageMap = new Map<string, Set<string>>()
 // Track authorized remote control participants per meeting room
 const activeRemoteControllers = new Map<string, string>()
 
-async function verifyIsHostOrCoHost(meetingId: string, checkUserId: string): Promise<boolean> {
+export async function verifyIsHostOrCoHost(meetingId: string, checkUserId: string): Promise<boolean> {
     try {
         const meeting = await getMeetingByMeetingId(meetingId)
         if (!meeting) return false
@@ -349,8 +349,18 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         const targetSocketId = payload?.socketId || payload?.guestSocketId
         if (!userId || !targetSocketId) return
         
-        // Handle locally first (supports single-node in-memory dev fallback)
         const guestSocket = io.sockets.sockets.get(targetSocketId) as AuthenticatedSocket
+        const targetMeetingId = payload?.meetingId || guestSocket?.meetingId
+        if (targetMeetingId) {
+            const baseMeetId = targetMeetingId.includes('__sub_') ? targetMeetingId.split('__sub_')[0] : targetMeetingId
+            const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+            if (!authorized) {
+                socket.emit('error', { message: 'Forbidden: Only host or co-host can approve guests' })
+                return
+            }
+        }
+
+        // Handle locally first (supports single-node in-memory dev fallback)
         if (guestSocket) {
             guestSocket.isPending = false
             guestSocket.leave(`lobby:${guestSocket.meetingId}`)
@@ -390,12 +400,22 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         io.serverSideEmit("internal:guest:approve-cluster", targetSocketId)
     })
 
-    socket.on('guest:deny', (payload: { socketId?: string; guestSocketId?: string; meetingId?: string }) => {
+    socket.on('guest:deny', async (payload: { socketId?: string; guestSocketId?: string; meetingId?: string }) => {
         const targetSocketId = payload?.socketId || payload?.guestSocketId
         if (!userId || !targetSocketId) return
+
+        const guestSocket = io.sockets.sockets.get(targetSocketId) as AuthenticatedSocket
+        const targetMeetingId = payload?.meetingId || guestSocket?.meetingId
+        if (targetMeetingId) {
+            const baseMeetId = targetMeetingId.includes('__sub_') ? targetMeetingId.split('__sub_')[0] : targetMeetingId
+            const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+            if (!authorized) {
+                socket.emit('error', { message: 'Forbidden: Only host or co-host can deny guests' })
+                return
+            }
+        }
         
         // Handle locally first
-        const guestSocket = io.sockets.sockets.get(targetSocketId) as AuthenticatedSocket
         if (guestSocket) {
             guestSocket.emit('guest:denied')
             io.to(`user:${guestSocket.userId}`).emit('guest:denied')
@@ -430,6 +450,12 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
     socket.on('guest:approve-all', async (payload: { meetingId: string }) => {
         if (!userId || !payload?.meetingId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can approve guests' })
+            return
+        }
         
         const lobbyRoom = io.sockets.adapter.rooms.get(`lobby:${payload.meetingId}`)
         if (lobbyRoom) {
@@ -515,13 +541,19 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         }
     })
 
-    socket.on('meeting:camera-toggle', (payload: { meetingId: string; isVideoOff: boolean }) => {
+    const handleCameraToggle = (payload: { meetingId: string; isVideoOff: boolean }) => {
         if (!userId || !payload?.meetingId) return
         socket.to(`meeting:${payload.meetingId}`).emit('meeting:camera-toggle', {
             userId,
             isVideoOff: payload.isVideoOff
         })
-    })
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:video-toggle', {
+            userId,
+            isVideoOff: payload.isVideoOff
+        })
+    }
+    socket.on('meeting:camera-toggle', handleCameraToggle)
+    socket.on('meeting:video-toggle', handleCameraToggle)
 
     socket.on('meeting:mic-toggle', (payload: { meetingId: string; isMuted: boolean }) => {
         if (!userId || !payload?.meetingId) return
@@ -533,6 +565,12 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
     socket.on(SocketEvents.MEETING_LOCK_TOGGLE, async (payload: { meetingId: string; isLocked: boolean }) => {
         if (!userId || !payload?.meetingId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can lock the meeting' })
+            return
+        }
         try {
             await Meeting.findOneAndUpdate({ meetingId: payload.meetingId }, { isLocked: payload.isLocked })
             io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_LOCK_TOGGLE, {
@@ -544,12 +582,23 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         }
     })
 
-    socket.on(SocketEvents.MEETING_MUTE_ALL, (payload: { meetingId: string }) => {
+    const handleMuteAll = async (payload: { meetingId: string }) => {
         if (!userId || !payload?.meetingId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can mute all participants' })
+            return
+        }
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_MUTE_ALL, {
             meetingId: payload.meetingId
         })
-    })
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:mute-all', {
+            meetingId: payload.meetingId
+        })
+    }
+    socket.on(SocketEvents.MEETING_MUTE_ALL, handleMuteAll)
+    socket.on('meeting:mute-all', handleMuteAll)
 
     socket.on(SocketEvents.MEETING_CAPTION, (payload: { meetingId: string; text: string; isFinal: boolean; speakerName?: string }) => {
         if (!userId || !payload?.meetingId || !payload?.text) return
@@ -574,6 +623,12 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
     const handleEndMeeting = async (payload: { meetingId: string }) => {
         if (!userId || !payload?.meetingId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can end the meeting for all' })
+            return
+        }
         try {
             const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
             const meeting = await Meeting.findOne({ meetingId: baseMeetId })

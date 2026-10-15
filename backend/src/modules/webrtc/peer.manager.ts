@@ -29,6 +29,30 @@ function getRedisClient() {
 
 export function addPeerSession(userId: string, meetingId: string, socketId: string, displayName?: string, isVideoOff?: boolean, isMuted?: boolean) {
     const existing = peersByUserId.get(userId)
+    const redis = getRedisClient()
+
+    // If user reconnected with a new socket ID, clean up old socket mapping to prevent ghost disconnect races
+    if (existing && existing.socketId && existing.socketId !== socketId) {
+        peersBySocketId.delete(existing.socketId)
+        if (redis) {
+            redis.del(`webrtc:socket:${existing.socketId}`).catch(() => {})
+        }
+    }
+
+    // If user changed meeting rooms (e.g., entered or left a breakout sub-room), clean up old room membership
+    if (existing && existing.meetingId && existing.meetingId !== meetingId) {
+        const oldSet = meetingPeers.get(existing.meetingId)
+        if (oldSet) {
+            oldSet.delete(userId)
+            if (oldSet.size === 0) {
+                meetingPeers.delete(existing.meetingId)
+            }
+        }
+        if (redis) {
+            redis.sRem(`webrtc:meeting:${existing.meetingId}`, userId).catch(() => {})
+        }
+    }
+
     const session: PeerSession = { 
         userId, 
         meetingId, 
@@ -46,7 +70,6 @@ export function addPeerSession(userId: string, meetingId: string, socketId: stri
     meetingPeers.set(meetingId, existingSet)
 
     // Sync to Redis for multi-instance cluster
-    const redis = getRedisClient()
     if (redis) {
         redis.set(`webrtc:session:${userId}`, JSON.stringify(session), { EX: SESSION_TTL_SECONDS }).catch(() => {})
         redis.set(`webrtc:socket:${socketId}`, userId, { EX: SESSION_TTL_SECONDS }).catch(() => {})
@@ -148,21 +171,30 @@ export function removePeerSessionBySocket(socketId: string): PeerSession | null 
     }
 
     peersBySocketId.delete(socketId)
-    peersByUserId.delete(session.userId)
 
-    const meetingSet = meetingPeers.get(session.meetingId)
-    if (meetingSet) {
-        meetingSet.delete(session.userId)
-        if (meetingSet.size === 0) {
-            meetingPeers.delete(session.meetingId)
+    // IMPORTANT: Only delete user-level active session if this socket is still their active socket.
+    // If the user already reconnected on a new socket, deleting their session here would disconnect their active call!
+    const activeSession = peersByUserId.get(session.userId)
+    const isCurrentActiveSocket = activeSession && activeSession.socketId === socketId
+
+    if (isCurrentActiveSocket) {
+        peersByUserId.delete(session.userId)
+        const meetingSet = meetingPeers.get(session.meetingId)
+        if (meetingSet) {
+            meetingSet.delete(session.userId)
+            if (meetingSet.size === 0) {
+                meetingPeers.delete(session.meetingId)
+            }
         }
     }
 
     const redis = getRedisClient()
     if (redis) {
-        redis.del(`webrtc:session:${session.userId}`).catch(() => {})
         redis.del(`webrtc:socket:${socketId}`).catch(() => {})
-        redis.sRem(`webrtc:meeting:${session.meetingId}`, session.userId).catch(() => {})
+        if (isCurrentActiveSocket) {
+            redis.del(`webrtc:session:${session.userId}`).catch(() => {})
+            redis.sRem(`webrtc:meeting:${session.meetingId}`, session.userId).catch(() => {})
+        }
     }
 
     return session

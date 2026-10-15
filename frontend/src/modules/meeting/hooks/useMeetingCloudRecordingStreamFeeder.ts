@@ -60,6 +60,10 @@ export const useMeetingCloudRecordingStreamFeeder = ({
             const activeMeetingId = meetingId || meetingInput
             if (data.isCloudRecording) {
                 addToast(`Headless Cloud Recording started by ${data.initiatedBy || 'Host'} on server.`, 'success')
+                // CRITICAL: Only the host/organizer should feed the recording stream to avoid multi-peer file corruption
+                if (!canManageRef.current) {
+                    return
+                }
                 try {
                     const streamToRecord = localStream || activeLocalStream
                     if (streamToRecord && streamToRecord.getTracks().length > 0) {

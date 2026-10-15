@@ -20,8 +20,17 @@ export const PersistentAudioBridge: React.FC<PersistentAudioBridgeProps> = ({
 }) => {
     return (
         <div
-            style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, opacity: 0.001, pointerEvents: 'none' }}
-            aria-hidden="true"
+            style={{
+                position: 'fixed',
+                bottom: 0,
+                right: 0,
+                width: 2,
+                height: 2,
+                opacity: 0.01,
+                overflow: 'hidden',
+                pointerEvents: 'none',
+                zIndex: -1
+            }}
         >
             {Object.entries(remoteStreams).map(([peerId, rStream]) => {
                 if (!rStream || peerId === 'me' || peerId === localUserId) return null

@@ -19,6 +19,7 @@ interface UseMeetingLifecycleProps {
     mediaLoading: boolean
     connectToMeeting: (id: string, name: string) => void
     leaveMeeting: () => void
+    stopMedia?: () => void
     onLeave?: () => void
     isGuest: boolean
     timerStr: string
@@ -48,6 +49,7 @@ export const useMeetingLifecycle = ({
     mediaLoading,
     connectToMeeting,
     leaveMeeting,
+    stopMedia,
     onLeave,
     isGuest,
     timerStr,
@@ -136,6 +138,13 @@ export const useMeetingLifecycle = ({
             }
         } catch (e) { }
         leaveMeeting()
+        if (stopMedia) {
+            try {
+                stopMedia()
+            } catch (e) {
+                console.warn('Error stopping media on exit:', e)
+            }
+        }
         try {
             window.history.replaceState(null, '', '/#meeting')
         } catch (_) {}

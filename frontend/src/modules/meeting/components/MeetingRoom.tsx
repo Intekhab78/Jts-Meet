@@ -629,6 +629,7 @@ const [activePanel, setActivePanel] = useState<ActivePanel>(null)
         mediaLoading,
         connectToMeeting,
         leaveMeeting,
+        stopMedia,
         onLeave,
         isGuest,
         timerStr,

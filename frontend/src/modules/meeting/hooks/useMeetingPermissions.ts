@@ -83,6 +83,7 @@ export const useMeetingPermissions = ({
             setIsMuted(true)
             setIsVideoOff(true)
             socket?.emit('meeting:mic-toggle', { meetingId: meetingId || meetingInput.trim(), isMuted: true })
+            socket?.emit('meeting:camera-toggle', { meetingId: meetingId || meetingInput.trim(), isVideoOff: true })
             socket?.emit('meeting:video-toggle', { meetingId: meetingId || meetingInput.trim(), isVideoOff: true })
         }
     }, [isWebinarAttendee, localStream, socket, meetingId, meetingInput, setIsMuted, setIsVideoOff])

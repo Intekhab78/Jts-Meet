@@ -33,6 +33,8 @@ export const useTalkingWhileMutedDetector = ({
         let audioCtx: AudioContext | null = null
         let animFrameId: number | null = null
         let monitorTrack: MediaStreamTrack | null = null
+        let source: MediaStreamAudioSourceNode | null = null
+        let analyser: AnalyserNode | null = null
         let consecutiveSpeechCount = 0
         let cooldownUntil = 0
 
@@ -45,8 +47,8 @@ export const useTalkingWhileMutedDetector = ({
             const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext
             if (!AudioCtxClass) return
             audioCtx = new AudioCtxClass()
-            const source = audioCtx.createMediaStreamSource(monitorStream)
-            const analyser = audioCtx.createAnalyser()
+            source = audioCtx.createMediaStreamSource(monitorStream)
+            analyser = audioCtx.createAnalyser()
             analyser.fftSize = 256
             analyser.smoothingTimeConstant = 0.4
             source.connect(analyser)
@@ -54,7 +56,7 @@ export const useTalkingWhileMutedDetector = ({
             const buffer = new Uint8Array(analyser.frequencyBinCount)
 
             const checkSpeech = () => {
-                if (!audioCtx || audioCtx.state === 'closed') return
+                if (!audioCtx || audioCtx.state === 'closed' || !analyser) return
                 analyser.getByteFrequencyData(buffer)
 
                 // Human speech formant frequency range: bins 2 to 24 (approx 375Hz to 4500Hz)
@@ -90,7 +92,10 @@ export const useTalkingWhileMutedDetector = ({
 
         return () => {
             if (animFrameId) cancelAnimationFrame(animFrameId)
-            if (monitorTrack) monitorTrack.stop()
+            try {
+                if (source) source.disconnect()
+                if (analyser) analyser.disconnect()
+            } catch (e) {}
             if (audioCtx && audioCtx.state !== 'closed') {
                 audioCtx.close().catch(() => {})
             }

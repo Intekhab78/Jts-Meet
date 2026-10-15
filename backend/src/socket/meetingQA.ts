@@ -1,5 +1,6 @@
 import { Server, Socket } from 'socket.io'
 import { AuthenticatedSocket } from './auth'
+import { verifyIsHostOrCoHost } from './meeting'
 
 export interface QAQuestion {
     id: string
@@ -141,11 +142,21 @@ export function registerMeetingQAHandlers(io: Server, socket: Socket) {
         io.to(`meeting:${payload.meetingId}`).emit('qa:question_updated', q)
     })
 
-    // Delete a single question
-    socket.on('qa:delete', (payload: { meetingId: string; questionId: string }) => {
+    // Delete a single question (only author or host)
+    socket.on('qa:delete', async (payload: { meetingId: string; questionId: string }) => {
         if (!payload?.meetingId || !payload?.questionId) return
 
         let list = meetingQuestionsMap.get(payload.meetingId) || []
+        const targetQ = list.find(item => item.id === payload.questionId)
+        if (!targetQ) return
+
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const isHost = await verifyIsHostOrCoHost(baseMeetId, authSocket.userId || '')
+        if (targetQ.authorId !== effectiveUserId && !isHost) {
+            socket.emit('error', { message: 'Forbidden: You can only delete your own questions' })
+            return
+        }
+
         list = list.filter(item => item.id !== payload.questionId)
         meetingQuestionsMap.set(payload.meetingId, list)
 
@@ -153,8 +164,14 @@ export function registerMeetingQAHandlers(io: Server, socket: Socket) {
     })
 
     // Host clears all questions
-    socket.on('qa:clear_all', (payload: { meetingId: string }) => {
+    socket.on('qa:clear_all', async (payload: { meetingId: string }) => {
         if (!payload?.meetingId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const isHost = await verifyIsHostOrCoHost(baseMeetId, authSocket.userId || '')
+        if (!isHost) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can clear all questions' })
+            return
+        }
         meetingQuestionsMap.set(payload.meetingId, [])
         io.to(`meeting:${payload.meetingId}`).emit('qa:list', [])
     })
