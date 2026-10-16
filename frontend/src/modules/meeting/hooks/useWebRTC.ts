@@ -968,6 +968,10 @@ export function useWebRTC(
         }
 
         const handleScreenStart = (payload: { userId: string; meetingId: string; }) => {
+            const localId = getLocalUserId()
+            if (!payload?.userId || payload.userId === socket.id || (localId && payload.userId === localId) || payload.userId === 'me') {
+                return
+            }
             setScreenSharingUserIds(prev => prev.includes(payload.userId) ? prev : [...prev, payload.userId])
             setScreenSharingUserId(payload.userId)
             // Trigger fresh MediaStream reference so React components re-mount/play the screen video
@@ -988,7 +992,11 @@ export function useWebRTC(
         }
 
         const handleScreenStop = (payload: { userId: string; meetingId: string; }) => {
+            const localId = getLocalUserId()
             const targetId = String(payload?.userId || '')
+            if (!targetId || targetId === socket.id || (localId && targetId === localId) || targetId === 'me') {
+                return
+            }
             setScreenSharingUserIds(prev => {
                 const remaining = prev.filter(id => String(id).toLowerCase() !== targetId.toLowerCase())
                 setScreenSharingUserId(curr => (curr && String(curr).toLowerCase() === targetId.toLowerCase() ? (remaining.length > 0 ? remaining[remaining.length - 1] : null) : curr))
@@ -1003,8 +1011,11 @@ export function useWebRTC(
         }
 
         const handleScreenChanged = (payload: { userId: string; meetingId: string; active: boolean }) => {
+            const localId = getLocalUserId()
             const targetId = String(payload?.userId || '')
-            if (!targetId) return
+            if (!targetId || targetId === socket.id || (localId && targetId === localId) || targetId === 'me') {
+                return
+            }
             if (payload.active) {
                 setScreenSharingUserIds(prev => prev.some(id => String(id).toLowerCase() === targetId.toLowerCase()) ? prev : [...prev, targetId])
                 setScreenSharingUserId(targetId)

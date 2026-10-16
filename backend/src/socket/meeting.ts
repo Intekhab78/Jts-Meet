@@ -748,45 +748,63 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
     // Remote Desktop Control Events Relay
     socket.on('remote-control:request', (payload: { meetingId: string; requesterId: string; requesterName: string; targetUserId: string }) => {
-        if (!payload?.meetingId || !payload?.targetUserId) return
-        socket.to(`meeting:${payload.meetingId}`).emit('remote-control:request', {
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId || !payload?.targetUserId) return
+        socket.to(`meeting:${mId}`).emit('remote-control:request', {
             ...payload,
+            meetingId: mId,
             requesterName: payload.requesterName || authSocket.guestName || 'Participant'
         })
     })
 
     socket.on('remote-control:response', (payload: { meetingId: string; requesterId: string; granted: boolean; presenterId: string; presenterName?: string }) => {
-        if (!payload?.meetingId || !payload?.requesterId) return
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId || !payload?.requesterId) return
         if (payload.granted) {
-            activeRemoteControllers.set(payload.meetingId, payload.requesterId)
+            activeRemoteControllers.set(mId, payload.requesterId)
         } else {
-            activeRemoteControllers.delete(payload.meetingId)
+            activeRemoteControllers.delete(mId)
         }
-        socket.to(`meeting:${payload.meetingId}`).emit('remote-control:response', payload)
+        socket.to(`meeting:${mId}`).emit('remote-control:response', {
+            ...payload,
+            meetingId: mId
+        })
     })
 
     socket.on('remote-control:revoke', (payload: { meetingId: string; controllerId?: string; presenterId: string }) => {
-        if (!payload?.meetingId) return
-        activeRemoteControllers.delete(payload.meetingId)
-        socket.to(`meeting:${payload.meetingId}`).emit('remote-control:revoke', payload)
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId) return
+        activeRemoteControllers.delete(mId)
+        socket.to(`meeting:${mId}`).emit('remote-control:revoke', {
+            ...payload,
+            meetingId: mId
+        })
     })
 
     socket.on('remote-control:mouse', (payload: { meetingId: string; controllerId: string; type: string; x: number; y: number; button?: number; deltaY?: number }) => {
-        if (!payload?.meetingId) return
-        const authorizedController = activeRemoteControllers.get(payload.meetingId)
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId) return
+        const authorizedController = activeRemoteControllers.get(mId)
         if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
             return
         }
-        socket.to(`meeting:${payload.meetingId}`).emit('remote-control:mouse', payload)
+        socket.to(`meeting:${mId}`).emit('remote-control:mouse', {
+            ...payload,
+            meetingId: mId
+        })
     })
 
     socket.on('remote-control:key', (payload: { meetingId: string; controllerId: string; type: string; key: string; code: string; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }) => {
-        if (!payload?.meetingId) return
-        const authorizedController = activeRemoteControllers.get(payload.meetingId)
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId) return
+        const authorizedController = activeRemoteControllers.get(mId)
         if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
             return
         }
-        socket.to(`meeting:${payload.meetingId}`).emit('remote-control:key', payload)
+        socket.to(`meeting:${mId}`).emit('remote-control:key', {
+            ...payload,
+            meetingId: mId
+        })
     })
 
     // Presenter Backstage / Virtual Green Room (Enterprise Tier)

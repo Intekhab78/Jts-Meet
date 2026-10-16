@@ -630,7 +630,7 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                     })()}
 
                                     {/* Presenter Incoming Remote Control Request Dialog */}
-                                    {incomingControlRequest && screenSharingUserId === 'me' && (
+                                    {incomingControlRequest && (screenSharingUserId === 'me' || (screenSharingUserIds && screenSharingUserIds.includes('me'))) && (
                                         <div style={{
                                             position: 'absolute',
                                             top: 20,
@@ -700,7 +700,7 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                             isActive={activePresenterId === 'me' ? isAnnotationActive : true}
                                             isPresenter={activePresenterId === 'me'}
                                             socket={socket}
-                                            meetingId={meetingInfo?.customId || meetingInfo?.id || meetingId || initialMeetingId}
+                                            meetingId={meetingId || initialMeetingId || meetingInfo?.customId || meetingInfo?.id || ''}
                                             onClose={() => {
                                                 setIsAnnotationActive(false)
                                                 setIsAttendeeAnnotationActive(false)
@@ -713,10 +713,10 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                     {/* Screen Share Remote Desktop Control Overlay */}
                                     {isScreenShareActive && (
                                         <RemoteControlOverlay
-                                            meetingId={meetingInfo?.customId || meetingInfo?.id || meetingId || initialMeetingId}
+                                            meetingId={meetingId || initialMeetingId || meetingInfo?.customId || meetingInfo?.id || ''}
                                             socket={socket}
-                                            isPresenter={screenSharingUserId === 'me'}
-                                            isController={activeControllerId !== null && (activeControllerId === (parseJwt(token)?.userId || 'me') || (screenSharingUserId !== 'me' && activeControllerId === myDisplayName))}
+                                            isPresenter={screenSharingUserId === 'me' || (screenSharingUserIds && screenSharingUserIds.includes('me'))}
+                                            isController={activeControllerId !== null && (activeControllerId === (parseJwt(token)?.userId || 'me') || (!(screenSharingUserId === 'me' || (screenSharingUserIds && screenSharingUserIds.includes('me'))) && activeControllerId === myDisplayName))}
                                             activeControllerId={activeControllerId}
                                             activeControllerName={activeControllerName}
                                             onRevokeControl={handleRevokeRemoteControl}

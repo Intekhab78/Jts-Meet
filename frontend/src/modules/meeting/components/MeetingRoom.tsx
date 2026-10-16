@@ -173,9 +173,11 @@ const {
     } = useMeetingRemoteControl({
         socket,
         meetingId,
-                meetingInfo,
+        meetingInput,
+        meetingInfo,
         initialMeetingId,
         screenSharingUserId,
+        screenSharingUserIds,
         token,
         myDisplayName,
         addToast
