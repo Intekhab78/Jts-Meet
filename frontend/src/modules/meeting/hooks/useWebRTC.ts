@@ -323,6 +323,38 @@ export function useWebRTC(
         }
     }, [meetingId, socket, evaluateMeshHealth])
 
+    // Non-destructive SDP renegotiation that preserves established ICE bindings
+    const triggerRenegotiation = useCallback(async (targetUserId: string) => {
+        const pc = peerConnectionsRef.current[targetUserId]
+        const activeMeetingId = meetingId || sessionStorage.getItem('jts_active_meeting_id') || ''
+        if (!pc || !socket || !activeMeetingId) return
+        if (pc.signalingState !== 'stable' || makingOfferRef.current[targetUserId]) {
+            console.log(`[WebRTC] Peer ${targetUserId} in state ${pc.signalingState}, deferring renegotiation offer`)
+            return
+        }
+        try {
+            console.log(`[WebRTC] Initiating renegotiation for user ${targetUserId}`)
+            makingOfferRef.current[targetUserId] = true
+            const offer = await pc.createOffer({ voiceActivityDetection: true } as any)
+            const activePeers = Object.keys(peerConnectionsRef.current).length + 1
+            const hdSdp = enhanceSdpForHdVideo(offer.sdp, activePeers)
+            const hdOffer = { type: offer.type, sdp: hdSdp }
+            await pc.setLocalDescription(hdOffer)
+            const isSharing = !!screenTrackRef.current
+            optimizePeerConnectionForHd(pc, activePeers, isSharing)
+            socket.emit(SocketEvents.WEBRTC_OFFER, {
+                targetUserId,
+                meetingId: activeMeetingId,
+                offer: hdOffer,
+                displayName: localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || undefined
+            })
+        } catch (err) {
+            console.warn('[WebRTC] Renegotiation offer failed for user', targetUserId, err)
+        } finally {
+            makingOfferRef.current[targetUserId] = false
+        }
+    }, [meetingId, socket])
+
     const handlePeerIceStateChange = useCallback((userId: string, state: RTCIceConnectionState) => {
         if (state === 'disconnected' || state === 'failed') {
             if (!iceRestartTimersRef.current[userId]) {
@@ -385,7 +417,8 @@ export function useWebRTC(
                 const tc = pc.getTransceivers().find(t => 
                     (t.receiver?.track?.kind === kind) ||
                     (t.sender?.track && t.sender.track.kind === kind) ||
-                    (!t.sender?.track && kind === 'video')
+                    (!t.sender?.track && kind === 'video') ||
+                    (!t.sender?.track && kind === 'audio')
                 )
 
                 if (tc) {
@@ -398,9 +431,10 @@ export function useWebRTC(
                             if (kind === 'video') {
                                 optimizePeerConnectionForHd(pc, peerCount, isScreen)
                             }
-                            // Restart ICE and renegotiate if transceiver direction flipped, screen sharing started, or video track was restored
-                            if (directionChanged || isScreen || (kind === 'video' && newTrack !== null)) {
-                                triggerIceRestart(targetUserId)
+                            // In WebRTC, replaceTrack swaps the RTP source in-place without renegotiation or ICE tear down.
+                            // Only trigger renegotiation if transceiver direction flipped from recvonly/inactive!
+                            if (directionChanged) {
+                                triggerRenegotiation(targetUserId)
                             }
                         }).catch(err => {
                             console.warn('Failed to replace track on transceiver:', err)
@@ -409,14 +443,11 @@ export function useWebRTC(
                     }
                 }
 
-                const sender = pc.getSenders().find((s) => (s.track && s.track.kind === kind) || (!s.track && kind === 'video'))
+                const sender = pc.getSenders().find((s) => (s.track && s.track.kind === kind) || (!s.track && kind === 'video') || (!s.track && kind === 'audio'))
                 if (sender) {
                     sender.replaceTrack(newTrack).then(() => {
                         if (kind === 'video') {
                             optimizePeerConnectionForHd(pc, peerCount, isScreen)
-                        }
-                        if (isScreen || (kind === 'video' && newTrack !== null)) {
-                            triggerIceRestart(targetUserId)
                         }
                     }).catch(err => {
                         console.warn('Failed to replace track on peer:', err)
@@ -424,15 +455,14 @@ export function useWebRTC(
                 } else if (newTrack && localStreamRef.current) {
                     try {
                         pc.addTrack(newTrack, localStreamRef.current)
-                        // Trigger renegotiation so the remote peer receives the newly added track
-                        triggerIceRestart(targetUserId)
+                        triggerRenegotiation(targetUserId)
                     } catch (err) {
                         console.warn('Failed to add track to peer:', err)
                     }
                 }
             })
         },
-        [triggerIceRestart]
+        [triggerRenegotiation]
     )
 
     const stopScreenShare = useCallback(async () => {
@@ -515,11 +545,6 @@ export function useWebRTC(
                 })
             }
 
-            // Trigger ICE restart with each peer so their WebRTC media engines immediately pick up the screen track!
-            Object.keys(peerConnectionsRef.current).forEach((targetUserId) => {
-                triggerIceRestart(targetUserId)
-            })
-
             screenTrack.onended = () => {
                 stopScreenShare()
             }
@@ -543,7 +568,7 @@ export function useWebRTC(
                 setScreenError(null)
             }, 4000)
         }
-    }, [cameraStream, meetingId, replaceLocalStream, replaceTrackOnPeers, socket, stopScreenShare, triggerIceRestart])
+    }, [cameraStream, meetingId, replaceLocalStream, replaceTrackOnPeers, socket, stopScreenShare])
 
     const clearScreenError = useCallback(() => {
         setScreenError(null)
@@ -628,7 +653,7 @@ export function useWebRTC(
             // Wait briefly if localStream is still initializing
             if (!localStreamRef.current) {
                 let attempts = 0
-                while (!localStreamRef.current && attempts < 12) {
+                while (!localStreamRef.current && attempts < 15) {
                     await new Promise(r => setTimeout(r, 100))
                     attempts++
                 }
@@ -636,14 +661,12 @@ export function useWebRTC(
 
             addParticipant(payload.userId)
 
+            // When a peer joins or re-joins (e.g. after page refresh), clean up any stale peer connection
+            // regardless of whether iceConnectionState has timed out yet.
             const existingPc = peerConnectionsRef.current[payload.userId]
-            if (existingPc && (existingPc.connectionState === 'connected' || existingPc.iceConnectionState === 'connected')) {
-                console.log(`[WebRTC] Peer connection already active for user ${payload.userId}, skipping redundant offer`)
-                return
-            }
-
             if (existingPc) {
                 try { existingPc.close() } catch (e) {}
+                delete peerConnectionsRef.current[payload.userId]
             }
 
             const currentPeerCount = Object.keys(peerConnectionsRef.current).length + 2
@@ -695,7 +718,6 @@ export function useWebRTC(
                     const aTrack = localStreamRef.current?.getAudioTracks()[0]
                     const isLocalVideoOff = vTrack ? (!!(vTrack as any).isDummy || !vTrack.enabled || vTrack.readyState === 'ended') : true
                     // Only intentional user mute (!aTrack.enabled) or ended track should be marked as muted.
-                    // Never treat temporary WebRTC buffer/audio device jitter (aTrack.muted) as user mute!
                     const isLocalAudioMuted = aTrack ? (!aTrack.enabled || aTrack.readyState === 'ended') : false
 
                     socket.emit(SocketEvents.WEBRTC_OFFER, {
@@ -723,7 +745,7 @@ export function useWebRTC(
             // Wait briefly if localStream is still initializing so the answer includes live video and audio
             if (!localStreamRef.current) {
                 let attempts = 0
-                while (!localStreamRef.current && attempts < 12) {
+                while (!localStreamRef.current && attempts < 15) {
                     await new Promise(r => setTimeout(r, 100))
                     attempts++
                 }
@@ -844,10 +866,6 @@ export function useWebRTC(
                 console.warn('handleAnswer: PeerConnection not found for user', payload.fromUserId)
                 return
             }
-            if (ignoreOfferRef.current[payload.fromUserId]) {
-                console.log(`[WebRTC] Ignoring colliding answer from ${payload.fromUserId}`)
-                return
-            }
             try {
                 if (pc.signalingState === 'have-local-offer') {
                     await pc.setRemoteDescription(new RTCSessionDescription(payload.answer))
@@ -899,11 +917,11 @@ export function useWebRTC(
                 return prev
             })
 
-            // If we don't have a video track for this user yet, request ICE restart to renegotiate the video track!
+            // If we don't have a video track for this user yet, request clean renegotiation
             const currentStream = peerRemoteStreams.get(payload.userId)
             if (!currentStream || currentStream.getVideoTracks().length === 0) {
-                console.log(`[WebRTC] Remote user ${payload.userId} started screen share, ensuring ICE restart synchronization...`)
-                triggerIceRestart(payload.userId)
+                console.log(`[WebRTC] Remote user ${payload.userId} started screen share, ensuring video track negotiation...`)
+                triggerRenegotiation(payload.userId)
             }
         }
 
@@ -953,6 +971,15 @@ export function useWebRTC(
                             setScreenSharingUserIds(prev => prev.includes(peer.userId) ? prev : [...prev, peer.userId])
                             setScreenSharingUserId(peer.userId)
                         }
+
+                        // Reconnect / refresh failsafe: If remote peer has not connected with us within 1800ms,
+                        // initiate an offer from this side to guarantee connection
+                        setTimeout(() => {
+                            if (!peerConnectionsRef.current[peer.userId] && socket.connected) {
+                                console.log(`[WebRTC] Initiating offer for existing roster peer ${peer.userId}...`)
+                                handleUserJoined({ userId: peer.userId, meetingId: payload.meetingId })
+                            }
+                        }, 1800)
                     }
                 })
             }
@@ -963,8 +990,8 @@ export function useWebRTC(
         }
 
         const handleUserReconnected = (payload: { userId: string; meetingId: string }) => {
-            console.log(`[WebRTC] Remote peer ${payload.userId} reconnected! Triggering fast ICE restart to sync media...`)
-            triggerIceRestart(payload.userId)
+            console.log(`[WebRTC] Remote peer ${payload.userId} reconnected! Re-establishing fresh peer connection...`)
+            handleUserJoined({ userId: payload.userId, meetingId: payload.meetingId })
         }
 
         socket.on(SocketEvents.WEBRTC_JOIN, handleRosterSync)
@@ -992,7 +1019,7 @@ export function useWebRTC(
             socket.off(SocketEvents.SCREEN_STOP, handleScreenStop)
             socket.off(SocketEvents.SCREEN_CHANGED, handleScreenChanged)
         }
-    }, [socket, addParticipant, removeParticipant, cleanupPeer, triggerIceRestart, rebalanceMeshBitrate, handlePeerIceStateChange])
+    }, [socket, addParticipant, removeParticipant, cleanupPeer, triggerIceRestart, triggerRenegotiation, rebalanceMeshBitrate, handlePeerIceStateChange])
 
     // 20-Minute Audio & WebRTC Mesh Health Watchdog:
     // Periodically checks inbound audio RTP flow and connection state across all connected peers.

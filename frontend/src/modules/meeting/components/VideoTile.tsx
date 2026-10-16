@@ -32,7 +32,16 @@ export const PersistentAudioTile = React.memo(function PersistentAudioTile({
             if (!el) return
             // If the element has paused or stalled, resume playback immediately
             if (el.paused && !el.muted) {
-                el.play().catch(() => {})
+                const playPromise = el.play()
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        window.dispatchEvent(new CustomEvent('jts:audio-autoplay-allowed'))
+                    }).catch((err: any) => {
+                        if (err?.name === 'NotAllowedError') {
+                            window.dispatchEvent(new CustomEvent('jts:audio-autoplay-blocked', { detail: { peerId } }))
+                        }
+                    })
+                }
             }
         }
 
@@ -61,16 +70,21 @@ export const PersistentAudioTile = React.memo(function PersistentAudioTile({
             t.addEventListener('unmute', handleTrackUpdate)
         })
 
-        // Periodic watchdog: checks every 2.5s to ensure long meetings (20+ mins) never have silent stalls
-        const watchdogTimer = setInterval(tryPlay, 2500)
+        // Periodic watchdog: checks every 2s to ensure long meetings never have silent stalls
+        const watchdogTimer = setInterval(tryPlay, 2000)
 
-        // Gesture and focus unlocks to defeat browser autoplay blocks & background tab throttling
+        // Capture-phase gesture unlocks to reliably defeat browser autoplay policy across any interactive element
         const unlock = () => {
-            tryPlay()
+            if (el && el.paused && !el.muted) {
+                el.play().then(() => {
+                    window.dispatchEvent(new CustomEvent('jts:audio-autoplay-allowed'))
+                }).catch(() => {})
+            }
         }
-        window.addEventListener('click', unlock)
-        window.addEventListener('keydown', unlock)
-        window.addEventListener('touchstart', unlock)
+        window.addEventListener('click', unlock, { capture: true })
+        window.addEventListener('pointerdown', unlock, { capture: true })
+        window.addEventListener('keydown', unlock, { capture: true })
+        window.addEventListener('touchstart', unlock, { capture: true })
         window.addEventListener('focus', unlock)
         document.addEventListener('visibilitychange', unlock)
 
@@ -85,13 +99,14 @@ export const PersistentAudioTile = React.memo(function PersistentAudioTile({
             aTracks.forEach(t => {
                 t.removeEventListener('unmute', handleTrackUpdate)
             })
-            window.removeEventListener('click', unlock)
-            window.removeEventListener('keydown', unlock)
-            window.removeEventListener('touchstart', unlock)
+            window.removeEventListener('click', unlock, { capture: true } as any)
+            window.removeEventListener('pointerdown', unlock, { capture: true } as any)
+            window.removeEventListener('keydown', unlock, { capture: true } as any)
+            window.removeEventListener('touchstart', unlock, { capture: true } as any)
             window.removeEventListener('focus', unlock)
             document.removeEventListener('visibilitychange', unlock)
         }
-    }, [stream, isMuted])
+    }, [stream, isMuted, peerId])
 
     return (
         <audio
@@ -187,7 +202,15 @@ export const VideoTile = React.memo(function VideoTile({
                 t.addEventListener('unmute', handleTrackChange)
             })
 
+            // Watchdog for screen share decoding: ensures decoder starts immediately even on low-fps static screen shares
+            const checkDecoding = setInterval(() => {
+                if (el && !el.paused && isScreenShare && el.videoWidth === 0 && stream.getVideoTracks().length > 0) {
+                    el.play().catch(() => {})
+                }
+            }, 1000)
+
             return () => {
+                clearInterval(checkDecoding)
                 stream.removeEventListener('addtrack', handleTrackChange)
                 stream.removeEventListener('removetrack', handleTrackChange)
                 vTracks.forEach(t => {

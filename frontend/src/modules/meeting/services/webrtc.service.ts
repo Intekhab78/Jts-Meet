@@ -157,11 +157,22 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
             e2eeService.setupReceiverTransform(event.receiver)
         }
         
-        let pStream = (event.streams && event.streams[0]) ? event.streams[0] : peerRemoteStreams.get(userId)
+        let pStream = peerRemoteStreams.get(userId)
         if (!pStream) {
             pStream = new MediaStream()
+            peerRemoteStreams.set(userId, pStream)
         }
-        peerRemoteStreams.set(userId, pStream)
+
+        // Remove old/stale tracks of the same kind with a different ID (e.g. camera replaced by screen share)
+        // so getVideoTracks()[0] is always the active live track rendered by <video>
+        pStream.getTracks().forEach((oldTrack) => {
+            if (oldTrack.kind === event.track.kind && oldTrack.id !== event.track.id) {
+                console.log(`[WebRTC] Removing superseded ${oldTrack.kind} track ${oldTrack.id} in favor of ${event.track.id}`)
+                try {
+                    pStream!.removeTrack(oldTrack)
+                } catch (e) {}
+            }
+        })
 
         if (!pStream.getTracks().some(t => t.id === event.track.id)) {
             pStream.addTrack(event.track)
@@ -185,6 +196,9 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
 
         event.track.onended = () => {
             console.log(`[WebRTC] track ended: kind=${event.track.kind} from user ${userId}`)
+            try {
+                pStream?.removeTrack(event.track)
+            } catch (e) {}
             notify()
         }
     }
