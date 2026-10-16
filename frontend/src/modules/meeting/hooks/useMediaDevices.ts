@@ -240,7 +240,9 @@ export function useMediaDevices(): UseMediaDevicesResult {
                 const newStream = new MediaStream(localStreamRef.current.getTracks())
                 setLocalStream(newStream)
                 if (onTrackSwapped) onTrackSwapped(rawTrack)
-                window.dispatchEvent(new CustomEvent('jts:device-swapped', { detail: { stream: newStream } }))
+                window.dispatchEvent(new CustomEvent('jts:device-swapped', { 
+                    detail: { kind: 'audio', track: rawTrack, stream: newStream } 
+                }))
             }
         } catch (err) {
             console.error('[MediaDevices] Failed to switch audio device:', err)
@@ -250,10 +252,19 @@ export function useMediaDevices(): UseMediaDevicesResult {
     const switchVideoDevice = useCallback(async (deviceId: string, onTrackSwapped?: (track: MediaStreamTrack) => void) => {
         if (!deviceId) return
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { deviceId: { exact: deviceId }, width: { ideal: 1920, min: 1280 }, height: { ideal: 1080, min: 720 } },
-                audio: false
-            })
+            let stream: MediaStream
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false
+                })
+            } catch (err) {
+                console.warn('[MediaDevices] Ideal constraints failed, falling back to basic deviceId constraints:', err)
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: deviceId } },
+                    audio: false
+                })
+            }
             const newTrack = stream.getVideoTracks()[0]
             if (newTrack && localStreamRef.current) {
                 const oldTrack = localStreamRef.current.getVideoTracks()[0]
@@ -262,10 +273,13 @@ export function useMediaDevices(): UseMediaDevicesResult {
                     try { oldTrack.stop() } catch {}
                 }
                 localStreamRef.current.addTrack(newTrack)
-                setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
-                setCameraStream(new MediaStream(localStreamRef.current.getTracks()))
+                const updatedStream = new MediaStream(localStreamRef.current.getTracks())
+                setLocalStream(updatedStream)
+                setCameraStream(updatedStream)
                 if (onTrackSwapped) onTrackSwapped(newTrack)
-                window.dispatchEvent(new CustomEvent('jts:device-swapped', { detail: { stream: localStreamRef.current } }))
+                window.dispatchEvent(new CustomEvent('jts:device-swapped', { 
+                    detail: { kind: 'video', track: newTrack, stream: updatedStream } 
+                }))
             }
         } catch (err) {
             console.error('[MediaDevices] Failed to switch video device:', err)
@@ -314,8 +328,8 @@ export function useMediaDevices(): UseMediaDevicesResult {
                                 googAudioMirroring: false
                             } as any) : false,
                             video: (videoTracks.length > 0 && !videoEnded) ? {
-                                width: { ideal: 1920, min: 1280 },
-                                height: { ideal: 1080, min: 720 },
+                                width: { ideal: 1280 },
+                                height: { ideal: 720 },
                                 aspectRatio: 1.7777777778
                             } : false
                         })

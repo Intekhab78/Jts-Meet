@@ -124,6 +124,11 @@ export function useWebRTC(
     const reconnectFailsafeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const makingOfferRef = useRef<Record<string, boolean>>({})
     const ignoreOfferRef = useRef<Record<string, boolean>>({})
+    const screenAudioMixerRef = useRef<{
+        audioCtx: AudioContext
+        mixedTrack: MediaStreamTrack
+        originalMicTrack: MediaStreamTrack | null
+    } | null>(null)
 
     const clearReconnectFailsafe = useCallback(() => {
         if (reconnectFailsafeTimerRef.current) {
@@ -229,6 +234,13 @@ export function useWebRTC(
         setScreenSharingUserId(null)
         setScreenSharingUserIds([])
         sessionStorage.removeItem('jts_active_meeting_id')
+        if (screenAudioMixerRef.current) {
+            try {
+                screenAudioMixerRef.current.mixedTrack.stop()
+                screenAudioMixerRef.current.audioCtx.close().catch(() => {})
+            } catch {}
+            screenAudioMixerRef.current = null
+        }
         if (window.location.hash.startsWith('#meeting')) {
             window.history.replaceState(null, '', '/#meeting')
         }
@@ -473,6 +485,19 @@ export function useWebRTC(
             screenTrackRef.current = null
         }
 
+        // Clean up screen audio mixer and restore original microphone track to peers
+        if (screenAudioMixerRef.current) {
+            const { audioCtx, mixedTrack, originalMicTrack } = screenAudioMixerRef.current
+            screenAudioMixerRef.current = null
+            try {
+                mixedTrack.stop()
+                audioCtx.close().catch(() => {})
+            } catch {}
+            if (originalMicTrack && originalMicTrack.readyState === 'live') {
+                replaceTrackOnPeers(originalMicTrack, 'audio')
+            }
+        }
+
         try {
             // Find active live camera track from cameraStream or localStream
             let cameraTrack = cameraStream?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy) || null
@@ -527,9 +552,46 @@ export function useWebRTC(
             screenTrackRef.current = screenTrack
 
             // Preserve active microphone audio tracks so the user is never muted or disconnected
-            const micAudioTracks = (cameraStream || localStreamRef.current)?.getAudioTracks() || []
-            const screenAudioTracks = screenStream.getAudioTracks() || []
-            const audioTracks = [...micAudioTracks, ...screenAudioTracks]
+            const micAudioTracks = (cameraStream || localStreamRef.current)?.getAudioTracks().filter(t => t.readyState === 'live') || []
+            const screenAudioTracks = screenStream.getAudioTracks().filter(t => t.readyState === 'live') || []
+
+            let activeAudioTrack: MediaStreamTrack | null = micAudioTracks[0] || null
+
+            // If the user checked "Share tab/system audio", mix microphone audio and screen audio together
+            if (screenAudioTracks.length > 0) {
+                try {
+                    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+                    if (AudioContextClass) {
+                        const audioCtx = new AudioContextClass()
+                        const destination = audioCtx.createMediaStreamDestination()
+
+                        // Connect screen tab/system audio
+                        const screenSource = audioCtx.createMediaStreamSource(new MediaStream([screenAudioTracks[0]]))
+                        screenSource.connect(destination)
+
+                        // Connect microphone audio if active
+                        if (micAudioTracks[0]) {
+                            const micSource = audioCtx.createMediaStreamSource(new MediaStream([micAudioTracks[0]]))
+                            micSource.connect(destination)
+                        }
+
+                        const mixedTrack = destination.stream.getAudioTracks()[0]
+                        if (mixedTrack) {
+                            screenAudioMixerRef.current = {
+                                audioCtx,
+                                mixedTrack,
+                                originalMicTrack: micAudioTracks[0] || null
+                            }
+                            activeAudioTrack = mixedTrack
+                            replaceTrackOnPeers(mixedTrack, 'audio')
+                        }
+                    }
+                } catch (mixErr) {
+                    console.warn('[ScreenShare] Tab audio mixing setup error, fallback to mic audio:', mixErr)
+                }
+            }
+
+            const audioTracks = activeAudioTrack ? [activeAudioTrack] : []
             const combinedStream = new MediaStream([screenTrack, ...audioTracks])
 
             replaceLocalStream(combinedStream)

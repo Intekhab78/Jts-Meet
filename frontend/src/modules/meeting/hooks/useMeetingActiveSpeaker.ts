@@ -132,6 +132,18 @@ export const useMeetingActiveSpeaker = ({
         }
     }, [localStream, remoteStreams, isMuted])
 
+    // Clean up analyser and audio source nodes for participants who left
+    useEffect(() => {
+        Object.keys(analysersRef.current).forEach((id) => {
+            if (id !== 'me' && !remoteStreams[id]) {
+                try {
+                    analysersRef.current[id].source.disconnect()
+                } catch (e) {}
+                delete analysersRef.current[id]
+            }
+        })
+    }, [remoteStreams])
+
     // Cleanup AudioContext and audio nodes on unmount only
     useEffect(() => {
         return () => {

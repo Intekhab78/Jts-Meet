@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 interface UseMeetingDeviceHotSwapProps {
-    replaceTrackOnPeers: (track: MediaStreamTrack) => void
+    replaceTrackOnPeers: (track: MediaStreamTrack, kindOverride?: 'audio' | 'video') => void
     requestMedia: (audioOnly?: boolean) => Promise<any>
     stopMedia: () => void
     setIsVideoOff: (videoOff: boolean) => void
@@ -37,13 +37,19 @@ export const useMeetingDeviceHotSwap = ({
         }
     }, [setIsVideoOff])
 
-    // Audio/Video Device Hot-Swapping listener (Bluetooth/USB disconnect/reconnect)
+    // Audio/Video Device Hot-Swapping listener (Bluetooth/USB disconnect/reconnect or settings change)
     useEffect(() => {
         const handleDeviceSwap = (e: any) => {
-            const { kind, track } = e.detail || {}
+            const { kind, track, stream } = e.detail || {}
             if (kind && track) {
                 console.log(`[DeviceHotSwap] Replacing ${kind} track on active WebRTC peers:`, track.label)
-                replaceTrackOnPeers(track)
+                replaceTrackOnPeers(track, kind)
+            } else if (stream instanceof MediaStream) {
+                console.log('[DeviceHotSwap] Replacing all live tracks from stream on active WebRTC peers')
+                const audio = stream.getAudioTracks().find((t: MediaStreamTrack) => t.readyState === 'live')
+                const video = stream.getVideoTracks().find((t: MediaStreamTrack) => t.readyState === 'live' && !(t as any).isDummy)
+                if (audio) replaceTrackOnPeers(audio, 'audio')
+                if (video) replaceTrackOnPeers(video, 'video')
             }
         }
         window.addEventListener('jts:device-swapped', handleDeviceSwap)
