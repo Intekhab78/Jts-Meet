@@ -466,12 +466,10 @@ export function useWebRTC(
             const peerCount = Object.keys(peerConnectionsRef.current).length + 1
 
             Object.entries(peerConnectionsRef.current).forEach(([targetUserId, pc]) => {
-                // Find matching transceiver for this kind (audio or video)
+                // Find matching transceiver strictly for this kind (audio or video)
                 const tc = pc.getTransceivers().find(t => 
-                    (t.receiver?.track?.kind === kind) ||
-                    (t.sender?.track && t.sender.track.kind === kind) ||
-                    (!t.sender?.track && kind === 'video') ||
-                    (!t.sender?.track && kind === 'audio')
+                    (t.receiver?.track && t.receiver.track.kind === kind) ||
+                    (t.sender?.track && t.sender.track.kind === kind)
                 )
 
                 if (tc) {
@@ -779,7 +777,11 @@ export function useWebRTC(
                 localStreamRef.current,
                 {
                     onTrack: (stream) => {
-                        setRemoteStreams((prev) => ({ ...prev, [payload.userId]: stream }))
+                        setRemoteStreams((prev) => ({
+                            ...prev,
+                            [payload.userId]: stream,
+                            [payload.userId.toLowerCase()]: stream
+                        }))
                     },
                     onICECandidate: (candidate) => {
                         socket.emit(SocketEvents.WEBRTC_ICE_CANDIDATE, {
@@ -871,7 +873,11 @@ export function useWebRTC(
                     localStreamRef.current,
                     {
                         onTrack: (stream) => {
-                            setRemoteStreams((prev) => ({ ...prev, [payload.fromUserId]: stream }))
+                            setRemoteStreams((prev) => ({
+                                ...prev,
+                                [payload.fromUserId]: stream,
+                                [payload.fromUserId.toLowerCase()]: stream
+                            }))
                         },
                         onICECandidate: (candidate) => {
                             socket.emit(SocketEvents.WEBRTC_ICE_CANDIDATE, {
@@ -1032,8 +1038,17 @@ export function useWebRTC(
                 return prev
             })
 
-            console.log(`[WebRTC] Remote user ${targetId} started screen share, ensuring video track reception...`)
-            triggerRenegotiation(matchPeerId)
+            console.log(`[WebRTC] Remote user ${targetId} started screen share, awaiting presenter's track update...`)
+            // Only as a delayed fallback if no video track arrived after 3.5s and connection is stable
+            setTimeout(() => {
+                const currentStream = peerRemoteStreams.get(targetId) || peerRemoteStreams.get(matchPeerId)
+                const hasVideo = currentStream && currentStream.getVideoTracks().length > 0 && currentStream.getVideoTracks().some(t => t.readyState === 'live')
+                const pc = peerConnectionsRef.current[matchPeerId]
+                if (!hasVideo && pc && pc.signalingState === 'stable' && !makingOfferRef.current[matchPeerId]) {
+                    console.log(`[WebRTC] Fallback renegotiation check for screen video from ${targetId}...`)
+                    triggerRenegotiation(matchPeerId)
+                }
+            }, 3500)
         }
 
         const handleScreenStop = (payload: { userId: string; meetingId: string; }) => {
@@ -1167,12 +1182,11 @@ export function useWebRTC(
         }
     }, [socket, addParticipant, removeParticipant, cleanupPeer, triggerIceRestart, triggerRenegotiation, rebalanceMeshBitrate, handlePeerIceStateChange])
 
-    // 20-Minute Audio & WebRTC Mesh Health Watchdog:
-    // Periodically checks inbound audio RTP flow and connection state across all connected peers.
-    // If a peer's inbound audio packets stall or connection drops silently, initiates auto-recovery.
+    // Periodic WebRTC Transport & Stream Health Watchdog:
+    // Only intervenes if ICE transport has actually failed or dropped without recovery.
+    // NEVER restarts ICE on silent/muted audio or normal speech pauses.
     useEffect(() => {
-        const lastInboundAudioBytes: Record<string, number> = {}
-        const frozenAudioCycles: Record<string, number> = {}
+        const lastRenegotiationAttempt: Record<string, number> = {}
 
         const interval = setInterval(async () => {
             if (!socket || !socket.connected) return
@@ -1183,60 +1197,34 @@ export function useWebRTC(
             for (const [peerId, pc] of pcs) {
                 if (!pc || pc.signalingState === 'closed') continue
 
-                // 1. If ICE connection state dropped, restart ICE
-                if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                    console.log(`[WebRTC Watchdog] Peer ${peerId} in ${pc.iceConnectionState} state, restarting ICE...`)
+                // 1. Only restart ICE if the connection state has officially failed
+                if (pc.iceConnectionState === 'failed' && pc.signalingState === 'stable' && !makingOfferRef.current[peerId]) {
+                    console.log(`[WebRTC Watchdog] Peer ${peerId} in failed ICE state, attempting auto-recovery ICE restart...`)
                     triggerIceRestart(peerId)
                     continue
                 }
 
-                // 2. Inspect WebRTC stats for inbound audio RTP flow
-                try {
-                    const stats = await pc.getStats()
-                    let foundInboundAudio = false
-                    stats.forEach((report) => {
-                        if (report.type === 'inbound-rtp' && report.kind === 'audio') {
-                            foundInboundAudio = true
-                            const currentBytes = report.bytesReceived || 0
-                            const prevBytes = lastInboundAudioBytes[peerId] || 0
-                            lastInboundAudioBytes[peerId] = currentBytes
+                // 2. If ICE is connected but remote stream is missing all tracks after 15+ seconds,
+                // gently request a renegotiation (SDP sync) instead of tearing down the network socket with ICE restart!
+                if ((pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') && pc.signalingState === 'stable' && !makingOfferRef.current[peerId]) {
+                    const remoteStream = peerRemoteStreams.get(peerId)
+                    const hasTracks = remoteStream && remoteStream.getTracks().length > 0
+                    const now = Date.now()
+                    const lastAttempt = lastRenegotiationAttempt[peerId] || 0
 
-                            // If bytes have not increased over consecutive intervals (audio stream frozen)
-                            if (currentBytes > 0 && currentBytes === prevBytes) {
-                                frozenAudioCycles[peerId] = (frozenAudioCycles[peerId] || 0) + 1
-                                if (frozenAudioCycles[peerId] >= 3) { // ~18s of frozen audio
-                                    console.warn(`[WebRTC Watchdog] Inbound audio frozen for peer ${peerId}. Triggering auto-recovery ICE restart...`)
-                                    frozenAudioCycles[peerId] = 0
-                                    triggerIceRestart(peerId)
-                                }
-                            } else {
-                                frozenAudioCycles[peerId] = 0
-                            }
-                        }
-                    })
-
-                    // If connected but audio track is missing from the stream
-                    if (!foundInboundAudio && pc.iceConnectionState === 'connected') {
-                        const remoteStream = peerRemoteStreams.get(peerId)
-                        if (!remoteStream || remoteStream.getAudioTracks().length === 0) {
-                            frozenAudioCycles[peerId] = (frozenAudioCycles[peerId] || 0) + 1
-                            if (frozenAudioCycles[peerId] >= 3) {
-                                console.warn(`[WebRTC Watchdog] Missing audio track for connected peer ${peerId}. Resyncing offer...`)
-                                frozenAudioCycles[peerId] = 0
-                                triggerIceRestart(peerId)
-                            }
-                        }
+                    if (!hasTracks && (now - lastAttempt > 20000)) {
+                        console.log(`[WebRTC Watchdog] Connected peer ${peerId} has no media tracks yet. Syncing SDP via gentle renegotiation...`)
+                        lastRenegotiationAttempt[peerId] = now
+                        triggerRenegotiation(peerId)
                     }
-                } catch (statsErr) {
-                    // Ignore stats error
                 }
             }
-        }, 6000)
+        }, 10000)
 
         return () => {
             clearInterval(interval)
         }
-    }, [socket, triggerIceRestart])
+    }, [socket, triggerIceRestart, triggerRenegotiation])
 
     const switchActivePresenter = useCallback((targetUserId: string) => {
         setScreenSharingUserId(targetUserId)

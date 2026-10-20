@@ -133,6 +133,14 @@ export interface MeetingModalsContainerProps {
     handleStopLiveStream: () => void
     upgradeModalFeature: any
     setUpgradeModalFeature: (feat: any) => void
+    isLiveStreamStandby?: boolean
+    toggleLiveStreamStandby?: () => void
+    liveStreamLayoutMode?: 'auto' | 'spotlight' | 'grid' | 'pip'
+    setLiveStreamLayoutMode?: (mode: 'auto' | 'spotlight' | 'grid' | 'pip') => void
+    liveStreamTickerText?: string
+    setLiveStreamTickerText?: (text: string) => void
+    showLiveStreamTicker?: boolean
+    toggleLiveStreamTicker?: () => void
     currentPlanTier: string
     onUpgradePlanRequest?: () => void
     isTimeLimitExpired: boolean
@@ -256,6 +264,14 @@ export function MeetingModalsContainer({
     setShowLiveStreamModal,
     handleStartLiveStream,
     handleStopLiveStream,
+    isLiveStreamStandby,
+    toggleLiveStreamStandby,
+    liveStreamLayoutMode,
+    setLiveStreamLayoutMode,
+    liveStreamTickerText,
+    setLiveStreamTickerText,
+    showLiveStreamTicker,
+    toggleLiveStreamTicker,
     upgradeModalFeature,
     setUpgradeModalFeature,
     currentPlanTier,
@@ -722,6 +738,16 @@ export function MeetingModalsContainer({
                     setShowLiveStreamModal(false)
                 }}
                 meetingTitle={meetingInfo?.title || meetingId || 'Enterprise Conference Session'}
+                previewStream={localStream}
+                isStandby={isLiveStreamStandby}
+                onToggleStandby={toggleLiveStreamStandby}
+                layoutMode={liveStreamLayoutMode}
+                onChangeLayoutMode={setLiveStreamLayoutMode}
+                tickerText={liveStreamTickerText}
+                showTicker={showLiveStreamTicker}
+                onToggleTicker={toggleLiveStreamTicker}
+                onChangeTickerText={setLiveStreamTickerText}
+                addToast={addToast}
             />
 
             {/* Feature Plan Upgrade Restriction Modal */}

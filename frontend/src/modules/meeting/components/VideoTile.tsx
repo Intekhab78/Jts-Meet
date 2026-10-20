@@ -183,14 +183,14 @@ export const VideoTile = React.memo(function VideoTile({
     useEffect(() => {
         const el = videoRef.current
         if (!el) return
-        if (stream && !isVideoOff) {
+        if (stream) {
             if (el.srcObject !== stream) {
                 el.srcObject = stream
             }
             el.play().catch(() => { })
 
             const handleTrackChange = () => {
-                if (el && el.srcObject !== stream && !isVideoOff) {
+                if (el && el.srcObject !== stream) {
                     el.srcObject = stream
                 }
                 el?.play().catch(() => { })
@@ -206,8 +206,10 @@ export const VideoTile = React.memo(function VideoTile({
 
             // Watchdog for screen share decoding: ensures decoder starts immediately even on low-fps static screen shares
             const checkDecoding = setInterval(() => {
-                if (el && !el.paused && isScreenShare && el.videoWidth === 0 && stream.getVideoTracks().length > 0) {
-                    el.play().catch(() => {})
+                if (el && isScreenShare && stream.getVideoTracks().length > 0) {
+                    if (el.paused) {
+                        el.play().catch(() => {})
+                    }
                 }
             }, 1000)
 
@@ -224,7 +226,7 @@ export const VideoTile = React.memo(function VideoTile({
                 el.srcObject = null
             }
         }
-    }, [stream, currentVideoTrackId, isVideoOff, isScreenShare])
+    }, [stream, currentVideoTrackId, isScreenShare])
 
     // Track status monitor (avoids checking vTrack.muted to prevent speech-induced flickers)
     useEffect(() => {

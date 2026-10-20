@@ -4,6 +4,7 @@ import { ScreenAnnotationOverlay } from './ScreenAnnotationOverlay'
 import { RemoteControlOverlay } from './RemoteControlOverlay'
 import { MeetingSidePanels, type ActiveMeetingPanel, type MeetingSidePanelsProps } from './MeetingSidePanels'
 import type { MeetingLayoutMode } from './LayoutSwitcherModal'
+import { peerRemoteStreams } from '../services/webrtc.service'
 import {
     IconInfo,
     IconX,
@@ -207,7 +208,11 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                screenSharingUserIds.some(id => id.toLowerCase() === userId.toLowerCase()))
         const stream = userId === 'me'
             ? (isUserSharingScreen ? localStream : (activeLocalStream || localStream))
-            : (remoteStreams[userId] || Object.entries(remoteStreams).find(([k]) => k.toLowerCase() === userId.toLowerCase())?.[1] || null)
+            : (remoteStreams[userId] || 
+               Object.entries(remoteStreams).find(([k]) => k.toLowerCase() === userId.toLowerCase())?.[1] || 
+               peerRemoteStreams.get(userId) || 
+               Array.from(peerRemoteStreams.entries()).find(([k]) => k.toLowerCase() === userId.toLowerCase())?.[1] || 
+               null)
         const isMutedUser = userId === 'me'
             ? isMuted
             : (remoteMuteStates[userId] !== undefined ? remoteMuteStates[userId] : !stream?.getAudioTracks()[0]?.enabled)

@@ -232,6 +232,16 @@ export function useMeetingRecording({
     const liveStreamCombinedStreamRef = useRef<MediaStream | null>(null)
     const renderLiveCanvasFrameRef = useRef<(() => void) | null>(null)
 
+    // Broadcast Studio Controls: Standby ("Be Right Back"), Layout, and News Ticker
+    const [isLiveStreamStandby, setIsLiveStreamStandby] = useState(false)
+    const liveStreamStandbyRef = useRef(false)
+    const [liveStreamLayoutMode, setLiveStreamLayoutMode] = useState<'auto' | 'spotlight' | 'grid' | 'pip'>('auto')
+    const liveStreamLayoutModeRef = useRef<'auto' | 'spotlight' | 'grid' | 'pip'>('auto')
+    const [liveStreamTickerText, setLiveStreamTickerText] = useState('🔴 Live Conference Broadcast • Q&A Session Active')
+    const liveStreamTickerTextRef = useRef('🔴 Live Conference Broadcast • Q&A Session Active')
+    const [showLiveStreamTicker, setShowLiveStreamTicker] = useState(false)
+    const showLiveStreamTickerRef = useRef(false)
+
     // Master Web Audio API Multi-Source Mixer refs with Broadcast Dynamics Compressor
     const liveStreamAudioCtxRef = useRef<AudioContext | null>(null)
     const liveStreamAudioDestRef = useRef<MediaStreamAudioDestinationNode | null>(null)
@@ -326,6 +336,59 @@ export function useMeetingRecording({
         const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
         if (!ctx) return
 
+        const width = canvas.width
+        const height = canvas.height
+
+        // ── 0. Standby Mode Slate ("Be Right Back" Broadcast Card) ──
+        if (liveStreamStandbyRef.current) {
+            const gradient = ctx.createLinearGradient(0, 0, width, height)
+            gradient.addColorStop(0, '#020617')
+            gradient.addColorStop(0.5, '#0b0f19')
+            gradient.addColorStop(1, '#020617')
+            ctx.fillStyle = gradient
+            ctx.fillRect(0, 0, width, height)
+
+            const radialGlow = ctx.createRadialGradient(width / 2, height / 2 - 20, 20, width / 2, height / 2 - 20, 320)
+            radialGlow.addColorStop(0, 'rgba(245, 158, 11, 0.22)')
+            radialGlow.addColorStop(0.6, 'rgba(99, 102, 241, 0.08)')
+            radialGlow.addColorStop(1, 'rgba(0, 0, 0, 0)')
+            ctx.fillStyle = radialGlow
+            ctx.beginPath()
+            ctx.arc(width / 2, height / 2 - 20, 320, 0, Math.PI * 2)
+            ctx.fill()
+
+            const boxW = 540
+            const boxH = 220
+            const boxX = (width - boxW) / 2
+            const boxY = (height - boxH) / 2 - 20
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(boxX, boxY, boxW, boxH, 20)
+            else ctx.rect(boxX, boxY, boxW, boxH)
+            ctx.fill()
+            ctx.strokeStyle = 'rgba(245, 158, 11, 0.6)'
+            ctx.lineWidth = 1.8
+            ctx.stroke()
+
+            ctx.fillStyle = '#f59e0b'
+            ctx.font = '700 14px system-ui, -apple-system, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText('⏸️ BROADCAST STANDBY • STREAM ACTIVE', width / 2, boxY + 46)
+
+            ctx.fillStyle = '#ffffff'
+            ctx.font = '800 28px system-ui, -apple-system, sans-serif'
+            ctx.fillText('We will be right back!', width / 2, boxY + 98)
+
+            ctx.fillStyle = '#94a3b8'
+            ctx.font = '500 15px system-ui, -apple-system, sans-serif'
+            const title = meetingInfo?.title || 'Live Conference Broadcast'
+            ctx.fillText(`"${title}" is temporarily paused. Please stay tuned.`, width / 2, boxY + 144)
+
+            ctx.textAlign = 'left'
+            return
+        }
+
         const activeStream = getActiveLiveStream()
         const currentVideoTrack = activeStream?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy && t.enabled !== false) || activeStream?.getVideoTracks()[0] || null
 
@@ -415,9 +478,6 @@ export function useMeetingRecording({
                 }
             }
         }
-
-        const width = canvas.width
-        const height = canvas.height
 
         // Determine primary video drawSource:
         // When sharing screen, ALWAYS prioritize the actual screen sharing video element
@@ -748,6 +808,35 @@ export function useMeetingRecording({
         ctx.fillStyle = '#e2e8f0'
         ctx.font = '600 12px system-ui, -apple-system, sans-serif'
         ctx.fillText(`🎙️ ${meetingTitle.slice(0, 28)}`, 38, height - 34)
+
+        // ── 4. Broadcast Lower-Third Live Ticker Bar (if enabled) ──
+        if (showLiveStreamTickerRef.current && liveStreamTickerTextRef.current) {
+            const barH = 38
+            const barY = height - barH
+            ctx.fillStyle = 'rgba(11, 15, 25, 0.95)'
+            ctx.fillRect(0, barY, width, barH)
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)'
+            ctx.lineWidth = 1.5
+            ctx.beginPath()
+            ctx.moveTo(0, barY)
+            ctx.lineTo(width, barY)
+            ctx.stroke()
+
+            // Left Red LIVE Tag
+            const tagW = 90
+            ctx.fillStyle = '#ef4444'
+            ctx.fillRect(0, barY, tagW, barH)
+            ctx.fillStyle = '#ffffff'
+            ctx.font = '800 11px system-ui, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText('LIVE UPDATE', tagW / 2, barY + 24)
+
+            // Ticker Text
+            ctx.textAlign = 'left'
+            ctx.fillStyle = '#f8fafc'
+            ctx.font = '600 14px system-ui, -apple-system, sans-serif'
+            ctx.fillText(liveStreamTickerTextRef.current, tagW + 20, barY + 24)
+        }
     }, [getActiveLiveStream, getCameraOnlyStream, meetingInfo, screenSharingUserId, screenSharingUserIds, remoteStreams, localStream])
 
     // Keep live broadcast canvas renderer ref synced across every render & stream update
@@ -763,6 +852,17 @@ export function useMeetingRecording({
 
         if (audioCtx.state === 'suspended') {
             audioCtx.resume().catch(() => {})
+        }
+
+        const activeSources = liveStreamAudioSourcesRef.current
+
+        // If Standby Mode is active, mute audio output to YouTube stream
+        if (liveStreamStandbyRef.current) {
+            for (const entry of activeSources.values()) {
+                try { entry.node.disconnect() } catch (_) {}
+            }
+            activeSources.clear()
+            return
         }
 
         // Master Dynamics Compressor prevents voice clipping and volume surges
@@ -781,7 +881,6 @@ export function useMeetingRecording({
             liveStreamCompressorRef.current = compressor
         }
 
-        const activeSources = liveStreamAudioSourcesRef.current
         const neededStreams: { id: string; stream: MediaStream }[] = []
 
         // 1. Host local mic or tab audio
@@ -1294,6 +1393,39 @@ export function useMeetingRecording({
         setLiveStreamConfig,
         handleStartLiveStream,
         handleStopLiveStream,
-        cloudRecordRecorderRef
+        cloudRecordRecorderRef,
+        isLiveStreamStandby,
+        toggleLiveStreamStandby: () => {
+            setIsLiveStreamStandby(prev => {
+                const next = !prev
+                liveStreamStandbyRef.current = next
+                if (next) {
+                    addToast('Broadcast Standby: Feed paused on stream.', 'info')
+                } else {
+                    addToast('Broadcast Live: Video feed resumed.', 'success')
+                }
+                syncLiveStreamAudio()
+                return next
+            })
+        },
+        liveStreamLayoutMode,
+        setLiveStreamLayoutMode: (mode: 'auto' | 'spotlight' | 'grid' | 'pip') => {
+            setLiveStreamLayoutMode(mode)
+            liveStreamLayoutModeRef.current = mode
+        },
+        liveStreamTickerText,
+        setLiveStreamTickerText: (text: string) => {
+            setLiveStreamTickerText(text)
+            liveStreamTickerTextRef.current = text
+        },
+        showLiveStreamTicker,
+        toggleLiveStreamTicker: () => {
+            setShowLiveStreamTicker(prev => {
+                const next = !prev
+                showLiveStreamTickerRef.current = next
+                return next
+            })
+        },
+        liveStreamCombinedStreamRef
     }
 }

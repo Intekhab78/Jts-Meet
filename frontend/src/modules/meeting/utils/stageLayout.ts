@@ -1,5 +1,6 @@
 import React from 'react'
 import { MeetingLayoutMode } from '../components/LayoutSwitcherModal'
+import { peerRemoteStreams } from '../services/webrtc.service'
 
 export interface StageLayoutOptions {
     screenSharingUserId: string | null
@@ -88,7 +89,11 @@ export function calculateMeetingStageLayout({
     const isLocalSharing = screenSharingUserId === 'me' || screenSharingUserIds.includes('me')
     const primaryStream = primaryUser === 'me'
         ? (isLocalSharing ? localStream : (activeLocalStream || localStream))
-        : (remoteStreams[primaryUser] || Object.entries(remoteStreams).find(([k]) => k.toLowerCase() === primaryUser.toLowerCase())?.[1] || null)
+        : (remoteStreams[primaryUser] || 
+           Object.entries(remoteStreams).find(([k]) => k.toLowerCase() === primaryUser.toLowerCase())?.[1] || 
+           peerRemoteStreams.get(primaryUser) || 
+           Array.from(peerRemoteStreams.entries()).find(([k]) => k.toLowerCase() === primaryUser.toLowerCase())?.[1] || 
+           null)
 
     // Presenter details
     const presenterName = primaryUser === 'me' ? 'You' : getUserDisplayName(primaryUser)

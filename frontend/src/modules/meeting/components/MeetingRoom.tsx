@@ -456,7 +456,15 @@ const [activePanel, setActivePanel] = useState<ActivePanel>(null)
         liveStreamConfig,
         setLiveStreamConfig,
         handleStartLiveStream,
-        handleStopLiveStream
+        handleStopLiveStream,
+        isLiveStreamStandby,
+        toggleLiveStreamStandby,
+        liveStreamLayoutMode,
+        setLiveStreamLayoutMode,
+        liveStreamTickerText,
+        setLiveStreamTickerText,
+        showLiveStreamTicker,
+        toggleLiveStreamTicker
     } = useMeetingRecording({
         meetingId,
         meetingInput,
@@ -1330,6 +1338,14 @@ const activeRoomKey = meetingId || meetingInput.trim()
                 setShowLiveStreamModal={setShowLiveStreamModal}
                 handleStartLiveStream={handleStartLiveStream}
                 handleStopLiveStream={handleStopLiveStream}
+                isLiveStreamStandby={isLiveStreamStandby}
+                toggleLiveStreamStandby={toggleLiveStreamStandby}
+                liveStreamLayoutMode={liveStreamLayoutMode}
+                setLiveStreamLayoutMode={setLiveStreamLayoutMode}
+                liveStreamTickerText={liveStreamTickerText}
+                setLiveStreamTickerText={setLiveStreamTickerText}
+                showLiveStreamTicker={showLiveStreamTicker}
+                toggleLiveStreamTicker={toggleLiveStreamTicker}
                 upgradeModalFeature={upgradeModalFeature}
                 setUpgradeModalFeature={setUpgradeModalFeature}
                 currentPlanTier={currentPlanTier}
