@@ -40,22 +40,14 @@ export function calculateMeetingStageLayout({
     windowWidth,
     getUserDisplayName
 }: StageLayoutOptions) {
-    // Self-healing check: verify if screenSharingUserId actually has an active live video track.
-    let isScreenSharerLive = false
-    if (screenSharingUserId) {
-        if (screenSharingUserId === 'me') {
-            const vTracks = localStream?.getVideoTracks() || []
-            isScreenSharerLive = vTracks.length > 0 && vTracks.some(t => t.readyState === 'live' && !(t as any).isDummy)
-        } else {
-            const rStream = remoteStreams[screenSharingUserId]
-            if (rStream) {
-                const vTracks = rStream.getVideoTracks()
-                isScreenSharerLive = vTracks.length > 0 && vTracks.some(t => t.readyState === 'live')
-            }
-        }
-    }
+    // Robust screen sharer identification with case-insensitive and connection-resilient fallback
+    const effectiveRemoteSharerId = screenSharingUserId && screenSharingUserId !== 'me'
+        ? (remoteStreams[screenSharingUserId]
+            ? screenSharingUserId
+            : Object.keys(remoteStreams).find(k => k.toLowerCase() === screenSharingUserId.toLowerCase()) || screenSharingUserId)
+        : screenSharingUserId
 
-    const activePresenterId = isScreenSharerLive ? screenSharingUserId : null
+    const activePresenterId = effectiveRemoteSharerId
     const isScreenShareActive = !!activePresenterId
 
     // If screen sharer is backstage, only Host/Co-host or the sharer can see the shared screen
@@ -96,7 +88,7 @@ export function calculateMeetingStageLayout({
     const isLocalSharing = screenSharingUserId === 'me' || screenSharingUserIds.includes('me')
     const primaryStream = primaryUser === 'me'
         ? (isLocalSharing ? localStream : (activeLocalStream || localStream))
-        : remoteStreams[primaryUser]
+        : (remoteStreams[primaryUser] || Object.entries(remoteStreams).find(([k]) => k.toLowerCase() === primaryUser.toLowerCase())?.[1] || null)
 
     // Presenter details
     const presenterName = primaryUser === 'me' ? 'You' : getUserDisplayName(primaryUser)
@@ -171,7 +163,7 @@ export function calculateMeetingStageLayout({
             : { display: 'flex', flexDirection: 'row', height: '100%', width: '100%', gap: 20, overflow: 'hidden' }
 
     return {
-        isScreenSharerLive,
+        isScreenSharerLive: isScreenShareActive,
         activePresenterId,
         isScreenShareActive,
         effectiveScreenSharer,

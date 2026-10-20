@@ -29,6 +29,12 @@ interface UseMeetingLifecycleProps {
     setPostMeetingCapsule: (capsule: any) => void
     startScreenShare: (stream: MediaStream) => Promise<any>
     connectSocket: (token: string) => void
+    participants?: string[]
+    myDisplayName?: string
+    getUserDisplayName?: (id: string) => string
+    messages?: any[]
+    transcripts?: any[]
+    isCloudRecording?: boolean
 }
 
 export const useMeetingLifecycle = ({
@@ -58,7 +64,13 @@ export const useMeetingLifecycle = ({
     meetingInfo,
     setPostMeetingCapsule,
     startScreenShare,
-    connectSocket
+    connectSocket,
+    participants = [],
+    myDisplayName = '',
+    getUserDisplayName,
+    messages = [],
+    transcripts = [],
+    isCloudRecording = false
 }: UseMeetingLifecycleProps) => {
     const hasLeftRef = useRef(false)
     const hasAutoJoinedRef = useRef(false)
@@ -128,6 +140,8 @@ export const useMeetingLifecycle = ({
         try {
             sessionStorage.removeItem('jts_active_meeting_id')
             sessionStorage.removeItem('jts_meeting_joined')
+            sessionStorage.removeItem('jts_initial_camera_off')
+            sessionStorage.removeItem('jts_initial_mic_muted')
             if (isPermanentEnd) {
                 localStorage.removeItem('jts_last_meeting_id')
             } else if (currentMid) {
@@ -180,17 +194,65 @@ export const useMeetingLifecycle = ({
 
             const finalNotes = [meetingNotes.trim(), panelNotes.trim()].filter(Boolean).join('\n\n')
 
+            // Compile attendees with display names and talk times
+            const attendeeIds = participants && participants.length > 0 ? participants : ['me']
+            const compiledAttendees = attendeeIds.map(pId => {
+                const isMe = pId === 'me'
+                const name = isMe ? (myDisplayName || 'Host (You)') : (getUserDisplayName ? getUserDisplayName(pId) : pId)
+                const talkSecs = talkTimeMap[pId] || (isMe ? talkTimeMap['me'] || 0 : 0)
+                return {
+                    id: pId,
+                    name: name || 'Participant',
+                    talkTimeSeconds: talkSecs,
+                    isHost: isMe
+                }
+            })
+
+            // Parse or extract action items from notes
+            const parsedActionItems: Array<{ id: string; text: string; done?: boolean }> = []
+            if (finalNotes) {
+                const lines = finalNotes.split('\n')
+                lines.forEach((line, idx) => {
+                    const trimmed = line.trim()
+                    if (trimmed.startsWith('- [ ]') || trimmed.startsWith('• [ACTION]') || trimmed.startsWith('[ ]') || trimmed.startsWith('- [x]')) {
+                        const cleanText = trimmed.replace(/^[-•*]\s*\[[ x]?\]\s*/i, '').replace(/^•\s*\[ACTION\]\s*/i, '')
+                        if (cleanText) {
+                            parsedActionItems.push({
+                                id: `item_${idx}`,
+                                text: cleanText,
+                                done: trimmed.includes('[x]')
+                            })
+                        }
+                    }
+                })
+            }
+
+            // Extract chat highlights
+            const cleanMessages = (messages || []).map(m => ({
+                senderName: m.senderName || m.sender || 'Participant',
+                message: m.message || m.text || '',
+                timestamp: m.timestamp || new Date()
+            }))
+
             setPostMeetingCapsule({
+                meetingId: currentMid,
                 duration: timerStr,
+                endTime: new Date(),
+                hostName: myDisplayName || meetingInfo?.hostName || 'Host',
+                attendees: compiledAttendees,
                 talkTime: talkTimeMap,
                 notes: finalNotes,
-                title: meetingInfo?.title || `Meeting ${meetingId || meetingInput}`
+                actionItems: parsedActionItems,
+                messages: cleanMessages,
+                transcripts: transcripts || [],
+                title: meetingInfo?.title || (currentMid ? `Meeting ${currentMid}` : 'Instant Meeting'),
+                isCloudRecording: !!isCloudRecording
             })
         } else {
             if (onLeave) onLeave()
             else window.location.hash = '#dashboard'
         }
-    }, [leaveMeeting, onLeave, timerStr, talkTimeMap, meetingNotes, meetingInfo, meetingId, meetingInput, isGuest, token, setMeetingInput, setPostMeetingCapsule])
+    }, [leaveMeeting, onLeave, timerStr, talkTimeMap, meetingNotes, meetingInfo, meetingId, meetingInput, isGuest, token, setMeetingInput, setPostMeetingCapsule, participants, myDisplayName, getUserDisplayName, messages, transcripts, isCloudRecording])
 
     // Direct autoJoin trigger: Only auto-joins ONCE upon entry, never if user has left!
     useEffect(() => {

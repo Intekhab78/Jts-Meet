@@ -19,7 +19,7 @@ import { setUserPresenceState } from './presence'
 import { cleanupWhiteboard } from './whiteboard'
 import { cleanupMeetingQA } from './meetingQA'
 import { cleanupPolls } from './poll'
-import { cleanupBreakout } from './breakout'
+import { cleanupBreakout, getActiveBreakoutSession } from './breakout'
 import { liveBroadcastService } from '../modules/webrtc/liveBroadcast.service'
 import { liveStreamService } from '../services/livestream.service'
 import { telephonyMediaService } from '../services/telephonyMedia.service'
@@ -129,22 +129,34 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                     startedAt: activeLiveSession.startedAt.toISOString()
                 })
             }
+
+            // Sync active breakout session to user on join or page refresh
+            const activeBreakout = getActiveBreakoutSession(payload.meetingId)
+            if (activeBreakout && activeBreakout.isActive) {
+                socket.emit('breakout:started', {
+                    meetingId: payload.meetingId,
+                    rooms: activeBreakout.rooms,
+                    endsAt: activeBreakout.endsAt
+                })
+            }
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Failed to join meeting' })
         }
     })
 
-    socket.on(SocketEvents.MEETING_LEAVE, async (payload: { meetingId: string }) => {
-        if (!userId || !payload?.meetingId) {
+    const handleMeetingLeaveAction = async (payload?: { meetingId?: string }) => {
+        const targetMeetingId = payload?.meetingId || authSocket.meetingId
+        const effectiveUserId = userId || authSocket.userId || socket.id
+        if (!targetMeetingId || !effectiveUserId) {
             return
         }
 
         try {
-            socket.leave(`meeting:${payload.meetingId}`)
+            socket.leave(`meeting:${targetMeetingId}`)
             let participants: any[] = []
             try {
-                if (!authSocket.isGuest) {
-                    const meeting = await leaveMeetingService(payload.meetingId, userId)
+                if (!authSocket.isGuest && userId) {
+                    const meeting = await leaveMeetingService(targetMeetingId, userId)
                     if (meeting?.participants) {
                         participants = meeting.participants
                     }
@@ -154,19 +166,22 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                 }
             } catch (e) {}
 
-            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_LEAVE, { 
-                userId,
-                meetingId: payload.meetingId, 
+            io.to(`meeting:${targetMeetingId}`).emit(SocketEvents.MEETING_LEAVE, { 
+                userId: effectiveUserId,
+                meetingId: targetMeetingId, 
                 participants 
             })
-            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
-                userId,
-                meetingId: payload.meetingId
+            io.to(`meeting:${targetMeetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
+                userId: effectiveUserId,
+                meetingId: targetMeetingId
             })
         } catch (error: any) {
             console.warn('[MeetingSocket] Error in MEETING_LEAVE handler:', error)
         }
-    })
+    }
+
+    socket.on(SocketEvents.MEETING_LEAVE, handleMeetingLeaveAction)
+    socket.on('meeting:leave', handleMeetingLeaveAction)
 
     socket.on(SocketEvents.MEETING_END, async (payload: { meetingId: string }) => {
         if (!userId) {
@@ -702,6 +717,18 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
             sound,
             soundType: sound,
             senderName: payload.senderName || authSocket.guestName || 'Participant'
+        })
+    })
+
+    // Meeting File Shared Broadcast
+    socket.on('meeting:file:share', (payload: { meetingId: string; file: any; senderName?: string }) => {
+        if (!payload?.meetingId || !payload?.file) return
+        const senderDisplayName = payload.senderName || authSocket.guestName || (socket.handshake.query?.displayName as string) || 'A participant'
+        io.to(`meeting:${payload.meetingId}`).emit('meeting:file:shared', {
+            meetingId: payload.meetingId,
+            file: payload.file,
+            senderName: senderDisplayName,
+            sharedAt: new Date()
         })
     })
 

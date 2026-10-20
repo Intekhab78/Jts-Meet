@@ -62,7 +62,14 @@ export const meetingController = {
         const meeting = await getMeetingByMeetingId(meetingId)
 
         if (!meeting) {
-            return sendError(res, 404, 'Meeting not found')
+            // Return 200 with minimal ad-hoc meeting payload to avoid 404 error in browser console for instant rooms
+            return sendSuccess(res, {
+                meetingId,
+                title: `Meeting (${meetingId})`,
+                isAdHoc: true,
+                participants: [],
+                status: 'active'
+            }, 'Ad-hoc meeting metadata')
         }
 
         return sendSuccess(res, meeting, 'Meeting retrieved')

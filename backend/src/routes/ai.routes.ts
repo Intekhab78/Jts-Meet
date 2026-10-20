@@ -69,7 +69,7 @@ const enforceAiPlatformPolicy = async (req: any, res: any, next: any) => {
                 return
             }
 
-            if (!settings.aiAllowFreeTier) {
+            if (settings.aiAllowFreeTier === false) {
                 const planTier = await getUserPlanTier(req.userId)
                 if (planTier === 'free') {
                     res.status(403).json({
@@ -86,8 +86,8 @@ const enforceAiPlatformPolicy = async (req: any, res: any, next: any) => {
     }
 }
 
-// Generate AI meeting summary & action items
-router.post('/summary', optionalAuth, enforceAiPlatformPolicy, async (req: Request, res: Response): Promise<void> => {
+// Generate AI meeting summary & action items (Available for all meeting participants)
+router.post('/summary', optionalAuth, async (req: Request, res: Response): Promise<void> => {
     try {
         const { title, participants, duration, notes, transcripts, chatMessages } = req.body
         const result = await generateMeetingSummary({
@@ -155,7 +155,7 @@ router.post('/translate', optionalAuth, async (req: Request, res: Response): Pro
 })
 
 // Late-Joiner AI Summary: "Catch Me Up" (MS Teams Copilot feature)
-router.post('/catch-up', optionalAuth, enforceAiPlatformPolicy, async (req: Request, res: Response): Promise<void> => {
+router.post('/catch-up', optionalAuth, async (req: Request, res: Response): Promise<void> => {
     try {
         const { title, transcripts, chatMessages } = req.body
         const result = await generateLateJoinerCatchUp({

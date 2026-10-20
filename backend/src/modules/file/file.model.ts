@@ -9,7 +9,8 @@ export interface IFileMetadata extends Document {
     storageProvider: string
     storageKey: string
     secureUrl: string
-    uploadedBy: Types.ObjectId
+    uploadedBy?: Types.ObjectId | null
+    uploaderName?: string
     uploadedAt: Date
     deletedAt?: Date | null
     checksum: string
@@ -31,7 +32,8 @@ const FileMetadataSchema = new Schema<IFileMetadata>(
         storageProvider: { type: String, required: true },
         storageKey: { type: String, required: true, unique: true },
         secureUrl: { type: String, required: true },
-        uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+        uploaderName: { type: String, default: null },
         uploadedAt: { type: Date, default: () => new Date(), required: true },
         deletedAt: { type: Date, default: null },
         checksum: { type: String, required: true, index: true },
@@ -45,6 +47,7 @@ const FileMetadataSchema = new Schema<IFileMetadata>(
     { timestamps: true }
 )
 
+FileMetadataSchema.index({ contextType: 1, contextId: 1, deletedAt: 1 })
 FileMetadataSchema.index({ uploadedBy: 1, deletedAt: 1 })
 FileMetadataSchema.index({ organizationId: 1, deletedAt: 1 })
 FileMetadataSchema.index({ teamId: 1, deletedAt: 1 })

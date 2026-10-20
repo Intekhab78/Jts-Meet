@@ -125,6 +125,26 @@ const LANG_VOICE_MAP: Record<string, string> = {
     hu: 'hu-HU'
 }
 
+export const SPOKEN_LANGUAGE_OPTIONS = [
+    { code: 'en-US', label: 'English (US)' },
+    { code: 'en-IN', label: 'English (India)' },
+    { code: 'hi-IN', label: 'Hindi (हिंदी)' },
+    { code: 'es-ES', label: 'Spanish' },
+    { code: 'fr-FR', label: 'French' },
+    { code: 'de-DE', label: 'German' },
+    { code: 'ar-SA', label: 'Arabic' },
+    { code: 'zh-CN', label: 'Chinese' },
+    { code: 'ja-JP', label: 'Japanese' },
+    { code: 'pt-BR', label: 'Portuguese' },
+    { code: 'bn-IN', label: 'Bengali (বাংলা)' },
+    { code: 'te-IN', label: 'Telugu (తెలుగు)' },
+    { code: 'ta-IN', label: 'Tamil (தமிழ்)' },
+    { code: 'mr-IN', label: 'Marathi (मराठी)' },
+    { code: 'gu-IN', label: 'Gujarati (ગુજરાતી)' },
+    { code: 'pa-IN', label: 'Punjabi (ਪੰਜਾਬੀ)' },
+    { code: 'ur-PK', label: 'Urdu (اردو)' },
+]
+
 const clientTranslationCache = new Map<string, string>()
 
 interface CaptionEntry {
@@ -139,6 +159,8 @@ interface MeetingCaptionsBannerProps {
     meetingId: string
     socket: Socket | null
     isLocalMuted?: boolean
+    toggleMute?: () => void
+    isVoiceDubbingEnabledProp?: boolean
     onTranscriptUpdate?: (transcript: CaptionEntry[]) => void
     onClose?: () => void
 }
@@ -149,6 +171,8 @@ export function MeetingCaptionsBanner({
     meetingId,
     socket,
     isLocalMuted,
+    toggleMute,
+    isVoiceDubbingEnabledProp,
     onTranscriptUpdate,
     onClose
 }: MeetingCaptionsBannerProps) {
@@ -156,6 +180,13 @@ export function MeetingCaptionsBanner({
     const [currentSpeaker, setCurrentSpeaker] = useState<string>('')
     const [isUnsupportedBrowser, setIsUnsupportedBrowser] = useState<boolean>(false)
     const [showIdleNotice, setShowIdleNotice] = useState<boolean>(true)
+    const [spokenLanguage, setSpokenLanguage] = useState<string>(() => {
+        try {
+            return localStorage.getItem('jts_caption_spoken_lang') || (navigator.language?.startsWith('hi') ? 'hi-IN' : 'en-US')
+        } catch {
+            return 'en-US'
+        }
+    })
     const [targetLanguage, setTargetLanguage] = useState<string>(() => {
         try {
             return localStorage.getItem('jts_caption_lang') || 'original'
@@ -256,7 +287,7 @@ export function MeetingCaptionsBanner({
         // 110ms debounce for near-instant responsive subtitles
         const timer = setTimeout(async () => {
             try {
-                const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || sessionStorage.getItem('token')) : null
+                const token = typeof window !== 'undefined' ? (localStorage.getItem('jts_guest_token') || localStorage.getItem('jts_token') || localStorage.getItem('token') || sessionStorage.getItem('token')) : null
                 const res = await fetch(`${API_BASE}/api/ai/translate`, {
                     method: 'POST',
                     headers: {
@@ -307,27 +338,37 @@ export function MeetingCaptionsBanner({
         }
     }
 
-    // Real-time AI Voice Dubbing (TTS Spoken Audio for translated captions)
     useEffect(() => {
-        if (!isVoiceDubbingEnabled || !translatedText.trim() || targetLanguage === 'original') return
+        if (isVoiceDubbingEnabledProp !== undefined) {
+            setIsVoiceDubbingEnabled(isVoiceDubbingEnabledProp)
+        }
+    }, [isVoiceDubbingEnabledProp])
+
+    // Real-time AI Voice Dubbing (TTS Spoken Audio for translated captions or incoming speech)
+    useEffect(() => {
+        if (!isVoiceDubbingEnabled) return
         if (!('speechSynthesis' in window)) return
 
         // Prevent echo if current speaker is local user
-        const isSelf = currentSpeaker.toLowerCase() === 'you' || 
+        const isSelf = !currentSpeaker ||
+                       currentSpeaker.toLowerCase() === 'you' || 
                        (speakerNameRef.current && currentSpeaker.toLowerCase() === speakerNameRef.current.toLowerCase())
         if (isSelf) return
 
+        const textToSpeak = (targetLanguage !== 'original' && translatedText.trim()) ? translatedText.trim() : displayText.trim()
+        if (!textToSpeak || textToSpeak.length < 2) return
+
         try {
             window.speechSynthesis.cancel()
-            const utterance = new SpeechSynthesisUtterance(translatedText)
-            utterance.lang = LANG_VOICE_MAP[targetLanguage] || 'en-US'
+            const utterance = new SpeechSynthesisUtterance(textToSpeak)
+            utterance.lang = (targetLanguage !== 'original' ? LANG_VOICE_MAP[targetLanguage] : spokenLanguage) || 'en-US'
             utterance.volume = voiceDubbingVolume
             utterance.rate = 1.05
             window.speechSynthesis.speak(utterance)
         } catch (err) {
             console.warn('[AI Voice Dubbing] Error:', err)
         }
-    }, [translatedText, isVoiceDubbingEnabled, voiceDubbingVolume, targetLanguage, currentSpeaker])
+    }, [translatedText, displayText, isVoiceDubbingEnabled, voiceDubbingVolume, targetLanguage, spokenLanguage, currentSpeaker])
 
     // Cleanup speech synthesis
     useEffect(() => {
@@ -443,12 +484,13 @@ export function MeetingCaptionsBanner({
 
         let recognitionInstance: any = null
         let isStoppedManually = false
+        let hasFatalError = false
 
         try {
             recognitionInstance = new SpeechRecognition()
             recognitionInstance.continuous = true
             recognitionInstance.interimResults = true
-            recognitionInstance.lang = 'en-US'
+            recognitionInstance.lang = spokenLanguage || 'en-US'
 
             recognitionInstance.onresult = (event: any) => {
                 let interim = ''
@@ -493,13 +535,16 @@ export function MeetingCaptionsBanner({
             }
 
             recognitionInstance.onerror = (event: any) => {
-                if (event.error !== 'no-speech' && event.error !== 'aborted') {
+                if (event.error === 'not-allowed' || event.error === 'audio-capture') {
+                    hasFatalError = true
+                    console.warn('[Captions] Speech recognition permission denied or no audio capture:', event.error)
+                } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
                     console.warn('Speech recognition status:', event.error)
                 }
             }
 
             recognitionInstance.onend = () => {
-                if (!isStoppedManually && isEnabled && !isLocalMuted) {
+                if (!isStoppedManually && isEnabled && !isLocalMuted && !hasFatalError) {
                     try {
                         recognitionInstance.start()
                     } catch (e) {}
@@ -521,7 +566,7 @@ export function MeetingCaptionsBanner({
             }
             recognitionRef.current = null
         }
-    }, [isEnabled, isLocalMuted])
+    }, [isEnabled, isLocalMuted, spokenLanguage])
 
     if (!isEnabled) return null
 
@@ -534,8 +579,8 @@ export function MeetingCaptionsBanner({
         if (isUnsupportedBrowser) {
             return (
                 <div style={{
-                    position: 'absolute', bottom: 84, left: '50%', transform: 'translateX(-50%)',
-                    zIndex: 80, padding: '6px 14px',
+                    position: 'fixed', bottom: 96, left: '50%', transform: 'translateX(-50%)',
+                    zIndex: 9990, padding: '6px 14px',
                     background: 'rgba(15, 23, 42, 0.88)', backdropFilter: 'blur(16px)',
                     WebkitBackdropFilter: 'blur(16px)',
                     border: '1px solid rgba(245, 158, 11, 0.4)',
@@ -554,11 +599,11 @@ export function MeetingCaptionsBanner({
 
         return (
             <div style={{
-                position: 'absolute',
-                bottom: 84,
+                position: 'fixed',
+                bottom: 96,
                 left: '50%',
                 transform: 'translateX(-50%)',
-                zIndex: 80,
+                zIndex: 9990,
                 padding: '4px 6px 4px 12px',
                 background: 'rgba(15, 23, 42, 0.85)',
                 backdropFilter: 'blur(20px) saturate(180%)',
@@ -568,7 +613,7 @@ export function MeetingCaptionsBanner({
                 boxShadow: '0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05)',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 9,
+                gap: 8,
                 userSelect: 'none'
             }}>
                 <style>{`
@@ -585,16 +630,31 @@ export function MeetingCaptionsBanner({
                 {/* Status Indicator */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
                     {isLocalMuted ? (
-                        <>
+                        <div
+                            onClick={toggleMute}
+                            title={toggleMute ? "Microphone is muted. Click here or mic button to unmute." : "Mic Muted"}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                cursor: toggleMute ? 'pointer' : 'default',
+                                padding: '2px 6px',
+                                borderRadius: 9999,
+                                background: 'rgba(245, 158, 11, 0.12)',
+                                transition: 'all 0.15s ease'
+                            }}
+                        >
                             <div style={{
-                                width: 18, height: 18, borderRadius: '50%',
-                                background: 'rgba(245, 158, 11, 0.15)',
+                                width: 16, height: 16, borderRadius: '50%',
+                                background: 'rgba(245, 158, 11, 0.25)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center'
                             }}>
-                                <IconMicOff size={11} color="#f59e0b" />
+                                <IconMicOff size={10} color="#f59e0b" />
                             </div>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1' }}>Mic Muted</span>
-                        </>
+                            <span style={{ fontSize: '0.74rem', fontWeight: 600, color: '#fde68a' }}>
+                                Mic Muted (Unmute to speak)
+                            </span>
+                        </div>
                     ) : (
                         <>
                             <div style={{
@@ -614,7 +674,64 @@ export function MeetingCaptionsBanner({
 
                 <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
 
-                {/* Professional Language Selector Pill */}
+                {/* Spoken Voice Language Selector */}
+                <div
+                    style={{
+                        position: 'relative',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '3px 8px',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                        borderRadius: 9999,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                    }}
+                    title="Select the language you are speaking"
+                >
+                    <IconMic size={11} color="#34d399" style={{ flexShrink: 0 }} />
+                    <span style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        color: '#f8fafc',
+                        maxWidth: 95,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                    }}>
+                        {SPOKEN_LANGUAGE_OPTIONS.find(o => o.code === spokenLanguage)?.label || 'English (US)'}
+                    </span>
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                    <select
+                        value={spokenLanguage}
+                        onChange={(e) => {
+                            setSpokenLanguage(e.target.value)
+                            try { localStorage.setItem('jts_caption_spoken_lang', e.target.value) } catch (_) {}
+                        }}
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            opacity: 0,
+                            cursor: 'pointer',
+                            appearance: 'none',
+                            WebkitAppearance: 'none'
+                        }}
+                    >
+                        {SPOKEN_LANGUAGE_OPTIONS.map(opt => (
+                            <option key={opt.code} value={opt.code} style={{ background: '#0f172a', color: '#fff' }}>
+                                🎙️ Spoken: {opt.label}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* Translation Language Selector Pill */}
                 <div
                     style={{
                         position: 'relative',
@@ -628,6 +745,7 @@ export function MeetingCaptionsBanner({
                         cursor: 'pointer',
                         transition: 'all 0.15s ease'
                     }}
+                    title="Translate subtitles into another language"
                     onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.14)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)' }}
                 >
@@ -636,7 +754,7 @@ export function MeetingCaptionsBanner({
                         fontSize: '0.72rem',
                         fontWeight: 600,
                         color: '#f8fafc',
-                        maxWidth: 130,
+                        maxWidth: 120,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
@@ -750,8 +868,8 @@ export function MeetingCaptionsBanner({
     // Active Captions: Sleek, compact, glassmorphic subtitle card
     return (
         <div style={{
-            position: 'absolute', bottom: 84, left: '50%', transform: 'translateX(-50%)',
-            zIndex: 80,
+            position: 'fixed', bottom: 96, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 9990,
             width: 'auto',
             maxWidth: 'min(92vw, 560px)',
             minWidth: 'min(92vw, 320px)',

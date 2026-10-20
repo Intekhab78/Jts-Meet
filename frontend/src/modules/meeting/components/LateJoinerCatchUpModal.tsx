@@ -33,69 +33,87 @@ export function LateJoinerCatchUpModal({
     const [copied, setCopied] = useState(false)
     const fetchedRef = useRef(false)
 
+    const propsRef = useRef({
+        meetingTitle,
+        meetingId,
+        token,
+        transcripts,
+        chatMessages
+    })
+
+    useEffect(() => {
+        propsRef.current = {
+            meetingTitle,
+            meetingId,
+            token,
+            transcripts,
+            chatMessages
+        }
+    })
+
     useEffect(() => {
         if (fetchedRef.current) return
         fetchedRef.current = true
 
-        let isMounted = true
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 6000)
+
         const fetchCatchUp = async () => {
             setLoading(true)
+            const { meetingTitle: title, transcripts: curTranscripts, chatMessages: curChat, token: propToken } = propsRef.current
+            const activeToken = propToken || localStorage.getItem('token') || localStorage.getItem('jts_token') || sessionStorage.getItem('token') || sessionStorage.getItem('jts_token') || ''
+
+            const fallbackBullets = [
+                `Meeting initiated with agenda discussion for "${title || 'Meeting'}".`,
+                'Participants reviewed project status, milestones, and deliverables.',
+                'Active discussion and media sharing are in progress.'
+            ]
+            const fallbackTakeaway = 'Meeting is actively underway. Check recent chat messages or shared screen to jump right in!'
+
             try {
                 const res = await fetch(`${API_BASE}/api/ai/catch-up`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                        ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
                     },
                     body: JSON.stringify({
-                        title: meetingTitle,
-                        transcripts,
-                        chatMessages
-                    })
+                        title: title || 'Meeting Session',
+                        transcripts: curTranscripts || [],
+                        chatMessages: curChat || []
+                    }),
+                    signal: controller.signal
                 })
+
+                clearTimeout(timer)
 
                 if (res.ok) {
                     const data = await res.json()
-                    if (isMounted && data.data) {
-                        setBullets(data.data.bullets && data.data.bullets.length > 0 ? data.data.bullets : [
-                            `Discussion initiated on agenda topics for "${meetingTitle}".`,
-                            'Participants reviewed progress checkpoints and key updates.',
-                            'Session is actively ongoing with collaborative discussions.'
-                        ])
-                        setKeyTakeaway(data.data.keyTakeaway || 'Meeting is actively underway. Check recent chat or screen share to stay aligned.')
+                    if (data.data) {
+                        setBullets(data.data.bullets && data.data.bullets.length > 0 ? data.data.bullets : fallbackBullets)
+                        setKeyTakeaway(data.data.keyTakeaway || fallbackTakeaway)
                         return
                     }
                 }
 
-                // Fallback if not ok or no data
-                if (isMounted) {
-                    setBullets([
-                        `Discussion initiated on agenda topics for "${meetingTitle}".`,
-                        'Participants reviewed progress checkpoints and key updates.',
-                        'Session is actively ongoing with collaborative discussions.'
-                    ])
-                    setKeyTakeaway('Meeting is actively underway. Check recent chat or screen share to stay aligned.')
-                }
-            } catch (err) {
+                setBullets(fallbackBullets)
+                setKeyTakeaway(fallbackTakeaway)
+            } catch (err: any) {
+                clearTimeout(timer)
                 console.warn('[Catch Me Up] Fallback used:', err)
-                if (isMounted) {
-                    setBullets([
-                        `Discussion initiated on agenda topics for "${meetingTitle}".`,
-                        'Participants reviewed progress checkpoints and key updates.',
-                        'Session is actively ongoing with collaborative discussions.'
-                    ])
-                    setKeyTakeaway('Meeting is actively underway. Check recent chat or screen share to stay aligned.')
-                }
+                setBullets(fallbackBullets)
+                setKeyTakeaway(fallbackTakeaway)
             } finally {
-                if (isMounted) setLoading(false)
+                setLoading(false)
             }
         }
 
         fetchCatchUp()
+
         return () => {
-            isMounted = false
+            controller.abort()
         }
-    }, [meetingTitle, meetingId, token])
+    }, [])
 
     const handleCopy = () => {
         const textToCopy = `Catch Me Up Recap — ${meetingTitle}\n\nKey Highlights:\n${bullets.map(b => `• ${b}`).join('\n')}\n\nTakeaway: ${keyTakeaway}`

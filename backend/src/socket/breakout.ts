@@ -95,3 +95,7 @@ export function registerBreakoutHandlers(io: Server, socket: Socket) {
 export function cleanupBreakout(meetingId: string) {
     activeBreakoutSessions.delete(meetingId)
 }
+
+export function getActiveBreakoutSession(meetingId: string): BreakoutSession | undefined {
+    return activeBreakoutSessions.get(meetingId)
+}

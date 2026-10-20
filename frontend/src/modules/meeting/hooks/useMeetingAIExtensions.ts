@@ -6,12 +6,8 @@ export interface TranscriptItem {
     timestamp: Date
 }
 
-export interface PostMeetingCapsuleData {
-    duration: string
-    talkTime: Record<string, number>
-    notes: string
-    title: string
-}
+import type { PostMeetingCapsuleData } from '../components/PostMeetingCapsuleModal'
+export type { PostMeetingCapsuleData }
 
 export interface DetectedActionItem {
     id: string

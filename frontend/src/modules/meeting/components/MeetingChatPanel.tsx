@@ -228,7 +228,7 @@ export function MeetingChatPanel({
         try {
             const formData = new FormData()
             formData.append('file', file)
-            const authToken = token || localStorage.getItem('token') || localStorage.getItem('authToken') || ''
+            const authToken = token || localStorage.getItem('jts_guest_token') || localStorage.getItem('jts_token') || localStorage.getItem('token') || localStorage.getItem('authToken') || ''
             const headers: Record<string, string> = {}
             if (authToken) {
                 headers['Authorization'] = `Bearer ${authToken}`

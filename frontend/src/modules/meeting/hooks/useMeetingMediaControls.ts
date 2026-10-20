@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { virtualBackgroundService } from '../../../services/virtualBackground.service'
 
 export interface UseMeetingMediaControlsProps {
@@ -26,7 +26,13 @@ export function useMeetingMediaControls({
     setShowPushToTalkHud,
     addToast
 }: UseMeetingMediaControlsProps) {
-    const [isMuted, setIsMuted] = useState(false)
+    const [isMuted, setIsMuted] = useState(() => {
+        try {
+            return sessionStorage.getItem('jts_initial_mic_muted') === 'true'
+        } catch {
+            return false
+        }
+    })
     const [isVideoOff, setIsVideoOff] = useState(() => {
         try {
             return sessionStorage.getItem('jts_initial_camera_off') === 'true'
@@ -45,14 +51,30 @@ export function useMeetingMediaControls({
     const rawCameraTrackRef = useRef<MediaStreamTrack | null>(null)
     const activeVideoDeviceIdRef = useRef<string | null>(null)
 
+    // Synchronize physical hardware audio tracks whenever localStream or isMuted changes (ensures muted state on refresh)
+    useEffect(() => {
+        if (localStream) {
+            localStream.getAudioTracks().forEach(track => {
+                track.enabled = !isMuted
+            })
+        }
+    }, [localStream, isMuted])
+
     const toggleMute = () => {
         const nextMuted = !isMuted
         if (localStream) {
             localStream.getAudioTracks().forEach(track => {
-                track.enabled = isMuted
+                track.enabled = !nextMuted
             })
         }
         setIsMuted(nextMuted)
+        try {
+            if (nextMuted) {
+                sessionStorage.setItem('jts_initial_mic_muted', 'true')
+            } else {
+                sessionStorage.removeItem('jts_initial_mic_muted')
+            }
+        } catch {}
         setShowPushToTalkHud(true)
         socket?.emit('meeting:mic-toggle', { meetingId: meetingId || meetingInput, isMuted: nextMuted })
     }

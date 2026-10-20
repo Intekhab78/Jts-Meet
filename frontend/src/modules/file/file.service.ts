@@ -108,3 +108,24 @@ export async function deleteFile(fileId: string, token?: string): Promise<void> 
 export function getFileDownloadUrl(fileId: string): string {
     return `${API_BASE}/api/file/${fileId}/download`
 }
+
+export async function listContextFiles(contextType: string, contextId: string, token?: string): Promise<FileMetadata[]> {
+    try {
+        const response = await fetch(`${API_BASE}/api/file/context/${contextType}/${contextId}`, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...(buildAuthHeaders(token) ?? {})
+            }
+        })
+
+        if (!response.ok) {
+            return []
+        }
+
+        const payload = await response.json()
+        return (payload.data || []) as FileMetadata[]
+    } catch {
+        return []
+    }
+}
+

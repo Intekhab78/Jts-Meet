@@ -22,8 +22,9 @@ export function useSocket(): UseSocketResult {
             auth: { token },
             transports: ['polling', 'websocket'],
             reconnection: true,
-            reconnectionAttempts: 10,
-            reconnectionDelay: 1000
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000
         })
 
         client.on('connect', () => setConnected(true))
@@ -41,6 +42,20 @@ export function useSocket(): UseSocketResult {
         socket.disconnect()
         setSocket(null)
         setConnected(false)
+    }, [socket])
+
+    // Immediately trigger socket reconnect when laptop connects to phone hotspot or network restores
+    useEffect(() => {
+        const handleOnline = () => {
+            if (socket && !socket.connected) {
+                console.log('[Socket] Network connection restored (online). Immediate socket reconnect...')
+                socket.connect()
+            }
+        }
+        window.addEventListener('online', handleOnline)
+        return () => {
+            window.removeEventListener('online', handleOnline)
+        }
     }, [socket])
 
     useEffect(() => {

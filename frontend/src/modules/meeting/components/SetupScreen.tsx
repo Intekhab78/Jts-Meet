@@ -109,7 +109,13 @@ export function SetupScreen({
     localStream, replaceLocalStream, initialVideoOff = false, onToggleVideo, onLeave
 }: SetupScreenProps) {
     const [activeTab, setActiveTab] = useState<'join' | 'create'>('join')
-    const [isMuted, setIsMuted] = useState(false)
+    const [isMuted, setIsMuted] = useState(() => {
+        try {
+            return sessionStorage.getItem('jts_initial_mic_muted') === 'true'
+        } catch {
+            return false
+        }
+    })
     const [isVideoOff, setIsVideoOff] = useState(() => {
         try {
             return initialVideoOff || sessionStorage.getItem('jts_initial_camera_off') === 'true'
@@ -117,6 +123,15 @@ export function SetupScreen({
             return initialVideoOff
         }
     })
+
+    // Synchronize physical hardware audio tracks with isMuted state
+    useEffect(() => {
+        if (localStream) {
+            localStream.getAudioTracks().forEach(track => {
+                track.enabled = !isMuted
+            })
+        }
+    }, [localStream, isMuted])
 
     // Waiting room state
     const [isWaiting, setIsWaiting] = useState(false)
@@ -155,12 +170,20 @@ export function SetupScreen({
     }, [meetingInput])
 
     const toggleMute = () => {
+        const nextMuted = !isMuted
         if (localStream) {
             localStream.getAudioTracks().forEach(track => {
-                track.enabled = isMuted
+                track.enabled = !nextMuted
             })
         }
-        setIsMuted(!isMuted)
+        setIsMuted(nextMuted)
+        try {
+            if (nextMuted) {
+                sessionStorage.setItem('jts_initial_mic_muted', 'true')
+            } else {
+                sessionStorage.removeItem('jts_initial_mic_muted')
+            }
+        } catch {}
     }
 
     const toggleVideo = async () => {

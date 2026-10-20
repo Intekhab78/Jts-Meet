@@ -322,13 +322,13 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             meetingId: targetMeetingId
         })
 
-        console.log(`[WebRTC Socket] Socket ${socket.id} (user ${sUserId}) dropped unexpectedly. Starting 15s grace window...`)
+        console.log(`[WebRTC Socket] Socket ${socket.id} (user ${sUserId}) dropped unexpectedly. Starting 60s network recovery grace window...`)
 
         const timer = setTimeout(() => {
             pendingDisconnectTimeouts.delete(sessionKey)
             console.log(`[WebRTC Socket] Grace period expired for user ${sUserId} in ${targetMeetingId}. Cleaning up session.`)
             handleLeaveOrDisconnect(targetMeetingId, sUserId)
-        }, 15000)
+        }, 60000)
 
         pendingDisconnectTimeouts.set(sessionKey, timer)
     })

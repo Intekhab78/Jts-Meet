@@ -293,7 +293,7 @@ export function MeetingModalsContainer({
                 isOpen={showPolls}
                 onClose={() => setShowPolls(false)}
                 meetingId={meetingId || meetingInput}
-                currentUserId="me"
+                currentUserId={localUserId || 'me'}
                 isHostOrCoHost={canManageParticipants || isLocalHost}
                 socket={socket}
             />
@@ -704,44 +704,8 @@ export function MeetingModalsContainer({
                 isOpen={isInviteOpen && !isGuest}
                 onClose={() => setIsInviteOpen(false)}
                 meetingId={meetingId || meetingInput}
-                token={token || ''}
                 addToast={addToast}
             />
-
-            {(isLiveStreaming || remoteLiveStatus?.isStreaming) && (
-                <div 
-                    onClick={() => setShowLiveStreamModal(true)}
-                    title="Click to manage live stream"
-                    style={{
-                        position: 'fixed',
-                        top: 68,
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        zIndex: 999,
-                        background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.95) 0%, rgba(185, 28, 28, 0.95) 100%)',
-                        backdropFilter: 'blur(8px)',
-                        border: '1px solid rgba(255, 255, 255, 0.25)',
-                        color: '#fff',
-                        padding: '6px 18px',
-                        borderRadius: 24,
-                        fontSize: '0.75rem',
-                        fontWeight: 800,
-                        letterSpacing: '0.04em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 18px rgba(239, 68, 68, 0.45)',
-                        animation: 'pulse 2s infinite',
-                        userSelect: 'none',
-                        transition: 'transform 0.2s ease'
-                    }}
-                >
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff', display: 'inline-block' }} />
-                    <span>ON AIR: LIVE STREAMING ON {(liveStreamConfig?.platform || remoteLiveStatus?.platform || 'RTMP').toUpperCase()}</span>
-                    <span style={{ fontSize: '0.65rem', opacity: 0.85, marginLeft: 4 }}>• Manage ⚙️</span>
-                </div>
-            )}
 
             {/* RTMP Live Streaming Studio Modal */}
             <LiveStreamModal

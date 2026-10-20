@@ -57,6 +57,7 @@ export interface MeetingBottomControlsProps {
     setShowWhiteboard: React.Dispatch<React.SetStateAction<boolean>>
     showPolls: boolean
     setShowPolls: React.Dispatch<React.SetStateAction<boolean>>
+    hasActiveUnvotedPoll?: boolean
     canAccessBreakout: boolean
     activeBreakoutSession: any
     setIsBreakoutModalOpen: (open: boolean) => void
@@ -156,6 +157,7 @@ export const MeetingBottomControls: React.FC<MeetingBottomControlsProps> = ({
     setShowWhiteboard,
     showPolls,
     setShowPolls,
+    hasActiveUnvotedPoll,
     canAccessBreakout,
     activeBreakoutSession,
     setIsBreakoutModalOpen,
@@ -249,6 +251,7 @@ export const MeetingBottomControls: React.FC<MeetingBottomControlsProps> = ({
                     setShowCaptions(next)
                     addToast(next ? 'Live Captions (CC) turned ON: Speak to see real-time subtitles' : 'Live Captions (CC) turned OFF', 'info')
                 }}
+                hasActiveUnvotedPoll={hasActiveUnvotedPoll}
                 moreBtnRef={moreBtnRef}
                 showMoreMenu={showMoreMenu}
                 onToggleMoreMenu={(e) => {
@@ -304,7 +307,33 @@ export const MeetingBottomControls: React.FC<MeetingBottomControlsProps> = ({
                 isConfidentialMode={isConfidentialMode}
                 onToggleConfidentialMode={() => setIsConfidentialMode(prev => !prev)}
                 isVoiceDubbingEnabled={isVoiceDubbingEnabled}
-                onToggleVoiceDubbing={() => setIsVoiceDubbingEnabled(prev => !prev)}
+                onToggleVoiceDubbing={() => {
+                    const next = !isVoiceDubbingEnabled
+                    setIsVoiceDubbingEnabled(next)
+                    try {
+                        localStorage.setItem('jts_voice_dubbing', String(next))
+                    } catch (_) {}
+                    if (next) {
+                        if (!showCaptions) {
+                            setShowCaptions(true)
+                        }
+                        addToast('AI Live Voice Dubbing ACTIVE: Remote speech will be voiced aloud in real time.', 'info')
+                        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                            try {
+                                window.speechSynthesis.cancel()
+                                const testUtter = new SpeechSynthesisUtterance('Live voice dubbing enabled')
+                                testUtter.rate = 1.1
+                                testUtter.volume = 0.85
+                                window.speechSynthesis.speak(testUtter)
+                            } catch (_) {}
+                        }
+                    } else {
+                        addToast('AI Live Voice Dubbing turned off.', 'info')
+                        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                            window.speechSynthesis.cancel()
+                        }
+                    }
+                }}
                 handleTogglePiP={handleTogglePiP}
                 isPiPActive={isPiPActive}
                 lowBandwidthMode={lowBandwidthMode}
@@ -323,7 +352,15 @@ export const MeetingBottomControls: React.FC<MeetingBottomControlsProps> = ({
                 onToggleStudioLighting={() => {
                     const next = !isStudioLightingEnabled
                     setIsStudioLightingEnabled(next)
-                    addToast(next ? 'Studio soft lighting enabled' : 'Studio lighting disabled', 'info')
+                    if (next) {
+                        if (isVideoOff) {
+                            addToast('Studio Lighting ON • Turn on camera to see warm studio glow', 'info')
+                        } else {
+                            addToast('Studio Soft Lighting Active • Warm studio glow applied', 'info')
+                        }
+                    } else {
+                        addToast('Studio Soft Lighting turned OFF', 'info')
+                    }
                 }}
                 canAccessRTMP={canAccessRTMP}
                 isLiveStreaming={isLiveStreaming}

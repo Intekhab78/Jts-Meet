@@ -138,6 +138,7 @@ export interface VideoTileProps {
     isCompact?: boolean
     isActiveSpeaker?: boolean
     isMutedProp?: boolean
+    objectFitProp?: 'contain' | 'cover'
 }
 
 export const VideoTile = React.memo(function VideoTile({
@@ -156,7 +157,8 @@ export const VideoTile = React.memo(function VideoTile({
     watermarkText,
     isCompact = false,
     isActiveSpeaker = false,
-    isMutedProp
+    isMutedProp,
+    objectFitProp
 }: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const isLocalUser = label.toLowerCase().includes('you') || label === 'me'
@@ -369,13 +371,13 @@ export const VideoTile = React.memo(function VideoTile({
                 style={{
                     width: '100%',
                     height: '100%',
-                    objectFit: isScreenShare ? 'contain' : 'cover',
+                    objectFit: isScreenShare ? 'contain' : (objectFitProp || 'cover'),
                     display: isVideoOff ? 'none' : 'block',
                     position: 'absolute',
                     inset: 0,
                     transform: isLocalUser && !isScreenShare ? 'scaleX(-1)' : 'none',
                     filter: [
-                        isStudioLighting ? 'brightness(1.14) contrast(1.06) saturate(1.05)' : '',
+                        isStudioLighting ? 'brightness(1.22) contrast(1.08) saturate(1.12)' : '',
                         isHdBoost ? 'contrast(1.05) saturate(1.06) brightness(1.02)' : ''
                     ].filter(Boolean).join(' ') || 'none',
                     pointerEvents: isVideoOff ? 'none' : 'auto',
@@ -384,6 +386,23 @@ export const VideoTile = React.memo(function VideoTile({
                     WebkitBackfaceVisibility: 'hidden'
                 }}
             />
+
+            {/* Studio Soft Lighting Warm Ambient Glow Overlay */}
+            {isStudioLighting && !isVideoOff && (
+                <div
+                    className="studio-lighting-warm-glow"
+                    style={{
+                        position: 'absolute',
+                        inset: 0,
+                        pointerEvents: 'none',
+                        zIndex: 2,
+                        background: 'radial-gradient(circle at 50% 35%, rgba(255, 237, 213, 0.18) 0%, rgba(251, 191, 36, 0.08) 50%, transparent 80%)',
+                        mixBlendMode: 'screen',
+                        boxShadow: 'inset 0 0 60px rgba(251, 191, 36, 0.16)',
+                        transition: 'opacity 0.4s ease'
+                    }}
+                />
+            )}
 
             {/* Center Avatar & First Name Placeholder (Active when Camera is OFF) */}
             <div
@@ -465,6 +484,19 @@ export const VideoTile = React.memo(function VideoTile({
                             )}
                             {effectiveMuted ? 'Muted' : 'Live'}
                         </span>
+                        {isStudioLighting && (
+                            <>
+                                <span style={{ width: 1, height: 12, background: 'rgba(251, 191, 36, 0.4)' }} />
+                                <span style={{ display: 'inline-flex', alignItems: 'center', color: '#fbbf24', fontWeight: 600, fontSize: '0.75rem' }}>
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}>
+                                        <circle cx="12" cy="12" r="5" />
+                                        <line x1="12" y1="1" x2="12" y2="3" />
+                                        <line x1="12" y1="21" x2="12" y2="23" />
+                                    </svg>
+                                    Studio Light Active
+                                </span>
+                            </>
+                        )}
                     </div>
                 )}
             </div>
@@ -556,38 +588,89 @@ export const VideoTile = React.memo(function VideoTile({
                 )}
             </div>
 
-            {/* Top Right: Network Quality Indicator */}
-            <div style={{
-                position: 'absolute',
-                top: isCompact ? 6 : 12,
-                right: isCompact ? 6 : 12,
-                display: 'flex',
-                alignItems: 'center',
-                gap: isCompact ? 4 : 6,
-                zIndex: 10
-            }}>
+            {/* Top Right: Network Quality Indicator (hidden on screenshare & primary main stage when Good to prevent covering content) */}
+            {!isScreenShare && (!isPrimary || connectionQuality !== 'Good') && (
                 <div style={{
-                    background: 'rgba(10, 11, 15, 0.75)',
-                    backdropFilter: 'blur(8px)',
-                    padding: isCompact ? '2px 5px' : '4px 8px',
-                    borderRadius: 'var(--radius-full)',
+                    position: 'absolute',
+                    top: isCompact ? 6 : 12,
+                    right: isCompact ? 6 : 12,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 4,
-                    color: connectionQuality === 'Good' ? 'var(--color-success)' : 'var(--color-warning)',
-                    fontSize: isCompact ? '0.575rem' : '0.625rem',
-                    fontWeight: 600,
-                    border: '1px solid rgba(255,255,255,0.06)'
+                    gap: isCompact ? 4 : 6,
+                    zIndex: 10
                 }}>
-                    <svg width={isCompact ? 8 : 10} height={isCompact ? 8 : 10} viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="1" y="16" width="3" height="5" />
-                        <rect x="6" y="12" width="3" height="9" />
-                        <rect x="11" y="8" width="3" height="13" />
-                        <rect x="16" y="4" width="3" height="17" />
-                    </svg>
-                    <span>{connectionQuality}</span>
+                    <div style={{
+                        background: 'rgba(10, 11, 15, 0.75)',
+                        backdropFilter: 'blur(8px)',
+                        padding: isCompact ? '2px 5px' : '4px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        color: connectionQuality === 'Good' ? 'var(--color-success)' : 'var(--color-warning)',
+                        fontSize: isCompact ? '0.575rem' : '0.625rem',
+                        fontWeight: 600,
+                        border: '1px solid rgba(255,255,255,0.06)'
+                    }}>
+                        <svg width={isCompact ? 8 : 10} height={isCompact ? 8 : 10} viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="1" y="16" width="3" height="5" />
+                            <rect x="6" y="12" width="3" height="9" />
+                            <rect x="11" y="8" width="3" height="13" />
+                            <rect x="16" y="4" width="3" height="17" />
+                        </svg>
+                        <span>{connectionQuality}</span>
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {/* Studio Light Floating Status Indicator Badge */}
+            {isStudioLighting && (
+                <div
+                    title={isVideoOff ? 'Studio Soft Lighting is active (waiting for camera)' : 'Studio Soft Lighting is actively enhancing video'}
+                    style={{
+                        position: 'absolute',
+                        top: isCompact ? 6 : 12,
+                        right: (!isScreenShare && (!isPrimary || connectionQuality !== 'Good'))
+                            ? (isCompact ? 68 : 88)
+                            : (isCompact ? 6 : 12),
+                        zIndex: 10,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: isCompact ? '2px 6px' : '3px 8px',
+                        borderRadius: 14,
+                        background: 'rgba(15, 23, 42, 0.88)',
+                        border: '1px solid rgba(251, 191, 36, 0.55)',
+                        backdropFilter: 'blur(10px)',
+                        color: '#fbbf24',
+                        fontSize: isCompact ? '0.625rem' : '0.6875rem',
+                        fontWeight: 700,
+                        letterSpacing: '0.04em',
+                        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5), 0 0 12px rgba(251, 191, 36, 0.25)',
+                        pointerEvents: 'none'
+                    }}
+                >
+                    <span style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: '#fbbf24',
+                        boxShadow: '0 0 8px #fbbf24'
+                    }} />
+                    <svg width={isCompact ? 10 : 12} height={isCompact ? 10 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="5" />
+                        <line x1="12" y1="1" x2="12" y2="3" />
+                        <line x1="12" y1="21" x2="12" y2="23" />
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                        <line x1="1" y1="12" x2="3" y2="12" />
+                        <line x1="21" y1="12" x2="23" y2="12" />
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                    </svg>
+                    <span>{isVideoOff ? 'STUDIO LIGHT (READY)' : 'STUDIO LIGHT'}</span>
+                </div>
+            )}
 
             {/* Confidential Data Leak Prevention Watermark */}
             {watermarkText && (

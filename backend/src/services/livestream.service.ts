@@ -124,20 +124,21 @@ class LiveStreamService extends EventEmitter {
         const numericKbps = parseInt(rawBitrate.replace(/[^0-9]/g, ''), 10) || (is1080p ? 4500 : 2500)
         const bufSize = `${numericKbps * 2}k`
         const scaleFilter = is1080p
-            ? 'format=yuv420p,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:-1:-1:color=black'
-            : 'format=yuv420p,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:-1:-1:color=black'
+            ? 'format=yuv420p,scale=1920:1080:flags=fast_bilinear'
+            : 'format=yuv420p,scale=1280:720:flags=fast_bilinear'
 
         const currentFfmpegPath = getFfmpegPath()
         console.log(`[LiveStream] Spawning FFmpeg (${currentFfmpegPath}) for meeting ${meetingId} -> ${options.platform.toUpperCase()} (${options.resolution || '720p'}) @ ${videoBitrate} (buf: ${bufSize})`)
 
         const ffmpegArgs = [
-            '-analyzeduration', '3000000',
-            '-probesize', '3000000',
+            '-analyzeduration', '1000000',
+            '-probesize', '1000000',
             '-thread_queue_size', '4096',
             '-err_detect', 'ignore_err',
             '-fflags', '+genpts+nobuffer+discardcorrupt',
             '-f', 'matroska',
             '-i', 'pipe:0',
+            '-threads', '0',
             '-max_muxing_queue_size', '4096',
             '-max_interleave_delta', '0',
             '-vf', scaleFilter,
@@ -145,6 +146,7 @@ class LiveStreamService extends EventEmitter {
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
             '-profile:v', 'baseline',
+            '-x264-params', 'no-scenecut=1:keyint=60:min-keyint=60',
             '-bf', '0',
             '-b:v', videoBitrate,
             '-minrate', videoBitrate,
@@ -159,7 +161,7 @@ class LiveStreamService extends EventEmitter {
             '-b:a', '128k',
             '-ar', '44100',
             '-ac', '2',
-            '-af', 'aresample=async=1:first_pts=0',
+            '-af', 'aresample=async=1000:first_pts=0',
             '-avoid_negative_ts', 'make_zero',
             '-f', 'flv',
             '-flvflags', 'no_duration_filesize',
@@ -215,8 +217,7 @@ class LiveStreamService extends EventEmitter {
                 if (attempts <= 5) {
                     console.log(`[LiveStream][${meetingId}] Auto-reconnecting live stream (attempt ${attempts}/5)...`)
                     session.status = 'starting'
-                    // Clear stale container headers and buffers so client browser keyframe feeds cleanly from byte 0
-                    session.initHeader = undefined
+                    // Retain cached EBML container header so newly spawned FFmpeg process receives valid header
                     session.pendingBuffer = []
                     session.headerFlushedOnReconnect = false
 

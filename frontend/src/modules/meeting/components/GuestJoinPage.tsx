@@ -38,8 +38,20 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
     const videoRef = useRef<HTMLVideoElement>(null)
     const streamRef = useRef<MediaStream | null>(null)
     const [stream, setStream] = useState<MediaStream | null>(null)
-    const [cameraOn, setCameraOn] = useState(true)
-    const [micOn, setMicOn] = useState(true)
+    const [cameraOn, setCameraOn] = useState(() => {
+        try {
+            return sessionStorage.getItem('jts_initial_camera_off') !== 'true'
+        } catch {
+            return true
+        }
+    })
+    const [micOn, setMicOn] = useState(() => {
+        try {
+            return sessionStorage.getItem('jts_initial_mic_muted') !== 'true'
+        } catch {
+            return true
+        }
+    })
     
     // Devices
     const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([])
@@ -78,6 +90,45 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
             }
         }
         fetchMeetingDetails()
+    }, [meetingId])
+
+    // Auto-join for Headless Server-Side Cloud Recorder Bot
+    useEffect(() => {
+        const searchParams = new URLSearchParams(window.location.search)
+        const isCloudRecorder = searchParams.get('cloudRecorder') === 'true'
+        const botName = searchParams.get('botName') || 'JTS Cloud Recorder Bot'
+        if (isCloudRecorder && meetingId && !requesting) {
+            const autoJoinBot = async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/api/guest/request`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            meetingId,
+                            guestName: botName
+                        })
+                    })
+                    const data = await response.json()
+                    if (response.ok && data?.success) {
+                        const { token, userId, isPending } = data.data
+                        try {
+                            localStorage.setItem('jts_guest_name', botName)
+                            sessionStorage.setItem('jts_active_meeting_id', meetingId)
+                            sessionStorage.setItem('jts_meeting_joined', 'true')
+                        } catch (_) {}
+                        onGuestRequestSuccess(token, userId, isPending, {
+                            guestName: botName,
+                            meetingTitle: `Room ${meetingId}`,
+                            hostName: 'Host',
+                            planTier: 'enterprise'
+                        })
+                    }
+                } catch (e) {
+                    console.error('[CloudRecorderBot] Failed to auto-join meeting:', e)
+                }
+            }
+            autoJoinBot()
+        }
     }, [meetingId])
 
     const getDevices = async () => {
@@ -205,6 +256,11 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                         sessionStorage.setItem('jts_initial_camera_off', 'true')
                     } else {
                         sessionStorage.removeItem('jts_initial_camera_off')
+                    }
+                    if (!micOn) {
+                        sessionStorage.setItem('jts_initial_mic_muted', 'true')
+                    } else {
+                        sessionStorage.removeItem('jts_initial_mic_muted')
                     }
                 } catch (e) {}
                 // Stop local preview completely so webcam LED turns off before joining room
@@ -461,7 +517,20 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                                 {cameraOn ? <IconVideo size={18} /> : <IconVideoOff size={18} />}
                             </button>
                             <button
-                                onClick={() => setMicOn(!micOn)}
+                                onClick={() => {
+                                    const next = !micOn
+                                    setMicOn(next)
+                                    if (stream) {
+                                        stream.getAudioTracks().forEach(t => { t.enabled = next })
+                                    }
+                                    try {
+                                        if (!next) {
+                                            sessionStorage.setItem('jts_initial_mic_muted', 'true')
+                                        } else {
+                                            sessionStorage.removeItem('jts_initial_mic_muted')
+                                        }
+                                    } catch (_) {}
+                                }}
                                 className={`btn ${micOn ? 'btn-ghost' : 'btn-primary'}`}
                                 style={{
                                     borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,

@@ -148,6 +148,17 @@ export const useMeetingGlobalSocketEvents = ({
         socket.on(SocketEvents.STAGE_STATUS_CHANGE, onStageStatusChange)
         socket.on(SocketEvents.STAGE_STATE_SYNC, onStageStateSync)
 
+        // Clean up backstage state when a participant leaves
+        const onUserLeftGlobal = (data: { userId: string }) => {
+            if (data?.userId) {
+                const targetId = String(data.userId).trim().toLowerCase()
+                setBackstageUserIds(prev => prev.filter(id => id.trim().toLowerCase() !== targetId))
+            }
+        }
+        socket.on(SocketEvents.WEBRTC_USER_LEFT, onUserLeftGlobal)
+        socket.on(SocketEvents.MEETING_LEAVE, onUserLeftGlobal)
+        socket.on('meeting:leave', onUserLeftGlobal)
+
         return () => {
             socket.off('meeting:mute-all', onMuteAllEvent)
             socket.off('meeting:lock-toggle', onLockToggleEvent)
@@ -163,6 +174,9 @@ export const useMeetingGlobalSocketEvents = ({
             socket.off(SocketEvents.MEETING_REMOVE_USER, onRemoveUserEvent)
             socket.off(SocketEvents.STAGE_STATUS_CHANGE, onStageStatusChange)
             socket.off(SocketEvents.STAGE_STATE_SYNC, onStageStateSync)
+            socket.off(SocketEvents.WEBRTC_USER_LEFT, onUserLeftGlobal)
+            socket.off(SocketEvents.MEETING_LEAVE, onUserLeftGlobal)
+            socket.off('meeting:leave', onUserLeftGlobal)
         }
     }, [socket, isLocalHost, localUserId, meetingId, localStream, setIsMuted, setIsLocked, setMeetingInput, handleExitMeeting, isGuest, token, setIsWatermarkEnabled, spawnReaction, setBackstageUserIds, addToast])
 }

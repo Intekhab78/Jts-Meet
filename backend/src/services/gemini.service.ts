@@ -4,8 +4,8 @@
  */
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
-const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-flash-latest']
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
+const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
 
 async function callGeminiApi(prompt: string, options: { jsonResponse?: boolean; temperature?: number; maxTokens?: number } = {}): Promise<string> {
     if (!GEMINI_API_KEY) {
@@ -32,11 +32,16 @@ async function callGeminiApi(prompt: string, options: { jsonResponse?: boolean; 
                 bodyPayload.generationConfig.maxOutputTokens = options.maxTokens
             }
 
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), 15000)
+
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(bodyPayload)
+                body: JSON.stringify(bodyPayload),
+                signal: controller.signal
             })
+            clearTimeout(timer)
 
             if (!response.ok) {
                 const errText = await response.text()

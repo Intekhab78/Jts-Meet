@@ -45,6 +45,7 @@ export interface MeetingToolbarProps {
     unreadChatCount: number
     showCaptions: boolean
     onToggleCaptions: () => void
+    hasActiveUnvotedPoll?: boolean
     moreBtnRef: React.RefObject<any>
     showMoreMenu: boolean
     onToggleMoreMenu: (e: React.MouseEvent) => void
@@ -82,6 +83,7 @@ export function MeetingToolbar({
     unreadChatCount,
     showCaptions,
     onToggleCaptions,
+    hasActiveUnvotedPoll,
     moreBtnRef,
     showMoreMenu,
     onToggleMoreMenu,
@@ -375,18 +377,19 @@ export function MeetingToolbar({
                 ref={moreBtnRef}
                 className={`btn-icon ${showMoreMenu ? 'active' : ''}`}
                 onClick={onToggleMoreMenu}
-                title="More options (⋮)"
+                title={hasActiveUnvotedPoll ? "New poll active! More options (⋮)" : "More options (⋮)"}
                 style={{
                     width: windowWidth < 640 ? 36 : 40,
                     height: windowWidth < 640 ? 36 : 40,
                     border: 'none',
                     borderRadius: '50%',
-                    background: showMoreMenu ? 'rgba(255,255,255,0.18)' : 'transparent',
-                    color: '#fff',
+                    background: showMoreMenu ? 'rgba(255,255,255,0.18)' : (hasActiveUnvotedPoll ? 'rgba(168, 85, 247, 0.2)' : 'transparent'),
+                    color: hasActiveUnvotedPoll ? '#c084fc' : '#fff',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    position: 'relative',
                     flexShrink: 0
                 }}
             >
@@ -395,6 +398,19 @@ export function MeetingToolbar({
                     <circle cx="12" cy="12" r="2" />
                     <circle cx="12" cy="19" r="2" />
                 </svg>
+                {/* Active Poll Notification Dot */}
+                {hasActiveUnvotedPoll && (
+                    <span style={{
+                        position: 'absolute',
+                        top: 4,
+                        right: 4,
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: '#c084fc',
+                        boxShadow: '0 0 8px #c084fc'
+                    }} />
+                )}
             </button>
 
             <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />

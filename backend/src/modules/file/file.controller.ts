@@ -1,7 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import { Request, Response } from 'express'
-import { createFileMetadata, getFileMetadata, softDeleteFile, computeChecksum } from './file.service'
+import { createFileMetadata, getFileMetadata, softDeleteFile, computeChecksum, listFilesByContext } from './file.service'
 import { sendSuccess, sendError } from '../../utils/responseHelper'
 import { fileUpload, isAllowedMimeType } from './file.validator'
 import { Organization } from '../organization/organization.model'
@@ -9,6 +9,7 @@ import { Organization } from '../organization/organization.model'
 interface AuthRequest extends Request {
     userId?: string
     file?: Express.Multer.File
+    guestName?: string
 }
 
 export const fileController = {
@@ -17,9 +18,10 @@ export const fileController = {
         const file = req.file
         const contextType = req.body.contextType as any
         const contextId = req.body.contextId as string
+        const uploaderName = req.body.uploaderName || req.guestName || undefined
 
-        if (!userId || !file) {
-            return sendError(res, 400, 'File and authentication required')
+        if (!file) {
+            return sendError(res, 400, 'File is required')
         }
 
         if (!isAllowedMimeType(file.mimetype)) {
@@ -43,12 +45,32 @@ export const fileController = {
                 file.mimetype,
                 userId,
                 contextType,
-                contextId
+                contextId,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                uploaderName
             )
 
             return sendSuccess(res, metadata)
         } catch (error: any) {
             return sendError(res, 500, error.message || 'Upload failed')
+        }
+    },
+
+    async listContextFiles(req: AuthRequest, res: Response) {
+        const contextType = Array.isArray(req.params.contextType) ? req.params.contextType[0] : req.params.contextType
+        const contextId = Array.isArray(req.params.contextId) ? req.params.contextId[0] : req.params.contextId
+        if (!contextType || !contextId) {
+            return sendError(res, 400, 'Context type and context ID are required')
+        }
+
+        try {
+            const files = await listFilesByContext(contextType, contextId)
+            return sendSuccess(res, files)
+        } catch (error: any) {
+            return sendError(res, 500, error.message || 'Failed to list context files')
         }
     },
 

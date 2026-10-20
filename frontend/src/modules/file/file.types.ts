@@ -10,7 +10,8 @@ export interface FileMetadata {
     storageProvider: string
     storageKey: string
     secureUrl: string
-    uploadedBy: string
+    uploadedBy: string | any
+    uploaderName?: string
     uploadedAt: string
     deletedAt?: string | null
     checksum: string

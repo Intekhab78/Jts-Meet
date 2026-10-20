@@ -41,6 +41,7 @@ import { useMeetingCloudRecordingStreamFeeder } from '../hooks/useMeetingCloudRe
 import { useMeetingNetworkAndToolbar } from '../hooks/useMeetingNetworkAndToolbar'
 import { useMeetingHands } from '../hooks/useMeetingHands'
 import { useMeetingFreeTierTimer } from '../hooks/useMeetingFreeTierTimer'
+import { useMeetingPolls } from '../hooks/useMeetingPolls'
 import { calculateMeetingStageLayout } from '../utils/stageLayout'
 
 type ActivePanel = 'participants' | 'chat' | 'files' | 'settings' | 'notes' | 'qa' | null
@@ -360,6 +361,18 @@ const [activePanel, setActivePanel] = useState<ActivePanel>(null)
         addToast
     })
 
+    // Meeting In-Call Polls & Real-Time Broadcast Hook
+    const {
+        activeNotificationPoll,
+        dismissNotification: dismissPollNotification,
+        hasActiveUnvotedPoll
+    } = useMeetingPolls({
+        socket,
+        meetingId: meetingId || meetingInput || '',
+        localUserId: localUserId || '',
+        addToast
+    })
+
 
 
 
@@ -640,7 +653,13 @@ const [activePanel, setActivePanel] = useState<ActivePanel>(null)
         meetingInfo,
         setPostMeetingCapsule,
         startScreenShare,
-        connectSocket
+        connectSocket,
+        participants,
+        myDisplayName,
+        getUserDisplayName,
+        messages,
+        transcripts,
+        isCloudRecording
     })
 
     const togglePanel = (panel: ActivePanel) => {
@@ -725,6 +744,15 @@ const activeRoomKey = meetingId || meetingInput.trim()
             <PostMeetingCapsuleModal
                 capsule={postMeetingCapsule}
                 isOpen={true}
+                onRejoin={() => {
+                    setPostMeetingCapsule(null)
+                    const targetId = postMeetingCapsule.meetingId || meetingId || meetingInput
+                    if (targetId) {
+                        setMeetingInput(targetId)
+                        setMeetingId(targetId)
+                        handleJoinMeeting(targetId)
+                    }
+                }}
                 onClose={() => {
                     setPostMeetingCapsule(null)
                     if (onLeave) onLeave()
@@ -812,7 +840,15 @@ const activeRoomKey = meetingId || meetingInput.trim()
                 showTalkingWhileMuted={showTalkingWhileMuted}
                 isMuted={isMuted}
                 showCaptions={showCaptions}
+                setShowCaptions={setShowCaptions}
+                displayName={myDisplayName || 'You'}
                 toggleMute={toggleMute}
+                activeNotificationPoll={activeNotificationPoll}
+                onVotePoll={() => {
+                    setShowPolls(true)
+                    dismissPollNotification()
+                }}
+                onDismissPollNotification={dismissPollNotification}
                 isWebinarMode={isWebinarMode}
                 isWebinarAttendee={isWebinarAttendee}
                 participantsCount={participants.length}
@@ -827,6 +863,8 @@ const activeRoomKey = meetingId || meetingInput.trim()
                 remoteMuteStates={remoteMuteStates}
                 canManageParticipants={canManageParticipants}
                 isLocalHost={isLocalHost}
+                isVoiceDubbingEnabled={isVoiceDubbingEnabled}
+                onTranscriptUpdate={setTranscripts}
             />
 
             {/* ── Header Bar ── */}
@@ -835,6 +873,10 @@ const activeRoomKey = meetingId || meetingInput.trim()
                 isRecording={isRecording}
                 isRemoteRecording={isRemoteRecording}
                 isCloudRecording={isCloudRecording}
+                isLiveStreaming={isLiveStreaming}
+                remoteLiveStatus={remoteLiveStatus}
+                liveStreamConfig={liveStreamConfig}
+                onOpenLiveStream={() => setShowLiveStreamModal(true)}
                 meetingDisplayId={meetingId || meetingInput}
                 canAccessE2EE={canAccessE2EE}
                 isE2EEActive={isE2EEActive}
@@ -1090,6 +1132,7 @@ const activeRoomKey = meetingId || meetingInput.trim()
                 setShowWhiteboard={setShowWhiteboard}
                 showPolls={showPolls}
                 setShowPolls={setShowPolls}
+                hasActiveUnvotedPoll={hasActiveUnvotedPoll}
                 canAccessBreakout={canAccessBreakout}
                 activeBreakoutSession={activeBreakoutSession}
                 setIsBreakoutModalOpen={setIsBreakoutModalOpen}

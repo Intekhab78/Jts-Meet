@@ -332,33 +332,35 @@ export function MoreOptionsMenu({
                 </button>
             )}
 
-            {/* Polls */}
-            {(canManageParticipants || showPolls) && (
-                <button
-                    onClick={() => {
-                        onClose()
-                        onTogglePolls()
-                    }}
-                    style={{
-                        display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
-                        background: 'transparent', border: 'none', borderRadius: '10px',
-                        color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
-                        transition: 'background 0.15s ease'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                >
-                    <div style={{
-                        width: 28, height: 28, borderRadius: 7,
-                        background: 'rgba(99, 102, 241, 0.12)',
-                        color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                    }}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                    </div>
-                    <span style={{ flex: 1, textAlign: 'left' }}>In-Call Polls</span>
-                    {showPolls && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>ACTIVE</span>}
-                </button>
-            )}
+            {/* Polls - accessible by all participants */}
+            <button
+                onClick={() => {
+                    onClose()
+                    onTogglePolls()
+                }}
+                style={{
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                    background: 'transparent', border: 'none', borderRadius: '10px',
+                    color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                    transition: 'background 0.15s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            >
+                <div style={{
+                    width: 28, height: 28, borderRadius: 7,
+                    background: 'rgba(168, 85, 247, 0.15)',
+                    color: '#c084fc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                </div>
+                <span style={{ flex: 1, textAlign: 'left' }}>In-Call Polls</span>
+                {showPolls ? (
+                    <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#c084fc', background: 'rgba(168, 85, 247, 0.2)', padding: '2px 6px', borderRadius: '6px' }}>OPEN</span>
+                ) : (
+                    <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#a855f7', background: 'rgba(168, 85, 247, 0.12)', padding: '2px 6px', borderRadius: '6px' }}>POLLS</span>
+                )}
+            </button>
 
             {/* Breakout Rooms (Host / Co-Host) */}
             {(canManageParticipants || isLocalHost) && (
@@ -416,36 +418,6 @@ export function MoreOptionsMenu({
                     )}
                 </button>
             )}
-
-            {/* Structured Q&A Panel */}
-            <button
-                onClick={() => {
-                    onClose()
-                    onTogglePanel('qa')
-                }}
-                style={{
-                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
-                    background: 'transparent', border: 'none', borderRadius: '10px',
-                    color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
-                    transition: 'background 0.15s ease'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-            >
-                <div style={{
-                    width: 28, height: 28, borderRadius: 7,
-                    background: 'rgba(236, 72, 153, 0.12)',
-                    color: '#f472b6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                </div>
-                <span style={{ flex: 1, textAlign: 'left' }}>Q&amp;A Panel</span>
-                {activePanel === 'qa' && (
-                    <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>
-                        OPEN
-                    </span>
-                )}
-            </button>
 
             {/* Q&A with Upvoting */}
             <button
@@ -733,32 +705,32 @@ export function MoreOptionsMenu({
             </button>
 
             {/* Shared Files */}
-            {(!isGuest || canManageParticipants) && (
-                <button
-                    onClick={() => {
-                        onClose()
-                        onTogglePanel('files')
-                    }}
-                    style={{
-                        display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
-                        background: 'transparent', border: 'none', borderRadius: '10px',
-                        color: '#fff', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
-                        transition: 'background 0.15s ease'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                >
-                    <div style={{
-                        width: 28, height: 28, borderRadius: 7,
-                        background: 'rgba(14, 165, 233, 0.12)',
-                        color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                    }}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                    </div>
-                    <span style={{ flex: 1, textAlign: 'left' }}>Shared Files</span>
-                    {activePanel === 'files' && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>OPEN</span>}
-                </button>
-            )}
+            <button
+                onClick={() => {
+                    onClose()
+                    onTogglePanel('files')
+                }}
+                style={{
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '7px 10px',
+                    background: activePanel === 'files' ? 'rgba(14, 165, 233, 0.15)' : 'transparent',
+                    border: 'none', borderRadius: '10px',
+                    color: activePanel === 'files' ? '#38bdf8' : '#fff',
+                    fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', width: '100%', textAlign: 'left',
+                    transition: 'background 0.15s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = activePanel === 'files' ? 'rgba(14, 165, 233, 0.15)' : 'transparent'}
+            >
+                <div style={{
+                    width: 28, height: 28, borderRadius: 7,
+                    background: 'rgba(14, 165, 233, 0.12)',
+                    color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <span style={{ flex: 1, textAlign: 'left' }}>Shared Files</span>
+                {activePanel === 'files' && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#38bdf8', background: 'rgba(14, 165, 233, 0.2)', padding: '2px 6px', borderRadius: '6px' }}>OPEN</span>}
+            </button>
 
             {/* Collaborative Notes */}
             <button

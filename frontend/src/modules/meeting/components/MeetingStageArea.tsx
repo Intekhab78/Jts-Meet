@@ -160,7 +160,8 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
     sidePanelsProps
 }) => {
     const [hoveredTile, setHoveredTile] = useState<string | null>(null)
-
+    const [isToolbarMinimized, setIsToolbarMinimized] = useState<boolean>(false)
+    const [isToolbarHovered, setIsToolbarHovered] = useState<boolean>(false)
     // Synchronize browser native fullscreen exit (e.g. user pressed Escape) with fullScreenUserId state
     useEffect(() => {
         const handleFullscreenChange = () => {
@@ -174,6 +175,25 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
         }
     }, [fullScreenUserId, setFullScreenUserId])
 
+    const isPrimaryFullscreen = fullScreenUserId === primaryUser || (typeof document !== 'undefined' && !!document.fullscreenElement)
+
+    const handleTogglePrimaryFullScreen = () => {
+        const tileElem = document.getElementById('primary-stage-tile')
+        if (!isPrimaryFullscreen) {
+            setFullScreenUserId(primaryUser)
+            if (tileElem && tileElem.requestFullscreen && !document.fullscreenElement) {
+                tileElem.requestFullscreen().catch(() => {})
+            }
+            if (addToast) addToast('Full screen mode (Side strip hidden, 0% crop)', 'info')
+        } else {
+            setFullScreenUserId(null)
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => {})
+            }
+            if (addToast) addToast('Exited full screen', 'info')
+        }
+    }
+
     if (isWebinarAttendee) return null
 
     // Render a single participant video tile with standard controls, click (pin) and double click (full screen)
@@ -181,10 +201,13 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
         const displayName = getUserDisplayName(userId)
         const isUserSharingScreen = userId === 'me'
             ? (screenSharingUserId === 'me' || screenSharingUserIds.includes('me'))
-            : (screenSharingUserId === userId || screenSharingUserIds.includes(userId))
+            : (screenSharingUserId === userId || 
+               screenSharingUserIds.includes(userId) ||
+               (!!screenSharingUserId && screenSharingUserId.toLowerCase() === userId.toLowerCase()) ||
+               screenSharingUserIds.some(id => id.toLowerCase() === userId.toLowerCase()))
         const stream = userId === 'me'
             ? (isUserSharingScreen ? localStream : (activeLocalStream || localStream))
-            : remoteStreams[userId]
+            : (remoteStreams[userId] || Object.entries(remoteStreams).find(([k]) => k.toLowerCase() === userId.toLowerCase())?.[1] || null)
         const isMutedUser = userId === 'me'
             ? isMuted
             : (remoteMuteStates[userId] !== undefined ? remoteMuteStates[userId] : !stream?.getAudioTracks()[0]?.enabled)
@@ -249,7 +272,7 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                     isHandRaised={isUserHandRaised}
                     isHost={userId === 'me' ? isLocalHost : !!(meetingInfo && meetingInfo.host && (meetingInfo.host._id === userId || meetingInfo.host === userId))}
                     isGuest={userId === 'me' ? isGuest : userId.startsWith('guest_')}
-                    isVideoOffProp={userId === 'me' ? isVideoOff : remoteVideoStates[userId]}
+                    isVideoOffProp={userId === 'me' ? (isUserSharingScreen ? false : isVideoOff) : (isUserSharingScreen ? false : remoteVideoStates[userId])}
                     isBlurred={userId === 'me' && isBlurEnabled}
                     isStudioLighting={userId === 'me' && isStudioLightingEnabled}
                     isHdBoost={isHdBoostEnabled}
@@ -382,8 +405,8 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
     return (
         <main style={{
             flex: 1,
-            paddingTop: isWebinarMode ? (isLowTimeWarning ? 142 : 102) : (isLowTimeWarning ? 104 : 64),
-            paddingBottom: 20,
+            paddingTop: isWebinarMode ? (isLowTimeWarning ? 142 : 102) : (isLowTimeWarning ? 94 : 56),
+            paddingBottom: 10,
             display: 'flex',
             overflow: 'hidden',
             boxSizing: 'border-box'
@@ -432,7 +455,11 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                         {isStageLayoutActive ? (
                             <div style={layoutStyle}>
                                 {/* Primary Focus Zone (Left / Top) */}
-                                <div style={{
+                                <div 
+                                    id="primary-stage-tile"
+                                    onMouseEnter={() => setHoveredTile('primary')}
+                                    onMouseLeave={() => setHoveredTile(null)}
+                                    style={{
                                     flex: (fullScreenUserId || layoutMode === 'spotlight' || stripUsers.length === 0) ? 1 : isMobile ? 1 : isTablet ? '1 1 65%' : '1 1 80%',
                                     minWidth: 0,
                                     minHeight: 0,
@@ -445,39 +472,149 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                     boxShadow: activeSpeaker === primaryUser ? '0 0 12px rgba(59, 130, 246, 0.45)' : 'var(--shadow-sm)',
                                     transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
                                 }}>
-                                    <VideoTile
-                                        stream={primaryStream}
-                                        label={primaryUser === 'me' ? 'You' : getUserDisplayName(primaryUser)}
-                                        muted={primaryUser === 'me'}
-                                        isScreenShare={isScreenShareActive && primaryUser === activePresenterId}
-                                        isPrimary={true}
-                                        isHandRaised={primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser]}
-                                        isHost={primaryUser === 'me' ? isLocalHost : !!(meetingInfo && meetingInfo.host && (meetingInfo.host._id === primaryUser || meetingInfo.host === primaryUser))}
-                                        isGuest={primaryUser === 'me' ? isGuest : primaryUser.startsWith('guest_')}
-                                        isVideoOffProp={primaryUser === 'me' ? isVideoOff : remoteVideoStates[primaryUser]}
-                                        isBlurred={primaryUser === 'me' && isBlurEnabled}
-                                        isStudioLighting={primaryUser === 'me' && isStudioLightingEnabled}
-                                        isHdBoost={isHdBoostEnabled}
-                                        watermarkText={isWatermarkEnabled ? `${myDisplayName} • ${meetingInfo?.customId || meetingInfo?.id || meetingId || 'JTS-Meet'}` : undefined}
-                                        isActiveSpeaker={activeSpeaker === primaryUser}
-                                        isMutedProp={primaryUser === 'me' ? isMuted : (remoteMuteStates[primaryUser] !== undefined ? remoteMuteStates[primaryUser] : !primaryStream?.getAudioTracks()[0]?.enabled)}
-                                    />
+                                    {(() => {
+                                        const isPrimarySharingScreen = isScreenShareActive && (
+                                            primaryUser === activePresenterId ||
+                                            (!!activePresenterId && primaryUser.toLowerCase() === activePresenterId.toLowerCase())
+                                        );
+                                        return (
+                                            <VideoTile
+                                                stream={primaryStream}
+                                                label={primaryUser === 'me' ? 'You' : getUserDisplayName(primaryUser)}
+                                                muted={primaryUser === 'me'}
+                                                isScreenShare={isPrimarySharingScreen}
+                                                isPrimary={true}
+                                                isHandRaised={primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser]}
+                                                isHost={primaryUser === 'me' ? isLocalHost : !!(meetingInfo && meetingInfo.host && (meetingInfo.host._id === primaryUser || meetingInfo.host === primaryUser))}
+                                                isGuest={primaryUser === 'me' ? isGuest : primaryUser.startsWith('guest_')}
+                                                isVideoOffProp={primaryUser === 'me' ? (isPrimarySharingScreen ? false : isVideoOff) : (isPrimarySharingScreen ? false : remoteVideoStates[primaryUser])}
+                                                isBlurred={primaryUser === 'me' && isBlurEnabled}
+                                                isStudioLighting={primaryUser === 'me' && isStudioLightingEnabled}
+                                                isHdBoost={isHdBoostEnabled}
+                                                watermarkText={isWatermarkEnabled ? `${myDisplayName} • ${meetingInfo?.customId || meetingInfo?.id || meetingId || 'JTS-Meet'}` : undefined}
+                                                isActiveSpeaker={activeSpeaker === primaryUser}
+                                                isMutedProp={primaryUser === 'me' ? isMuted : (remoteMuteStates[primaryUser] !== undefined ? remoteMuteStates[primaryUser] : !primaryStream?.getAudioTracks()[0]?.enabled)}
+                                            />
+                                        );
+                                    })()}
 
-                                    {/* Top-Left Action Toolbar (Unpin Screen & Screen Share Controls in one clean row) */}
+                                    {/* Top-Left Action Toolbar (Unpin Screen & Screen Share Controls with Auto-Hide & Minimize) */}
                                     {(pinnedUserId || isScreenShareActive) && (() => {
                                         const isPrimaryHandRaised = primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser];
+                                        const isControlsVisible = hoveredTile === 'primary' || isToolbarHovered;
+                                        
+                                        if (isToolbarMinimized) {
+                                            return (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: 12,
+                                                    left: isPrimaryHandRaised ? 125 : 14,
+                                                    zIndex: 45,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 6
+                                                }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsToolbarMinimized(false)}
+                                                        onMouseEnter={() => setIsToolbarHovered(true)}
+                                                        onMouseLeave={() => setIsToolbarHovered(false)}
+                                                        style={{
+                                                            background: 'rgba(10, 11, 15, 0.85)',
+                                                            backdropFilter: 'blur(10px)',
+                                                            WebkitBackdropFilter: 'blur(10px)',
+                                                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                                                            borderRadius: '50%',
+                                                            width: 30,
+                                                            height: 30,
+                                                            color: 'rgba(255, 255, 255, 0.9)',
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                                                            opacity: isControlsVisible ? 1 : 0.45,
+                                                            transition: 'all 0.25s ease',
+                                                            userSelect: 'none'
+                                                        }}
+                                                        title="Screen Controls (Click to expand)"
+                                                        aria-label="Screen Controls"
+                                                    >
+                                                        <IconPin size={14} />
+                                                    </button>
+
+                                                    {isScreenShareActive && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleTogglePrimaryFullScreen}
+                                                            onMouseEnter={() => setIsToolbarHovered(true)}
+                                                            onMouseLeave={() => setIsToolbarHovered(false)}
+                                                            style={{
+                                                                background: isPrimaryFullscreen ? 'rgba(59, 130, 246, 0.9)' : 'rgba(10, 11, 15, 0.85)',
+                                                                backdropFilter: 'blur(10px)',
+                                                                WebkitBackdropFilter: 'blur(10px)',
+                                                                border: isPrimaryFullscreen ? '1px solid #60a5fa' : '1px solid rgba(255, 255, 255, 0.2)',
+                                                                borderRadius: '50%',
+                                                                width: 30,
+                                                                height: 30,
+                                                                color: '#fff',
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                boxShadow: isPrimaryFullscreen ? '0 0 10px rgba(59, 130, 246, 0.4)' : '0 2px 8px rgba(0,0,0,0.3)',
+                                                                opacity: isControlsVisible ? 1 : 0.45,
+                                                                transition: 'all 0.25s ease',
+                                                                userSelect: 'none'
+                                                            }}
+                                                            title={isPrimaryFullscreen ? "Exit Full Screen (Esc)" : "Full Screen (Focus View, No Cropping)"}
+                                                            aria-label={isPrimaryFullscreen ? "Exit Full Screen" : "Full Screen"}
+                                                        >
+                                                            {isPrimaryFullscreen ? (
+                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <polyline points="4 14 10 14 10 20" />
+                                                                    <polyline points="20 10 14 10 14 4" />
+                                                                    <line x1="14" y1="10" x2="21" y2="3" />
+                                                                    <line x1="3" y1="21" x2="10" y2="14" />
+                                                                </svg>
+                                                            ) : (
+                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <polyline points="15 3 21 3 21 9" />
+                                                                    <polyline points="9 21 3 21 3 15" />
+                                                                    <line x1="21" y1="3" x2="14" y2="10" />
+                                                                    <line x1="3" y1="21" x2="10" y2="14" />
+                                                                </svg>
+                                                            )}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        }
+
                                         return (
-                                            <div style={{
-                                                position: 'absolute',
-                                                top: 14,
-                                                left: isPrimaryHandRaised ? 125 : 14,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 8,
-                                                zIndex: 45,
-                                                maxWidth: 'calc(100% - 180px)',
-                                                flexWrap: 'wrap'
-                                            }}>
+                                            <div 
+                                                onMouseEnter={() => setIsToolbarHovered(true)}
+                                                onMouseLeave={() => setIsToolbarHovered(false)}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: 12,
+                                                    left: isPrimaryHandRaised ? 125 : 14,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 6,
+                                                    padding: '3px 6px',
+                                                    background: 'rgba(10, 11, 15, 0.85)',
+                                                    backdropFilter: 'blur(12px)',
+                                                    WebkitBackdropFilter: 'blur(12px)',
+                                                    border: '1px solid rgba(255, 255, 255, 0.18)',
+                                                    borderRadius: 'var(--radius-full)',
+                                                    zIndex: 45,
+                                                    boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                                                    opacity: isControlsVisible ? 1 : 0.35,
+                                                    pointerEvents: isControlsVisible ? 'auto' : 'none',
+                                                    transition: 'opacity 0.25s ease'
+                                                }}
+                                            >
                                                 {/* Floating Unpin Button */}
                                                 {pinnedUserId && (
                                                     <button
@@ -487,35 +624,28 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                                             if (addToast) addToast('Unpinned user', 'info');
                                                         }}
                                                         style={{
-                                                            background: 'rgba(10, 11, 15, 0.85)',
-                                                            backdropFilter: 'blur(10px)',
-                                                            WebkitBackdropFilter: 'blur(10px)',
-                                                            border: '1px solid rgba(255, 255, 255, 0.18)',
-                                                            borderRadius: 'var(--radius-full)',
-                                                            padding: '6px 14px',
+                                                            background: 'transparent',
+                                                            border: 'none',
+                                                            borderRadius: '50%',
+                                                            width: 28,
+                                                            height: 28,
                                                             color: '#fff',
-                                                            fontSize: '0.75rem',
-                                                            fontWeight: 700,
                                                             cursor: 'pointer',
                                                             display: 'inline-flex',
                                                             alignItems: 'center',
-                                                            gap: 6,
-                                                            boxShadow: 'var(--shadow-md)',
-                                                            transition: 'all 0.2s ease',
-                                                            whiteSpace: 'nowrap'
+                                                            justifyContent: 'center',
+                                                            transition: 'all 0.2s ease'
                                                         }}
                                                         onMouseEnter={(e) => {
                                                             e.currentTarget.style.background = 'var(--color-accent)';
-                                                            e.currentTarget.style.borderColor = 'transparent';
                                                         }}
                                                         onMouseLeave={(e) => {
-                                                            e.currentTarget.style.background = 'rgba(10, 11, 15, 0.85)';
-                                                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+                                                            e.currentTarget.style.background = 'transparent';
                                                         }}
-                                                        title="Unpin from main stage"
+                                                        title={isScreenShareActive ? 'Unpin Screen' : 'Unpin'}
+                                                        aria-label="Unpin"
                                                     >
-                                                        <IconPin size={13} />
-                                                        <span>{isScreenShareActive ? 'Unpin Screen' : 'Unpin'}</span>
+                                                        <IconPin size={14} />
                                                     </button>
                                                 )}
 
@@ -525,29 +655,24 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                                         type="button"
                                                         onClick={() => setIsAnnotationActive(true)}
                                                         style={{
-                                                            background: 'rgba(10, 11, 15, 0.85)',
-                                                            backdropFilter: 'blur(10px)',
-                                                            WebkitBackdropFilter: 'blur(10px)',
-                                                            border: '1px solid rgba(255,255,255,0.18)',
-                                                            borderRadius: 'var(--radius-full)',
-                                                            padding: '5px 11px',
-                                                            color: '#fff',
-                                                            fontSize: '0.72rem',
-                                                            fontWeight: 700,
+                                                            background: 'transparent',
+                                                            border: 'none',
+                                                            borderRadius: '50%',
+                                                            width: 28,
+                                                            height: 28,
+                                                            color: '#a78bfa',
                                                             cursor: 'pointer',
                                                             display: 'inline-flex',
                                                             alignItems: 'center',
-                                                            gap: 5,
-                                                            boxShadow: 'var(--shadow-md)',
-                                                            transition: 'all 0.2s ease',
-                                                            whiteSpace: 'nowrap'
+                                                            justifyContent: 'center',
+                                                            transition: 'all 0.2s ease'
                                                         }}
-                                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.9)'; e.currentTarget.style.borderColor = 'transparent' }}
-                                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(10, 11, 15, 0.85)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)' }}
-                                                        title="Toggle interactive drawing & laser pointer on screen"
+                                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.25)'; e.currentTarget.style.color = '#fff' }}
+                                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#a78bfa' }}
+                                                        title="Annotate & Laser Pointer"
+                                                        aria-label="Annotate & Laser"
                                                     >
-                                                        <IconEdit size={13} />
-                                                        <span>Annotate & Laser</span>
+                                                        <IconEdit size={14} />
                                                     </button>
                                                 )}
 
@@ -559,38 +684,44 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                                         disabled={isRequestingControl}
                                                         style={{
                                                             background: activeControllerId === (parseJwt(token)?.userId || 'me')
-                                                                ? 'rgba(59, 130, 246, 0.95)'
+                                                                ? 'rgba(59, 130, 246, 0.85)'
+                                                                : 'transparent',
+                                                            border: 'none',
+                                                            borderRadius: '50%',
+                                                            width: 28,
+                                                            height: 28,
+                                                            color: activeControllerId === (parseJwt(token)?.userId || 'me')
+                                                                ? '#fff'
                                                                 : isRequestingControl
-                                                                    ? 'rgba(100, 116, 139, 0.8)'
-                                                                    : 'rgba(10, 11, 15, 0.85)',
-                                                            backdropFilter: 'blur(10px)',
-                                                            WebkitBackdropFilter: 'blur(10px)',
-                                                            border: activeControllerId === (parseJwt(token)?.userId || 'me')
-                                                                ? '1px solid #93c5fd'
-                                                                : '1px solid rgba(255,255,255,0.18)',
-                                                            borderRadius: 'var(--radius-full)',
-                                                            padding: '5px 11px',
-                                                            color: '#fff',
-                                                            fontSize: '0.72rem',
-                                                            fontWeight: 700,
+                                                                    ? '#94a3b8'
+                                                                    : '#60a5fa',
                                                             cursor: isRequestingControl ? 'not-allowed' : 'pointer',
                                                             display: 'inline-flex',
                                                             alignItems: 'center',
-                                                            gap: 5,
-                                                            boxShadow: activeControllerId === (parseJwt(token)?.userId || 'me') ? '0 0 16px rgba(59, 130, 246, 0.5)' : 'var(--shadow-md)',
-                                                            transition: 'all 0.2s ease',
-                                                            whiteSpace: 'nowrap'
+                                                            justifyContent: 'center',
+                                                            boxShadow: activeControllerId === (parseJwt(token)?.userId || 'me') ? '0 0 10px rgba(59, 130, 246, 0.5)' : 'none',
+                                                            transition: 'all 0.2s ease'
                                                         }}
-                                                        title={activeControllerId === (parseJwt(token)?.userId || 'me') ? 'Release Remote Control' : 'Request Remote Control of this screen'}
+                                                        onMouseEnter={(e) => {
+                                                            if (activeControllerId !== (parseJwt(token)?.userId || 'me') && !isRequestingControl) {
+                                                                e.currentTarget.style.background = 'rgba(59, 130, 246, 0.25)';
+                                                                e.currentTarget.style.color = '#fff';
+                                                            }
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            if (activeControllerId !== (parseJwt(token)?.userId || 'me') && !isRequestingControl) {
+                                                                e.currentTarget.style.background = 'transparent';
+                                                                e.currentTarget.style.color = '#60a5fa';
+                                                            }
+                                                        }}
+                                                        title={activeControllerId === (parseJwt(token)?.userId || 'me')
+                                                            ? 'Release Remote Control'
+                                                            : isRequestingControl
+                                                                ? 'Requesting Control...'
+                                                                : 'Request Remote Control'}
+                                                        aria-label="Remote Control"
                                                     >
-                                                        <IconMonitor size={13} />
-                                                        <span>
-                                                            {activeControllerId === (parseJwt(token)?.userId || 'me')
-                                                                ? 'Release Control'
-                                                                : isRequestingControl
-                                                                    ? 'Requesting Control...'
-                                                                    : 'Request Control'}
-                                                        </span>
+                                                        <IconMonitor size={14} />
                                                     </button>
                                                 )}
 
@@ -600,31 +731,111 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                                         type="button"
                                                         onClick={() => setIsAttendeeAnnotationActive(true)}
                                                         style={{
-                                                            background: 'rgba(10, 11, 15, 0.85)',
-                                                            backdropFilter: 'blur(10px)',
-                                                            WebkitBackdropFilter: 'blur(10px)',
-                                                            border: '1px solid rgba(255, 255, 255, 0.18)',
-                                                            borderRadius: 'var(--radius-full)',
-                                                            padding: '5px 11px',
-                                                            color: '#fff',
-                                                            fontSize: '0.72rem',
-                                                            fontWeight: 700,
+                                                            background: 'transparent',
+                                                            border: 'none',
+                                                            borderRadius: '50%',
+                                                            width: 28,
+                                                            height: 28,
+                                                            color: '#818cf8',
                                                             cursor: 'pointer',
                                                             display: 'inline-flex',
                                                             alignItems: 'center',
-                                                            gap: 5,
-                                                            boxShadow: 'var(--shadow-md)',
-                                                            transition: 'all 0.2s ease',
-                                                            whiteSpace: 'nowrap'
+                                                            justifyContent: 'center',
+                                                            transition: 'all 0.2s ease'
                                                         }}
-                                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.9)'; e.currentTarget.style.borderColor = 'transparent' }}
-                                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(10, 11, 15, 0.85)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)' }}
-                                                        title="Toggle drawing and annotations on screen"
+                                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.25)'; e.currentTarget.style.color = '#fff' }}
+                                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#818cf8' }}
+                                                        title="Draw on Screen (Viewer Annotation)"
+                                                        aria-label="Draw on Screen"
                                                     >
-                                                        <IconEdit size={13} />
-                                                        <span>Annotate</span>
+                                                        <IconEdit size={14} />
                                                     </button>
                                                 )}
+
+                                                {/* Full Screen / Focus View Toggle */}
+                                                {isScreenShareActive && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleTogglePrimaryFullScreen}
+                                                        style={{
+                                                            background: isPrimaryFullscreen ? 'rgba(59, 130, 246, 0.85)' : 'transparent',
+                                                            border: 'none',
+                                                            borderRadius: '50%',
+                                                            width: 28,
+                                                            height: 28,
+                                                            color: isPrimaryFullscreen ? '#fff' : '#cbd5e1',
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            boxShadow: isPrimaryFullscreen ? '0 0 10px rgba(59, 130, 246, 0.45)' : 'none',
+                                                            transition: 'all 0.2s ease'
+                                                        }}
+                                                        onMouseEnter={(e) => {
+                                                            if (!isPrimaryFullscreen) {
+                                                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                                                                e.currentTarget.style.color = '#fff';
+                                                            }
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            if (!isPrimaryFullscreen) {
+                                                                e.currentTarget.style.background = 'transparent';
+                                                                e.currentTarget.style.color = '#cbd5e1';
+                                                            }
+                                                        }}
+                                                        title={isPrimaryFullscreen ? "Exit Full Screen (Esc)" : "Full Screen (Focus View, No Cropping)"}
+                                                        aria-label={isPrimaryFullscreen ? "Exit Full Screen" : "Full Screen"}
+                                                    >
+                                                        {isPrimaryFullscreen ? (
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                                                                <polyline points="4 14 10 14 10 20" />
+                                                                <polyline points="20 10 14 10 14 4" />
+                                                                <line x1="14" y1="10" x2="21" y2="3" />
+                                                                <line x1="3" y1="21" x2="10" y2="14" />
+                                                            </svg>
+                                                        ) : (
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                                                                <polyline points="15 3 21 3 21 9" />
+                                                                <polyline points="9 21 3 21 3 15" />
+                                                                <line x1="21" y1="3" x2="14" y2="10" />
+                                                                <line x1="3" y1="21" x2="10" y2="14" />
+                                                            </svg>
+                                                        )}
+                                                    </button>
+                                                )}
+
+                                                {/* Hide / Minimize Toolbar Button */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsToolbarMinimized(true)}
+                                                    style={{
+                                                        background: 'transparent',
+                                                        border: 'none',
+                                                        borderRadius: '50%',
+                                                        width: 28,
+                                                        height: 28,
+                                                        color: '#94a3b8',
+                                                        cursor: 'pointer',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        transition: 'all 0.2s ease'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                                                        e.currentTarget.style.color = '#fff';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.background = 'transparent';
+                                                        e.currentTarget.style.color = '#94a3b8';
+                                                    }}
+                                                    title="Minimize toolbar"
+                                                    aria-label="Minimize toolbar"
+                                                >
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                        <polyline points="18 15 12 9 6 15" />
+                                                    </svg>
+                                                </button>
                                             </div>
                                         );
                                     })()}

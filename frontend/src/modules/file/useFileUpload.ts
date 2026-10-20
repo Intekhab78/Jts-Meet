@@ -12,7 +12,7 @@ export interface UseFileUploadResult {
     selectFiles: (files: FileList | File[]) => void
     removeFile: (index: number) => void
     clearSelection: () => void
-    uploadSelectedFiles: (token: string, contextType?: FileContextType, contextId?: string) => Promise<void>
+    uploadSelectedFiles: (token: string, contextType?: FileContextType, contextId?: string) => Promise<FileMetadata[]>
     cancelUpload: () => void
 }
 
@@ -52,10 +52,10 @@ export function useFileUpload(): UseFileUploadResult {
     }, [])
 
     const uploadSelectedFiles = useCallback(
-        async (token: string, contextType?: FileContextType, contextId?: string) => {
+        async (token: string, contextType?: FileContextType, contextId?: string): Promise<FileMetadata[]> => {
             if (selectedFiles.length === 0) {
                 setError('No files selected for upload')
-                return
+                return []
             }
 
             setUploading(true)
@@ -81,8 +81,10 @@ export function useFileUpload(): UseFileUploadResult {
 
                 setUploadedFiles((current) => [...current, ...results])
                 setSelectedFiles([])
+                return results
             } catch (uploadError: any) {
                 setError(uploadError?.message || 'Upload failed')
+                return []
             } finally {
                 setUploading(false)
                 setUploadProgress(0)

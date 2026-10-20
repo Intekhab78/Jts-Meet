@@ -2,12 +2,21 @@ import React from 'react'
 import { TalkingWhileMutedAlert } from './TalkingWhileMutedAlert'
 import { WebinarStageActiveBanner } from './WebinarStageActiveBanner'
 import { PersistentAudioBridge } from './PersistentAudioBridge'
+import { MeetingCaptionsBanner } from './MeetingCaptionsBanner'
+import { ActivePollNotificationBanner } from './ActivePollNotificationBanner'
+import type { Poll } from '../hooks/useMeetingPolls'
 
 export interface MeetingOverlayBannersProps {
     showTalkingWhileMuted: boolean
     isMuted: boolean
     showCaptions: boolean
+    setShowCaptions?: (enabled: boolean) => void
+    displayName?: string
     toggleMute: () => void
+
+    activeNotificationPoll?: Poll | null
+    onVotePoll?: () => void
+    onDismissPollNotification?: () => void
 
     isWebinarMode: boolean
     isWebinarAttendee: boolean
@@ -24,13 +33,20 @@ export interface MeetingOverlayBannersProps {
     remoteMuteStates: { [userId: string]: boolean }
     canManageParticipants: boolean
     isLocalHost: boolean
+    isVoiceDubbingEnabled?: boolean
+    onTranscriptUpdate?: (transcript: any[]) => void
 }
 
 export const MeetingOverlayBanners: React.FC<MeetingOverlayBannersProps> = ({
     showTalkingWhileMuted,
     isMuted,
     showCaptions,
+    setShowCaptions,
+    displayName,
     toggleMute,
+    activeNotificationPoll,
+    onVotePoll,
+    onDismissPollNotification,
     isWebinarMode,
     isWebinarAttendee,
     participantsCount,
@@ -44,16 +60,46 @@ export const MeetingOverlayBanners: React.FC<MeetingOverlayBannersProps> = ({
     backstageUserIds,
     remoteMuteStates,
     canManageParticipants,
-    isLocalHost
+    isLocalHost,
+    isVoiceDubbingEnabled,
+    onTranscriptUpdate
 }) => {
     return (
         <>
+            {/* Interactive Floating Poll Notification Banner */}
+            {activeNotificationPoll && (
+                <ActivePollNotificationBanner
+                    isOpen={!!activeNotificationPoll}
+                    question={activeNotificationPoll.question}
+                    optionsCount={activeNotificationPoll.options?.length || 0}
+                    onVote={() => {
+                        onVotePoll?.()
+                    }}
+                    onDismiss={() => {
+                        onDismissPollNotification?.()
+                    }}
+                />
+            )}
+
             {/* Google Meet Style "Talking While Muted" Floating Alert */}
             <TalkingWhileMutedAlert
                 show={showTalkingWhileMuted}
                 isMuted={isMuted}
                 showCaptions={showCaptions}
                 toggleMute={toggleMute}
+            />
+
+            {/* Google Meet Style Live Captions & Real-Time AI Subtitles */}
+            <MeetingCaptionsBanner
+                isEnabled={showCaptions}
+                speakerName={displayName || 'You'}
+                meetingId={meetingId || meetingInput || ''}
+                socket={socket}
+                isLocalMuted={isMuted}
+                toggleMute={toggleMute}
+                isVoiceDubbingEnabledProp={isVoiceDubbingEnabled}
+                onTranscriptUpdate={onTranscriptUpdate}
+                onClose={() => setShowCaptions && setShowCaptions(false)}
             />
 
             {/* Webinar Stage Active Banner for Host & Speakers */}
@@ -80,3 +126,4 @@ export const MeetingOverlayBanners: React.FC<MeetingOverlayBannersProps> = ({
         </>
     )
 }
+

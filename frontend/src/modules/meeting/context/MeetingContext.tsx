@@ -32,13 +32,16 @@ export const MeetingProvider: React.FC<React.PropsWithChildren> = ({ children })
             }
         } catch (_) {}
 
-        if (currentUserId && userId === currentUserId) return
+        if (currentUserId && userId.trim().toLowerCase() === currentUserId.trim().toLowerCase()) return
 
-        setParticipants((prev) => (prev.includes(userId) ? prev : [...prev, userId]))
+        const targetId = userId.trim()
+        setParticipants((prev) => (prev.some((id) => id.trim().toLowerCase() === targetId.toLowerCase()) ? prev : [...prev, targetId]))
     }, [])
 
     const removeParticipant = useCallback((userId: string) => {
-        setParticipants((prev) => prev.filter((id) => id !== userId))
+        if (!userId) return
+        const targetId = userId.trim().toLowerCase()
+        setParticipants((prev) => prev.filter((id) => id.trim().toLowerCase() !== targetId))
     }, [])
 
     return (

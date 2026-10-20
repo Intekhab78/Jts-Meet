@@ -161,6 +161,12 @@ export function useMediaDevices(): UseMediaDevicesResult {
 
             const rawAudioTrack = stream.getAudioTracks()[0]
             if (rawAudioTrack) {
+                try {
+                    const isInitialMicMuted = sessionStorage.getItem('jts_initial_mic_muted') === 'true'
+                    if (isInitialMicMuted) {
+                        rawAudioTrack.enabled = false
+                    }
+                } catch {}
                 const videoTracks = stream.getVideoTracks()
                 const cleanStream = new MediaStream([rawAudioTrack, ...videoTracks])
                 localStreamRef.current = cleanStream

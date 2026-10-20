@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { API_BASE } from '../../../config'
 import { IconSparkles, IconX, IconRefresh, IconCheck, IconDownload, IconFileText } from '../../../components/common/Icons'
 
@@ -51,27 +51,63 @@ export function MeetingSummaryModal({
     const [errorMsg, setErrorMsg] = useState<string | null>(null)
     const [activeTab, setActiveTab] = useState<'summary' | 'actions' | 'transcripts'>('summary')
 
+    const propsRef = useRef({
+        meetingTitle,
+        meetingId,
+        transcripts,
+        participantsCount,
+        chatMessages,
+        duration,
+        participantsList
+    })
+
+    useEffect(() => {
+        propsRef.current = {
+            meetingTitle,
+            meetingId,
+            transcripts,
+            participantsCount,
+            chatMessages,
+            duration,
+            participantsList
+        }
+    })
+
+    const hasFetchedRef = useRef(false)
+
     const fetchGeminiSummary = useCallback(async () => {
         setIsGenerating(true)
         setErrorMsg(null)
 
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 12000)
+
+        const {
+            meetingTitle: title,
+            duration: currentDuration,
+            participantsList: pList,
+            participantsCount: pCount,
+            transcripts: curTranscripts,
+            chatMessages: curChat
+        } = propsRef.current
+
         try {
-            const token = localStorage.getItem('jts_token') || sessionStorage.getItem('jts_token') || ''
+            const token = localStorage.getItem('jts_guest_token') || localStorage.getItem('jts_token') || localStorage.getItem('token') || sessionStorage.getItem('token') || sessionStorage.getItem('jts_token') || ''
             const headers: Record<string, string> = { 'Content-Type': 'application/json' }
             if (token) {
                 headers['Authorization'] = `Bearer ${token}`
             }
 
             const payload = {
-                title: meetingTitle || 'Meeting Session',
-                duration: duration || '30 mins',
-                participants: participantsList.length > 0 ? participantsList : [`${participantsCount} attendee(s)`],
-                transcripts: transcripts.map(t => ({
+                title: title || 'Meeting Session',
+                duration: currentDuration || '30 mins',
+                participants: pList && pList.length > 0 ? pList : [`${pCount} attendee(s)`],
+                transcripts: (curTranscripts || []).map(t => ({
                     speaker: t.speaker,
                     text: t.text,
                     timestamp: t.timestamp ? new Date(t.timestamp).toISOString() : undefined
                 })),
-                chatMessages: chatMessages.map(c => ({
+                chatMessages: (curChat || []).map(c => ({
                     sender: c.senderName || c.senderId || 'Participant',
                     text: c.message
                 }))
@@ -80,8 +116,11 @@ export function MeetingSummaryModal({
             const res = await fetch(`${API_BASE}/api/ai/summary`, {
                 method: 'POST',
                 headers,
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                signal: controller.signal
             })
+
+            clearTimeout(timeoutId)
 
             const json = await res.json()
             if (json.success && json.data) {
@@ -101,19 +140,21 @@ export function MeetingSummaryModal({
                 throw new Error(json.message || 'Unable to generate summary with Gemini')
             }
         } catch (err: any) {
+            clearTimeout(timeoutId)
             console.error('[Gemini AI Summary Error]', err)
-            setErrorMsg(err.message || 'Failed to connect to Gemini AI. Showing smart heuristic summary.')
+            setErrorMsg(err.name === 'AbortError' ? 'AI response timed out. Showing smart heuristic summary.' : (err.message || 'Showing smart heuristic summary.'))
 
-            // Heuristic fallback so the user always has a high quality summary
-            const transcriptText = transcripts.map(t => `${t.speaker}: ${t.text}`).join('\n')
-            const actionSentences = transcripts
+            // Heuristic fallback so the user always has a high quality summary immediately
+            const curT = propsRef.current.transcripts || []
+            const transcriptText = curT.map(t => `${t.speaker}: ${t.text}`).join('\n')
+            const actionSentences = curT
                 .map(t => t.text)
-                .filter(text => /(will|should|need to|action|todo|follow up|schedule|deliver|prepare|assign)/i.test(text))
+                .filter(text => /(will|should|need to|action|todo|follow up|schedule|deliver|prepare|assign|review|fix|test|update)/i.test(text))
 
             setSummaryData({
                 summary: transcriptText.length > 30
-                    ? `Discussion during "${meetingTitle}" covered key deliverables and operational parameters. Team members coordinated on active milestones and task distribution.`
-                    : `Executive session for "${meetingTitle}" with ${participantsCount} attendee(s). Agenda focused on roadmap execution and cross-team synchronization.`,
+                    ? `Discussion during "${title}" covered key deliverables and operational parameters. Team members coordinated on active milestones and task distribution.`
+                    : `Executive session for "${title}" with ${pCount} attendee(s). Agenda focused on roadmap execution and cross-team synchronization.`,
                 keyTopics: [
                     'Project roadmap alignment & milestone execution',
                     'Real-time media quality and performance benchmarks',
@@ -136,12 +177,16 @@ export function MeetingSummaryModal({
         } finally {
             setIsGenerating(false)
         }
-    }, [meetingTitle, duration, participantsList, participantsCount, transcripts, chatMessages])
+    }, [])
 
-    // Trigger AI generation on open if not already loaded
+    // Trigger AI generation only once when modal opens
     useEffect(() => {
-        if (isOpen && !summaryData && !isGenerating) {
+        if (isOpen && !summaryData && !isGenerating && !hasFetchedRef.current) {
+            hasFetchedRef.current = true
             fetchGeminiSummary()
+        }
+        if (!isOpen) {
+            hasFetchedRef.current = false
         }
     }, [isOpen, summaryData, isGenerating, fetchGeminiSummary])
 
@@ -237,7 +282,7 @@ ${summaryData.actionItems.map(a => `- [${a.completed ? 'x' : ' '}] ${a.text}`).j
                                     borderRadius: 12, background: 'rgba(99, 102, 241, 0.2)',
                                     color: '#a5b4fc', border: '1px solid rgba(99, 102, 241, 0.3)'
                                 }}>
-                                    Gemini 3.6 Flash
+                                    Gemini 3.5 Flash
                                 </span>
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted, #94a3b8)', marginTop: 2 }}>

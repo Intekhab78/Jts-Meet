@@ -36,8 +36,8 @@ function AppLoadingFallback() {
 type ViewType = 'landing' | 'login' | 'register' | 'forgot-password' | 'reset-password' | 'email-verification' | 'otp-verification' | 'app' | 'guest-preview' | 'guest-waiting' | 'microsoft-callback' | 'google-callback'
 
 const getMeetingIdFromUrl = (): string | null => {
-    // 1. Pathname /meet/:id or /join/:id
-    const match = window.location.pathname.match(/^\/(?:meet|join)\/([a-zA-Z0-9\-_]+)/)
+    // 1. Pathname /meet/:id, /meeting/:id or /join/:id
+    const match = window.location.pathname.match(/^\/(?:meet|meeting|join)\/([a-zA-Z0-9\-_]+)/)
     if (match) return match[1]
 
     // 2. Hash /#meeting?id=xxx or #meeting?id=xxx
@@ -62,7 +62,7 @@ const getMeetingIdFromUrl = (): string | null => {
 
     // 4. Stored active meeting ID ONLY if currently on a meeting route
     try {
-        if (window.location.pathname.startsWith('/meet') || window.location.pathname.startsWith('/join') || window.location.hash.startsWith('#meeting')) {
+        if (window.location.pathname.startsWith('/meet') || window.location.pathname.startsWith('/meeting') || window.location.pathname.startsWith('/join') || window.location.hash.startsWith('#meeting')) {
             const active = sessionStorage.getItem('jts_active_meeting_id')
             if (active) return active
         }

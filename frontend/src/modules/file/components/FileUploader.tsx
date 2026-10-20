@@ -69,8 +69,11 @@ export function FileUploader({
     )
 
     const handleUpload = useCallback(async () => {
-        await uploadSelectedFiles(token, contextType, contextId)
-    }, [uploadSelectedFiles, token, contextType, contextId])
+        const results = await uploadSelectedFiles(token, contextType, contextId)
+        if (results && results.length > 0 && onUploadComplete) {
+            onUploadComplete(results)
+        }
+    }, [uploadSelectedFiles, token, contextType, contextId, onUploadComplete])
 
     const content = useMemo(
         () => (

@@ -203,6 +203,8 @@ export const MeetingSidePanels: React.FC<MeetingSidePanelsProps> = ({
                 <FilesPanel
                     token={token}
                     meetingId={effectiveMeetingId}
+                    socket={socket}
+                    myDisplayName={renamedUsers['me'] || myDisplayName || (parseJwt(token)?.fullName || 'You')}
                     onClose={() => setActivePanel(null)}
                 />
             )}

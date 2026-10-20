@@ -518,22 +518,20 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 5,
-                                padding: '4px 9px',
-                                borderRadius: '9999px',
-                                fontSize: '0.72rem',
-                                fontWeight: 700,
+                                justifyContent: 'center',
+                                width: 28,
+                                height: 28,
+                                borderRadius: '50%',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s ease',
                                 border: tool === 'laser' ? '1px solid #ef4444' : '1px solid transparent',
                                 background: tool === 'laser' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.06)',
-                                color: tool === 'laser' ? '#f87171' : '#e2e8f0',
                                 boxShadow: tool === 'laser' ? '0 0 10px rgba(239, 68, 68, 0.4)' : 'none'
                             }}
                             title="Laser Pointer (Temporary Glowing Trail)"
+                            aria-label="Laser Pointer"
                         >
-                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 8px #ef4444' }} />
-                            <span>Laser</span>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 8px #ef4444' }} />
                         </button>
 
                         {/* Pen */}
@@ -543,22 +541,20 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 5,
-                                padding: '4px 9px',
-                                borderRadius: '9999px',
-                                fontSize: '0.72rem',
-                                fontWeight: 700,
+                                justifyContent: 'center',
+                                width: 28,
+                                height: 28,
+                                borderRadius: '50%',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s ease',
                                 border: tool === 'pen' ? '1px solid #3b82f6' : '1px solid transparent',
                                 background: tool === 'pen' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.06)',
-                                color: tool === 'pen' ? '#60a5fa' : '#e2e8f0',
                                 boxShadow: tool === 'pen' ? '0 0 10px rgba(59, 130, 246, 0.4)' : 'none'
                             }}
                             title="Freehand Pen"
+                            aria-label="Freehand Pen"
                         >
-                            <IconEdit size={12} color="#60a5fa" />
-                            <span>Pen</span>
+                            <IconEdit size={14} color={tool === 'pen' ? '#60a5fa' : '#cbd5e1'} />
                         </button>
 
                         {/* Highlighter */}
@@ -568,22 +564,23 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 5,
-                                padding: '4px 9px',
-                                borderRadius: '9999px',
-                                fontSize: '0.72rem',
-                                fontWeight: 700,
+                                justifyContent: 'center',
+                                width: 28,
+                                height: 28,
+                                borderRadius: '50%',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s ease',
                                 border: tool === 'highlighter' ? '1px solid #eab308' : '1px solid transparent',
                                 background: tool === 'highlighter' ? 'rgba(234, 179, 8, 0.25)' : 'rgba(255, 255, 255, 0.06)',
-                                color: tool === 'highlighter' ? '#facc15' : '#e2e8f0',
                                 boxShadow: tool === 'highlighter' ? '0 0 10px rgba(234, 179, 8, 0.4)' : 'none'
                             }}
                             title="Highlighter"
+                            aria-label="Highlighter"
                         >
-                            <IconEdit size={12} color="#facc15" />
-                            <span>Highlight</span>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={tool === 'highlighter' ? '#facc15' : '#cbd5e1'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="m9 11-6 6v3h3l6-6"/>
+                                <path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>
+                            </svg>
                         </button>
 
                         {/* Eraser */}
@@ -593,21 +590,24 @@ export const ScreenAnnotationOverlay: React.FC<ScreenAnnotationOverlayProps> = (
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 4,
-                                padding: '4px 8px',
-                                borderRadius: '9999px',
-                                fontSize: '0.72rem',
-                                fontWeight: 700,
+                                justifyContent: 'center',
+                                width: 28,
+                                height: 28,
+                                borderRadius: '50%',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s ease',
                                 border: tool === 'eraser' ? '1px solid rgba(255,255,255,0.4)' : '1px solid transparent',
                                 background: tool === 'eraser' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.06)',
-                                color: '#ffffff'
+                                boxShadow: tool === 'eraser' ? '0 0 10px rgba(255, 255, 255, 0.3)' : 'none'
                             }}
-                            title="Eraser"
+                            title="Eraser (Erase Strokes)"
+                            aria-label="Eraser"
                         >
-                            <IconTrash size={12} color="#ffffff" />
-                            <span>Eraser</span>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={tool === 'eraser' ? '#ffffff' : '#cbd5e1'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/>
+                                <path d="M22 21H7"/>
+                                <path d="m5 11 9 9"/>
+                            </svg>
                         </button>
 
                         <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />

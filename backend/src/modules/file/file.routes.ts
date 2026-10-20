@@ -17,6 +17,7 @@ const handleMulterUpload = (req: any, res: any, next: any) => {
 }
 
 router.post('/upload', authenticate, handleMulterUpload, asyncWrapper(fileController.uploadFile))
+router.get('/context/:contextType/:contextId', optionalAuthenticate, asyncWrapper(fileController.listContextFiles))
 router.get('/:fileId', optionalAuthenticate, asyncWrapper(fileController.getMetadata))
 router.get('/:fileId/download', optionalAuthenticate, asyncWrapper(fileController.downloadFile))
 router.get('/:fileId/view', optionalAuthenticate, asyncWrapper(fileController.downloadFile))

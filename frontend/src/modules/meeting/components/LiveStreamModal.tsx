@@ -1,5 +1,19 @@
 import React, { useState, useEffect } from 'react'
-import { IconVideo, IconZap, IconX, IconLock, IconSparkles, IconSquare, IconPlay, IconGlobe, IconMonitor } from '../../../components/common/Icons'
+import {
+    IconVideo,
+    IconZap,
+    IconX,
+    IconLock,
+    IconSquare,
+    IconPlay,
+    IconMonitor,
+    IconShieldCheck,
+    IconMic,
+    IconCopy,
+    IconCheck,
+    IconExternalLink,
+    IconGlobe
+} from '../../../components/common/Icons'
 
 export interface LiveStreamConfig {
     platform: 'youtube' | 'facebook' | 'twitch' | 'custom'
@@ -20,34 +34,73 @@ interface LiveStreamModalProps {
     meetingTitle?: string
 }
 
-const PLATFORM_DEFAULTS = {
+// Official Platform Brand SVGs
+const YouTubeBrandIcon: React.FC<{ size?: number }> = ({ size = 22 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <rect width="24" height="24" rx="6" fill="#FF0000" />
+        <path d="M10 8.5L16 12L10 15.5V8.5Z" fill="#FFFFFF" />
+    </svg>
+)
+
+const FacebookBrandIcon: React.FC<{ size?: number }> = ({ size = 22 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="12" fill="#1877F2" />
+        <path d="M14.5 12.5H12.5V20H9.5V12.5H8V10H9.5V8.3C9.5 6.7 10.4 5.5 12.2 5.5C13 5.5 13.8 5.6 13.8 5.6V7.4H12.9C12 7.4 11.7 8 11.7 8.8V10H14.3L13.9 12.5H14.5Z" fill="#FFFFFF" />
+    </svg>
+)
+
+const TwitchBrandIcon: React.FC<{ size?: number }> = ({ size = 22 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <rect width="24" height="24" rx="6" fill="#9146FF" />
+        <path d="M6 5L5 8.5V18H8.5V20.5L11 18H13.5L18 13.5V5H6ZM16.5 12.5L14.5 14.5H12L10 16.5V14.5H7.5V6.5H16.5V12.5Z" fill="#FFFFFF" />
+        <rect x="13" y="8.5" width="2" height="4" fill="#FFFFFF" />
+        <rect x="9.5" y="8.5" width="2" height="4" fill="#FFFFFF" />
+    </svg>
+)
+
+const CustomRtmpBrandIcon: React.FC<{ size?: number }> = ({ size = 22 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <rect width="24" height="24" rx="6" fill="#10B981" />
+        <path d="M13 3L4 14H11L10 21L19 10H12L13 3Z" fill="#FFFFFF" />
+    </svg>
+)
+
+const PLATFORMS = {
     youtube: {
-        name: 'YouTube Live',
-        renderIcon: (size = 18) => <IconPlay size={size} color="#ef4444" />,
-        color: '#ef4444',
+        id: 'youtube' as const,
+        name: 'YouTube',
+        brandIcon: <YouTubeBrandIcon size={24} />,
+        accentColor: '#FF0000',
+        activeGlow: 'rgba(255, 0, 0, 0.35)',
         defaultUrl: 'rtmp://a.rtmp.youtube.com/live2',
-        guide: 'Get your Stream Key from YouTube Studio > Go Live > Stream Key'
+        portalUrl: 'https://studio.youtube.com/channel/live'
     },
     facebook: {
-        name: 'Facebook Live',
-        renderIcon: (size = 18) => <IconGlobe size={size} color="#3b82f6" />,
-        color: '#3b82f6',
+        id: 'facebook' as const,
+        name: 'Facebook',
+        brandIcon: <FacebookBrandIcon size={24} />,
+        accentColor: '#1877F2',
+        activeGlow: 'rgba(24, 119, 242, 0.35)',
         defaultUrl: 'rtmps://live-api-s.facebook.com:443/rtmp/',
-        guide: 'Get your Stream Key from Facebook Live Producer > Stream Setup'
+        portalUrl: 'https://www.facebook.com/live/producer'
     },
     twitch: {
+        id: 'twitch' as const,
         name: 'Twitch',
-        renderIcon: (size = 18) => <IconMonitor size={size} color="#a855f7" />,
-        color: '#a855f7',
+        brandIcon: <TwitchBrandIcon size={24} />,
+        accentColor: '#9146FF',
+        activeGlow: 'rgba(145, 70, 255, 0.35)',
         defaultUrl: 'rtmp://live.twitch.tv/app/',
-        guide: 'Get your Stream Key from Twitch Creator Dashboard > Settings > Stream'
+        portalUrl: 'https://dashboard.twitch.tv/settings/stream'
     },
     custom: {
-        name: 'Custom RTMP / CDN',
-        renderIcon: (size = 18) => <IconZap size={size} color="#10b981" />,
-        color: '#10b981',
+        id: 'custom' as const,
+        name: 'Custom',
+        brandIcon: <CustomRtmpBrandIcon size={24} />,
+        accentColor: '#10B981',
+        activeGlow: 'rgba(16, 185, 129, 0.35)',
         defaultUrl: 'rtmp://',
-        guide: 'Enter any custom RTMP/RTMPS ingest endpoint from OBS, Restream, or your CDN'
+        portalUrl: ''
     }
 }
 
@@ -58,20 +111,20 @@ export function LiveStreamModal({
     liveConfig,
     onStartStream,
     onStopStream,
-    meetingTitle = 'Enterprise Conference Session'
+    meetingTitle = 'Live Conference Stream'
 }: LiveStreamModalProps) {
     const [platform, setPlatform] = useState<'youtube' | 'facebook' | 'twitch' | 'custom'>('youtube')
-    const [serverUrl, setServerUrl] = useState(PLATFORM_DEFAULTS.youtube.defaultUrl)
+    const [serverUrl, setServerUrl] = useState(PLATFORMS.youtube.defaultUrl)
     const [streamKey, setStreamKey] = useState('')
-    const [broadcastTitle, setBroadcastTitle] = useState(meetingTitle)
     const [resolution, setResolution] = useState<'1080p' | '720p' | '480p'>('720p')
     const [bitrate, setBitrate] = useState<number>(2500)
     const [showKey, setShowKey] = useState(false)
+    const [copiedUrl, setCopiedUrl] = useState(false)
     const [liveTimerSeconds, setLiveTimerSeconds] = useState(0)
 
     useEffect(() => {
         if (!isLive) {
-            setServerUrl(PLATFORM_DEFAULTS[platform].defaultUrl)
+            setServerUrl(PLATFORMS[platform].defaultUrl)
         }
     }, [platform, isLive])
 
@@ -99,49 +152,81 @@ export function LiveStreamModal({
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
     }
 
+    const handlePasteKey = async () => {
+        try {
+            const clipText = await navigator.clipboard.readText()
+            if (clipText) {
+                setStreamKey(clipText.trim())
+            }
+        } catch (_) {}
+    }
+
+    const handleCopyUrl = async () => {
+        try {
+            await navigator.clipboard.writeText(serverUrl)
+            setCopiedUrl(true)
+            setTimeout(() => setCopiedUrl(false), 2000)
+        } catch (_) {}
+    }
+
     const handleStart = (e: React.FormEvent) => {
         e.preventDefault()
         if (!streamKey.trim() && platform !== 'custom') {
-            alert('Please provide a valid Stream Key for ' + PLATFORM_DEFAULTS[platform].name)
+            alert('Please paste a stream key for ' + PLATFORMS[platform].name)
             return
         }
         onStartStream({
             platform,
             serverUrl: serverUrl.trim(),
             streamKey: streamKey.trim(),
-            broadcastTitle: broadcastTitle.trim() || meetingTitle,
+            broadcastTitle: meetingTitle,
             resolution,
             bitrate
         })
     }
+
+    const activePlatform = PLATFORMS[liveConfig?.platform || platform]
 
     return (
         <div style={{
             position: 'fixed',
             inset: 0,
             zIndex: 99999,
-            background: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(12px)',
+            background: 'rgba(5, 8, 16, 0.85)',
+            backdropFilter: 'blur(20px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: 16
         }}>
+            <style>{`
+                @keyframes pulseDot {
+                    0%, 100% { opacity: 1; transform: scale(1); }
+                    50% { opacity: 0.35; transform: scale(0.85); }
+                }
+                @keyframes waveBar1 { 0%, 100% { height: 6px; } 50% { height: 24px; } }
+                @keyframes waveBar2 { 0%, 100% { height: 18px; } 50% { height: 8px; } }
+                @keyframes waveBar3 { 0%, 100% { height: 10px; } 50% { height: 28px; } }
+                @keyframes waveBar4 { 0%, 100% { height: 24px; } 50% { height: 12px; } }
+            `}</style>
+
             <div style={{
-                background: 'linear-gradient(135deg, #111827 0%, #0f172a 100%)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: 20,
+                background: 'linear-gradient(180deg, #0b1120 0%, #060913 100%)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: 24,
                 width: '100%',
-                maxWidth: 580,
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 30px rgba(99, 102, 241, 0.2)',
+                maxWidth: 480,
+                boxShadow: isLive 
+                    ? '0 30px 70px -15px rgba(0, 0, 0, 0.95), 0 0 50px rgba(239, 68, 68, 0.25)' 
+                    : '0 30px 70px -15px rgba(0, 0, 0, 0.95), 0 0 40px rgba(99, 102, 241, 0.18)',
                 color: '#fff',
                 overflow: 'hidden',
-                animation: 'scaleUp 0.25s ease-out'
+                animation: 'scaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
             }}>
-                {/* Header */}
+                {/* Header with Icon */}
                 <div style={{
-                    padding: '20px 24px',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                    padding: '16px 22px',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.07)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -149,331 +234,521 @@ export function LiveStreamModal({
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <div style={{
-                            width: 42,
-                            height: 42,
-                            borderRadius: 12,
-                            background: isLive 
-                                ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' 
-                                : 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                            width: 36,
+                            height: 36,
+                            borderRadius: 10,
+                            background: isLive ? 'rgba(239, 68, 68, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+                            border: isLive ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(99, 102, 241, 0.3)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            fontSize: '1.25rem',
-                            boxShadow: isLive ? '0 0 20px rgba(239, 68, 68, 0.5)' : 'none'
+                            boxShadow: isLive ? '0 0 14px rgba(239, 68, 68, 0.35)' : 'none'
                         }}>
-                            {isLive ? <IconVideo size={20} color="#fff" /> : <IconZap size={20} color="#fff" />}
+                            {isLive ? <IconVideo size={18} color="#ef4444" /> : <IconZap size={18} color="#818cf8" />}
                         </div>
                         <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700 }}>
-                                    RTMP Live Streaming Studio
+                                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, letterSpacing: '-0.01em' }}>
+                                    Broadcast Studio
                                 </h3>
                                 {isLive && (
-                                    <span style={{
-                                        background: '#ef4444',
-                                        color: '#fff',
-                                        padding: '2px 8px',
-                                        borderRadius: 6,
-                                        fontSize: '0.72rem',
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        background: 'rgba(239, 68, 68, 0.18)',
+                                        border: '1px solid rgba(239, 68, 68, 0.5)',
+                                        color: '#f87171',
+                                        padding: '1px 7px',
+                                        borderRadius: 20,
+                                        fontSize: '0.68rem',
                                         fontWeight: 800,
-                                        letterSpacing: '0.05em',
-                                        animation: 'pulse 1.5s infinite'
+                                        letterSpacing: '0.04em'
                                     }}>
-                                        ON AIR • {formatTimer(liveTimerSeconds)}
-                                    </span>
+                                        <span style={{
+                                            width: 6,
+                                            height: 6,
+                                            borderRadius: '50%',
+                                            background: '#ef4444',
+                                            boxShadow: '0 0 8px #ef4444',
+                                            animation: 'pulseDot 1.2s infinite'
+                                        }} />
+                                        <span>LIVE • {formatTimer(liveTimerSeconds)}</span>
+                                    </div>
                                 )}
                             </div>
-                            <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>
-                                Broadcast live conference directly to YouTube, Facebook, or custom RTMP ingest
-                            </p>
+                            <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                                RTMP / RTMPS Live Output
+                            </span>
                         </div>
                     </div>
+
                     <button
                         onClick={onClose}
                         style={{
-                            background: 'transparent',
-                            border: 'none',
+                            width: 30,
+                            height: 30,
+                            borderRadius: 8,
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
                             color: '#94a3b8',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             cursor: 'pointer',
-                            padding: 6
+                            transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'
+                            e.currentTarget.style.color = '#fff'
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                            e.currentTarget.style.color = '#94a3b8'
                         }}
                     >
-                        <IconX size={18} />
+                        <IconX size={15} />
                     </button>
                 </div>
 
                 {/* Content */}
-                <div style={{ padding: 24 }}>
+                <div style={{ padding: 22 }}>
                     {isLive ? (
-                        <div style={{
-                            background: 'rgba(239, 68, 68, 0.08)',
-                            border: '1px solid rgba(239, 68, 68, 0.25)',
-                            borderRadius: 14,
-                            padding: 20,
-                            textAlign: 'center',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: 14
-                        }}>
+                        /* Sleek Studio On-Air View (Pure Icon-Driven Telemetry) */
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                            {/* Visual Monitor Frame */}
                             <div style={{
-                                width: 64,
-                                height: 64,
-                                borderRadius: '50%',
-                                background: 'rgba(239, 68, 68, 0.2)',
-                                border: '2px solid #ef4444',
+                                background: 'radial-gradient(ellipse at top, rgba(239, 68, 68, 0.14) 0%, rgba(11, 17, 32, 0.7) 70%)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                borderRadius: 16,
+                                padding: '22px 18px',
                                 display: 'flex',
+                                flexDirection: 'column',
                                 alignItems: 'center',
-                                justifyContent: 'center',
-                                animation: 'pulse 2s infinite'
+                                gap: 14
                             }}>
-                                <IconVideo size={28} color="#ef4444" />
-                            </div>
-                            <div>
-                                <h4 style={{ margin: '0 0 6px', fontSize: '1.1rem', color: '#fca5a5' }}>
-                                    Live Broadcast in Progress
-                                </h4>
-                                <p style={{ margin: 0, fontSize: '0.88rem', color: '#cbd5e1' }}>
-                                    Target: <strong>{PLATFORM_DEFAULTS[liveConfig?.platform || 'youtube'].name}</strong> ({liveConfig?.resolution} • {liveConfig?.bitrate} kbps)
-                                </p>
-                                <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
-                                    Live Duration: <strong style={{ color: '#fff' }}>{formatTimer(liveTimerSeconds)}</strong>
-                                </p>
+                                {/* Platform Brand Pill */}
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 10,
+                                    background: 'rgba(15, 23, 42, 0.9)',
+                                    border: `1px solid ${activePlatform.accentColor}`,
+                                    padding: '6px 14px',
+                                    borderRadius: 30,
+                                    boxShadow: `0 0 20px ${activePlatform.activeGlow}`
+                                }}>
+                                    {activePlatform.brandIcon}
+                                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fff' }}>
+                                        {activePlatform.name} Live
+                                    </span>
+                                </div>
+
+                                {/* Dynamic Audio Waves */}
+                                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 28 }}>
+                                    <span style={{ width: 4, background: '#ef4444', borderRadius: 2, animation: 'waveBar1 0.7s infinite ease-in-out' }} />
+                                    <span style={{ width: 4, background: '#f87171', borderRadius: 2, animation: 'waveBar2 0.85s infinite ease-in-out' }} />
+                                    <span style={{ width: 4, background: '#fca5a5', borderRadius: 2, animation: 'waveBar3 0.65s infinite ease-in-out' }} />
+                                    <span style={{ width: 4, background: '#ef4444', borderRadius: 2, animation: 'waveBar4 0.9s infinite ease-in-out' }} />
+                                    <span style={{ width: 4, background: '#f87171', borderRadius: 2, animation: 'waveBar2 0.75s infinite ease-in-out' }} />
+                                    <span style={{ width: 4, background: '#fca5a5', borderRadius: 2, animation: 'waveBar1 0.8s infinite ease-in-out' }} />
+                                </div>
+
+                                <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                                    Active Conference Broadcast Stream
+                                </span>
                             </div>
 
-                            {/* Resilient Engine Badges */}
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
-                                <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: 6, background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
-                                    🛡️ Auto-Reconnect Protected
-                                </span>
-                                <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: 6, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-                                    🔄 Page Reload Resilient
-                                </span>
-                                <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: 6, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
-                                    🎚️ Broadcast Audio Limiter
-                                </span>
+                            {/* Icon-Driven Telemetry Pills */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                                <div style={{
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid rgba(255, 255, 255, 0.07)',
+                                    borderRadius: 12,
+                                    padding: '10px 6px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: 4
+                                }}>
+                                    <IconZap size={16} color="#eab308" />
+                                    <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>
+                                        {liveConfig?.bitrate || bitrate}k
+                                    </span>
+                                    <span style={{ fontSize: '0.62rem', color: '#64748b' }}>BITRATE</span>
+                                </div>
+
+                                <div style={{
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid rgba(255, 255, 255, 0.07)',
+                                    borderRadius: 12,
+                                    padding: '10px 6px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: 4
+                                }}>
+                                    <IconMonitor size={16} color="#38bdf8" />
+                                    <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>
+                                        {liveConfig?.resolution || resolution}
+                                    </span>
+                                    <span style={{ fontSize: '0.62rem', color: '#64748b' }}>30 FPS</span>
+                                </div>
+
+                                <div style={{
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid rgba(255, 255, 255, 0.07)',
+                                    borderRadius: 12,
+                                    padding: '10px 6px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: 4
+                                }}>
+                                    <IconMic size={16} color="#c084fc" />
+                                    <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>AAC</span>
+                                    <span style={{ fontSize: '0.62rem', color: '#64748b' }}>44.1 kHz</span>
+                                </div>
+
+                                <div style={{
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid rgba(255, 255, 255, 0.07)',
+                                    borderRadius: 12,
+                                    padding: '10px 6px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: 4
+                                }}>
+                                    <IconShieldCheck size={16} color="#22c55e" />
+                                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#22c55e' }}>100%</span>
+                                    <span style={{ fontSize: '0.62rem', color: '#64748b' }}>HEALTH</span>
+                                </div>
                             </div>
 
+                            {/* Stop Live Stream Button */}
                             <button
                                 onClick={onStopStream}
                                 style={{
-                                    marginTop: 6,
-                                    padding: '12px 28px',
+                                    width: '100%',
+                                    padding: '13px',
                                     background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
                                     border: 'none',
-                                    borderRadius: 10,
+                                    borderRadius: 12,
                                     color: '#fff',
                                     fontWeight: 700,
-                                    fontSize: '0.95rem',
+                                    fontSize: '0.92rem',
                                     cursor: 'pointer',
-                                    boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)',
+                                    boxShadow: '0 4px 16px rgba(239, 68, 68, 0.4)',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 8
+                                    justifyContent: 'center',
+                                    gap: 8,
+                                    transition: 'all 0.15s ease'
                                 }}
                             >
-                                <IconSquare size={14} color="#fff" />
-                                <span>End Live Stream</span>
+                                <IconSquare size={15} color="#fff" />
+                                <span>End Stream</span>
                             </button>
                         </div>
                     ) : (
-                        <form onSubmit={handleStart} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                            {/* Platform Selector */}
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 8 }}>
-                                    Choose Streaming Destination:
-                                </label>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                                    {(['youtube', 'facebook', 'twitch', 'custom'] as const).map(p => {
-                                        const isSelected = platform === p
-                                        const info = PLATFORM_DEFAULTS[p]
-                                        return (
-                                            <button
-                                                key={p}
-                                                type="button"
-                                                onClick={() => setPlatform(p)}
-                                                style={{
-                                                    padding: '10px 6px',
-                                                    borderRadius: 10,
-                                                    border: isSelected ? `2px solid ${info.color}` : '1px solid rgba(255, 255, 255, 0.1)',
-                                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                                                    color: isSelected ? '#fff' : '#94a3b8',
-                                                    cursor: 'pointer',
-                                                    display: 'flex',
-                                                    flexDirection: 'column',
-                                                    alignItems: 'center',
-                                                    gap: 4,
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                            >
-                                                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 22 }}>
-                                                    {info.renderIcon(18)}
-                                                </span>
-                                                <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{info.name}</span>
-                                            </button>
-                                        )
-                                    })}
-                                </div>
+                        /* Ultra-Clean Studio Setup Form (Minimal Text, Icon-Driven) */
+                        <form onSubmit={handleStart} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {/* Destination Brand Selector with Real Icons */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                                {(Object.keys(PLATFORMS) as (keyof typeof PLATFORMS)[]).map(pKey => {
+                                    const p = PLATFORMS[pKey]
+                                    const isSelected = platform === pKey
+                                    return (
+                                        <button
+                                            key={pKey}
+                                            type="button"
+                                            onClick={() => setPlatform(pKey)}
+                                            style={{
+                                                padding: '10px 6px',
+                                                borderRadius: 14,
+                                                border: isSelected ? `2px solid ${p.accentColor}` : '1px solid rgba(255, 255, 255, 0.07)',
+                                                background: isSelected ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.02)',
+                                                color: isSelected ? '#fff' : '#64748b',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                gap: 6,
+                                                boxShadow: isSelected ? `0 0 16px ${p.activeGlow}` : 'none',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {p.brandIcon}
+                                            </div>
+                                            <span style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                                                {p.name}
+                                            </span>
+                                        </button>
+                                    )
+                                })}
                             </div>
 
-                            {/* YouTube Auto-Stop Guidance Callout */}
-                            {platform === 'youtube' && (
+                            {/* Stream Server Info / URL Pill (Clean & Non-Intrusive) */}
+                            {platform !== 'custom' ? (
                                 <div style={{
-                                    padding: '10px 14px',
-                                    borderRadius: 10,
-                                    background: 'rgba(239, 68, 68, 0.08)',
-                                    border: '1px solid rgba(239, 68, 68, 0.25)',
                                     display: 'flex',
-                                    alignItems: 'flex-start',
-                                    gap: 10
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '8px 12px',
+                                    borderRadius: 10,
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                                    fontSize: '0.75rem',
+                                    color: '#64748b'
                                 }}>
-                                    <span style={{ fontSize: '1.05rem', lineHeight: 1 }}>💡</span>
-                                    <div style={{ fontSize: '0.78rem', color: '#fca5a5', lineHeight: 1.45 }}>
-                                        <strong>YouTube Studio Best Practice:</strong> In YouTube Studio Stream Settings, keep <strong>"Enable Auto-stop" OFF</strong>. This ensures your stream never stops automatically if internet fluctuates.
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                                        <IconGlobe size={14} color="#64748b" />
+                                        <span style={{ fontFamily: 'monospace', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {serverUrl}
+                                        </span>
                                     </div>
-                                </div>
-                            )}
-
-                            {/* Stream Server URL */}
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>
-                                    Stream RTMP Server URL:
-                                </label>
-                                <input
-                                    type="text"
-                                    value={serverUrl}
-                                    onChange={(e) => setServerUrl(e.target.value)}
-                                    placeholder="rtmp://a.rtmp.youtube.com/live2"
-                                    style={{
-                                        width: '100%',
-                                        boxSizing: 'border-box',
-                                        padding: '10px 14px',
-                                        borderRadius: 10,
-                                        background: 'rgba(0, 0, 0, 0.4)',
-                                        border: '1px solid rgba(255, 255, 255, 0.12)',
-                                        color: '#fff',
-                                        fontSize: '0.88rem',
-                                        outline: 'none'
-                                    }}
-                                />
-                            </div>
-
-                            {/* Stream Key */}
-                            <div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                    <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8' }}>
-                                        Stream Key (Private):
-                                    </label>
-                                    <span style={{ fontSize: '0.72rem', color: '#6366f1', fontStyle: 'italic' }}>
-                                        {PLATFORM_DEFAULTS[platform].guide}
-                                    </span>
-                                </div>
-                                <div style={{ position: 'relative' }}>
-                                    <input
-                                        type={showKey ? 'text' : 'password'}
-                                        value={streamKey}
-                                        onChange={(e) => setStreamKey(e.target.value)}
-                                        placeholder="xxxx-xxxx-xxxx-xxxx"
-                                        required
-                                        style={{
-                                            width: '100%',
-                                            boxSizing: 'border-box',
-                                            padding: '10px 42px 10px 14px',
-                                            borderRadius: 10,
-                                            background: 'rgba(0, 0, 0, 0.4)',
-                                            border: '1px solid rgba(255, 255, 255, 0.12)',
-                                            color: '#fff',
-                                            fontSize: '0.88rem',
-                                            outline: 'none'
-                                        }}
-                                    />
                                     <button
                                         type="button"
-                                        onClick={() => setShowKey(!showKey)}
+                                        onClick={handleCopyUrl}
+                                        title="Copy RTMP URL"
                                         style={{
-                                            position: 'absolute',
-                                            right: 10,
-                                            top: '50%',
-                                            transform: 'translateY(-50%)',
                                             background: 'transparent',
                                             border: 'none',
-                                            color: '#94a3b8',
+                                            color: copiedUrl ? '#22c55e' : '#94a3b8',
                                             cursor: 'pointer',
                                             display: 'flex',
                                             alignItems: 'center',
-                                            justifyContent: 'center',
-                                            padding: 4
+                                            padding: 2
                                         }}
                                     >
-                                        {showKey ? <IconSparkles size={16} /> : <IconLock size={16} />}
+                                        {copiedUrl ? <IconCheck size={14} /> : <IconCopy size={14} />}
                                     </button>
                                 </div>
-                            </div>
-
-                            {/* Quality & Resolution Settings */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            ) : (
                                 <div>
-                                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>
-                                        Broadcast Quality:
-                                    </label>
-                                    <select
-                                        value={resolution}
-                                        onChange={(e) => {
-                                            const r = e.target.value as any
-                                            setResolution(r)
-                                            if (r === '1080p') setBitrate(4500)
-                                            else if (r === '720p') setBitrate(2500)
-                                            else setBitrate(1200)
-                                        }}
+                                    <input
+                                        type="text"
+                                        value={serverUrl}
+                                        onChange={(e) => setServerUrl(e.target.value)}
+                                        placeholder="rtmp://custom.server.com/live"
                                         style={{
                                             width: '100%',
                                             boxSizing: 'border-box',
                                             padding: '10px 12px',
                                             borderRadius: 10,
-                                            background: '#1e293b',
-                                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                                            background: 'rgba(0, 0, 0, 0.5)',
+                                            border: '1px solid rgba(255, 255, 255, 0.1)',
                                             color: '#fff',
-                                            fontSize: '0.88rem',
+                                            fontSize: '0.82rem',
                                             outline: 'none'
                                         }}
-                                    >
-                                        <option value="720p">720p HD (Recommended • Stable 30 FPS)</option>
-                                        <option value="1080p">1080p Full HD (High Performance • 30 FPS)</option>
-                                        <option value="480p">480p SD (Low Bandwidth)</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>
-                                        Bitrate ({bitrate} kbps):
-                                    </label>
-                                    <input
-                                        type="range"
-                                        min={800}
-                                        max={8000}
-                                        step={100}
-                                        value={bitrate}
-                                        onChange={(e) => setBitrate(Number(e.target.value))}
-                                        style={{ width: '100%', accentColor: '#6366f1', marginTop: 10 }}
                                     />
+                                </div>
+                            )}
+
+                            {/* Stream Key Input (Obsidian Dark Glass with Icons) */}
+                            <div>
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    borderRadius: 12,
+                                    background: 'rgba(0, 0, 0, 0.5)',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    padding: '0 8px 0 12px',
+                                    transition: 'border 0.15s ease'
+                                }}>
+                                    <IconLock size={15} color="#64748b" />
+                                    <input
+                                        type={showKey ? 'text' : 'password'}
+                                        value={streamKey}
+                                        onChange={(e) => setStreamKey(e.target.value)}
+                                        placeholder="Paste Stream Key..."
+                                        required
+                                        style={{
+                                            flex: 1,
+                                            padding: '11px 10px',
+                                            background: 'transparent',
+                                            border: 'none',
+                                            color: '#fff',
+                                            fontSize: '0.85rem',
+                                            outline: 'none',
+                                            fontFamily: showKey ? 'inherit' : 'monospace'
+                                        }}
+                                    />
+                                    {/* Paste Icon Button */}
+                                    <button
+                                        type="button"
+                                        onClick={handlePasteKey}
+                                        title="Paste from clipboard"
+                                        style={{
+                                            background: 'rgba(255, 255, 255, 0.05)',
+                                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                                            borderRadius: 6,
+                                            color: '#94a3b8',
+                                            cursor: 'pointer',
+                                            padding: '5px 8px',
+                                            marginRight: 6,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 4,
+                                            fontSize: '0.7rem'
+                                        }}
+                                    >
+                                        <IconCopy size={13} />
+                                        <span>Paste</span>
+                                    </button>
+
+                                    {/* Eye Mask Icon Button */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowKey(!showKey)}
+                                        title={showKey ? 'Hide key' : 'Show key'}
+                                        style={{
+                                            background: 'transparent',
+                                            border: 'none',
+                                            color: showKey ? '#818cf8' : '#64748b',
+                                            cursor: 'pointer',
+                                            padding: 4,
+                                            display: 'flex',
+                                            alignItems: 'center'
+                                        }}
+                                    >
+                                        <IconLock size={15} />
+                                    </button>
+                                </div>
+
+                                {/* External Key Link */}
+                                {activePlatform.portalUrl && (
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                                        <a
+                                            href={activePlatform.portalUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{
+                                                fontSize: '0.72rem',
+                                                color: activePlatform.accentColor,
+                                                textDecoration: 'none',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 4,
+                                                fontWeight: 600
+                                            }}
+                                        >
+                                            <span>Get {activePlatform.name} Key</span>
+                                            <IconExternalLink size={11} />
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Resolution & Bitrate Segmented Controls (Icons & Pills) */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                                {/* Resolution Pills */}
+                                <div>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setResolution('720p'); setBitrate(2500); }}
+                                            style={{
+                                                flex: 1,
+                                                padding: '8px',
+                                                borderRadius: 10,
+                                                border: resolution === '720p' ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.08)',
+                                                background: resolution === '720p' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                                                color: resolution === '720p' ? '#38bdf8' : '#94a3b8',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: 5
+                                            }}
+                                        >
+                                            <IconMonitor size={14} />
+                                            <span>720p HD</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setResolution('1080p'); setBitrate(4500); }}
+                                            style={{
+                                                flex: 1,
+                                                padding: '8px',
+                                                borderRadius: 10,
+                                                border: resolution === '1080p' ? '1px solid #818cf8' : '1px solid rgba(255, 255, 255, 0.08)',
+                                                background: resolution === '1080p' ? 'rgba(129, 140, 248, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                                                color: resolution === '1080p' ? '#818cf8' : '#94a3b8',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: 5
+                                            }}
+                                        >
+                                            <IconMonitor size={14} />
+                                            <span>1080p</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Bitrate Indicator */}
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '0 12px',
+                                    borderRadius: 10,
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <IconZap size={15} color="#eab308" />
+                                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#eab308' }}>
+                                            {bitrate} kbps
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {[2500, 4500].map(b => (
+                                            <button
+                                                key={b}
+                                                type="button"
+                                                onClick={() => setBitrate(b)}
+                                                style={{
+                                                    padding: '3px 6px',
+                                                    borderRadius: 6,
+                                                    border: 'none',
+                                                    background: bitrate === b ? '#eab308' : 'rgba(255, 255, 255, 0.08)',
+                                                    color: bitrate === b ? '#000' : '#94a3b8',
+                                                    fontSize: '0.65rem',
+                                                    fontWeight: 700,
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                {b === 2500 ? '2.5M' : '4.5M'}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Action Buttons */}
-                            <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                            {/* Actions */}
+                            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
                                 <button
                                     type="button"
                                     onClick={onClose}
                                     style={{
                                         flex: 1,
-                                        padding: '12px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        borderRadius: 10,
-                                        color: '#cbd5e1',
+                                        padding: '11px',
+                                        background: 'rgba(255, 255, 255, 0.04)',
+                                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                                        borderRadius: 12,
+                                        color: '#94a3b8',
                                         fontWeight: 600,
+                                        fontSize: '0.85rem',
                                         cursor: 'pointer'
                                     }}
                                 >
@@ -483,23 +758,24 @@ export function LiveStreamModal({
                                     type="submit"
                                     style={{
                                         flex: 2,
-                                        padding: '12px',
+                                        padding: '11px',
                                         background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
                                         border: 'none',
-                                        borderRadius: 10,
+                                        borderRadius: 12,
                                         color: '#fff',
                                         fontWeight: 700,
-                                        fontSize: '0.95rem',
+                                        fontSize: '0.92rem',
                                         cursor: 'pointer',
-                                        boxShadow: '0 4px 14px rgba(239, 68, 68, 0.45)',
+                                        boxShadow: '0 4px 16px rgba(239, 68, 68, 0.45)',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        gap: 8
+                                        gap: 8,
+                                        transition: 'all 0.15s ease'
                                     }}
                                 >
-                                    <IconVideo size={16} color="#fff" />
-                                    <span>Go Live ({PLATFORM_DEFAULTS[platform].name})</span>
+                                    <IconPlay size={16} color="#fff" />
+                                    <span>Go Live</span>
                                 </button>
                             </div>
                         </form>

@@ -24,6 +24,8 @@ export const SocketEvents = {
     MEETING_CHAT_RECEIVE: 'meeting:chat:receive',
     MEETING_CHAT_TYPING: 'meeting:chat:typing',
     MEETING_CHAT_STOP_TYPING: 'meeting:chat:stopTyping',
+    MEETING_FILE_SHARE: 'meeting:file:share',
+    MEETING_FILE_SHARED: 'meeting:file:shared',
     CHANNEL_CHAT_SEND: 'channel:chat:send',
     CHANNEL_CHAT_RECEIVE: 'channel:chat:receive',
     CHANNEL_CHAT_TYPING: 'channel:chat:typing',

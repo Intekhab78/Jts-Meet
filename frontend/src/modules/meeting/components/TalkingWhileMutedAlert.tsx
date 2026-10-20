@@ -19,7 +19,7 @@ export const TalkingWhileMutedAlert: React.FC<TalkingWhileMutedAlertProps> = ({
     return (
         <div style={{
             position: 'fixed',
-            bottom: showCaptions ? 134 : 86,
+            bottom: showCaptions ? 160 : 86,
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 99999,

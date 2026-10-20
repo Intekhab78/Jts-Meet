@@ -11,19 +11,21 @@ export async function createFileMetadata(
     buffer: Buffer,
     originalName: string,
     mimeType: string,
-    uploadedBy: string,
+    uploadedBy?: string,
     contextType?: IFileMetadata['contextType'],
     contextId?: string,
     organizationId?: string,
     teamId?: string,
     channelId?: string,
-    messageId?: string
+    messageId?: string,
+    uploaderName?: string
 ): Promise<IFileMetadata> {
     const checksum = await computeChecksum(buffer)
+    const validUserId = uploadedBy && Types.ObjectId.isValid(uploadedBy) ? new Types.ObjectId(uploadedBy) : null
     const existing = await FileMetadata.findOne({
         checksum,
         originalName,
-        uploadedBy: new Types.ObjectId(uploadedBy),
+        ...(validUserId ? { uploadedBy: validUserId } : {}),
         deletedAt: null
     }).exec()
     if (existing) {
@@ -44,14 +46,15 @@ export async function createFileMetadata(
         storageProvider: stored.provider,
         storageKey: stored.publicId,
         secureUrl: stored.secureUrl,
-        uploadedBy: new Types.ObjectId(uploadedBy),
+        uploadedBy: validUserId,
+        uploaderName: uploaderName || (!validUserId && uploadedBy ? uploadedBy : undefined),
         uploadedAt: new Date(),
         contextType,
         contextId,
-        organizationId: organizationId ? new Types.ObjectId(organizationId) : null,
-        teamId: teamId ? new Types.ObjectId(teamId) : null,
-        channelId: channelId ? new Types.ObjectId(channelId) : null,
-        messageId: messageId ? new Types.ObjectId(messageId) : null
+        organizationId: organizationId && Types.ObjectId.isValid(organizationId) ? new Types.ObjectId(organizationId) : null,
+        teamId: teamId && Types.ObjectId.isValid(teamId) ? new Types.ObjectId(teamId) : null,
+        channelId: channelId && Types.ObjectId.isValid(channelId) ? new Types.ObjectId(channelId) : null,
+        messageId: messageId && Types.ObjectId.isValid(messageId) ? new Types.ObjectId(messageId) : null
     })
 
     await metadata.save()
@@ -71,7 +74,7 @@ export async function softDeleteFile(fileId: string, userId: string): Promise<IF
         return null
     }
 
-    if (!file.uploadedBy.equals(new Types.ObjectId(userId))) {
+    if (!file.uploadedBy || !file.uploadedBy.equals(new Types.ObjectId(userId))) {
         throw new Error('Forbidden')
     }
 
@@ -94,4 +97,16 @@ export async function listChannelFiles(channelId: string): Promise<IFileMetadata
         deletedAt: null
     }).populate('uploadedBy', 'fullName email profileImage').sort({ uploadedAt: -1 }).exec()
 }
+
+export async function listFilesByContext(contextType: string, contextId: string): Promise<IFileMetadata[]> {
+    return FileMetadata.find({
+        contextType,
+        contextId,
+        deletedAt: null
+    })
+    .populate('uploadedBy', 'fullName email profileImage')
+    .sort({ uploadedAt: -1 })
+    .exec()
+}
+
 
