@@ -3,6 +3,7 @@ import {
     IconX,
     IconBuilding,
     IconMail,
+    IconMic,
     IconMicOff,
     IconSparkles,
     IconCrown,
@@ -26,6 +27,12 @@ export interface ParticipantsPanelProps {
     isLocked?: boolean
     onToggleLock?: () => void
     onMuteAll?: () => void
+    onUnmuteAll?: () => void
+    onMuteUser?: (userId: string) => void
+    onUnmuteUser?: (userId: string) => void
+    remoteMuteStates?: Record<string, boolean>
+    isLocalMuted?: boolean
+    canManageParticipants?: boolean
     isWatermarkEnabled?: boolean
     onToggleWatermark?: () => void
     onExportAttendance?: () => void
@@ -50,7 +57,9 @@ export interface ParticipantsPanelProps {
 export function ParticipantsPanel({
     participants, onClose, spotlightUserId, setSpotlightUserId,
     coHostIds, setCoHostIds, renamedUsers, setRenamedUsers, addToast,
-    hostId, isLocalHost, isLocked, onToggleLock, onMuteAll,
+    hostId, isLocalHost, isLocked, onToggleLock, onMuteAll, onUnmuteAll,
+    onMuteUser, onUnmuteUser, remoteMuteStates = {}, isLocalMuted = false,
+    canManageParticipants = false,
     isWatermarkEnabled, onToggleWatermark, onExportAttendance, onOpenAttendance,
     recordingAllowedUserIds = [], whiteboardAllowedUserIds = [],
     onTogglePermission, onPromoteCoHost,
@@ -134,7 +143,14 @@ export function ParticipantsPanel({
     }
 
     const handleMute = (userId: string) => {
-        addToast(`Requested ${getParticipantName(userId)} to mute`, 'warning')
+        onMuteUser?.(userId)
+        addToast(`Muted ${getParticipantName(userId)}`, 'warning')
+        setActiveMenu(null)
+    }
+
+    const handleUnmute = (userId: string) => {
+        onUnmuteUser?.(userId)
+        addToast(`Unmuted ${getParticipantName(userId)}`, 'success')
         setActiveMenu(null)
     }
 
@@ -235,37 +251,47 @@ export function ParticipantsPanel({
                     gap: 4,
                     flexShrink: 0
                 }}>
-                    <button
-                        onClick={onMuteAll}
-                        style={{
-                            padding: '6px 2px',
-                            background: 'rgba(239, 68, 68, 0.12)',
-                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                            borderRadius: 'var(--radius-sm)',
-                            color: '#fca5a5',
-                            fontSize: '0.65rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 4,
-                            minWidth: 0,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            transition: 'all 0.15s ease'
-                        }}
-                        title="Mute all participants' microphones"
-                    >
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                            <line x1="1" y1="1" x2="23" y2="23" />
-                            <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
-                            <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
-                            <line x1="12" y1="19" x2="12" y2="23" />
-                            <line x1="8" y1="23" x2="16" y2="23" />
-                        </svg>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Mute All</span>
-                    </button>
+                    {(() => {
+                        const areAllMuted = filtered.length > 0 && filtered.every(p => remoteMuteStates[p] === true)
+                        return (
+                            <button
+                                onClick={areAllMuted ? onUnmuteAll : onMuteAll}
+                                onContextMenu={(e) => { e.preventDefault(); areAllMuted ? onMuteAll?.() : onUnmuteAll?.(); }}
+                                style={{
+                                    padding: '6px 2px',
+                                    background: areAllMuted ? 'rgba(16, 185, 129, 0.16)' : 'rgba(239, 68, 68, 0.12)',
+                                    border: areAllMuted ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(239, 68, 68, 0.3)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    color: areAllMuted ? '#34d399' : '#fca5a5',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 4,
+                                    minWidth: 0,
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                title={areAllMuted ? "Unmute all participants' microphones (Right-click to mute all)" : "Mute all participants' microphones (Right-click to unmute all)"}
+                            >
+                                {areAllMuted ? (
+                                    <IconMic size={11} color="#34d399" />
+                                ) : (
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                        <line x1="1" y1="1" x2="23" y2="23" />
+                                        <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+                                        <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
+                                        <line x1="12" y1="19" x2="12" y2="23" />
+                                        <line x1="8" y1="23" x2="16" y2="23" />
+                                    </svg>
+                                )}
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{areAllMuted ? 'Unmute All' : 'Mute All'}</span>
+                            </button>
+                        )
+                    })()}
                     <button
                         onClick={onToggleLock}
                         style={{
@@ -446,7 +472,24 @@ export function ParticipantsPanel({
                                 <span className="badge badge-accent" style={{ marginLeft: 6, fontSize: '0.625rem', padding: '1px 5px' }}>Host</span>
                             )}
                         </div>
-                        <span className="badge-dot success" style={{ width: 8, height: 8 }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div
+                                title={isLocalMuted ? 'Your microphone is muted' : 'Your microphone is active'}
+                                style={{
+                                    width: 24,
+                                    height: 24,
+                                    borderRadius: '50%',
+                                    background: isLocalMuted ? 'rgba(239, 68, 68, 0.14)' : 'rgba(52, 211, 153, 0.12)',
+                                    color: isLocalMuted ? '#f87171' : '#34d399',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                            >
+                                {isLocalMuted ? <IconMicOff size={13} /> : <IconMic size={13} />}
+                            </div>
+                            <span className="badge-dot success" style={{ width: 8, height: 8 }} />
+                        </div>
                     </li>
 
                     {/* Remote User cards */}
@@ -459,6 +502,8 @@ export function ParticipantsPanel({
                         const isCoHost = coHostIds.includes(p)
                         const isSpotlighted = spotlightUserId === p
                         const avatarBg = getAvatarGradient(displayName)
+                        const isPeerMuted = remoteMuteStates[p] === true
+                        const canManageThisUser = isLocalHost || canManageParticipants
 
                         return (
                             <li
@@ -536,8 +581,49 @@ export function ParticipantsPanel({
                                     <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>Participant</span>
                                 </div>
 
-                                {/* Menu trigger */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {/* Mic action button & Menu trigger */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    {canManageThisUser ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => isPeerMuted ? handleUnmute(p) : handleMute(p)}
+                                            style={{
+                                                width: 26,
+                                                height: 26,
+                                                borderRadius: '50%',
+                                                border: isPeerMuted ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid rgba(52, 211, 153, 0.3)',
+                                                background: isPeerMuted ? 'rgba(239, 68, 68, 0.14)' : 'rgba(52, 211, 153, 0.1)',
+                                                color: isPeerMuted ? '#f87171' : '#34d399',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                padding: 0,
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            title={isPeerMuted ? "Participant is muted. Click to unmute." : "Participant is unmuted. Click to mute."}
+                                            aria-label={isPeerMuted ? "Unmute participant" : "Mute participant"}
+                                        >
+                                            {isPeerMuted ? <IconMicOff size={13} /> : <IconMic size={13} />}
+                                        </button>
+                                    ) : (
+                                        <div
+                                            title={isPeerMuted ? "Participant is muted" : "Participant microphone active"}
+                                            style={{
+                                                width: 22,
+                                                height: 22,
+                                                borderRadius: '50%',
+                                                background: isPeerMuted ? 'rgba(239, 68, 68, 0.12)' : 'rgba(52, 211, 153, 0.08)',
+                                                color: isPeerMuted ? '#f87171' : '#34d399',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
+                                        >
+                                            {isPeerMuted ? <IconMicOff size={12} /> : <IconMic size={12} />}
+                                        </div>
+                                    )}
+
                                     <button
                                         className="btn-icon"
                                         onClick={() => setActiveMenu(activeMenu === p ? null : p)}
@@ -571,14 +657,27 @@ export function ParticipantsPanel({
                                             display: 'flex', flexDirection: 'column', gap: 4,
                                             animation: 'jts-slide-up 150ms ease-out'
                                         }}>
-                                        <button
-                                            onClick={() => handleMute(p)}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
-                                            className="btn-secondary"
-                                        >
-                                            <IconMicOff size={14} color="#f87171" />
-                                            <span>Mute Participant</span>
-                                        </button>
+                                        {isPeerMuted ? (
+                                            <button
+                                                onClick={() => handleUnmute(p)}
+                                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left', fontWeight: 600 }}
+                                                className="btn-secondary"
+                                                title="Unmute participant microphone"
+                                            >
+                                                <IconMic size={14} color="#34d399" />
+                                                <span>Unmute Participant</span>
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleMute(p)}
+                                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#f87171', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}
+                                                className="btn-secondary"
+                                                title="Mute participant microphone"
+                                            >
+                                                <IconMicOff size={14} color="#f87171" />
+                                                <span>Mute Participant</span>
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => handleSpotlight(p)}
                                             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', width: '100%', fontSize: '0.75rem', border: 'none', background: 'none', color: '#fff', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}

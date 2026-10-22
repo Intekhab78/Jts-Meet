@@ -89,18 +89,56 @@ export function updatePeerSession(userId: string, updates: Partial<PeerSession>)
     }
 }
 
+export function clearMeetingPeerSessions(meetingId: string) {
+    const userIds = meetingPeers.get(meetingId)
+    if (userIds) {
+        for (const uId of userIds) {
+            const session = peersByUserId.get(uId)
+            if (session && session.meetingId === meetingId) {
+                peersByUserId.delete(uId)
+                peersBySocketId.delete(session.socketId)
+            }
+        }
+        meetingPeers.delete(meetingId)
+    }
+    const redis = getRedisClient()
+    if (redis) {
+        redis.del(`webrtc:meeting:${meetingId}`).catch(() => {})
+    }
+}
+
 export function getMeetingPeersInfo(meetingId: string) {
     const userIds = getMeetingPeerUserIds(meetingId)
-    return userIds.map((uId) => {
+    const activePeers: Array<{
+        userId: string
+        displayName: string
+        isVideoOff?: boolean
+        isMuted?: boolean
+        isScreenSharing?: boolean
+    }> = []
+
+    for (const uId of userIds) {
         const s = peersByUserId.get(uId)
-        return {
-            userId: uId,
-            displayName: s?.displayName || '',
-            isVideoOff: s?.isVideoOff,
-            isMuted: s?.isMuted,
-            isScreenSharing: s?.isScreenSharing || false
+        if (!s) {
+            // Prune stale participant from meetingPeers set
+            const meetingSet = meetingPeers.get(meetingId)
+            if (meetingSet) {
+                meetingSet.delete(uId)
+                if (meetingSet.size === 0) {
+                    meetingPeers.delete(meetingId)
+                }
+            }
+            continue
         }
-    })
+        activePeers.push({
+            userId: uId,
+            displayName: s.displayName || '',
+            isVideoOff: s.isVideoOff,
+            isMuted: s.isMuted,
+            isScreenSharing: s.isScreenSharing || false
+        })
+    }
+    return activePeers
 }
 
 /**
@@ -123,25 +161,33 @@ export async function getMeetingPeersInfoCluster(meetingId: string): Promise<Arr
                     if (raw) {
                         try {
                             const parsed = JSON.parse(raw) as PeerSession
-                            return {
-                                userId: uId,
-                                displayName: parsed.displayName || '',
-                                isVideoOff: parsed.isVideoOff,
-                                isMuted: parsed.isMuted,
-                                isScreenSharing: parsed.isScreenSharing || false
+                            // Verify meetingId matches to avoid cross-room ghosts
+                            if (parsed.meetingId === meetingId) {
+                                return {
+                                    userId: uId,
+                                    displayName: parsed.displayName || '',
+                                    isVideoOff: parsed.isVideoOff,
+                                    isMuted: parsed.isMuted,
+                                    isScreenSharing: parsed.isScreenSharing || false
+                                }
                             }
                         } catch {
-                            return null
+                            // JSON error
                         }
                     }
                     const local = peersByUserId.get(uId)
-                    return {
-                        userId: uId,
-                        displayName: local?.displayName || '',
-                        isVideoOff: local?.isVideoOff,
-                        isMuted: local?.isMuted,
-                        isScreenSharing: local?.isScreenSharing || false
+                    if (local && local.meetingId === meetingId) {
+                        return {
+                            userId: uId,
+                            displayName: local.displayName || '',
+                            isVideoOff: local.isVideoOff,
+                            isMuted: local.isMuted,
+                            isScreenSharing: local.isScreenSharing || false
+                        }
                     }
+                    // Ghost cleanup: user is no longer active in Redis session nor local memory!
+                    redis.sRem(`webrtc:meeting:${meetingId}`, uId).catch(() => {})
+                    return null
                 })
 
                 const clusterPeers = (await Promise.all(sessionPromises)).filter(Boolean) as Array<{
@@ -152,9 +198,7 @@ export async function getMeetingPeersInfoCluster(meetingId: string): Promise<Arr
                     isScreenSharing?: boolean
                 }>
 
-                if (clusterPeers.length > 0) {
-                    return clusterPeers
-                }
+                return clusterPeers
             }
         } catch (_) {
             // Fallback to in-memory on error

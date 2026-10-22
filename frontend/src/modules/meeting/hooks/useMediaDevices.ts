@@ -81,6 +81,7 @@ export function useMediaDevices(): UseMediaDevicesResult {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true,
+            voiceIsolation: true,
             channelCount: 1,
             sampleRate: 48000,
             googEchoCancellation: true,
@@ -128,7 +129,17 @@ export function useMediaDevices(): UseMediaDevicesResult {
                                     return
                                 }
                                 const rawAudio = audioOnlyStream.getAudioTracks()[0]
-                                const cleanOnlyStream = new MediaStream(rawAudio ? [rawAudio] : [])
+                                const isNoiseSupprPref = (() => {
+                                    try {
+                                        return localStorage.getItem('jts_pref_noise_suppr') !== 'false'
+                                    } catch {
+                                        return true
+                                    }
+                                })()
+                                const cleanAudio = rawAudio
+                                    ? noiseCancellationService.processAudioTrack(rawAudio, isNoiseSupprPref ? 'high' : 'off')
+                                    : null
+                                const cleanOnlyStream = new MediaStream(cleanAudio ? [cleanAudio] : [])
                                 localStreamRef.current = cleanOnlyStream
                                 cameraStreamRef.current = audioOnlyStream
                                 setCameraStream(audioOnlyStream)
@@ -167,8 +178,22 @@ export function useMediaDevices(): UseMediaDevicesResult {
                         rawAudioTrack.enabled = false
                     }
                 } catch {}
+
+                const isNoiseSupprPref = (() => {
+                    try {
+                        return localStorage.getItem('jts_pref_noise_suppr') !== 'false'
+                    } catch {
+                        return true
+                    }
+                })()
+
+                const cleanAudioTrack = noiseCancellationService.processAudioTrack(
+                    rawAudioTrack,
+                    isNoiseSupprPref ? 'high' : 'off'
+                )
+
                 const videoTracks = stream.getVideoTracks()
-                const cleanStream = new MediaStream([rawAudioTrack, ...videoTracks])
+                const cleanStream = new MediaStream([cleanAudioTrack, ...videoTracks])
                 localStreamRef.current = cleanStream
                 cameraStreamRef.current = stream
                 setCameraStream(stream)
@@ -215,6 +240,14 @@ export function useMediaDevices(): UseMediaDevicesResult {
     const switchAudioDevice = useCallback(async (deviceId: string, onTrackSwapped?: (track: MediaStreamTrack) => void) => {
         if (!deviceId) return
         try {
+            const isNoiseSupprPref = (() => {
+                try {
+                    return localStorage.getItem('jts_pref_noise_suppr') !== 'false'
+                } catch {
+                    return true
+                }
+            })()
+
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     deviceId: { exact: deviceId },
@@ -223,6 +256,7 @@ export function useMediaDevices(): UseMediaDevicesResult {
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true,
+                    voiceIsolation: true,
                     googEchoCancellation: true,
                     googEchoCancellation2: true,
                     googDAEchoCancellation: true,
@@ -242,12 +276,16 @@ export function useMediaDevices(): UseMediaDevicesResult {
                     localStreamRef.current.removeTrack(oldTrack)
                     try { oldTrack.stop() } catch {}
                 }
-                localStreamRef.current.addTrack(rawTrack)
+                const cleanTrack = noiseCancellationService.processAudioTrack(
+                    rawTrack,
+                    isNoiseSupprPref ? 'high' : 'off'
+                )
+                localStreamRef.current.addTrack(cleanTrack)
                 const newStream = new MediaStream(localStreamRef.current.getTracks())
                 setLocalStream(newStream)
-                if (onTrackSwapped) onTrackSwapped(rawTrack)
+                if (onTrackSwapped) onTrackSwapped(cleanTrack)
                 window.dispatchEvent(new CustomEvent('jts:device-swapped', { 
-                    detail: { kind: 'audio', track: rawTrack, stream: newStream } 
+                    detail: { kind: 'audio', track: cleanTrack, stream: newStream } 
                 }))
             }
         } catch (err) {
@@ -322,11 +360,12 @@ export function useMediaDevices(): UseMediaDevicesResult {
                                 sampleRate: 48000,
                                 echoCancellation: true,
                                 noiseSuppression: true,
-                                autoGainControl: false,
+                                autoGainControl: true,
+                                voiceIsolation: true,
                                 googEchoCancellation: true,
                                 googEchoCancellation2: true,
                                 googDAEchoCancellation: true,
-                                googAutoGainControl: false,
+                                googAutoGainControl: true,
                                 googNoiseSuppression: true,
                                 googNoiseSuppression2: true,
                                 googHighpassFilter: true,

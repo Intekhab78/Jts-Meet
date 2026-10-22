@@ -114,20 +114,10 @@ export function calculateMeetingStageLayout({
     const isTablet = windowWidth >= 640 && windowWidth < 1024
 
     // Dynamic grid configuration for Smart Meeting Layout
+    // Dynamic grid configuration for Smart Meeting Layout
+    const count = displayedUsers.length || allUsers.length
     let gridStyle: React.CSSProperties = {}
-    if (layoutMode === 'tiled') {
-        const count = displayedUsers.length
-        const cols = count <= 1 ? 1 : count <= 4 ? 2 : count <= 9 ? 3 : count <= 16 ? 4 : count <= 25 ? 5 : 6
-        gridStyle = {
-            display: count <= 1 ? 'flex' : 'grid',
-            justifyContent: 'center',
-            alignItems: 'center',
-            gridTemplateColumns: count > 1 ? `repeat(${cols}, minmax(0, 1fr))` : undefined,
-            gridTemplateRows: count > 1 ? `repeat(${Math.ceil(count / cols)}, minmax(0, 1fr))` : undefined,
-            height: '100%',
-            gap: 12
-        }
-    } else if (allUsers.length === 1) {
+    if (count <= 1) {
         gridStyle = {
             display: 'flex',
             justifyContent: 'center',
@@ -135,7 +125,7 @@ export function calculateMeetingStageLayout({
             height: '100%',
             gap: 16
         }
-    } else if (allUsers.length === 2) {
+    } else if (count === 2) {
         gridStyle = {
             display: 'grid',
             gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
@@ -143,7 +133,15 @@ export function calculateMeetingStageLayout({
             height: '100%',
             gap: 16
         }
-    } else if (allUsers.length <= 4) {
+    } else if (count === 3) {
+        gridStyle = {
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))',
+            gridTemplateRows: isMobile ? 'repeat(3, 1fr)' : '1fr',
+            height: '100%',
+            gap: 16
+        }
+    } else if (count === 4) {
         gridStyle = {
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
@@ -151,13 +149,48 @@ export function calculateMeetingStageLayout({
             height: '100%',
             gap: 16
         }
-    } else {
+    } else if (count === 5) {
         gridStyle = {
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            gridTemplateRows: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(6, minmax(0, 1fr))',
+            gridTemplateRows: isMobile ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))',
             height: '100%',
             gap: 16
+        }
+    } else if (count === 6) {
+        gridStyle = {
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3, minmax(0, 1fr))',
+            gridTemplateRows: isMobile ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))',
+            height: '100%',
+            gap: 16
+        }
+    } else if (count === 7) {
+        gridStyle = {
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(8, minmax(0, 1fr))',
+            gridTemplateRows: isMobile ? 'repeat(4, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))',
+            height: '100%',
+            gap: 16
+        }
+    } else if (count === 8) {
+        gridStyle = {
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, minmax(0, 1fr))',
+            gridTemplateRows: isMobile ? 'repeat(4, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))',
+            height: '100%',
+            gap: 16
+        }
+    } else {
+        const cols = count <= 9 ? 3 : count <= 16 ? 4 : count <= 25 ? 5 : 6
+        gridStyle = {
+            display: 'grid',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${Math.ceil(count / cols)}, minmax(0, 1fr))`,
+            height: '100%',
+            gap: 12
         }
     }
 
@@ -187,3 +220,52 @@ export function calculateMeetingStageLayout({
         layoutStyle
     }
 }
+
+/**
+ * Calculates responsive grid column/row spans to center tiles on the last row
+ * when the participant count results in an incomplete row (e.g., 5 or 7 participants on desktop).
+ */
+export function getBalancedGridTileStyle(index: number, totalCount: number, isMobile: boolean): React.CSSProperties {
+    if (isMobile) {
+        if (totalCount === 3 && index === 2) {
+            return { gridColumn: 'span 2' }
+        }
+        if (totalCount === 5 && index === 4) {
+            return { gridColumn: 'span 2' }
+        }
+        if (totalCount === 7 && index === 6) {
+            return { gridColumn: 'span 2' }
+        }
+        return {}
+    }
+
+    // Desktop
+    if (totalCount === 5) {
+        // 6-column grid:
+        // Row 1 (3 tiles): indices 0, 1, 2 -> span 2 columns each (cols 1-2, 3-4, 5-6)
+        // Row 2 (2 tiles): index 3 (cols 2-3), index 4 (cols 4-5)
+        // Col 1 and Col 6 are empty margins, perfectly centering the 2 tiles in Row 2!
+        if (index === 0) return { gridColumn: '1 / span 2', gridRow: '1' }
+        if (index === 1) return { gridColumn: '3 / span 2', gridRow: '1' }
+        if (index === 2) return { gridColumn: '5 / span 2', gridRow: '1' }
+        if (index === 3) return { gridColumn: '2 / span 2', gridRow: '2' }
+        if (index === 4) return { gridColumn: '4 / span 2', gridRow: '2' }
+    }
+
+    if (totalCount === 7) {
+        // 8-column grid:
+        // Row 1 (4 tiles): indices 0, 1, 2, 3 -> span 2 columns each (cols 1-2, 3-4, 5-6, 7-8)
+        // Row 2 (3 tiles): index 4 (cols 2-3), index 5 (cols 4-5), index 6 (cols 6-7)
+        // Col 1 and Col 8 are empty margins, perfectly centering the 3 tiles in Row 2!
+        if (index === 0) return { gridColumn: '1 / span 2', gridRow: '1' }
+        if (index === 1) return { gridColumn: '3 / span 2', gridRow: '1' }
+        if (index === 2) return { gridColumn: '5 / span 2', gridRow: '1' }
+        if (index === 3) return { gridColumn: '7 / span 2', gridRow: '1' }
+        if (index === 4) return { gridColumn: '2 / span 2', gridRow: '2' }
+        if (index === 5) return { gridColumn: '4 / span 2', gridRow: '2' }
+        if (index === 6) return { gridColumn: '6 / span 2', gridRow: '2' }
+    }
+
+    return {}
+}
+

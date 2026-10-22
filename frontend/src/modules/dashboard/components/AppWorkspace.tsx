@@ -173,6 +173,7 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
         try {
             sessionStorage.setItem('jts_active_meeting_id', cleanId)
             sessionStorage.setItem(`jts_created_meeting_${cleanId}`, 'true')
+            sessionStorage.setItem('jts_auto_open_invite', 'true')
             localStorage.setItem('jts_last_meeting_id', cleanId)
         } catch (e) { }
         setMeetingId(cleanId)

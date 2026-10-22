@@ -12,16 +12,24 @@ namespace JtsInputInjector
         static extern bool SetCursorPos(int X, int Y);
 
         [DllImport("user32.dll", SetLastError = true)]
-        static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-
-        [DllImport("user32.dll", SetLastError = true)]
         static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
         [DllImport("user32.dll")]
-        static extern short VkKeyScan(char ch);
+        static extern int GetSystemMetrics(int nIndex);
+
+        [DllImport("user32.dll")]
+        static extern bool SetProcessDPIAware();
+
+        [DllImport("user32.dll")]
+        static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
+
+        const int SM_XVIRTUALSCREEN = 76;
+        const int SM_YVIRTUALSCREEN = 77;
+        const int SM_CXVIRTUALSCREEN = 78;
+        const int SM_CYVIRTUALSCREEN = 79;
+
+        const uint INPUT_MOUSE = 0;
+        const uint INPUT_KEYBOARD = 1;
 
         const uint MOUSEEVENTF_MOVE = 0x0001;
         const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
@@ -31,6 +39,7 @@ namespace JtsInputInjector
         const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
         const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
         const uint MOUSEEVENTF_WHEEL = 0x0800;
+        const uint MOUSEEVENTF_VIRTUALDESK = 0x4000;
         const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
 
         const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
@@ -81,36 +90,195 @@ namespace JtsInputInjector
             public ushort wParamH;
         }
 
+        static void ConvertToAbsoluteCoordinates(int x, int y, out int absX, out int absY)
+        {
+            int vLeft = GetSystemMetrics(SM_XVIRTUALSCREEN);
+            int vTop = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            int vWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+            int vHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+            if (vWidth <= 0) vWidth = 1920;
+            if (vHeight <= 0) vHeight = 1080;
+
+            absX = (int)Math.Round(((double)(x - vLeft) * 65535.0) / (double)vWidth);
+            absY = (int)Math.Round(((double)(y - vTop) * 65535.0) / (double)vHeight);
+        }
+
+        static void SendMouseMove(int x, int y)
+        {
+            SetCursorPos(x, y);
+            int absX, absY;
+            ConvertToAbsoluteCoordinates(x, y, out absX, out absY);
+
+            INPUT[] inputs = new INPUT[1];
+            inputs[0].type = INPUT_MOUSE;
+            inputs[0].u.mi.dx = absX;
+            inputs[0].u.mi.dy = absY;
+            inputs[0].u.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE;
+            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        static void SendMouseDown(int x, int y, int btn)
+        {
+            SetCursorPos(x, y);
+            int absX, absY;
+            ConvertToAbsoluteCoordinates(x, y, out absX, out absY);
+
+            uint flag = btn == 2 ? MOUSEEVENTF_RIGHTDOWN : (btn == 1 ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_LEFTDOWN);
+
+            INPUT[] inputs = new INPUT[1];
+            inputs[0].type = INPUT_MOUSE;
+            inputs[0].u.mi.dx = absX;
+            inputs[0].u.mi.dy = absY;
+            inputs[0].u.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE | flag;
+            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        static void SendMouseUp(int x, int y, int btn)
+        {
+            SetCursorPos(x, y);
+            int absX, absY;
+            ConvertToAbsoluteCoordinates(x, y, out absX, out absY);
+
+            uint flag = btn == 2 ? MOUSEEVENTF_RIGHTUP : (btn == 1 ? MOUSEEVENTF_MIDDLEUP : MOUSEEVENTF_LEFTUP);
+
+            INPUT[] inputs = new INPUT[1];
+            inputs[0].type = INPUT_MOUSE;
+            inputs[0].u.mi.dx = absX;
+            inputs[0].u.mi.dy = absY;
+            inputs[0].u.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE | flag;
+            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        static void SendMouseClick(int x, int y, int btn)
+        {
+            SendMouseDown(x, y, btn);
+            Thread.Sleep(20);
+            SendMouseUp(x, y, btn);
+        }
+
+        static void SendMouseDoubleClick(int x, int y)
+        {
+            SendMouseClick(x, y, 0);
+            Thread.Sleep(50);
+            SendMouseClick(x, y, 0);
+        }
+
+        static void SendMouseScroll(int delta)
+        {
+            INPUT[] inputs = new INPUT[1];
+            inputs[0].type = INPUT_MOUSE;
+            inputs[0].u.mi.mouseData = (uint)delta;
+            inputs[0].u.mi.dwFlags = MOUSEEVENTF_WHEEL;
+            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        static void SendKey(byte vk, bool isUp, bool isExtended = false)
+        {
+            INPUT[] inputs = new INPUT[1];
+            inputs[0].type = INPUT_KEYBOARD;
+            inputs[0].u.ki.wVk = vk;
+            inputs[0].u.ki.wScan = 0;
+            inputs[0].u.ki.dwFlags = (isUp ? KEYEVENTF_KEYUP : 0) | (isExtended ? KEYEVENTF_EXTENDEDKEY : 0);
+            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        static void SendUnicodeChar(char c)
+        {
+            INPUT[] inputs = new INPUT[2];
+
+            inputs[0].type = INPUT_KEYBOARD;
+            inputs[0].u.ki.wVk = 0;
+            inputs[0].u.ki.wScan = (ushort)c;
+            inputs[0].u.ki.dwFlags = KEYEVENTF_UNICODE;
+
+            inputs[1].type = INPUT_KEYBOARD;
+            inputs[1].u.ki.wVk = 0;
+            inputs[1].u.ki.wScan = (ushort)c;
+            inputs[1].u.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+
+            SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
         static void SendUnicodeString(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
             foreach (char c in text)
             {
-                INPUT[] inputs = new INPUT[2];
-
-                // Key down
-                inputs[0].type = 1; // INPUT_KEYBOARD
-                inputs[0].u.ki.wVk = 0;
-                inputs[0].u.ki.wScan = (ushort)c;
-                inputs[0].u.ki.dwFlags = KEYEVENTF_UNICODE;
-                inputs[0].u.ki.time = 0;
-                inputs[0].u.ki.dwExtraInfo = UIntPtr.Zero;
-
-                // Key up
-                inputs[1].type = 1;
-                inputs[1].u.ki.wVk = 0;
-                inputs[1].u.ki.wScan = (ushort)c;
-                inputs[1].u.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-                inputs[1].u.ki.time = 0;
-                inputs[1].u.ki.dwExtraInfo = UIntPtr.Zero;
-
-                SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
-                Thread.Sleep(5);
+                SendUnicodeChar(c);
+                Thread.Sleep(4);
             }
         }
 
-        static byte GetVirtualKeyCode(string keyName)
+        static void TriggerHotkey(string hotkey)
         {
+            switch (hotkey.ToUpper())
+            {
+                case "WIN":
+                case "START":
+                    // Windows Start Menu
+                    SendKey(0x5B, false, true); // VK_LWIN down
+                    Thread.Sleep(30);
+                    SendKey(0x5B, true, true);  // VK_LWIN up
+                    break;
+
+                case "WIN_D":
+                    // Show / Minimize Desktop (Win + D)
+                    SendKey(0x5B, false, true);
+                    Thread.Sleep(10);
+                    SendKey(0x44, false); // D down
+                    Thread.Sleep(20);
+                    SendKey(0x44, true);
+                    SendKey(0x5B, true, true);
+                    break;
+
+                case "WIN_E":
+                    // Open File Explorer (Win + E)
+                    SendKey(0x5B, false, true);
+                    Thread.Sleep(10);
+                    SendKey(0x45, false); // E down
+                    Thread.Sleep(20);
+                    SendKey(0x45, true);
+                    SendKey(0x5B, true, true);
+                    break;
+
+                case "TASKMGR":
+                    // Open Windows Task Manager (Ctrl + Shift + Esc)
+                    SendKey(0x11, false); // Ctrl
+                    SendKey(0x10, false); // Shift
+                    Thread.Sleep(10);
+                    SendKey(0x1B, false); // Esc down
+                    Thread.Sleep(20);
+                    SendKey(0x1B, true);  // Esc up
+                    SendKey(0x10, true);  // Shift up
+                    SendKey(0x11, true);  // Ctrl up
+                    break;
+
+                case "WIN_R":
+                    // Open Windows Run Dialog (Win + R)
+                    SendKey(0x5B, false, true);
+                    Thread.Sleep(15);
+                    SendKey(0x52, false); // R down
+                    Thread.Sleep(25);
+                    SendKey(0x52, true);  // R up
+                    SendKey(0x5B, true, true);
+                    break;
+
+                case "ALT_TAB":
+                    // Switch Application Window (Alt + Tab)
+                    SendKey(0x12, false); // Alt
+                    Thread.Sleep(10);
+                    SendKey(0x09, false); // Tab down
+                    Thread.Sleep(20);
+                    SendKey(0x09, true);
+                    SendKey(0x12, true);
+                    break;
+            }
+        }
+
+        static byte GetVirtualKeyCode(string keyName, out bool isExtended)
+        {
+            isExtended = false;
             switch (keyName.ToLower())
             {
                 case "enter":
@@ -122,26 +290,46 @@ namespace JtsInputInjector
                 case "space":
                 case " ": return 0x20;
                 case "delete":
-                case "del": return 0x2E;
+                case "del":
+                    isExtended = true;
+                    return 0x2E;
                 case "arrowup":
-                case "up": return 0x26;
+                case "up":
+                    isExtended = true;
+                    return 0x26;
                 case "arrowdown":
-                case "down": return 0x28;
+                case "down":
+                    isExtended = true;
+                    return 0x28;
                 case "arrowleft":
-                case "left": return 0x25;
+                case "left":
+                    isExtended = true;
+                    return 0x25;
                 case "arrowright":
-                case "right": return 0x27;
-                case "home": return 0x24;
-                case "end": return 0x23;
-                case "pageup": return 0x21;
-                case "pagedown": return 0x22;
+                case "right":
+                    isExtended = true;
+                    return 0x27;
+                case "home":
+                    isExtended = true;
+                    return 0x24;
+                case "end":
+                    isExtended = true;
+                    return 0x23;
+                case "pageup":
+                    isExtended = true;
+                    return 0x21;
+                case "pagedown":
+                    isExtended = true;
+                    return 0x22;
                 case "control":
                 case "ctrl": return 0x11;
                 case "alt": return 0x12;
                 case "shift": return 0x10;
                 case "meta":
                 case "win":
-                case "windows": return 0x5B;
+                case "windows":
+                    isExtended = true;
+                    return 0x5B;
                 case "f1": return 0x70;
                 case "f2": return 0x71;
                 case "f3": return 0x72;
@@ -157,7 +345,7 @@ namespace JtsInputInjector
                 default:
                     if (keyName.Length == 1)
                     {
-                        char ch = keyName.ToUpper()[0];
+                        char ch = char.ToUpperInvariant(keyName[0]);
                         if (ch >= 'A' && ch <= 'Z') return (byte)ch;
                         if (ch >= '0' && ch <= '9') return (byte)ch;
                     }
@@ -167,127 +355,138 @@ namespace JtsInputInjector
 
         static void Main(string[] args)
         {
+            // Configure DPI Awareness so coordinates match physical screen pixels on Windows 10/11
             try
             {
-                Console.OutputEncoding = Encoding.UTF8;
-                Console.WriteLine("JTS_INPUT_READY");
+                // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+                SetProcessDpiAwarenessContext((IntPtr)(-4));
             }
             catch
             {
-                // Ignore console handle errors when spawned with hidden window or redirected IO
+                try { SetProcessDPIAware(); } catch { }
             }
 
             try
             {
-                string line;
-                while ((line = Console.ReadLine()) != null)
+                Console.OutputEncoding = Encoding.UTF8;
+            }
+            catch { }
+
+            try
+            {
+                using (var reader = new StreamReader(Console.OpenStandardInput(), Encoding.UTF8))
                 {
-                    line = line.Trim();
-                    if (string.IsNullOrEmpty(line)) continue;
-                    if (line.Equals("EXIT", StringComparison.OrdinalIgnoreCase)) break;
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        line = line.Trim();
+                        if (string.IsNullOrEmpty(line)) continue;
+                        if (line.Equals("EXIT", StringComparison.OrdinalIgnoreCase)) break;
 
-                try
-                {
-                    string[] parts = line.Split(' ');
-                    string cmd = parts[0].ToUpper();
-
-                    if (cmd == "MOVE" && parts.Length >= 3)
-                    {
-                        int x = int.Parse(parts[1]);
-                        int y = int.Parse(parts[2]);
-                        SetCursorPos(x, y);
-                    }
-                    else if (cmd == "DOWN" && parts.Length >= 4)
-                    {
-                        int x = int.Parse(parts[1]);
-                        int y = int.Parse(parts[2]);
-                        int btn = int.Parse(parts[3]);
-                        SetCursorPos(x, y);
-                        uint flag = btn == 2 ? MOUSEEVENTF_RIGHTDOWN : (btn == 1 ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_LEFTDOWN);
-                        mouse_event(flag, 0, 0, 0, UIntPtr.Zero);
-                    }
-                    else if (cmd == "UP" && parts.Length >= 4)
-                    {
-                        int x = int.Parse(parts[1]);
-                        int y = int.Parse(parts[2]);
-                        int btn = int.Parse(parts[3]);
-                        SetCursorPos(x, y);
-                        uint flag = btn == 2 ? MOUSEEVENTF_RIGHTUP : (btn == 1 ? MOUSEEVENTF_MIDDLEUP : MOUSEEVENTF_LEFTUP);
-                        mouse_event(flag, 0, 0, 0, UIntPtr.Zero);
-                    }
-                    else if (cmd == "CLICK" && parts.Length >= 4)
-                    {
-                        int x = int.Parse(parts[1]);
-                        int y = int.Parse(parts[2]);
-                        int btn = int.Parse(parts[3]);
-                        SetCursorPos(x, y);
-                        uint downFlag = btn == 2 ? MOUSEEVENTF_RIGHTDOWN : (btn == 1 ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_LEFTDOWN);
-                        uint upFlag = btn == 2 ? MOUSEEVENTF_RIGHTUP : (btn == 1 ? MOUSEEVENTF_MIDDLEUP : MOUSEEVENTF_LEFTUP);
-                        mouse_event(downFlag, 0, 0, 0, UIntPtr.Zero);
-                        Thread.Sleep(10);
-                        mouse_event(upFlag, 0, 0, 0, UIntPtr.Zero);
-                    }
-                    else if (cmd == "DBLCLICK" && parts.Length >= 3)
-                    {
-                        int x = int.Parse(parts[1]);
-                        int y = int.Parse(parts[2]);
-                        SetCursorPos(x, y);
-                        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
-                        Thread.Sleep(20);
-                        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
-                        Thread.Sleep(50);
-                        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
-                        Thread.Sleep(20);
-                        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
-                    }
-                    else if (cmd == "CONTEXTMENU" && parts.Length >= 3)
-                    {
-                        int x = int.Parse(parts[1]);
-                        int y = int.Parse(parts[2]);
-                        SetCursorPos(x, y);
-                        mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, UIntPtr.Zero);
-                        Thread.Sleep(20);
-                        mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, UIntPtr.Zero);
-                    }
-                    else if (cmd == "SCROLL" && parts.Length >= 2)
-                    {
-                        int delta = int.Parse(parts[1]);
-                        mouse_event(MOUSEEVENTF_WHEEL, 0, 0, (uint)delta, UIntPtr.Zero);
-                    }
-                    else if (cmd == "KEY" && parts.Length >= 3)
-                    {
-                        string action = parts[1].ToLower();
-                        string key = parts[2];
-                        byte vk = GetVirtualKeyCode(key);
-
-                        if (vk != 0)
+                        try
                         {
-                            uint flag = action == "up" ? KEYEVENTF_KEYUP : 0;
-                            keybd_event(vk, 0, flag, UIntPtr.Zero);
+                            string[] parts = line.Split(' ');
+                            string cmd = parts[0].ToUpper();
+
+                            if (cmd == "MOVE" && parts.Length >= 3)
+                            {
+                                int x = int.Parse(parts[1]);
+                                int y = int.Parse(parts[2]);
+                                SendMouseMove(x, y);
+                            }
+                            else if (cmd == "DOWN" && parts.Length >= 4)
+                            {
+                                int x = int.Parse(parts[1]);
+                                int y = int.Parse(parts[2]);
+                                int btn = int.Parse(parts[3]);
+                                SendMouseDown(x, y, btn);
+                            }
+                            else if (cmd == "UP" && parts.Length >= 4)
+                            {
+                                int x = int.Parse(parts[1]);
+                                int y = int.Parse(parts[2]);
+                                int btn = int.Parse(parts[3]);
+                                SendMouseUp(x, y, btn);
+                            }
+                            else if (cmd == "CLICK" && parts.Length >= 4)
+                            {
+                                int x = int.Parse(parts[1]);
+                                int y = int.Parse(parts[2]);
+                                int btn = int.Parse(parts[3]);
+                                SendMouseClick(x, y, btn);
+                            }
+                            else if (cmd == "DBLCLICK" && parts.Length >= 3)
+                            {
+                                int x = int.Parse(parts[1]);
+                                int y = int.Parse(parts[2]);
+                                SendMouseDoubleClick(x, y);
+                            }
+                            else if (cmd == "CONTEXTMENU" && parts.Length >= 3)
+                            {
+                                int x = int.Parse(parts[1]);
+                                int y = int.Parse(parts[2]);
+                                SendMouseClick(x, y, 2);
+                            }
+                            else if (cmd == "SCROLL" && parts.Length >= 2)
+                            {
+                                int delta = int.Parse(parts[1]);
+                                SendMouseScroll(delta);
+                            }
+                            else if (cmd == "HOTKEY" && parts.Length >= 2)
+                            {
+                                TriggerHotkey(parts[1]);
+                            }
+                            else if (cmd == "KEY" && parts.Length >= 3)
+                            {
+                                string action = parts[1].ToLower();
+                                string key = parts[2];
+                                bool isExtended;
+                                byte vk = GetVirtualKeyCode(key, out isExtended);
+
+                                if (vk != 0)
+                                {
+                                    SendKey(vk, action == "up", isExtended);
+                                }
+                                else if (action == "down" && key.Length == 1)
+                                {
+                                    SendUnicodeChar(key[0]);
+                                }
+                            }
+                            else if (cmd == "TEXT" && parts.Length >= 2)
+                            {
+                                string b64 = parts[1];
+                                byte[] bytes = Convert.FromBase64String(b64);
+                                string text = Encoding.UTF8.GetString(bytes);
+                                SendUnicodeString(text);
+                            }
+                            else if (cmd == "RUN" && parts.Length >= 2)
+                            {
+                                string target = line.Substring(4).Trim();
+                                try
+                                {
+                                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                                    {
+                                        FileName = target,
+                                        UseShellExecute = true
+                                    });
+                                }
+                                catch
+                                {
+                                    // Process launch failure ignored
+                                }
+                            }
                         }
-                        else if (action == "down" && key.Length == 1)
+                        catch
                         {
-                            SendUnicodeString(key);
+                            // Ignore transient command parsing error
                         }
                     }
-                    else if (cmd == "TEXT" && parts.Length >= 2)
-                    {
-                        string b64 = parts[1];
-                        byte[] bytes = Convert.FromBase64String(b64);
-                        string text = Encoding.UTF8.GetString(bytes);
-                        SendUnicodeString(text);
-                    }
-                }
-                catch (Exception)
-                {
-                    // Ignore transient command parsing errors
                 }
             }
-        }
-        catch
-        {
-            // Process terminated or input closed
+            catch
+            {
+                // Process terminated or input closed
+            }
         }
     }
-}
 }

@@ -71,37 +71,10 @@ export async function captureDesktopSource(sourceId: string, includeAudio = fals
 
     let stream: MediaStream | null = null
 
-    // 2. Primary capture approach: getUserMedia with chromeMediaSource: 'desktop'
-    // This is the battle-tested, standard Electron screen capture method.
-    try {
-        const constraints: any = {
-            audio: false,
-            video: {
-                mandatory: {
-                    chromeMediaSource: 'desktop',
-                    chromeMediaSourceId: sourceId,
-                    minWidth: 1280,
-                    maxWidth: 1920,
-                    minHeight: 720,
-                    maxHeight: 1080,
-                    maxFrameRate: 30
-                }
-            }
-        }
-
-        if ((navigator.mediaDevices as any)?.getUserMedia) {
-            stream = await (navigator.mediaDevices as any).getUserMedia(constraints)
-        } else if ((navigator as any)?.webkitGetUserMedia) {
-            stream = await new Promise<MediaStream>((resolve, reject) => {
-                (navigator as any).webkitGetUserMedia(constraints, resolve, reject)
-            })
-        }
-    } catch (gumErr) {
-        console.warn('[ScreenService] getUserMedia desktop capture failed, trying getDisplayMedia:', gumErr)
-    }
-
-    // 3. Fallback capture approach: navigator.mediaDevices.getDisplayMedia
-    if (!stream || stream.getVideoTracks().length === 0) {
+    // 2. Primary capture approach: Hardware-accelerated getDisplayMedia (DXGI / WGC)
+    // Electron's setDisplayMediaRequestHandler intercepts this and serves the selected source
+    // using modern DirectX/WGC Desktop Duplication — eliminating the GDI BitBlt black frame flicker/blink.
+    if (navigator.mediaDevices?.getDisplayMedia) {
         try {
             stream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
@@ -112,8 +85,38 @@ export async function captureDesktopSource(sourceId: string, includeAudio = fals
                 audio: includeAudio
             })
         } catch (gdmErr) {
-            console.error('[ScreenService] getDisplayMedia fallback also failed:', gdmErr)
-            throw gdmErr
+            console.warn('[ScreenService] getDisplayMedia in Electron failed, attempting legacy getUserMedia fallback:', gdmErr)
+        }
+    }
+
+    // 3. Fallback capture approach for older runtimes: getUserMedia with chromeMediaSource: 'desktop'
+    if (!stream || stream.getVideoTracks().length === 0) {
+        try {
+            const constraints: any = {
+                audio: false,
+                video: {
+                    mandatory: {
+                        chromeMediaSource: 'desktop',
+                        chromeMediaSourceId: sourceId,
+                        minWidth: 1280,
+                        maxWidth: 1920,
+                        minHeight: 720,
+                        maxHeight: 1080,
+                        maxFrameRate: 30
+                    }
+                }
+            }
+
+            if ((navigator.mediaDevices as any)?.getUserMedia) {
+                stream = await (navigator.mediaDevices as any).getUserMedia(constraints)
+            } else if ((navigator as any)?.webkitGetUserMedia) {
+                stream = await new Promise<MediaStream>((resolve, reject) => {
+                    (navigator as any).webkitGetUserMedia(constraints, resolve, reject)
+                })
+            }
+        } catch (gumErr) {
+            console.error('[ScreenService] getUserMedia fallback also failed:', gumErr)
+            throw gumErr
         }
     }
 

@@ -717,8 +717,14 @@ export function MeetingModalsContainer({
 
             {/* Invite Participants Modal */}
             <InviteParticipantsModal
-                isOpen={isInviteOpen && !isGuest}
-                onClose={() => setIsInviteOpen(false)}
+                isOpen={isInviteOpen}
+                onClose={() => {
+                    setIsInviteOpen(false)
+                    const activeKey = (meetingId || meetingInput || '').trim()
+                    if (activeKey) {
+                        try { sessionStorage.setItem(`jts_invite_dismissed_${activeKey}`, 'true') } catch {}
+                    }
+                }}
                 meetingId={meetingId || meetingInput}
                 addToast={addToast}
             />

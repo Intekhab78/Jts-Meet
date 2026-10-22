@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { noiseCancellationService } from '../services/noiseCancellation.service'
 
 interface UseTalkingWhileMutedDetectorProps {
     isMuted: boolean
@@ -39,8 +40,9 @@ export const useTalkingWhileMutedDetector = ({
         let cooldownUntil = 0
 
         try {
-            // Clone track to monitor raw mic input without streaming audio to peers
-            monitorTrack = audioTracks[0].clone()
+            // Clone hardware mic track to monitor speech without streaming audio to peers
+            const rawTrack = noiseCancellationService.getRawTrack() || audioTracks[0]
+            monitorTrack = rawTrack.clone()
             monitorTrack.enabled = true
             const monitorStream = new MediaStream([monitorTrack])
 

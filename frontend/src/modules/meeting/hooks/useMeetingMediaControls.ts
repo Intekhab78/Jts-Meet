@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { virtualBackgroundService } from '../../../services/virtualBackground.service'
+import { noiseCancellationService } from '../services/noiseCancellation.service'
 
 export interface UseMeetingMediaControlsProps {
     localStream: MediaStream | null
@@ -44,7 +45,13 @@ export function useMeetingMediaControls({
     const [virtualBgPreset, setVirtualBgPreset] = useState<string>('none')
     const [isApplyingVirtualBg, setIsApplyingVirtualBg] = useState<boolean>(false)
     const [videoQuality, setVideoQuality] = useState<'1080p' | '720p' | 'auto'>('auto')
-    const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = useState(true)
+    const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = useState(() => {
+        try {
+            return localStorage.getItem('jts_pref_noise_suppr') !== 'false'
+        } catch {
+            return true
+        }
+    })
     const [isPiPActive, setIsPiPActive] = useState(false)
     const [activeLocalStream, setActiveLocalStream] = useState<MediaStream | null>(null)
 
@@ -58,12 +65,22 @@ export function useMeetingMediaControls({
                 track.enabled = !isMuted
             })
         }
-    }, [localStream, isMuted])
+        if (cameraStream) {
+            cameraStream.getAudioTracks().forEach(track => {
+                track.enabled = !isMuted
+            })
+        }
+    }, [localStream, cameraStream, isMuted])
 
     const toggleMute = () => {
         const nextMuted = !isMuted
         if (localStream) {
             localStream.getAudioTracks().forEach(track => {
+                track.enabled = !nextMuted
+            })
+        }
+        if (cameraStream) {
+            cameraStream.getAudioTracks().forEach(track => {
                 track.enabled = !nextMuted
             })
         }
@@ -265,10 +282,11 @@ export function useMeetingMediaControls({
                     sampleRate: 48000,
                     echoCancellation: true,
                     noiseSuppression: isNoiseSuppressionEnabled,
-                    autoGainControl: false,
+                    autoGainControl: true,
+                    voiceIsolation: true,
                     googEchoCancellation: true,
                     googEchoCancellation2: true,
-                    googAutoGainControl: false,
+                    googAutoGainControl: true,
                     googNoiseSuppression: isNoiseSuppressionEnabled,
                     googNoiseSuppression2: true,
                     googHighpassFilter: true,
@@ -278,14 +296,27 @@ export function useMeetingMediaControls({
             })
             const rawTrack = newStream.getAudioTracks()[0]
             if (rawTrack) {
+                const cleanTrack = noiseCancellationService.processAudioTrack(
+                    rawTrack,
+                    isNoiseSuppressionEnabled ? 'high' : 'off'
+                )
                 const oldTrack = localStream.getAudioTracks()[0]
                 if (oldTrack) {
                     oldTrack.stop()
                     localStream.removeTrack(oldTrack)
                 }
-                localStream.addTrack(rawTrack)
-                replaceTrackOnPeers(rawTrack)
-                rawTrack.enabled = !isMuted
+                localStream.addTrack(cleanTrack)
+                replaceTrackOnPeers(cleanTrack)
+                cleanTrack.enabled = !isMuted
+                if (cameraStream) {
+                    const oldCamTrack = cameraStream.getAudioTracks()[0]
+                    if (oldCamTrack) {
+                        oldCamTrack.stop()
+                        cameraStream.removeTrack(oldCamTrack)
+                    }
+                    cameraStream.addTrack(rawTrack)
+                    rawTrack.enabled = !isMuted
+                }
                 addToast('Microphone switched (Google Meet Voice Isolation active)', 'info')
             }
         } catch (err: any) {
@@ -410,29 +441,31 @@ export function useMeetingMediaControls({
     const handleToggleNoiseSuppression = async () => {
         const next = !isNoiseSuppressionEnabled
         setIsNoiseSuppressionEnabled(next)
+        try {
+            localStorage.setItem('jts_pref_noise_suppr', String(next))
+        } catch {}
         if (localStream) {
-            const audioTrack = localStream.getAudioTracks()[0]
-            if (audioTrack) {
-                try {
-                    await audioTrack.applyConstraints({
-                        noiseSuppression: next,
-                        echoCancellation: true,
-                        autoGainControl: false,
-                        googEchoCancellation: true,
-                        googEchoCancellation2: true,
-                        googAutoGainControl: false,
-                        googNoiseSuppression: next,
-                        googNoiseSuppression2: true,
-                        googHighpassFilter: true,
-                        googTypingNoiseDetection: true
-                    } as any)
-                } catch (e) {}
-
-                if (next) {
-                    addToast('Google Meet AI Voice Isolation active (Fan & background noise silenced)', 'success')
-                } else {
-                    addToast('Standard audio mode active (Noise cancellation off)', 'info')
+            const currentAudio = localStream.getAudioTracks()[0]
+            const rawMicTrack = noiseCancellationService.getRawTrack() || cameraStream?.getAudioTracks()[0] || currentAudio
+            if (rawMicTrack) {
+                const updatedTrack = noiseCancellationService.processAudioTrack(
+                    rawMicTrack,
+                    next ? 'high' : 'off'
+                )
+                if (currentAudio && currentAudio !== updatedTrack) {
+                    try { localStream.removeTrack(currentAudio) } catch {}
+                    localStream.addTrack(updatedTrack)
+                    const updatedStream = new MediaStream(localStream.getTracks())
+                    replaceLocalStream(updatedStream)
+                    replaceTrackOnPeers(updatedTrack, 'audio')
                 }
+                updatedTrack.enabled = !isMuted
+            }
+
+            if (next) {
+                addToast('Google Meet AI Voice Isolation active (Fan & background noise silenced)', 'success')
+            } else {
+                addToast('Standard audio mode active (Noise cancellation off)', 'info')
             }
         }
     }

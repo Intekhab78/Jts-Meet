@@ -24,6 +24,7 @@ import { liveBroadcastService } from '../modules/webrtc/liveBroadcast.service'
 import { liveStreamService } from '../services/livestream.service'
 import { telephonyMediaService } from '../services/telephonyMedia.service'
 import { cloudRecordingWorker } from '../workers/cloudRecording.worker'
+import { clearMeetingPeerSessions } from '../modules/webrtc/peer.manager'
 
 // Track backstage participants per meeting room for Virtual Green Room
 const meetingBackstageMap = new Map<string, Set<string>>()
@@ -209,18 +210,41 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         }
     })
 
-    socket.on(SocketEvents.MEETING_MUTE_USER, async (payload: { meetingId: string; targetUserId: string }) => {
+    const handleMuteUser = async (payload: { meetingId: string; targetUserId: string }) => {
         if (!userId || !payload?.meetingId || !payload?.targetUserId) return
         
-        const authorized = await verifyIsHostOrCoHost(payload.meetingId, userId)
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
         if (!authorized) {
             socket.emit('error', { message: 'Forbidden: Only host or co-host can mute participants' })
             return
         }
 
         io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_MUTE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+        io.to(`meeting:${payload.meetingId}`).emit('meeting:mute-user', { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
         io.to(`user:${payload.targetUserId}`).emit(SocketEvents.MEETING_MUTE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
-    })
+        io.to(`user:${payload.targetUserId}`).emit('meeting:mute-user', { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+    }
+    socket.on(SocketEvents.MEETING_MUTE_USER, handleMuteUser)
+    socket.on('meeting:mute-user', handleMuteUser)
+
+    const handleUnmuteUser = async (payload: { meetingId: string; targetUserId: string }) => {
+        if (!userId || !payload?.meetingId || !payload?.targetUserId) return
+        
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can unmute participants' })
+            return
+        }
+
+        io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_UNMUTE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+        io.to(`meeting:${payload.meetingId}`).emit('meeting:unmute-user', { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+        io.to(`user:${payload.targetUserId}`).emit(SocketEvents.MEETING_UNMUTE_USER, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+        io.to(`user:${payload.targetUserId}`).emit('meeting:unmute-user', { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+    }
+    socket.on(SocketEvents.MEETING_UNMUTE_USER, handleUnmuteUser)
+    socket.on('meeting:unmute-user', handleUnmuteUser)
 
     socket.on(SocketEvents.MEETING_REMOVE_USER, async (payload: { meetingId: string; targetUserId: string }) => {
         if (!userId || !payload?.meetingId || !payload?.targetUserId) return
@@ -615,6 +639,24 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     socket.on(SocketEvents.MEETING_MUTE_ALL, handleMuteAll)
     socket.on('meeting:mute-all', handleMuteAll)
 
+    const handleUnmuteAll = async (payload: { meetingId: string }) => {
+        if (!userId || !payload?.meetingId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can unmute all participants' })
+            return
+        }
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_UNMUTE_ALL, {
+            meetingId: payload.meetingId
+        })
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:unmute-all', {
+            meetingId: payload.meetingId
+        })
+    }
+    socket.on(SocketEvents.MEETING_UNMUTE_ALL, handleUnmuteAll)
+    socket.on('meeting:unmute-all', handleUnmuteAll)
+
     socket.on(SocketEvents.MEETING_CAPTION, (payload: { meetingId: string; text: string; isFinal: boolean; speakerName?: string }) => {
         if (!userId || !payload?.meetingId || !payload?.text) return
         const speakerName = payload.speakerName || authSocket.guestName || 'Speaker'
@@ -685,6 +727,10 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
             }
             if (baseMeetId) {
                 await liveStreamService.stopStream(baseMeetId).catch(() => {})
+            }
+            clearMeetingPeerSessions(payload.meetingId)
+            if (baseMeetId && baseMeetId !== payload.meetingId) {
+                clearMeetingPeerSessions(baseMeetId)
             }
             io.serverSideEmit("internal:meeting:end-cluster", payload.meetingId)
         } catch (err) {
@@ -829,6 +875,45 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
             return
         }
         socket.to(`meeting:${mId}`).emit('remote-control:key', {
+            ...payload,
+            meetingId: mId
+        })
+    })
+
+    socket.on('remote-control:hotkey', (payload: { meetingId: string; controllerId: string; hotkey: string }) => {
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId || !payload?.hotkey) return
+        const authorizedController = activeRemoteControllers.get(mId)
+        if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
+            return
+        }
+        socket.to(`meeting:${mId}`).emit('remote-control:hotkey', {
+            ...payload,
+            meetingId: mId
+        })
+    })
+
+    socket.on('remote-control:text', (payload: { meetingId: string; controllerId: string; text: string }) => {
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId || !payload?.text) return
+        const authorizedController = activeRemoteControllers.get(mId)
+        if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
+            return
+        }
+        socket.to(`meeting:${mId}`).emit('remote-control:text', {
+            ...payload,
+            meetingId: mId
+        })
+    })
+
+    socket.on('remote-control:launch', (payload: { meetingId: string; controllerId: string; app: string }) => {
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId || !payload?.app) return
+        const authorizedController = activeRemoteControllers.get(mId)
+        if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
+            return
+        }
+        socket.to(`meeting:${mId}`).emit('remote-control:launch', {
             ...payload,
             meetingId: mId
         })

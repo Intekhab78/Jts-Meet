@@ -33,6 +33,7 @@ export const SocketEvents = {
 
     // Interactive Meeting controls
     MEETING_MUTE_USER: 'meeting:mute-user',
+    MEETING_UNMUTE_USER: 'meeting:unmute-user',
     MEETING_REMOVE_USER: 'meeting:remove-user',
     MEETING_RAISE_HAND: 'meeting:raise-hand',
     MEETING_REACTION: 'meeting:reaction',
@@ -82,6 +83,7 @@ export const SocketEvents = {
     // Advanced meeting events
     MEETING_LOCK_TOGGLE: 'meeting:lock-toggle',
     MEETING_MUTE_ALL: 'meeting:mute-all',
+    MEETING_UNMUTE_ALL: 'meeting:unmute-all',
     MEETING_CAPTION: 'meeting:caption',
     MEETING_NOTES_UPDATE: 'meeting:notes:update',
     MEETING_END_ALL: 'meeting:end-all',
@@ -99,6 +101,9 @@ export const SocketEvents = {
     REMOTE_CONTROL_REVOKE: 'remote-control:revoke',
     REMOTE_CONTROL_MOUSE: 'remote-control:mouse',
     REMOTE_CONTROL_KEY: 'remote-control:key',
+    REMOTE_CONTROL_HOTKEY: 'remote-control:hotkey',
+    REMOTE_CONTROL_TEXT: 'remote-control:text',
+    REMOTE_CONTROL_LAUNCH: 'remote-control:launch',
 
     // RTMP Live Streaming events
     LIVESTREAM_TOGGLE: 'meeting:livestream-toggle',

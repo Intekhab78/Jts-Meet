@@ -335,9 +335,7 @@ export const meetingController = {
 
         try {
             const meeting = await getMeetingByMeetingId(meetingId)
-            if (!meeting) {
-                return sendError(res, 404, 'Meeting not found')
-            }
+            const meetingTitle = meeting?.title || `Instant Meeting (${meetingId})`
 
             const hostUser = await User.findById(userId)
             const hostName = hostUser?.fullName || 'Organizer'
@@ -347,7 +345,7 @@ export const meetingController = {
             const recipientUser = await User.findOne({ email: toEmail.toLowerCase().trim() })
 
             let teamName: string | undefined
-            if (meeting.teamId) {
+            if (meeting?.teamId) {
                 const team = await Team.findById(meeting.teamId).select('name')
                 if (team) teamName = team.name
             }
@@ -357,28 +355,28 @@ export const meetingController = {
                 await NotificationService.send({
                     recipientId: recipientUser._id.toString(),
                     title: 'Meeting Invitation',
-                    body: `${hostName} has invited you to join the meeting "${meeting.title}"`,
+                    body: `${hostName} has invited you to join "${meetingTitle}"`,
                     type: 'meeting_invite',
-                    metadata: { meetingId, hostName, title: meeting.title, teamName },
+                    metadata: { meetingId, hostName, title: meetingTitle, teamName },
                     emailData: {
                         to: toEmail,
                         template: 'meeting_invite',
                         params: {
                             meetingId,
-                            meetingTitle: meeting.title,
+                            meetingTitle,
                             hostName,
                             inviteLink: fullInviteLink,
-                            scheduledDate: meeting.scheduledDate,
-                            scheduledTime: meeting.scheduledTime,
+                            scheduledDate: meeting?.scheduledDate,
+                            scheduledTime: meeting?.scheduledTime,
                             teamName
                         }
                     }
                 })
             } else {
                 // External guest recipient: send email invitation only (prevents sending in-app notification to host)
-                await sendMeetingInvitationEmail(toEmail, meetingId, meeting.title, hostName, fullInviteLink, {
-                    scheduledDate: meeting.scheduledDate,
-                    scheduledTime: meeting.scheduledTime,
+                await sendMeetingInvitationEmail(toEmail, meetingId, meetingTitle, hostName, fullInviteLink, {
+                    scheduledDate: meeting?.scheduledDate,
+                    scheduledTime: meeting?.scheduledTime,
                     teamName
                 })
             }

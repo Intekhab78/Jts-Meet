@@ -240,6 +240,7 @@ export function SetupScreen({
         if (activeTab === 'create') {
             try {
                 sessionStorage.setItem(`jts_created_meeting_${targetMeetingId.trim()}`, 'true')
+                sessionStorage.setItem('jts_auto_open_invite', 'true')
             } catch (e) { }
         }
 

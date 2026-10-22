@@ -53,8 +53,8 @@ function enhanceSdpForHdVideo(sdp?: string, _peerCount: number = 1): string {
                     paramsMap['useinbandfec'] = '1'
                     paramsMap['stereo'] = '0'
                     paramsMap['sprop-stereo'] = '0'
-                    paramsMap['usedtx'] = '0'
-                    paramsMap['dtx'] = '0'
+                    paramsMap['usedtx'] = '1'
+                    paramsMap['dtx'] = '1'
                     paramsMap['cbr'] = '0'
                     paramsMap['maxaveragebitrate'] = '32000'
 
@@ -67,7 +67,7 @@ function enhanceSdpForHdVideo(sdp?: string, _peerCount: number = 1): string {
             if (!fmtpFound) {
                 const insertIndex = updatedLines.findIndex(l => l.startsWith(`a=rtpmap:${opusPt}`))
                 if (insertIndex !== -1) {
-                    updatedLines.splice(insertIndex + 1, 0, `a=fmtp:${opusPt} minptime=10;ptime=20;maxplaybackrate=48000;sprop-maxcapturerate=48000;useinbandfec=1;stereo=0;sprop-stereo=0;usedtx=0;dtx=0;cbr=0;maxaveragebitrate=32000`)
+                    updatedLines.splice(insertIndex + 1, 0, `a=fmtp:${opusPt} minptime=10;ptime=20;maxplaybackrate=48000;sprop-maxcapturerate=48000;useinbandfec=1;stereo=0;sprop-stereo=0;usedtx=1;dtx=1;cbr=0;maxaveragebitrate=32000`)
                 }
             }
             enhanced = updatedLines.join('\r\n')
@@ -108,7 +108,9 @@ export function useWebRTC(
     restoreCameraStream: () => void,
     setJoined: (value: boolean) => void,
     addParticipant: (userId: string) => void,
-    removeParticipant: (userId: string) => void
+    removeParticipant: (userId: string) => void,
+    clearParticipants?: () => void,
+    setParticipantsList?: (userIds: string[]) => void
 ): UseWebRTCResult {
     const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({})
     const [meetingId, setMeetingId] = useState<string>('')
@@ -249,6 +251,7 @@ export function useWebRTC(
         setJoined(false)
         setScreenSharingUserId(null)
         setScreenSharingUserIds([])
+        clearParticipants?.()
         sessionStorage.removeItem('jts_active_meeting_id')
         if (screenAudioMixerRef.current) {
             try {
@@ -261,11 +264,13 @@ export function useWebRTC(
             window.history.replaceState(null, '', '/#meeting')
         }
         Object.keys(peerConnectionsRef.current).forEach((userId) => cleanupPeer(userId))
+        setRemoteStreams({})
+        peerRemoteStreams.clear()
         if (socket && activeMeetingId) {
             socket.emit(SocketEvents.MEETING_LEAVE, { meetingId: activeMeetingId })
             socket.emit('meeting:leave', { meetingId: activeMeetingId })
         }
-    }, [cleanupPeer, clearReconnectFailsafe, meetingId, setJoined, socket])
+    }, [cleanupPeer, clearReconnectFailsafe, meetingId, setJoined, socket, clearParticipants])
 
     const connectToMeeting = useCallback(
         (targetMeetingId: string, displayName?: string, isDirectCall?: boolean) => {
@@ -273,16 +278,13 @@ export function useWebRTC(
                 return
             }
 
-            // If switching to a different meeting room (e.g., entering or leaving a breakout room),
-            // cleanly tear down all previous peer connections and ghost streams
-            const currentActiveId = meetingId || sessionStorage.getItem('jts_active_meeting_id') || ''
-            if (currentActiveId && currentActiveId !== targetMeetingId) {
-                Object.keys(peerConnectionsRef.current).forEach((uId) => cleanupPeer(uId))
-                setRemoteStreams({})
-                peerRemoteStreams.clear()
-                setScreenSharingUserId(null)
-                setScreenSharingUserIds([])
-            }
+            // Fresh meeting join: cleanly tear down any previous peer connections, ghost streams, and UI roster
+            clearParticipants?.()
+            Object.keys(peerConnectionsRef.current).forEach((uId) => cleanupPeer(uId))
+            setRemoteStreams({})
+            peerRemoteStreams.clear()
+            setScreenSharingUserId(null)
+            setScreenSharingUserIds([])
 
             setMeetingId(targetMeetingId)
             if (!isDirectCall) {
@@ -541,7 +543,7 @@ export function useWebRTC(
             // Find active live camera track from cameraStream or localStream
             let cameraTrack = cameraStream?.getVideoTracks().find(t => t.readyState === 'live' && !(t as any).isDummy) || null
 
-            const audioTracks = (cameraStream || localStreamRef.current)?.getAudioTracks().filter(t => t.readyState === 'live') || []
+            const audioTracks = (localStreamRef.current || cameraStream)?.getAudioTracks().filter(t => t.readyState === 'live') || []
             const tracks: MediaStreamTrack[] = []
             if (cameraTrack && cameraTrack.readyState === 'live') {
                 tracks.push(cameraTrack)
@@ -1038,17 +1040,25 @@ export function useWebRTC(
                 return prev
             })
 
-            console.log(`[WebRTC] Remote user ${targetId} started screen share, awaiting presenter's track update...`)
-            // Only as a delayed fallback if no video track arrived after 3.5s and connection is stable
+            console.log(`[WebRTC] Remote user ${targetId} started screen share, triggering immediate renegotiation & IDR keyframe delivery...`)
+            // Immediately renegotiate so the presenter's video encoder transmits an instant IDR keyframe
+            // at screen resolution without requiring remote peers to refresh
+            setTimeout(() => {
+                triggerRenegotiation(matchPeerId)
+            }, 300)
+
+            // Backup watchdog check at 2s if track is stalled or muted
             setTimeout(() => {
                 const currentStream = peerRemoteStreams.get(targetId) || peerRemoteStreams.get(matchPeerId)
-                const hasVideo = currentStream && currentStream.getVideoTracks().length > 0 && currentStream.getVideoTracks().some(t => t.readyState === 'live')
+                const vTrack = currentStream?.getVideoTracks()[0]
                 const pc = peerConnectionsRef.current[matchPeerId]
-                if (!hasVideo && pc && pc.signalingState === 'stable' && !makingOfferRef.current[matchPeerId]) {
-                    console.log(`[WebRTC] Fallback renegotiation check for screen video from ${targetId}...`)
-                    triggerRenegotiation(matchPeerId)
+                if (pc && pc.signalingState === 'stable' && !makingOfferRef.current[matchPeerId]) {
+                    if (!vTrack || vTrack.readyState !== 'live' || vTrack.muted) {
+                        console.log(`[WebRTC] Backup renegotiation for screen video from ${targetId}...`)
+                        triggerRenegotiation(matchPeerId)
+                    }
                 }
-            }, 3500)
+            }, 2000)
         }
 
         const handleScreenStop = (payload: { userId: string; meetingId: string; }) => {
@@ -1108,9 +1118,11 @@ export function useWebRTC(
             if (Array.isArray(payload?.peers)) {
                 const localId = getLocalUserId()
                 const currentPeerSet = new Set(payload.peers.map(p => p.userId.trim().toLowerCase()))
+                const validPeerIds: string[] = []
 
                 payload.peers.forEach((peer) => {
                     if (peer.userId && peer.userId !== socket.id && (!localId || peer.userId.trim().toLowerCase() !== localId.trim().toLowerCase()) && peer.userId !== 'me') {
+                        validPeerIds.push(peer.userId)
                         addParticipant(peer.userId)
                         if (peer.isScreenSharing) {
                             setScreenSharingUserIds(prev => prev.some(id => id.trim().toLowerCase() === peer.userId.trim().toLowerCase()) ? prev : [...prev, peer.userId])
@@ -1128,6 +1140,11 @@ export function useWebRTC(
                         }, 1800)
                     }
                 })
+
+                // Strictly sync UI roster to valid peers verified by the server
+                if (setParticipantsList) {
+                    setParticipantsList(validPeerIds)
+                }
 
                 // Active Roster Reconciliation: Purge any zombie peer connections that the server no longer lists
                 Object.keys(peerConnectionsRef.current).forEach((pId) => {

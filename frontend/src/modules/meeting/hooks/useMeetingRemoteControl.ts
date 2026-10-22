@@ -197,11 +197,20 @@ export const useMeetingRemoteControl = ({
         addToast(`Released remote control`, 'info')
     }
 
+    const myId = parseJwt(token || '')?.userId || socket?.id || 'me'
+    const isController = activeControllerId !== null && (
+        activeControllerId === myId ||
+        activeControllerId === 'me' ||
+        activeControllerId === socket?.id ||
+        activeControllerName === myDisplayName
+    )
+
     return {
         activeControllerId,
         setActiveControllerId,
         activeControllerName,
         setActiveControllerName,
+        isController,
         incomingControlRequest,
         isRequestingControl,
         handleRequestRemoteControl,

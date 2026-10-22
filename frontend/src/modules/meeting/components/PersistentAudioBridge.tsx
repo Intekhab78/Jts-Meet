@@ -35,14 +35,20 @@ export const PersistentAudioBridge: React.FC<PersistentAudioBridgeProps> = ({
 
         window.addEventListener('jts:audio-autoplay-blocked', handleBlocked)
         window.addEventListener('jts:audio-autoplay-allowed', handleAllowed)
+        window.addEventListener('click', handleUnlock, { capture: true })
         window.addEventListener('pointerdown', handleUnlock, { capture: true })
         window.addEventListener('keydown', handleUnlock, { capture: true })
+        window.addEventListener('touchstart', handleUnlock, { capture: true })
+        window.addEventListener('focus', handleUnlock)
 
         return () => {
             window.removeEventListener('jts:audio-autoplay-blocked', handleBlocked)
             window.removeEventListener('jts:audio-autoplay-allowed', handleAllowed)
+            window.removeEventListener('click', handleUnlock, { capture: true } as any)
             window.removeEventListener('pointerdown', handleUnlock, { capture: true } as any)
             window.removeEventListener('keydown', handleUnlock, { capture: true } as any)
+            window.removeEventListener('touchstart', handleUnlock, { capture: true } as any)
+            window.removeEventListener('focus', handleUnlock)
         }
     }, [])
 
@@ -96,19 +102,27 @@ export const PersistentAudioBridge: React.FC<PersistentAudioBridgeProps> = ({
                     zIndex: -1
                 }}
             >
-                {Object.entries(remoteStreams).map(([peerId, rStream]) => {
-                    if (!rStream || peerId === 'me' || peerId === localUserId) return null
-                    const isPeerBackstage = backstageUserIds.includes(peerId)
-                    const shouldMuteAudio = remoteMuteStates[peerId] === true || (isPeerBackstage && !canManageParticipants && !isLocalHost)
-                    return (
-                        <PersistentAudioTile
-                            key={`global-audio-${peerId}`}
-                            peerId={peerId}
-                            stream={rStream}
-                            isMuted={shouldMuteAudio}
-                        />
-                    )
-                })}
+                {(() => {
+                    const seenStreamIds = new Set<string>()
+                    return Object.entries(remoteStreams).map(([peerId, rStream]) => {
+                        if (!rStream || peerId === 'me' || peerId === localUserId) return null
+                        if (seenStreamIds.has(rStream.id)) return null
+                        seenStreamIds.add(rStream.id)
+
+                        const isPeerBackstage = backstageUserIds.includes(peerId) || backstageUserIds.includes(peerId.toLowerCase())
+                        const shouldMuteAudio = remoteMuteStates[peerId] === true || 
+                                                remoteMuteStates[peerId.toLowerCase()] === true || 
+                                                (isPeerBackstage && !canManageParticipants && !isLocalHost)
+                        return (
+                            <PersistentAudioTile
+                                key={`global-audio-${peerId}`}
+                                peerId={peerId}
+                                stream={rStream}
+                                isMuted={shouldMuteAudio}
+                            />
+                        )
+                    })
+                })()}
             </div>
         </>
     )

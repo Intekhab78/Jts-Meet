@@ -42,6 +42,7 @@ export const SocketEvents = {
     // Advanced meeting events
     MEETING_LOCK_TOGGLE: 'meeting:lock-toggle',
     MEETING_MUTE_ALL: 'meeting:mute-all',
+    MEETING_UNMUTE_ALL: 'meeting:unmute-all',
     MEETING_CAPTION: 'meeting:caption',
     MEETING_NOTES_UPDATE: 'meeting:notes:update',
     MEETING_END_ALL: 'meeting:end-all',
@@ -51,6 +52,7 @@ export const SocketEvents = {
     MEETING_COHOST_PROMOTE: 'meeting:cohost-promote',
     MEETING_COHOST_DEMOTE: 'meeting:cohost-demote',
     MEETING_MUTE_USER: 'meeting:mute-user',
+    MEETING_UNMUTE_USER: 'meeting:unmute-user',
     MEETING_REMOVE_USER: 'meeting:remove-user',
 
     // Screen Share Live Annotation events

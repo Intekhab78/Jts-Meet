@@ -1,13 +1,5 @@
 import React, { useState } from 'react'
 import { copyToClipboard } from '../../../utils/clipboard'
-import {
-    IconX,
-    IconCopy,
-    IconCalendar,
-    IconDownload,
-    IconMessage
-} from '../../../components/common/Icons'
-
 import { API_BASE } from '../../../config'
 
 export interface InviteParticipantsModalProps {
@@ -25,23 +17,26 @@ export function InviteParticipantsModal({
     token,
     addToast
 }: InviteParticipantsModalProps) {
-    const [inviteLinkCopied, setInviteLinkCopied] = useState(false)
+    const [copiedLink, setCopiedLink] = useState(false)
     const [inviteEmail, setInviteEmail] = useState('')
-    const [invitePhone, setInvitePhone] = useState('')
     const [sendingInvite, setSendingInvite] = useState(false)
+    const [smsNumber, setSmsNumber] = useState('')
+    const [sendingSms, setSendingSms] = useState(false)
 
     if (!isOpen) return null
 
+    const authToken = token || localStorage.getItem('jts_token') || localStorage.getItem('token') || ''
     const meetLink = `${window.location.origin}/meet/${meetingId}`
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(meetLink)}`
+    const fullJoiningInfo = `Join the JTS Meet call:\n${meetLink}\n\nMeeting Code: ${meetingId}`
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(meetLink)}`
     const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=JTS-Meet%20Session&details=Join%20the%20video%20call:%20${encodeURIComponent(meetLink)}`
     const outlookUrl = `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=JTS-Meet%20Session&body=Join%20the%20video%20call:%20${encodeURIComponent(meetLink)}`
 
-    const handleCopy = async () => {
+    const handleCopyLink = async () => {
         await copyToClipboard(meetLink)
-        setInviteLinkCopied(true)
+        setCopiedLink(true)
         addToast('Meeting link copied to clipboard!', 'success')
-        setTimeout(() => setInviteLinkCopied(false), 2500)
+        setTimeout(() => setCopiedLink(false), 2500)
     }
 
     const handleSendEmailInvite = async (e: React.FormEvent) => {
@@ -54,7 +49,7 @@ export function InviteParticipantsModal({
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
                 },
                 body: JSON.stringify({
                     meetingId: meetingId,
@@ -62,16 +57,29 @@ export function InviteParticipantsModal({
                 })
             })
             if (response.ok) {
-                addToast(`Invite email sent to ${inviteEmail.trim()}`, 'success')
+                addToast(`Invite email successfully sent to ${inviteEmail.trim()}`, 'success')
                 setInviteEmail('')
             } else {
-                addToast('Failed to send email invite', 'warning')
+                const data = await response.json().catch(() => null)
+                addToast(data?.message || 'Failed to send email invite', 'warning')
             }
-        } catch (err) {
+        } catch {
             addToast('Network error sending invite', 'warning')
         } finally {
             setSendingInvite(false)
         }
+    }
+
+    const handleSendSms = (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!smsNumber.trim()) return
+
+        setSendingSms(true)
+        setTimeout(() => {
+            setSendingSms(false)
+            addToast(`SMS invitation queued for ${smsNumber.trim()} (Demo Mode)`, 'success')
+            setSmsNumber('')
+        }, 500)
     }
 
     const downloadICSFile = () => {
@@ -112,191 +120,471 @@ export function InviteParticipantsModal({
     }
 
     return (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(8px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <div className="glass-card anim-scale-in" style={{ width: '100%', maxWidth: 540, background: 'rgba(15, 17, 23, 0.95)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90dvh' }}>
-                {/* Modal Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid var(--color-border)' }}>
-                    <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fff', margin: 0 }}>Invite Participants</h3>
+        <div
+            onClick={(e) => {
+                if (e.target === e.currentTarget) onClose()
+            }}
+            style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0, 0, 0, 0.75)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                zIndex: 10000,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '16px'
+            }}
+        >
+            <div
+                className="anim-scale-in"
+                style={{
+                    width: '100%',
+                    maxWidth: 520,
+                    background: '#0d1117',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: 16,
+                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.85)',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    fontFamily: 'inherit'
+                }}
+            >
+                {/* Header */}
+                <div style={{
+                    padding: '20px 24px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                    <h2 style={{
+                        fontSize: '1.25rem',
+                        fontWeight: 800,
+                        color: '#f8fafc',
+                        margin: 0,
+                        letterSpacing: '-0.02em'
+                    }}>
+                        Invite Participants
+                    </h2>
+
                     <button
+                        type="button"
                         onClick={onClose}
-                        className="btn-icon"
-                        style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', display: 'flex' }}
+                        title="Close"
+                        style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#94a3b8',
+                            width: 32,
+                            height: 32,
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            padding: 0
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = '#ffffff')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
                     >
-                        <IconX />
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
                     </button>
                 </div>
 
-                {/* Modal Body */}
-                <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* Body Content */}
+                <div style={{
+                    padding: '22px 24px 26px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 18
+                }}>
 
-                    {/* Link Copy Section */}
+                    {/* Section 1: MEETING INVITE LINK */}
                     <div>
-                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
-                            Meeting Invite Link
-                        </label>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <input
-                                type="text"
-                                readOnly
-                                value={meetLink}
-                                onFocus={(e) => e.target.select()}
-                                style={{
-                                    flex: 1,
-                                    background: 'var(--color-surface-2)',
-                                    border: inviteLinkCopied ? '1px solid #22c55e' : '1px solid var(--color-border)',
-                                    boxShadow: inviteLinkCopied ? '0 0 10px rgba(34, 197, 94, 0.25)' : 'none',
-                                    borderRadius: 'var(--radius-sm)',
-                                    padding: '10px 12px',
-                                    color: inviteLinkCopied ? '#86efac' : '#a5b4fc',
-                                    fontFamily: 'monospace',
-                                    fontSize: '0.8125rem',
-                                    outline: 'none',
-                                    transition: 'all 0.2s ease'
-                                }}
-                            />
+                        <div style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            color: '#64748b',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            marginBottom: 8
+                        }}>
+                            MEETING INVITE LINK
+                        </div>
+                        <div style={{
+                            display: 'flex',
+                            gap: 10,
+                            alignItems: 'center'
+                        }}>
+                            <div style={{
+                                flex: 1,
+                                minWidth: 0,
+                                background: '#131722',
+                                border: '1px solid rgba(255, 255, 255, 0.12)',
+                                borderRadius: 10,
+                                padding: '10px 14px',
+                                color: '#94a3b8',
+                                fontSize: '0.82rem',
+                                fontFamily: 'monospace',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                            }}
+                            title={meetLink}
+                            >
+                                {meetLink}
+                            </div>
                             <button
                                 type="button"
-                                onClick={handleCopy}
-                                className={inviteLinkCopied ? "btn btn-success" : "btn btn-secondary"}
+                                onClick={handleCopyLink}
                                 style={{
+                                    height: 42,
                                     padding: '0 16px',
+                                    background: '#1a202c',
+                                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                                    borderRadius: 10,
+                                    color: '#ffffff',
                                     fontSize: '0.8125rem',
                                     fontWeight: 700,
-                                    background: inviteLinkCopied ? '#16a34a' : undefined,
-                                    borderColor: inviteLinkCopied ? '#16a34a' : undefined,
-                                    color: '#fff',
+                                    cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 6,
-                                    transition: 'all 0.2s ease'
+                                    gap: 8,
+                                    whiteSpace: 'nowrap',
+                                    transition: 'background 0.15s ease'
                                 }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = '#222938')}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = '#1a202c')}
                             >
-                                {inviteLinkCopied ? (
-                                    <>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                            <polyline points="20 6 9 17 4 12" />
-                                        </svg>
-                                        <span>Copied!</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                        </svg>
-                                        <span>Copy Link</span>
-                                    </>
-                                )}
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                </svg>
+                                <span>{copiedLink ? 'Copied' : 'Copy Link'}</span>
                             </button>
                         </div>
                     </div>
 
-                    {/* Email Invite Section */}
-                    <form onSubmit={handleSendEmailInvite}>
-                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
-                            Email Invitation
-                        </label>
-                        <div style={{ display: 'flex', gap: 8 }}>
+                    {/* Section 2: EMAIL INVITATION */}
+                    <div>
+                        <div style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            color: '#64748b',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            marginBottom: 8
+                        }}>
+                            EMAIL INVITATION
+                        </div>
+                        <form onSubmit={handleSendEmailInvite} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                             <input
                                 type="email"
-                                required
                                 value={inviteEmail}
                                 onChange={(e) => setInviteEmail(e.target.value)}
                                 placeholder="Enter recipient email address"
-                                style={{ flex: 1, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', color: '#fff', fontSize: '0.8125rem', outline: 'none' }}
+                                style={{
+                                    flex: 1,
+                                    minWidth: 0,
+                                    height: 42,
+                                    boxSizing: 'border-box',
+                                    background: '#131722',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    borderRadius: 10,
+                                    padding: '0 14px',
+                                    color: '#ffffff',
+                                    fontSize: '0.84rem',
+                                    outline: 'none'
+                                }}
                             />
                             <button
                                 type="submit"
-                                disabled={sendingInvite || !inviteEmail}
-                                className="btn btn-primary"
-                                style={{ padding: '0 16px', fontSize: '0.8125rem', fontWeight: 700 }}
+                                disabled={sendingInvite || !inviteEmail.trim()}
+                                style={{
+                                    height: 42,
+                                    padding: '0 18px',
+                                    background: '#353c66',
+                                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                                    borderRadius: 10,
+                                    color: '#ffffff',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 700,
+                                    cursor: sendingInvite || !inviteEmail.trim() ? 'not-allowed' : 'pointer',
+                                    opacity: sendingInvite || !inviteEmail.trim() ? 0.6 : 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    whiteSpace: 'nowrap',
+                                    transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    if (!sendingInvite && inviteEmail.trim()) {
+                                        e.currentTarget.style.background = '#40497e'
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = '#353c66'
+                                }}
                             >
                                 {sendingInvite ? 'Sending...' : 'Send Email'}
                             </button>
-                        </div>
-                    </form>
-
-                    {/* SMS Invite Section */}
-                    <div>
-                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
-                            SMS Invite <span style={{ color: 'var(--color-text-muted)', fontSize: '0.6875rem' }}>(Future-ready Demo)</span>
-                        </label>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <input
-                                type="tel"
-                                value={invitePhone}
-                                onChange={(e) => setInvitePhone(e.target.value)}
-                                placeholder="+1 (555) 000-0000"
-                                style={{ flex: 1, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', color: '#fff', fontSize: '0.8125rem', outline: 'none' }}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    addToast('SMS Gateway Integration configured (future-ready mock trigger).', 'info');
-                                    setInvitePhone('');
-                                }}
-                                className="btn btn-secondary"
-                                style={{ padding: '0 16px', fontSize: '0.8125rem', fontWeight: 600 }}
-                            >
-                                Send SMS
-                            </button>
-                        </div>
+                        </form>
                     </div>
 
-                    {/* QR Code & Quick Shares */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'center', marginTop: 8 }}>
-                        {/* QR Code graphic */}
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-                            <img
-                                src={qrUrl}
-                                alt="Meeting Invite QR Code"
-                                style={{ width: 120, height: 120, borderRadius: 'var(--radius-sm)', background: '#fff', padding: 6 }}
+                    {/* Section 3: SMS INVITE (FUTURE-READY DEMO) */}
+                    <div>
+                        <div style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            color: '#64748b',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            marginBottom: 8
+                        }}>
+                            SMS INVITE (FUTURE-READY DEMO)
+                        </div>
+                        <form onSubmit={handleSendSms} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                            <input
+                                type="tel"
+                                value={smsNumber}
+                                onChange={(e) => setSmsNumber(e.target.value)}
+                                placeholder="+1 (555) 000-0000"
+                                style={{
+                                    flex: 1,
+                                    minWidth: 0,
+                                    height: 42,
+                                    boxSizing: 'border-box',
+                                    background: '#131722',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    borderRadius: 10,
+                                    padding: '0 14px',
+                                    color: '#ffffff',
+                                    fontSize: '0.84rem',
+                                    outline: 'none'
+                                }}
                             />
-                            <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Scan QR to Join Session</span>
+                            <button
+                                type="submit"
+                                disabled={sendingSms || !smsNumber.trim()}
+                                style={{
+                                    height: 42,
+                                    padding: '0 18px',
+                                    background: '#1a202c',
+                                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                                    borderRadius: 10,
+                                    color: '#ffffff',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 700,
+                                    cursor: sendingSms || !smsNumber.trim() ? 'not-allowed' : 'pointer',
+                                    opacity: sendingSms || !smsNumber.trim() ? 0.6 : 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    whiteSpace: 'nowrap',
+                                    transition: 'background 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    if (!sendingSms && smsNumber.trim()) {
+                                        e.currentTarget.style.background = '#222938'
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = '#1a202c'
+                                }}
+                            >
+                                {sendingSms ? 'Sending...' : 'Send SMS'}
+                            </button>
+                        </form>
+                    </div>
+
+                    {/* Section 4: Bottom 2-Column Split (QR Code + Actions Stack) */}
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '180px 1fr',
+                        gap: 16,
+                        marginTop: 4
+                    }}>
+                        {/* Left Card: QR Code */}
+                        <div style={{
+                            background: '#131722',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            borderRadius: 12,
+                            padding: '16px 12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 12
+                        }}>
+                            <div style={{
+                                background: '#ffffff',
+                                borderRadius: 8,
+                                padding: 6,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                            }}>
+                                <img
+                                    src={qrUrl}
+                                    alt="Scan QR to Join Session"
+                                    style={{
+                                        width: 120,
+                                        height: 120,
+                                        display: 'block'
+                                    }}
+                                />
+                            </div>
+                            <span style={{
+                                fontSize: '0.72rem',
+                                color: '#94a3b8',
+                                fontWeight: 600,
+                                textAlign: 'center',
+                                lineHeight: 1.3
+                            }}>
+                                Scan QR to Join Session
+                            </span>
                         </div>
 
-                        {/* WhatsApp & Calendars */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {/* Right Stack: WhatsApp, Google Calendar, Outlook Calendar, iCal */}
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8,
+                            justifyContent: 'space-between'
+                        }}>
+                            {/* WhatsApp Button */}
                             <a
-                                href={`https://api.whatsapp.com/send?text=Join%20my%20JTS-Meet%20session:%20${encodeURIComponent(meetLink)}`}
+                                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(fullJoiningInfo)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="btn"
-                                style={{ background: '#25d366', color: '#fff', padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', fontWeight: 700, textDecoration: 'none' }}
+                                style={{
+                                    height: 40,
+                                    background: '#22c55e',
+                                    borderRadius: 8,
+                                    color: '#ffffff',
+                                    fontSize: '0.84rem',
+                                    fontWeight: 700,
+                                    textDecoration: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 8,
+                                    boxShadow: '0 2px 8px rgba(34, 197, 94, 0.25)',
+                                    transition: 'opacity 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.92')}
+                                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                             >
-                                <IconMessage size={14} color="#fff" /> Share on WhatsApp
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.075-2.22-.556-1.954-.809-3.21-2.801-3.308-2.93-.097-.13-.787-1.047-.787-1.996 0-.949.497-1.416.674-1.611.177-.195.385-.244.513-.244.128 0 .256.002.368.007.119.006.278-.045.434.33.16.386.545 1.332.593 1.43.049.099.082.215.016.345-.065.13-.098.21-.194.323-.096.113-.203.252-.29.339-.096.096-.197.2-.085.393.112.193.499.824 1.07 1.332.735.654 1.354.856 1.547.953.193.097.306.082.419-.048.113-.13.483-.563.612-.756.129-.193.257-.161.434-.096.177.065 1.125.53 1.318.627.193.097.322.145.37.226.048.081.048.47-.096.875z" />
+                                </svg>
+                                <span>Share on WhatsApp</span>
                             </a>
 
+                            {/* Google Calendar */}
                             <a
                                 href={gCalUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="btn btn-secondary"
-                                style={{ padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: '0.8125rem', fontWeight: 600, textDecoration: 'none' }}
+                                style={{
+                                    height: 38,
+                                    background: '#171c26',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    borderRadius: 8,
+                                    color: '#ffffff',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    textDecoration: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 8,
+                                    transition: 'background 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = '#202633')}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = '#171c26')}
                             >
-                                <IconCalendar size={14} /> Google Calendar
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                                    <line x1="16" y1="2" x2="16" y2="6" />
+                                    <line x1="8" y1="2" x2="8" y2="6" />
+                                    <line x1="3" y1="10" x2="21" y2="10" />
+                                </svg>
+                                <span>Google Calendar</span>
                             </a>
 
+                            {/* Outlook Calendar */}
                             <a
                                 href={outlookUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="btn btn-secondary"
-                                style={{ padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: '0.8125rem', fontWeight: 600, textDecoration: 'none' }}
+                                style={{
+                                    height: 38,
+                                    background: '#171c26',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    borderRadius: 8,
+                                    color: '#ffffff',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    textDecoration: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 8,
+                                    transition: 'background 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = '#202633')}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = '#171c26')}
                             >
-                                <IconCalendar size={14} /> Outlook Calendar
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                                    <line x1="16" y1="2" x2="16" y2="6" />
+                                    <line x1="8" y1="2" x2="8" y2="6" />
+                                    <line x1="3" y1="10" x2="21" y2="10" />
+                                </svg>
+                                <span>Outlook Calendar</span>
                             </a>
 
+                            {/* Download iCal (.ics) */}
                             <button
                                 type="button"
                                 onClick={downloadICSFile}
-                                className="btn btn-secondary"
-                                style={{ padding: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}
+                                style={{
+                                    height: 38,
+                                    background: '#171c26',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    borderRadius: 8,
+                                    color: '#ffffff',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 8,
+                                    transition: 'background 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = '#202633')}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = '#171c26')}
                             >
-                                <IconDownload size={14} /> Download iCal (.ics)
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                                <span>Download iCal (.ics)</span>
                             </button>
                         </div>
                     </div>
+
                 </div>
             </div>
         </div>

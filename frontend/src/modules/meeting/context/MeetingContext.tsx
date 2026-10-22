@@ -8,6 +8,8 @@ interface MeetingContextValue {
     participants: string[]
     addParticipant: (userId: string) => void
     removeParticipant: (userId: string) => void
+    clearParticipants: () => void
+    setParticipantsList: (userIds: string[]) => void
 }
 
 const MeetingContext = createContext<MeetingContextValue | undefined>(undefined)
@@ -44,9 +46,43 @@ export const MeetingProvider: React.FC<React.PropsWithChildren> = ({ children })
         setParticipants((prev) => prev.filter((id) => id.trim().toLowerCase() !== targetId))
     }, [])
 
+    const clearParticipants = useCallback(() => {
+        setParticipants([])
+    }, [])
+
+    const setParticipantsList = useCallback((userIds: string[]) => {
+        let currentUserId = ''
+        try {
+            const token = localStorage.getItem('jts_guest_token') || localStorage.getItem('jts_token') || ''
+            if (token) {
+                const parts = token.split('.')
+                if (parts.length === 3) {
+                    const decoded = JSON.parse(atob(parts[1]))
+                    currentUserId = decoded.userId || decoded.id || decoded.sub || ''
+                }
+            }
+        } catch (_) {}
+
+        const cleaned = userIds
+            .map(id => id ? id.trim() : '')
+            .filter(id => id && id !== 'me' && (!currentUserId || id.toLowerCase() !== currentUserId.toLowerCase()))
+        
+        // Deduplicate case-insensitively
+        const unique: string[] = []
+        const seen = new Set<string>()
+        for (const id of cleaned) {
+            const lower = id.toLowerCase()
+            if (!seen.has(lower)) {
+                seen.add(lower)
+                unique.push(id)
+            }
+        }
+        setParticipants(unique)
+    }, [])
+
     return (
         <MeetingContext.Provider
-            value={{ meetingId, setMeetingId, joined, setJoined, participants, addParticipant, removeParticipant }}
+            value={{ meetingId, setMeetingId, joined, setJoined, participants, addParticipant, removeParticipant, clearParticipants, setParticipantsList }}
         >
             {children}
         </MeetingContext.Provider>

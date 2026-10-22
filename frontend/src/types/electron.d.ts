@@ -16,8 +16,8 @@ declare global {
 
             // ─── Remote Desktop Control ─────────────────────────────────────────
             sendRemoteControlInput: (event: {
-                type: 'mouse' | 'key'
-                action: string
+                type: 'mouse' | 'key' | 'hotkey' | 'text' | 'launch'
+                action?: string
                 x?: number
                 y?: number
                 button?: number
@@ -28,6 +28,9 @@ declare global {
                 altKey?: boolean
                 shiftKey?: boolean
                 metaKey?: boolean
+                hotkey?: string
+                text?: string
+                app?: string
             }) => void
 
             // ─── Screen Share (desktopCapturer) ─────────────────────────────────

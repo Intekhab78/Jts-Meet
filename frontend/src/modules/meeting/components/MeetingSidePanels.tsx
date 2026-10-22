@@ -31,7 +31,12 @@ export interface MeetingSidePanelsProps {
     isLocalHost: boolean
     isLocked: boolean
     handleToggleLock: () => void
+    handleMuteUser?: (userId: string) => void
+    handleUnmuteUser?: (userId: string) => void
     handleMuteAll: () => void
+    handleUnmuteAll?: () => void
+    remoteMuteStates?: Record<string, boolean>
+    isMuted?: boolean
     isWatermarkEnabled: boolean
     handleToggleWatermark: () => void
     exportAttendanceCSV: () => void
@@ -88,7 +93,12 @@ export const MeetingSidePanels: React.FC<MeetingSidePanelsProps> = ({
     isLocalHost,
     isLocked,
     handleToggleLock,
+    handleMuteUser,
+    handleUnmuteUser,
     handleMuteAll,
+    handleUnmuteAll,
+    remoteMuteStates,
+    isMuted,
     isWatermarkEnabled,
     handleToggleWatermark,
     exportAttendanceCSV,
@@ -146,6 +156,12 @@ export const MeetingSidePanels: React.FC<MeetingSidePanelsProps> = ({
                     isLocked={isLocked}
                     onToggleLock={handleToggleLock}
                     onMuteAll={handleMuteAll}
+                    onUnmuteAll={handleUnmuteAll}
+                    onMuteUser={handleMuteUser}
+                    onUnmuteUser={handleUnmuteUser}
+                    remoteMuteStates={remoteMuteStates}
+                    isLocalMuted={isMuted}
+                    canManageParticipants={canManageParticipants}
                     isWatermarkEnabled={isWatermarkEnabled}
                     onToggleWatermark={handleToggleWatermark}
                     onExportAttendance={exportAttendanceCSV}

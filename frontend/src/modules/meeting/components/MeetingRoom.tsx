@@ -699,7 +699,10 @@ const activeRoomKey = meetingId || meetingInput.trim()
         handlePromoteCoHost,
         handleTogglePermission,
         handleStageStatusChange,
+        handleMuteUser,
+        handleUnmuteUser,
         handleMuteAll,
+        handleUnmuteAll,
         handleToggleLock,
         handleToggleWatermark,
         handleToggleScreenSharePolicy,
@@ -745,6 +748,29 @@ const activeRoomKey = meetingId || meetingInput.trim()
         spawnReaction,
         addToast
     })
+
+    const hasTriggeredInviteRef = useRef(false)
+
+    // Automatically pop open Invite Participants modal when host creates/enters meeting
+    useEffect(() => {
+        const roomKey = (meetingId || meetingInput || initialMeetingId || '').trim()
+        if (!joined || !roomKey) return
+
+        if (hasTriggeredInviteRef.current) return
+
+        const isCreatedByMe = isRoomCreator ||
+                              sessionStorage.getItem(`jts_created_meeting_${roomKey}`) === 'true' ||
+                              sessionStorage.getItem('jts_auto_open_invite') === 'true'
+
+        const isHostOrCreator = isLocalHost || isCreatedByMe
+        const alreadyDismissed = sessionStorage.getItem(`jts_invite_dismissed_${roomKey}`) === 'true'
+
+        if (isHostOrCreator && !alreadyDismissed) {
+            hasTriggeredInviteRef.current = true
+            try { sessionStorage.removeItem('jts_auto_open_invite') } catch {}
+            setIsInviteOpen(true)
+        }
+    }, [joined, meetingId, meetingInput, initialMeetingId, isRoomCreator, isLocalHost, setIsInviteOpen])
 
     /* ── If the user has left the meeting and there is a capsule, show it ── */
     if (postMeetingCapsule) {
@@ -1054,7 +1080,10 @@ const activeRoomKey = meetingId || meetingInput.trim()
                 addToast={addToast}
                 isLocked={isLocked}
                 handleToggleLock={handleToggleLock}
+                handleMuteUser={handleMuteUser}
+                handleUnmuteUser={handleUnmuteUser}
                 handleMuteAll={handleMuteAll}
+                handleUnmuteAll={handleUnmuteAll}
                 handleToggleWatermark={handleToggleWatermark}
                 exportAttendanceCSV={exportAttendanceCSV}
                 setShowAttendanceModal={setShowAttendanceModal}

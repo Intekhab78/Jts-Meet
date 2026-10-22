@@ -1,9 +1,9 @@
 import { Server, Socket } from 'socket.io'
 import { SocketEvents } from '../../socket/events'
 import { AuthenticatedSocket } from '../../socket/auth'
-import { addPeerSession, removePeerSessionBySocket, removePeerSessionByUserId, getPeerSessionBySocketId, getPeerSessionByUserId, getMeetingParticipantSocketIds, getMeetingPeersInfo, getMeetingPeersInfoCluster, updatePeerSession } from './peer.manager'
+import { addPeerSession, removePeerSessionBySocket, removePeerSessionByUserId, getPeerSessionBySocketId, getPeerSessionByUserId, getMeetingParticipantSocketIds, getMeetingPeersInfo, getMeetingPeersInfoCluster, updatePeerSession, clearMeetingPeerSessions } from './peer.manager'
 import { authorizeMeetingJoin } from './webrtc.service'
-import { joinMeeting } from '../meeting/meeting.service'
+import { joinMeeting, leaveMeeting } from '../meeting/meeting.service'
 import { User } from '../../models/user.model'
 
 // Google Meet / Zoom style Reconnection Grace Period (15 seconds)
@@ -93,13 +93,28 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         // Get total participants in the meeting room and existing peer roster (excluding the joining user themselves)
         const clusterPeers = await getMeetingPeersInfoCluster(payload.meetingId)
         let participantCount = 1
+        let activeRoomSockets: Set<string> = new Set()
         try {
-            const sockets = await io.in(`meeting:${payload.meetingId}`).allSockets()
-            participantCount = Math.max(sockets.size, clusterPeers.length)
+            activeRoomSockets = await io.in(`meeting:${payload.meetingId}`).allSockets()
+            participantCount = Math.max(activeRoomSockets.size, 1)
         } catch (_) {
-            participantCount = clusterPeers.length
+            participantCount = Math.max(clusterPeers.length, 1)
         }
-        const peers = clusterPeers.filter((p) => p.userId !== userId)
+
+        // Strict Ghost Filter:
+        // If activeRoomSockets has only 1 socket (or 0), that means ONLY the joining user is in this room!
+        // No other live peer exists, so peers MUST be [] and stale records in Redis/memory must be flushed!
+        let peers = clusterPeers.filter((p) => p.userId !== userId)
+        if (activeRoomSockets.size <= 1) {
+            peers = []
+            participantCount = 1
+            if (clusterPeers.length > 1 || (clusterPeers.length === 1 && clusterPeers[0].userId !== userId)) {
+                console.log(`[WebRTC Socket] Cleaned up ${clusterPeers.length} ghost peer(s) from empty room ${payload.meetingId}`)
+                clearMeetingPeerSessions(payload.meetingId)
+                // Re-add only the current joining user's fresh session
+                addPeerSession(userId, payload.meetingId, socket.id, effectiveName, payload.isVideoOff, payload.isMuted)
+            }
+        }
 
         socket.emit(SocketEvents.WEBRTC_JOIN, { 
             meetingId: payload.meetingId, 
@@ -253,6 +268,8 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             } catch (e) {}
 
             if (sUserId) {
+                removePeerSessionByUserId(sUserId)
+                leaveMeeting(targetMeetingId, sUserId).catch(() => {})
                 io.to(`meeting:${targetMeetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
                     userId: sUserId,
                     meetingId: targetMeetingId

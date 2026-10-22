@@ -11,9 +11,11 @@ import {
     IconPin,
     IconEdit,
     IconMonitor,
-    IconMicOff
+    IconMicOff,
+    IconEye
 } from '../../../components/common/Icons'
 import { parseJwt } from '../utils/meetingHelpers'
+import { getBalancedGridTileStyle } from '../utils/stageLayout'
 
 export interface MeetingStageAreaProps {
     isWebinarAttendee: boolean
@@ -163,6 +165,13 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
     const [hoveredTile, setHoveredTile] = useState<string | null>(null)
     const [isToolbarMinimized, setIsToolbarMinimized] = useState<boolean>(false)
     const [isToolbarHovered, setIsToolbarHovered] = useState<boolean>(false)
+    const [showSelfScreenPreview, setShowSelfScreenPreview] = useState<boolean>(false)
+
+    useEffect(() => {
+        if (!isScreenShareActive) {
+            setShowSelfScreenPreview(false)
+        }
+    }, [isScreenShareActive])
     // Synchronize browser native fullscreen exit (e.g. user pressed Escape) with fullScreenUserId state
     useEffect(() => {
         const handleFullscreenChange = () => {
@@ -198,7 +207,7 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
     if (isWebinarAttendee) return null
 
     // Render a single participant video tile with standard controls, click (pin) and double click (full screen)
-    const renderMeetingTile = (userId: string, isEnlarged: boolean, isCompact: boolean = false) => {
+    const renderMeetingTile = (userId: string, isEnlarged: boolean, isCompact: boolean = false, customStyle?: React.CSSProperties) => {
         const displayName = getUserDisplayName(userId)
         const isUserSharingScreen = userId === 'me'
             ? (screenSharingUserId === 'me' || screenSharingUserIds.includes('me'))
@@ -264,7 +273,8 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                     overflow: 'hidden',
                     background: 'var(--color-surface-2)',
                     transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    ...customStyle
                 }}
             >
                 {/* Video Feed */}
@@ -482,24 +492,179 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                             primaryUser === activePresenterId ||
                                             (!!activePresenterId && primaryUser.toLowerCase() === activePresenterId.toLowerCase())
                                         );
+                                        const isSelfPresenter = isPrimarySharingScreen && (primaryUser === 'me' || primaryUser === 'local');
+
+                                        // When presenting your own screen, display a clean Google Meet-grade status card
+                                        // to completely eliminate the infinite mirror loop and GPU compositor blinking.
+                                        if (isSelfPresenter && !showSelfScreenPreview) {
+                                            return (
+                                                <div style={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    background: 'radial-gradient(circle at 50% 38%, rgba(30, 41, 59, 0.75) 0%, rgba(10, 11, 15, 0.98) 100%)',
+                                                    borderRadius: 'var(--radius-xl)',
+                                                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                                                    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6), inset 0 0 40px rgba(59, 130, 246, 0.05)',
+                                                    color: '#fff',
+                                                    padding: '32px 24px',
+                                                    textAlign: 'center',
+                                                    userSelect: 'none',
+                                                    position: 'relative',
+                                                    overflow: 'hidden'
+                                                }}>
+                                                    {/* Ambient Glow */}
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        top: '20%',
+                                                        width: 320,
+                                                        height: 320,
+                                                        borderRadius: '50%',
+                                                        background: 'radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%)',
+                                                        filter: 'blur(40px)',
+                                                        pointerEvents: 'none'
+                                                    }} />
+
+                                                    {/* Live Presentation Status Badge */}
+                                                    <div style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 8,
+                                                        padding: '6px 14px',
+                                                        borderRadius: 9999,
+                                                        background: 'rgba(16, 185, 129, 0.15)',
+                                                        border: '1px solid rgba(16, 185, 129, 0.4)',
+                                                        color: '#34d399',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 700,
+                                                        letterSpacing: '0.05em',
+                                                        textTransform: 'uppercase',
+                                                        marginBottom: 20
+                                                    }}>
+                                                        <span style={{
+                                                            width: 8,
+                                                            height: 8,
+                                                            borderRadius: '50%',
+                                                            background: '#10b981',
+                                                            boxShadow: '0 0 10px #10b981'
+                                                        }} />
+                                                        You are presenting to everyone
+                                                    </div>
+
+                                                    {/* Center Icon */}
+                                                    <div style={{
+                                                        width: 72,
+                                                        height: 72,
+                                                        borderRadius: '24px',
+                                                        background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(99, 102, 241, 0.1))',
+                                                        border: '1px solid rgba(59, 130, 246, 0.35)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        marginBottom: 16,
+                                                        boxShadow: '0 12px 24px rgba(0,0,0,0.4)'
+                                                    }}>
+                                                        <IconMonitor size={36} color="#60a5fa" />
+                                                    </div>
+
+                                                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 8px', color: '#f8fafc' }}>
+                                                        Your Screen is Live in Meeting
+                                                    </h2>
+
+                                                    <p style={{
+                                                        fontSize: '0.85rem',
+                                                        color: '#94a3b8',
+                                                        maxWidth: 440,
+                                                        lineHeight: 1.5,
+                                                        margin: '0 0 24px'
+                                                    }}>
+                                                        All attendees can see your shared screen. To avoid an infinite tunnel effect and screen blinking, switch to the application window you wish to present.
+                                                    </p>
+
+                                                    {/* Action buttons */}
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowSelfScreenPreview(true)}
+                                                            style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 8,
+                                                                padding: '8px 18px',
+                                                                borderRadius: 9999,
+                                                                background: 'rgba(255, 255, 255, 0.08)',
+                                                                border: '1px solid rgba(255, 255, 255, 0.2)',
+                                                                color: '#e2e8f0',
+                                                                fontSize: '0.8125rem',
+                                                                fontWeight: 600,
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.2s ease'
+                                                            }}
+                                                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)'; e.currentTarget.style.color = '#fff' }}
+                                                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#e2e8f0' }}
+                                                        >
+                                                            <IconEye size={16} />
+                                                            Show Screen Preview
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+
                                         return (
-                                            <VideoTile
-                                                stream={primaryStream}
-                                                label={primaryUser === 'me' ? 'You' : getUserDisplayName(primaryUser)}
-                                                muted={primaryUser === 'me'}
-                                                isScreenShare={isPrimarySharingScreen}
-                                                isPrimary={true}
-                                                isHandRaised={primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser]}
-                                                isHost={primaryUser === 'me' ? isLocalHost : !!(meetingInfo && meetingInfo.host && (meetingInfo.host._id === primaryUser || meetingInfo.host === primaryUser))}
-                                                isGuest={primaryUser === 'me' ? isGuest : primaryUser.startsWith('guest_')}
-                                                isVideoOffProp={primaryUser === 'me' ? (isPrimarySharingScreen ? false : isVideoOff) : (isPrimarySharingScreen ? false : remoteVideoStates[primaryUser])}
-                                                isBlurred={primaryUser === 'me' && isBlurEnabled}
-                                                isStudioLighting={primaryUser === 'me' && isStudioLightingEnabled}
-                                                isHdBoost={isHdBoostEnabled}
-                                                watermarkText={isWatermarkEnabled ? `${myDisplayName} • ${meetingInfo?.customId || meetingInfo?.id || meetingId || 'JTS-Meet'}` : undefined}
-                                                isActiveSpeaker={activeSpeaker === primaryUser}
-                                                isMutedProp={primaryUser === 'me' ? isMuted : (remoteMuteStates[primaryUser] !== undefined ? remoteMuteStates[primaryUser] : !primaryStream?.getAudioTracks()[0]?.enabled)}
-                                            />
+                                            <>
+                                                <VideoTile
+                                                    stream={primaryStream}
+                                                    label={primaryUser === 'me' ? 'You' : getUserDisplayName(primaryUser)}
+                                                    muted={primaryUser === 'me'}
+                                                    isScreenShare={isPrimarySharingScreen}
+                                                    isPrimary={true}
+                                                    isHandRaised={primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser]}
+                                                    isHost={primaryUser === 'me' ? isLocalHost : !!(meetingInfo && meetingInfo.host && (meetingInfo.host._id === primaryUser || meetingInfo.host === primaryUser))}
+                                                    isGuest={primaryUser === 'me' ? isGuest : primaryUser.startsWith('guest_')}
+                                                    isVideoOffProp={primaryUser === 'me' ? (isPrimarySharingScreen ? false : isVideoOff) : (isPrimarySharingScreen ? false : remoteVideoStates[primaryUser])}
+                                                    isBlurred={primaryUser === 'me' && isBlurEnabled}
+                                                    isStudioLighting={primaryUser === 'me' && isStudioLightingEnabled}
+                                                    isHdBoost={isHdBoostEnabled}
+                                                    watermarkText={isWatermarkEnabled ? `${myDisplayName} • ${meetingInfo?.customId || meetingInfo?.id || meetingId || 'JTS-Meet'}` : undefined}
+                                                    isActiveSpeaker={activeSpeaker === primaryUser}
+                                                    isMutedProp={primaryUser === 'me' ? isMuted : (remoteMuteStates[primaryUser] !== undefined ? remoteMuteStates[primaryUser] : !primaryStream?.getAudioTracks()[0]?.enabled)}
+                                                />
+                                                {isSelfPresenter && showSelfScreenPreview && (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        bottom: 16,
+                                                        left: '50%',
+                                                        transform: 'translateX(-50%)',
+                                                        zIndex: 35
+                                                    }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowSelfScreenPreview(false)}
+                                                            style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 8,
+                                                                padding: '6px 14px',
+                                                                borderRadius: 9999,
+                                                                background: 'rgba(15, 23, 42, 0.92)',
+                                                                backdropFilter: 'blur(10px)',
+                                                                border: '1px solid rgba(255, 255, 255, 0.25)',
+                                                                color: '#e2e8f0',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 600,
+                                                                cursor: 'pointer',
+                                                                boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                                                            }}
+                                                        >
+                                                            Hide Preview (Avoid Tunnel Effect)
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </>
                                         );
                                     })()}
 
@@ -932,7 +1097,17 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                             meetingId={meetingId || initialMeetingId || meetingInfo?.customId || meetingInfo?.id || ''}
                                             socket={socket}
                                             isPresenter={screenSharingUserId === 'me' || (screenSharingUserIds && screenSharingUserIds.includes('me'))}
-                                            isController={activeControllerId !== null && (activeControllerId === (parseJwt(token)?.userId || 'me') || (!(screenSharingUserId === 'me' || (screenSharingUserIds && screenSharingUserIds.includes('me'))) && activeControllerId === myDisplayName))}
+                                            isController={
+                                                activeControllerId !== null && (
+                                                    activeControllerId === (parseJwt(token)?.userId || 'me') ||
+                                                    activeControllerId === myDisplayName ||
+                                                    activeControllerId === socket?.id ||
+                                                    (!(screenSharingUserId === 'me' || (screenSharingUserIds && screenSharingUserIds.includes('me'))) && (
+                                                        activeControllerName === myDisplayName ||
+                                                        activeControllerId === 'me'
+                                                    ))
+                                                )
+                                            }
                                             activeControllerId={activeControllerId}
                                             activeControllerName={activeControllerName}
                                             onRevokeControl={handleRevokeRemoteControl}
@@ -1052,7 +1227,10 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                         ) : (
                             // Smart Layout responsive grid
                             <div style={gridStyle}>
-                                {displayedUsers.map((userId) => renderMeetingTile(userId, false))}
+                                {displayedUsers.map((userId, index) => {
+                                    const tileSpanStyle = getBalancedGridTileStyle(index, displayedUsers.length, isMobile)
+                                    return renderMeetingTile(userId, false, false, tileSpanStyle)
+                                })}
                             </div>
                         )}
                     </div>

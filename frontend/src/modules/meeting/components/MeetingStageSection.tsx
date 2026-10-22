@@ -81,7 +81,10 @@ export interface MeetingStageSectionProps {
     addToast: (msg: string, type?: any) => void
     isLocked: boolean
     handleToggleLock: () => void
+    handleMuteUser?: (userId: string) => void
+    handleUnmuteUser?: (userId: string) => void
     handleMuteAll: () => void
+    handleUnmuteAll?: () => void
     handleToggleWatermark: () => void
     exportAttendanceCSV: () => void
     setShowAttendanceModal: (v: boolean) => void
@@ -127,7 +130,10 @@ export const MeetingStageSection: React.FC<MeetingStageSectionProps> = (props) =
         isLocalHost,
         isLocked,
         handleToggleLock,
+        handleMuteUser,
+        handleUnmuteUser,
         handleMuteAll,
+        handleUnmuteAll,
         isWatermarkEnabled,
         handleToggleWatermark,
         exportAttendanceCSV,
@@ -189,7 +195,12 @@ export const MeetingStageSection: React.FC<MeetingStageSectionProps> = (props) =
                 isLocalHost,
                 isLocked,
                 handleToggleLock,
+                handleMuteUser,
+                handleUnmuteUser,
                 handleMuteAll,
+                handleUnmuteAll,
+                remoteMuteStates: stageProps.remoteMuteStates,
+                isMuted: stageProps.isMuted,
                 isWatermarkEnabled,
                 handleToggleWatermark,
                 exportAttendanceCSV,

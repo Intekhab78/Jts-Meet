@@ -34,7 +34,7 @@ const WebRTCContext = createContext<WebRTCContextValue | undefined>(undefined)
 
 export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
     const { socket } = useSocketContext()
-    const { meetingId, setJoined, addParticipant, removeParticipant } = useMeetingContext()
+    const { meetingId, setJoined, addParticipant, removeParticipant, clearParticipants, setParticipantsList } = useMeetingContext()
     const { localStream, cameraStream, mediaError, mediaLoading, requestMedia, stopMedia, replaceLocalStream, restoreCameraStream, switchAudioDevice, switchVideoDevice } = useMediaDevices()
     const { remoteStreams, connectToMeeting, leaveMeeting, startScreenShare, stopScreenShare, screenSharingUserId, screenSharingUserIds, switchActivePresenter, screenError, clearScreenError, replaceTrackOnPeers, networkStatus, isReconnecting, retryConnection } = useWebRTC(
         socket,
@@ -44,7 +44,9 @@ export const WebRTCProvider: React.FC<React.PropsWithChildren> = ({ children }) 
         restoreCameraStream,
         setJoined,
         addParticipant,
-        removeParticipant
+        removeParticipant,
+        clearParticipants,
+        setParticipantsList
     )
 
     const leaveRef = React.useRef(leaveMeeting)

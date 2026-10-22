@@ -22,6 +22,11 @@ app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 
+// Enable modern DirectX Desktop Duplication & Windows Graphics Capture (DXGI)
+// This eliminates the legacy GDI BitBlt tearing/blinking during desktop screen capture on Windows
+app.commandLine.appendSwitch('allow-directx-screen-capturer')
+app.commandLine.appendSwitch('enable-features', 'WindowsGraphicsCapture,ZeroCopyVideoCapture')
+
 // Register deep-linking scheme (e.g. jtsmeet://meet/room-code)
 if (process.defaultApp) {
     if (process.argv.length >= 2) {
@@ -65,7 +70,10 @@ function setupDisplayMediaHandler(sess) {
                     console.warn('[ScreenShare] No desktop sources available')
                     return callback({})
                 }
-                const chosen = (selectedScreenSourceId && sources.find(s => s.id === selectedScreenSourceId)) || sources[0]
+                const targetId = selectedScreenSourceId ? selectedScreenSourceId.trim().toLowerCase() : ''
+                const chosen = (targetId && sources.find(s => s.id.toLowerCase() === targetId)) ||
+                               (targetId && sources.find(s => s.id.toLowerCase().startsWith(targetId.split(':')[0]))) ||
+                               sources[0]
                 console.log('[ScreenShare] setDisplayMediaRequestHandler serving source:', chosen ? `${chosen.id} (${chosen.name})` : 'none')
                 const response = { video: chosen }
                 if (request.audioRequested) {
@@ -121,7 +129,7 @@ function initInputProcess() {
 }
 
 // Native Windows Input Simulator using compiled high-performance Win32 Injector
-function simulateWindowsInput(action, x, y, button, key, deltaY) {
+function simulateWindowsInput(action, x, y, button, key, deltaY, text, hotkey, app) {
     if (process.platform !== 'win32') return
     if (!inputProcess || !inputProcess.stdin || inputProcess.stdin.destroyed || !inputProcess.stdin.writable) {
         initInputProcess()
@@ -134,7 +142,7 @@ function simulateWindowsInput(action, x, y, button, key, deltaY) {
     let cmd = null
     if (action === 'move') {
         const now = Date.now()
-        if (now - lastMoveTime < 12) return // Smooth 80Hz cursor tracking
+        if (now - lastMoveTime < 10) return // Smooth 100Hz cursor tracking
         lastMoveTime = now
         cmd = `MOVE ${safeX} ${safeY}\n`
     } else if (action === 'click') {
@@ -153,6 +161,13 @@ function simulateWindowsInput(action, x, y, button, key, deltaY) {
     } else if (action === 'scroll') {
         const scrollAmount = Math.round((Number.isFinite(deltaY) ? deltaY : 0) * -1)
         cmd = `SCROLL ${scrollAmount}\n`
+    } else if (action === 'hotkey' && hotkey) {
+        cmd = `HOTKEY ${hotkey}\n`
+    } else if (action === 'text' && text) {
+        const b64 = Buffer.from(text, 'utf-8').toString('base64')
+        cmd = `TEXT ${b64}\n`
+    } else if (action === 'run' && app) {
+        cmd = `RUN ${app}\n`
     } else if (action === 'key' && key) {
         cmd = `KEY down ${key}\n`
     } else if (action === 'keyup' && key) {
@@ -339,6 +354,7 @@ ipcMain.handle('set-screen-source', async (_event, sourceId) => {
 // Handle Remote Control Input Events from Presenter's Frontend Overlay
 ipcMain.on('remote-control:input', (event, data) => {
     try {
+        if (!data) return
         const allDisplays = screen.getAllDisplays()
         let targetDisplay = screen.getPrimaryDisplay()
 
@@ -352,13 +368,20 @@ ipcMain.on('remote-control:input', (event, data) => {
             }
         }
 
+        const scaleFactor = targetDisplay.scaleFactor || 1
         const { x: offsetX, y: offsetY, width, height } = targetDisplay.bounds
 
-        const targetX = Math.round(offsetX + (data.x ?? 0.5) * width)
-        const targetY = Math.round(offsetY + (data.y ?? 0.5) * height)
+        const targetX = Math.round((offsetX + (data.x ?? 0.5) * width) * scaleFactor)
+        const targetY = Math.round((offsetY + (data.y ?? 0.5) * height) * scaleFactor)
 
         if (data.type === 'mouse') {
             simulateWindowsInput(data.action, targetX, targetY, data.button, null, data.deltaY)
+        } else if (data.type === 'hotkey' && data.hotkey) {
+            simulateWindowsInput('hotkey', targetX, targetY, null, null, null, null, data.hotkey)
+        } else if (data.type === 'text' && data.text) {
+            simulateWindowsInput('text', targetX, targetY, null, null, null, data.text)
+        } else if (data.type === 'launch' && data.app) {
+            simulateWindowsInput('run', null, null, null, null, null, null, null, data.app)
         } else if (data.type === 'key' && data.key) {
             if (data.action === 'up') {
                 simulateWindowsInput('keyup', targetX, targetY, null, data.key)

@@ -44,30 +44,73 @@ export const useMeetingGlobalSocketEvents = ({
             if (!isLocalHost) {
                 if (localStream) {
                     localStream.getAudioTracks().forEach(t => { t.enabled = false })
-                    setIsMuted(true)
-                    addToast('The host has muted all participants', 'warning')
-                    if (socket && meetingId) {
-                        socket.emit('meeting:mic-toggle', {
-                            meetingId,
-                            isMuted: true
-                        })
-                    }
+                }
+                setIsMuted(true)
+                try { sessionStorage.setItem('jts_initial_mic_muted', 'true') } catch {}
+                addToast('The host has muted all participants', 'warning')
+                if (socket && meetingId) {
+                    socket.emit('meeting:mic-toggle', {
+                        meetingId,
+                        isMuted: true
+                    })
+                }
+            }
+        }
+
+        const onUnmuteAllEvent = () => {
+            if (!isLocalHost) {
+                if (localStream) {
+                    localStream.getAudioTracks().forEach(t => { t.enabled = true })
+                }
+                setIsMuted(false)
+                try { sessionStorage.removeItem('jts_initial_mic_muted') } catch {}
+                addToast('The host has unmuted all participants', 'success')
+                if (socket && meetingId) {
+                    socket.emit('meeting:mic-toggle', {
+                        meetingId,
+                        isMuted: false
+                    })
                 }
             }
         }
 
         const onMuteUserEvent = (data: { targetUserId: string; meetingId?: string }) => {
-            const isTargetMe = data?.targetUserId === localUserId || data?.targetUserId === 'me'
+            const targetId = String(data?.targetUserId || '').trim().toLowerCase()
+            const myId = String(localUserId || '').trim().toLowerCase()
+            const mySockId = String(socket?.id || '').trim().toLowerCase()
+            const isTargetMe = targetId === myId || targetId === mySockId || targetId === 'me'
             if (isTargetMe) {
                 if (localStream) {
                     localStream.getAudioTracks().forEach(t => { t.enabled = false })
                 }
                 setIsMuted(true)
+                try { sessionStorage.setItem('jts_initial_mic_muted', 'true') } catch {}
                 addToast('The host has muted your microphone', 'warning')
                 if (socket) {
                     socket.emit('meeting:mic-toggle', {
                         meetingId: data.meetingId || meetingId,
                         isMuted: true
+                    })
+                }
+            }
+        }
+
+        const onUnmuteUserEvent = (data: { targetUserId: string; meetingId?: string }) => {
+            const targetId = String(data?.targetUserId || '').trim().toLowerCase()
+            const myId = String(localUserId || '').trim().toLowerCase()
+            const mySockId = String(socket?.id || '').trim().toLowerCase()
+            const isTargetMe = targetId === myId || targetId === mySockId || targetId === 'me'
+            if (isTargetMe) {
+                if (localStream) {
+                    localStream.getAudioTracks().forEach(t => { t.enabled = true })
+                }
+                setIsMuted(false)
+                try { sessionStorage.removeItem('jts_initial_mic_muted') } catch {}
+                addToast('The host has unmuted your microphone', 'success')
+                if (socket) {
+                    socket.emit('meeting:mic-toggle', {
+                        meetingId: data.meetingId || meetingId,
+                        isMuted: false
                     })
                 }
             }
@@ -124,6 +167,9 @@ export const useMeetingGlobalSocketEvents = ({
         }
 
         socket.on('meeting:mute-all', onMuteAllEvent)
+        socket.on(SocketEvents.MEETING_MUTE_ALL, onMuteAllEvent)
+        socket.on('meeting:unmute-all', onUnmuteAllEvent)
+        socket.on(SocketEvents.MEETING_UNMUTE_ALL, onUnmuteAllEvent)
         socket.on('meeting:lock-toggle', onLockToggleEvent)
         socket.on('meeting:end-all', onEndAllEvent)
         socket.on('meeting:end', onEndAllEvent)
@@ -133,6 +179,8 @@ export const useMeetingGlobalSocketEvents = ({
         socket.on(SocketEvents.MEETING_REACTION, onReactionEvent)
         socket.on('meeting:mute-user', onMuteUserEvent)
         socket.on(SocketEvents.MEETING_MUTE_USER, onMuteUserEvent)
+        socket.on('meeting:unmute-user', onUnmuteUserEvent)
+        socket.on(SocketEvents.MEETING_UNMUTE_USER, onUnmuteUserEvent)
         socket.on('meeting:remove-user', onRemoveUserEvent)
         socket.on(SocketEvents.MEETING_REMOVE_USER, onRemoveUserEvent)
 
@@ -161,6 +209,9 @@ export const useMeetingGlobalSocketEvents = ({
 
         return () => {
             socket.off('meeting:mute-all', onMuteAllEvent)
+            socket.off(SocketEvents.MEETING_MUTE_ALL, onMuteAllEvent)
+            socket.off('meeting:unmute-all', onUnmuteAllEvent)
+            socket.off(SocketEvents.MEETING_UNMUTE_ALL, onUnmuteAllEvent)
             socket.off('meeting:lock-toggle', onLockToggleEvent)
             socket.off('meeting:end-all', onEndAllEvent)
             socket.off('meeting:end', onEndAllEvent)
@@ -170,6 +221,8 @@ export const useMeetingGlobalSocketEvents = ({
             socket.off(SocketEvents.MEETING_REACTION, onReactionEvent)
             socket.off('meeting:mute-user', onMuteUserEvent)
             socket.off(SocketEvents.MEETING_MUTE_USER, onMuteUserEvent)
+            socket.off('meeting:unmute-user', onUnmuteUserEvent)
+            socket.off(SocketEvents.MEETING_UNMUTE_USER, onUnmuteUserEvent)
             socket.off('meeting:remove-user', onRemoveUserEvent)
             socket.off(SocketEvents.MEETING_REMOVE_USER, onRemoveUserEvent)
             socket.off(SocketEvents.STAGE_STATUS_CHANGE, onStageStatusChange)
