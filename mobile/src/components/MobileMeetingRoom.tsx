@@ -1710,7 +1710,23 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
           cursor: 'pointer',
         }}
       >
-        {/* CASE 1: SCREEN SHARING ACTIVE OR USER PINNED -> SCREEN TAKES FULL STAGE */}
+        {/* ── Global Continuous Remote Audio (Never cuts out during screen share or pinning) ── */}
+        <div style={{ display: 'none' }}>
+          {Object.entries(remoteStreams).map(([peerId, stream]) => (
+            <audio
+              key={`global_audio_${peerId}`}
+              autoPlay
+              playsInline
+              ref={(el) => {
+                if (el && stream && el.srcObject !== stream) {
+                  el.srcObject = stream;
+                  el.play().catch(() => {});
+                }
+              }}
+            />
+          ))}
+        </div>
+
         {/* CASE 1: SCREEN SHARING ACTIVE OR USER PINNED -> SCREEN TAKES FULL STAGE */}
         {activePresenterId ? (
           <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
@@ -2025,16 +2041,6 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                     transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                   }}
                 >
-                  {/* Remote Audio Track Player */}
-                  {stream && (
-                    <audio
-                      autoPlay
-                      playsInline
-                      ref={(el) => {
-                        if (el && stream && el.srcObject !== stream) el.srcObject = stream;
-                      }}
-                    />
-                  )}
 
                   {/* Remote Video Stream Player */}
                   {shouldShowVideo ? (
