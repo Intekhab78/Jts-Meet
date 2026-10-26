@@ -14,10 +14,16 @@ export const NewMeetingModal: React.FC<NewMeetingModalProps> = ({
   pmi = '789-456-123',
 }) => {
   const [tab, setTab] = useState<'instant' | 'share'>('instant');
-  const [videoOn, setVideoOn] = useState(true);
+  const [videoOn, setVideoOn] = useState(() => localStorage.getItem('jts_pref_video_off_join') !== 'true');
   const [usePmi, setUsePmi] = useState(false);
   const [createdCode, setCreatedCode] = useState<string>('');
   const [copied, setCopied] = useState(false);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setVideoOn(localStorage.getItem('jts_pref_video_off_join') !== 'true');
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

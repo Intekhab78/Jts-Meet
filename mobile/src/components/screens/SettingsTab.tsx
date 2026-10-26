@@ -13,9 +13,24 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onOpenAuth,
   onTestIncomingCall,
 }) => {
-  const [muteOnJoin, setMuteOnJoin] = useState(false);
-  const [videoOffOnJoin, setVideoOffOnJoin] = useState(false);
-  const [mirrorVideo, setMirrorVideo] = useState(true);
+  const [muteOnJoin, setMuteOnJoin] = useState(() => localStorage.getItem('jts_pref_mute_join') === 'true');
+  const [videoOffOnJoin, setVideoOffOnJoin] = useState(() => localStorage.getItem('jts_pref_video_off_join') === 'true');
+  const [mirrorVideo, setMirrorVideo] = useState(() => localStorage.getItem('jts_pref_mirror_video') !== 'false');
+
+  const handleToggleMuteOnJoin = (val: boolean) => {
+    setMuteOnJoin(val);
+    localStorage.setItem('jts_pref_mute_join', String(val));
+  };
+
+  const handleToggleVideoOffOnJoin = (val: boolean) => {
+    setVideoOffOnJoin(val);
+    localStorage.setItem('jts_pref_video_off_join', String(val));
+  };
+
+  const handleToggleMirrorVideo = (val: boolean) => {
+    setMirrorVideo(val);
+    localStorage.setItem('jts_pref_mirror_video', String(val));
+  };
 
   return (
     <div
@@ -226,7 +241,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <input
               type="checkbox"
               checked={muteOnJoin}
-              onChange={(e) => setMuteOnJoin(e.target.checked)}
+              onChange={(e) => handleToggleMuteOnJoin(e.target.checked)}
               style={{ width: 17, height: 17, accentColor: '#2563eb' }}
             />
           </div>
@@ -247,7 +262,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <input
               type="checkbox"
               checked={videoOffOnJoin}
-              onChange={(e) => setVideoOffOnJoin(e.target.checked)}
+              onChange={(e) => handleToggleVideoOffOnJoin(e.target.checked)}
               style={{ width: 17, height: 17, accentColor: '#2563eb' }}
             />
           </div>
@@ -267,7 +282,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <input
               type="checkbox"
               checked={mirrorVideo}
-              onChange={(e) => setMirrorVideo(e.target.checked)}
+              onChange={(e) => handleToggleMirrorVideo(e.target.checked)}
               style={{ width: 17, height: 17, accentColor: '#2563eb' }}
             />
           </div>

@@ -12,8 +12,12 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
   onSchedule,
 }) => {
   const [title, setTitle] = useState('New Team Meeting');
-  const [date, setDate] = useState('2026-10-23');
-  const [time, setTime] = useState('11:00');
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [time, setTime] = useState(() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() + 30);
+    return d.toTimeString().substring(0, 5);
+  });
 
   if (!isOpen) return null;
 

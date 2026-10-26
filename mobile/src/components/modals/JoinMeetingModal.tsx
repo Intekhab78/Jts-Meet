@@ -17,8 +17,8 @@ export const JoinMeetingModal: React.FC<JoinMeetingModalProps> = ({
   const [name, setName] = useState(() => {
     return defaultName || localStorage.getItem('jts_display_name') || localStorage.getItem('jts_user_name') || '';
   });
-  const [audioOff, setAudioOff] = useState(false);
-  const [videoOff, setVideoOff] = useState(false);
+  const [audioOff, setAudioOff] = useState(() => localStorage.getItem('jts_pref_mute_join') === 'true');
+  const [videoOff, setVideoOff] = useState(() => localStorage.getItem('jts_pref_video_off_join') === 'true');
 
   // Sync if defaultName or stored name becomes available
   React.useEffect(() => {
@@ -28,7 +28,11 @@ export const JoinMeetingModal: React.FC<JoinMeetingModalProps> = ({
       const stored = localStorage.getItem('jts_display_name') || localStorage.getItem('jts_user_name') || '';
       if (stored) setName(stored);
     }
-  }, [defaultName]);
+    if (isOpen) {
+      setAudioOff(localStorage.getItem('jts_pref_mute_join') === 'true');
+      setVideoOff(localStorage.getItem('jts_pref_video_off_join') === 'true');
+    }
+  }, [defaultName, isOpen]);
 
   if (!isOpen) return null;
 

@@ -313,6 +313,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   const [isBlurActive, setIsBlurActive] = useState(false);
   const [selectedBackgroundId, setSelectedBackgroundId] = useState<string>('none');
   const [customWallpaperUrl, setCustomWallpaperUrl] = useState<string | null>(null);
+  const [isNoiseShieldActive, setIsNoiseShieldActive] = useState(true);
   const bgFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const currentPreset = MOBILE_BACKGROUND_PRESETS.find((p) => p.id === selectedBackgroundId);
@@ -1228,8 +1229,24 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
   };
 
-  const toggleSpeaker = () => {
-    setIsSpeaker((prev) => !prev);
+  const toggleSpeaker = async () => {
+    const next = !isSpeaker;
+    setIsSpeaker(next);
+    try {
+      if (typeof (HTMLMediaElement.prototype as any).setSinkId === 'function') {
+        const audioEls = document.querySelectorAll('audio, video');
+        const devices = await navigator.mediaDevices?.enumerateDevices?.();
+        const audioOutputs = devices?.filter((d) => d.kind === 'audiooutput') || [];
+        const target = next
+          ? audioOutputs.find((d) => d.label.toLowerCase().includes('speaker')) || audioOutputs[0]
+          : audioOutputs.find((d) => d.label.toLowerCase().includes('earpiece') || d.label.toLowerCase().includes('receiver')) || audioOutputs[1] || audioOutputs[0];
+        if (target) {
+          audioEls.forEach((el: any) => {
+            el.setSinkId?.(target.deviceId).catch(() => {});
+          });
+        }
+      }
+    } catch (_) {}
   };
 
   const toggleHand = () => {
@@ -2277,7 +2294,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                     width: '100%',
                     height: '100%',
                     objectFit: 'cover',
-                    transform: facingMode === 'user' ? 'scaleX(-1)' : 'none',
+                    transform: (facingMode === 'user' && localStorage.getItem('jts_pref_mirror_video') !== 'false') ? 'scaleX(-1)' : 'none',
                     filter: selectedBackgroundId === 'blur_heavy'
                       ? 'contrast(1.08) brightness(1.03) saturate(1.05)'
                       : selectedBackgroundId === 'blur_light'
@@ -3352,7 +3369,18 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
               {/* Noise Shield / Voice Isolation */}
               <button
                 onClick={() => {
-                  alert('Voice Shield is Active: Acoustic Echo Cancellation & Noise Isolation are active.');
+                  const next = !isNoiseShieldActive;
+                  setIsNoiseShieldActive(next);
+                  const track = localStreamRef.current?.getAudioTracks()[0];
+                  if (track) {
+                    try {
+                      track.applyConstraints({
+                        echoCancellation: next,
+                        noiseSuppression: next,
+                        autoGainControl: next,
+                      } as any);
+                    } catch (_) {}
+                  }
                 }}
                 style={{
                   display: 'flex',
@@ -3360,16 +3388,16 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                   gap: 10,
                   padding: '12px 14px',
                   borderRadius: 14,
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  color: '#0f172a',
+                  backgroundColor: isNoiseShieldActive ? '#ecfdf5' : '#f8fafc',
+                  border: `1px solid ${isNoiseShieldActive ? '#a7f3d0' : '#e2e8f0'}`,
+                  color: isNoiseShieldActive ? '#065f46' : '#0f172a',
                   fontSize: '0.82rem',
                   fontWeight: 700,
                   cursor: 'pointer',
                   textAlign: 'left',
                 }}
               >
-                <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: '#ecfdf5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: isNoiseShieldActive ? '#d1fae5' : '#f1f5f9', color: isNoiseShieldActive ? '#059669' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                     <polyline points="9 12 11 14 15 10" />
@@ -3377,8 +3405,8 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                 </div>
                 <div>
                   <div>Voice Shield</div>
-                  <div style={{ fontSize: '0.68rem', color: '#059669', fontWeight: 600 }}>
-                    Noise Isolated
+                  <div style={{ fontSize: '0.68rem', color: isNoiseShieldActive ? '#059669' : '#64748b', fontWeight: 600 }}>
+                    {isNoiseShieldActive ? 'Active (Noise Isolated)' : 'Standard Mic'}
                   </div>
                 </div>
               </button>

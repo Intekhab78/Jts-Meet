@@ -232,10 +232,44 @@ export function App() {
     handleJoinMeeting(code, storedName, false, false, false);
   };
 
-  // Handle schedule
+  // Scheduled Meetings (Persisted in localStorage)
+  const [scheduledMeetings, setScheduledMeetings] = useState<
+    Array<{ id: string; title: string; date: string; time: string; meetingCode: string }>
+  >(() => {
+    try {
+      const stored = localStorage.getItem('jts_scheduled_meetings');
+      if (stored) return JSON.parse(stored);
+    } catch (_) {}
+    return [
+      { id: 'daily-scrum', title: 'Daily Standup Call', date: 'Today', time: '10:00 AM - 10:30 AM', meetingCode: 'daily-scrum' },
+      { id: 'client-review', title: 'Project Demo & Review', date: 'Tomorrow', time: '03:00 PM - 04:00 PM', meetingCode: 'client-review' },
+    ];
+  });
+
   const handleSchedule = (title: string, date: string, time: string) => {
     setIsScheduleOpen(false);
-    alert(`Meeting "${title}" scheduled for ${date} at ${time}!`);
+    const meetingCode = `sync-${Math.random().toString(36).substring(2, 8)}`;
+    const newMeeting = {
+      id: meetingCode,
+      title: title.trim() || 'Team Meeting',
+      date,
+      time,
+      meetingCode,
+    };
+    setScheduledMeetings((prev) => {
+      const updated = [newMeeting, ...prev];
+      localStorage.setItem('jts_scheduled_meetings', JSON.stringify(updated));
+      return updated;
+    });
+    setActiveTab('meetings');
+  };
+
+  const handleDeleteScheduled = (id: string) => {
+    setScheduledMeetings((prev) => {
+      const updated = prev.filter((m) => m.id !== id);
+      localStorage.setItem('jts_scheduled_meetings', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   // Handle Auth success
@@ -418,11 +452,16 @@ export function App() {
         {activeTab === 'meetings' && (
           <MeetingsTab
             onStartMeeting={(code) => handleQuickJoin(code)}
+            scheduledMeetings={scheduledMeetings}
+            onDeleteMeeting={handleDeleteScheduled}
+            onOpenScheduleModal={() => setIsScheduleOpen(true)}
           />
         )}
 
         {activeTab === 'messages' && (
-          <MessagesTab />
+          <MessagesTab
+            onStartMeeting={(code) => handleQuickJoin(code)}
+          />
         )}
 
         {activeTab === 'settings' && (
