@@ -98,6 +98,90 @@ const ICE_SERVERS: RTCIceServer[] = [
   },
 ];
 
+export interface MobileBgPreset {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  category: 'none' | 'blur' | 'wallpaper' | 'custom';
+  thumbnail: string;
+  url?: string;
+  blurRadius?: number;
+}
+
+export const MOBILE_BACKGROUND_PRESETS: MobileBgPreset[] = [
+  {
+    id: 'none',
+    title: 'None',
+    subtitle: 'Original Camera',
+    description: 'Original camera background with zero effects',
+    category: 'none',
+    thumbnail: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=300&q=70',
+  },
+  {
+    id: 'office',
+    title: 'Modern Office',
+    subtitle: 'Executive Suite',
+    description: 'Executive luxury office (glass windows aur daylight ke sath)',
+    category: 'wallpaper',
+    thumbnail: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=300&q=70',
+    url: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1280&q=80',
+  },
+  {
+    id: 'library',
+    title: 'Cozy Library',
+    subtitle: 'Oak Bookshelves',
+    description: 'Warm wooden bookshelves aur soft ambient study light',
+    category: 'wallpaper',
+    thumbnail: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=300&q=70',
+    url: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=1280&q=80',
+  },
+  {
+    id: 'studio',
+    title: 'Minimal Studio',
+    subtitle: 'Acoustic Neon',
+    description: 'Clean modern acoustic studio light neon accents ke sath',
+    category: 'wallpaper',
+    thumbnail: 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=300&q=70',
+    url: 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=1280&q=80',
+  },
+  {
+    id: 'cafe',
+    title: 'Warm Cafe',
+    subtitle: 'Coffee House',
+    description: 'Stylish coffee house background with soft bokeh',
+    category: 'wallpaper',
+    thumbnail: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=300&q=70',
+    url: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=1280&q=80',
+  },
+  {
+    id: 'blur_light',
+    title: 'Slight Blur',
+    subtitle: 'Portrait Bokeh',
+    description: 'Halki portrait depth-of-field (chehra ekdum sharp, background halka blur)',
+    category: 'blur',
+    blurRadius: 8,
+    thumbnail: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=70',
+  },
+  {
+    id: 'blur_heavy',
+    title: 'Deep Blur',
+    subtitle: 'Complete Privacy',
+    description: 'Poora background completely blur (complete privacy ke liye)',
+    category: 'blur',
+    blurRadius: 20,
+    thumbnail: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=70',
+  },
+  {
+    id: 'custom',
+    title: 'Custom Wallpaper',
+    subtitle: 'Gallery / Company Logo',
+    description: 'Aap phone ki gallery se apni company ka logo ya photo laga sakte hain',
+    category: 'custom',
+    thumbnail: '',
+  },
+];
+
 export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   meetingId,
   displayName,
@@ -118,7 +202,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [isSpeaker, setIsSpeaker] = useState(true);
   const [isHandRaised, setIsHandRaised] = useState(false);
-  const [activeSheet, setActiveSheet] = useState<'none' | 'chat' | 'participants' | 'invite' | 'more'>(
+  const [activeSheet, setActiveSheet] = useState<'none' | 'chat' | 'participants' | 'invite' | 'more' | 'virtual_background'>(
     showInitialInvite ? 'invite' : 'none'
   );
   const [chatMessages, setChatMessages] = useState<
@@ -227,6 +311,45 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   const [selfCorner, setSelfCorner] = useState<'bottom-right' | 'top-right' | 'bottom-left' | 'top-left' | 'minimized'>('bottom-right');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [isBlurActive, setIsBlurActive] = useState(false);
+  const [selectedBackgroundId, setSelectedBackgroundId] = useState<string>('none');
+  const [customWallpaperUrl, setCustomWallpaperUrl] = useState<string | null>(null);
+  const bgFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const currentPreset = MOBILE_BACKGROUND_PRESETS.find((p) => p.id === selectedBackgroundId);
+  const currentWallpaperUrl = selectedBackgroundId === 'custom' ? customWallpaperUrl : currentPreset?.url;
+
+  const handleSelectBackground = (presetId: string) => {
+    setSelectedBackgroundId(presetId);
+    const isBlur = presetId === 'blur_light' || presetId === 'blur_heavy';
+    setIsBlurActive(isBlur);
+
+    const track = localStreamRef.current?.getVideoTracks()[0];
+    if (track) {
+      try {
+        const capabilities = (track.getCapabilities && track.getCapabilities()) as any;
+        if (capabilities && 'backgroundBlur' in capabilities) {
+          track.applyConstraints({ advanced: [{ backgroundBlur: isBlur } as any] });
+        }
+      } catch (_) {}
+    }
+  };
+
+  const handleCustomWallpaperUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const result = ev.target?.result as string;
+        if (result) {
+          setCustomWallpaperUrl(result);
+          setSelectedBackgroundId('custom');
+          setIsBlurActive(false);
+        }
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+  };
 
   // Screen share only where the WebView actually supports it (Android WebView does not)
   const canScreenShare = typeof navigator !== 'undefined' && !!(navigator.mediaDevices as any)?.getDisplayMedia;
@@ -2155,10 +2278,28 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                     height: '100%',
                     objectFit: 'cover',
                     transform: facingMode === 'user' ? 'scaleX(-1)' : 'none',
-                    filter: isBlurActive ? 'contrast(1.04) brightness(1.02)' : 'none',
+                    filter: selectedBackgroundId === 'blur_heavy'
+                      ? 'contrast(1.08) brightness(1.03) saturate(1.05)'
+                      : selectedBackgroundId === 'blur_light'
+                      ? 'contrast(1.04) brightness(1.02)'
+                      : 'none',
                     display: isVideoOff ? 'none' : 'block',
                   }}
                 />
+                {/* Active Wallpaper Backdrop if video is off or backdrop is active */}
+                {currentWallpaperUrl && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      backgroundImage: `url(${currentWallpaperUrl})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      opacity: isVideoOff ? 0.9 : 0.25,
+                      pointerEvents: 'none',
+                    }}
+                  />
+                )}
                 {isVideoOff && (
                   <div
                     style={{
@@ -2226,7 +2367,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                   <NetworkSignalIndicator isPoor={networkStatus === 'reconnecting'} />
                 </div>
 
-                {isBlurActive && (
+                {selectedBackgroundId !== 'none' && (
                   <div
                     style={{
                       position: 'absolute',
@@ -2234,14 +2375,16 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                       left: 4,
                       padding: '1px 5px',
                       borderRadius: 4,
-                      backgroundColor: 'rgba(37, 99, 235, 0.85)',
+                      backgroundColor: 'rgba(37, 99, 235, 0.9)',
                       color: '#ffffff',
-                      fontSize: '0.55rem',
+                      fontSize: '0.52rem',
                       fontWeight: 800,
                       letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
                     }}
                   >
-                    BLUR
+                    {currentPreset?.title || 'EFFECT'}
                   </div>
                 )}
               </>
@@ -3171,20 +3314,10 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                 </div>
               </button>
 
-              {/* Virtual Background / Studio Blur */}
+              {/* Virtual Background & Studio Wallpapers */}
               <button
                 onClick={() => {
-                  const next = !isBlurActive;
-                  setIsBlurActive(next);
-                  const track = localStreamRef.current?.getVideoTracks()[0];
-                  if (track) {
-                    try {
-                      const capabilities = (track.getCapabilities && track.getCapabilities()) as any;
-                      if (capabilities && 'backgroundBlur' in capabilities) {
-                        track.applyConstraints({ advanced: [{ backgroundBlur: next } as any] });
-                      }
-                    } catch (_) {}
-                  }
+                  setActiveSheet('virtual_background');
                 }}
                 style={{
                   display: 'flex',
@@ -3192,29 +3325,26 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                   gap: 10,
                   padding: '12px 14px',
                   borderRadius: 14,
-                  backgroundColor: isBlurActive ? '#eff6ff' : '#f8fafc',
-                  border: `1px solid ${isBlurActive ? '#93c5fd' : '#e2e8f0'}`,
-                  color: isBlurActive ? '#1d4ed8' : '#0f172a',
+                  backgroundColor: selectedBackgroundId !== 'none' ? '#eff6ff' : '#f8fafc',
+                  border: `1px solid ${selectedBackgroundId !== 'none' ? '#93c5fd' : '#e2e8f0'}`,
+                  color: selectedBackgroundId !== 'none' ? '#1d4ed8' : '#0f172a',
                   fontSize: '0.82rem',
                   fontWeight: 700,
                   cursor: 'pointer',
                   textAlign: 'left',
                 }}
               >
-                <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: isBlurActive ? '#dbeafe' : '#f1f5f9', color: isBlurActive ? '#2563eb' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: selectedBackgroundId !== 'none' ? '#dbeafe' : '#f1f5f9', color: selectedBackgroundId !== 'none' ? '#2563eb' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <circle cx="12" cy="12" r="10" />
-                    <circle cx="12" cy="12" r="4" fill="currentColor" fillOpacity={isBlurActive ? 0.35 : 0} />
-                    <line x1="12" y1="2" x2="12" y2="4" />
-                    <line x1="12" y1="20" x2="12" y2="22" />
-                    <line x1="2" y1="12" x2="4" y2="12" />
-                    <line x1="20" y1="12" x2="22" y2="12" />
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
                   </svg>
                 </div>
                 <div>
-                  <div>Blur Effect</div>
-                  <div style={{ fontSize: '0.68rem', color: isBlurActive ? '#2563eb' : '#64748b', fontWeight: 600 }}>
-                    {isBlurActive ? 'Blur Active' : 'Studio Bokeh'}
+                  <div>Virtual Background</div>
+                  <div style={{ fontSize: '0.68rem', color: selectedBackgroundId !== 'none' ? '#2563eb' : '#64748b', fontWeight: 600 }}>
+                    {selectedBackgroundId === 'none' ? 'Office, Library & Blur' : (currentPreset?.title || 'Applied')}
                   </div>
                 </div>
               </button>
@@ -3371,6 +3501,238 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Slide-up Virtual Background & Wallpapers Sheet ── */}
+      {activeSheet === 'virtual_background' && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 110,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-end',
+          }}
+          onClick={() => setActiveSheet('none')}
+        >
+          <div
+            className="anim-slide-up"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#ffffff',
+              borderTopLeftRadius: 22,
+              borderTopRightRadius: 22,
+              padding: '16px 18px calc(var(--safe-bottom) + 16px) 18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              maxHeight: '82vh',
+              overflowY: 'auto',
+              boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.25)',
+            }}
+          >
+            {/* Grab Handle */}
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: '#cbd5e1', margin: '0 auto' }} />
+
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
+                  Virtual Background & Wallpapers
+                </span>
+                <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
+                  Modern office, cozy library ya phone gallery se custom photo choose karein
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveSheet('none')}
+                style={{ padding: 6, color: '#64748b', fontSize: '1.1rem', background: 'transparent', border: 'none', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Currently Active Status Chip */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 12px',
+                borderRadius: 10,
+                backgroundColor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.74rem', color: '#1d4ed8', fontWeight: 700 }}>
+                <span>✨ Active:</span>
+                <span>{selectedBackgroundId === 'custom' ? 'Custom Wallpaper' : (currentPreset?.title || 'None (Original Camera)')}</span>
+              </div>
+              {selectedBackgroundId !== 'none' && (
+                <button
+                  onClick={() => handleSelectBackground('none')}
+                  style={{
+                    fontSize: '0.7rem',
+                    color: '#dc2626',
+                    fontWeight: 700,
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Reset to Camera
+                </button>
+              )}
+            </div>
+
+            {/* Hidden File Input for Custom Gallery Wallpaper */}
+            <input
+              type="file"
+              ref={bgFileInputRef}
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handleCustomWallpaperUpload}
+            />
+
+            {/* Presets Grid (2 Columns, Mobile-First) */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: 10,
+              }}
+            >
+              {MOBILE_BACKGROUND_PRESETS.map((preset) => {
+                const isSelected = selectedBackgroundId === preset.id;
+                const isCustom = preset.id === 'custom';
+
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => {
+                      if (isCustom) {
+                        bgFileInputRef.current?.click();
+                      } else {
+                        handleSelectBackground(preset.id);
+                      }
+                    }}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      borderRadius: 14,
+                      overflow: 'hidden',
+                      border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                      backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
+                      boxShadow: isSelected ? '0 4px 14px rgba(37, 99, 235, 0.2)' : '0 1px 3px rgba(0,0,0,0.04)',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      position: 'relative',
+                      padding: 0,
+                    }}
+                  >
+                    {/* Thumbnail preview image */}
+                    <div
+                      style={{
+                        height: 76,
+                        width: '100%',
+                        backgroundColor: '#1e293b',
+                        backgroundImage: isCustom && customWallpaperUrl
+                          ? `url(${customWallpaperUrl})`
+                          : preset.thumbnail
+                          ? `url(${preset.thumbnail})`
+                          : undefined,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        position: 'relative',
+                      }}
+                    >
+                      {preset.id === 'none' && (
+                        <div style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700, backgroundColor: 'rgba(0,0,0,0.4)', padding: '3px 8px', borderRadius: 6 }}>
+                          No Effect
+                        </div>
+                      )}
+                      {preset.category === 'blur' && (
+                        <div style={{ color: '#ffffff', fontSize: '0.68rem', fontWeight: 800, backgroundColor: 'rgba(37, 99, 235, 0.75)', padding: '3px 8px', borderRadius: 6, backdropFilter: 'blur(4px)' }}>
+                          {preset.id === 'blur_light' ? 'Soft Bokeh' : 'Full Privacy'}
+                        </div>
+                      )}
+                      {isCustom && !customWallpaperUrl && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, color: '#60a5fa' }}>
+                          <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                          </svg>
+                          <span style={{ fontSize: '0.66rem', fontWeight: 700 }}>Choose from Gallery</span>
+                        </div>
+                      )}
+
+                      {/* Checkmark badge */}
+                      {isSelected && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 6,
+                            right: 6,
+                            width: 22,
+                            height: 22,
+                            borderRadius: '50%',
+                            backgroundColor: '#2563eb',
+                            color: '#ffffff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.35)',
+                          }}
+                        >
+                          <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Text Details */}
+                    <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 800, color: isSelected ? '#1d4ed8' : '#0f172a' }}>
+                        {preset.title}
+                      </div>
+                      <div style={{ fontSize: '0.65rem', color: '#64748b', lineHeight: 1.25 }}>
+                        {preset.description}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Done CTA */}
+            <button
+              onClick={() => setActiveSheet('none')}
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: 12,
+                backgroundColor: '#2563eb',
+                color: '#ffffff',
+                fontSize: '0.84rem',
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                marginTop: 4,
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+              }}
+            >
+              Apply & Done
+            </button>
           </div>
         </div>
       )}

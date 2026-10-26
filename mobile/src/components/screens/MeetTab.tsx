@@ -6,6 +6,7 @@ interface MeetTabProps {
   onOpenScheduleModal: () => void;
   onQuickJoin: (code: string) => void;
   recentMeetings?: string[];
+  onTestIncomingCall?: () => void;
 }
 
 export const MeetTab: React.FC<MeetTabProps> = ({
@@ -14,6 +15,7 @@ export const MeetTab: React.FC<MeetTabProps> = ({
   onOpenScheduleModal,
   onQuickJoin,
   recentMeetings = ['demo-sync', 'team-weekly'],
+  onTestIncomingCall,
 }) => {
   const [meetingCode, setMeetingCode] = useState('');
 
@@ -155,6 +157,66 @@ export const MeetTab: React.FC<MeetTabProps> = ({
           </span>
         </button>
       </div>
+
+      {/* WhatsApp / iOS Incoming Call Quick Test Chip */}
+      {onTestIncomingCall && (
+        <div
+          onClick={onTestIncomingCall}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '11px 14px',
+            borderRadius: 14,
+            background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
+            border: '1.5px solid #86efac',
+            cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                backgroundColor: '#22c55e',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#14532d' }}>
+                Test WhatsApp / iOS Call Alert
+              </div>
+              <div style={{ fontSize: '0.68rem', color: '#166534' }}>
+                Ringtone chime & pop-up modal test
+              </div>
+            </div>
+          </div>
+          <span
+            style={{
+              fontSize: '0.72rem',
+              fontWeight: 800,
+              color: '#15803d',
+              background: '#ffffff',
+              padding: '5px 11px',
+              borderRadius: 8,
+              border: '1px solid #86efac',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            }}
+          >
+            Test Now
+          </span>
+        </div>
+      )}
 
       {/* Quick Join Card */}
       <form

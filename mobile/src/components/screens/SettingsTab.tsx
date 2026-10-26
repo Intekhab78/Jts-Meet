@@ -4,12 +4,14 @@ interface SettingsTabProps {
   user: any;
   onLogout: () => void;
   onOpenAuth: () => void;
+  onTestIncomingCall?: () => void;
 }
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
   user,
   onLogout,
   onOpenAuth,
+  onTestIncomingCall,
 }) => {
   const [muteOnJoin, setMuteOnJoin] = useState(false);
   const [videoOffOnJoin, setVideoOffOnJoin] = useState(false);
@@ -118,6 +120,79 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           >
             Sign In / Register
           </button>
+        </div>
+      )}
+
+      {/* WhatsApp / iOS Call Ringing Test Card */}
+      {onTestIncomingCall && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Incoming Call Ringing Alert
+          </span>
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
+              border: '1.5px solid #86efac',
+              borderRadius: 14,
+              padding: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: '#22c55e',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  boxShadow: '0 4px 10px rgba(34, 197, 94, 0.35)',
+                }}
+              >
+                <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#14532d' }}>
+                  WhatsApp / iOS Style Call Alert
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: 2, lineHeight: 1.3 }}>
+                  Phone par incoming video call banner, ringtone audio chime aur vibration test karein.
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={onTestIncomingCall}
+              style={{
+                width: '100%',
+                padding: '11px 16px',
+                borderRadius: 10,
+                backgroundColor: '#16a34a',
+                color: '#ffffff',
+                fontSize: '0.82rem',
+                fontWeight: 800,
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                boxShadow: '0 3px 10px rgba(22, 163, 74, 0.25)',
+              }}
+            >
+              <span>🔔</span>
+              <span>Test Incoming Call (Simulate Now)</span>
+            </button>
+          </div>
         </div>
       )}
 

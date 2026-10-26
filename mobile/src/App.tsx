@@ -48,10 +48,16 @@ export function App() {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
       let isPlaying = true;
 
       const playChime = () => {
         if (!isPlaying || ctx.state === 'closed') return;
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
         const now = ctx.currentTime;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -60,7 +66,7 @@ export function App() {
         osc.frequency.setValueAtTime(520, now);
         osc.frequency.exponentialRampToValueAtTime(840, now + 0.35);
 
-        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.setValueAtTime(0.18, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
 
         osc.connect(gain);
@@ -68,6 +74,12 @@ export function App() {
 
         osc.start(now);
         osc.stop(now + 0.85);
+
+        if (navigator.vibrate) {
+          try {
+            navigator.vibrate([300, 150, 300]);
+          } catch (_) {}
+        }
       };
 
       playChime();
@@ -88,6 +100,24 @@ export function App() {
       ringAudioRef.current.stop();
       ringAudioRef.current = null;
     }
+  };
+
+  const handleTestIncomingCall = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        const dummyCtx = new AudioCtx();
+        if (dummyCtx.state === 'suspended') {
+          dummyCtx.resume().catch(() => {});
+        }
+      }
+    } catch (_) {}
+
+    setIncomingCall({
+      meetingId: 'jts-' + Math.floor(1000 + Math.random() * 9000),
+      callerName: 'Rajesh Sharma (JTS Meet)',
+      callerAvatar: '',
+    });
   };
 
   useEffect(() => {
@@ -381,6 +411,7 @@ export function App() {
             onOpenScheduleModal={() => setIsScheduleOpen(true)}
             onQuickJoin={handleQuickJoin}
             recentMeetings={recentMeetings}
+            onTestIncomingCall={handleTestIncomingCall}
           />
         )}
 
@@ -399,6 +430,7 @@ export function App() {
             user={user}
             onLogout={handleLogout}
             onOpenAuth={() => setIsAuthOpen(true)}
+            onTestIncomingCall={handleTestIncomingCall}
           />
         )}
       </main>
