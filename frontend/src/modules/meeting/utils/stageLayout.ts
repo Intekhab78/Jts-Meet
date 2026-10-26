@@ -110,8 +110,10 @@ export function calculateMeetingStageLayout({
             return 0
         })
 
-    const isMobile = windowWidth < 640
-    const isTablet = windowWidth >= 640 && windowWidth < 1024
+    const isMobile = windowWidth < 768 || 
+        (typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) ||
+        (typeof window !== 'undefined' && !!(window as any).Capacitor?.isNativePlatform())
+    const isTablet = !isMobile && windowWidth >= 768 && windowWidth < 1024
 
     // Dynamic grid configuration for Smart Meeting Layout
     // Dynamic grid configuration for Smart Meeting Layout

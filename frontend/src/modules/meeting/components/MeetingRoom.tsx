@@ -43,6 +43,7 @@ import { useMeetingHands } from '../hooks/useMeetingHands'
 import { useMeetingFreeTierTimer } from '../hooks/useMeetingFreeTierTimer'
 import { useMeetingPolls } from '../hooks/useMeetingPolls'
 import { calculateMeetingStageLayout } from '../utils/stageLayout'
+import { MobileMeetingRoom } from './MobileMeetingRoom'
 
 type ActivePanel = 'participants' | 'chat' | 'files' | 'settings' | 'notes' | 'qa' | null
 
@@ -856,6 +857,43 @@ const activeRoomKey = meetingId || meetingInput.trim()
         getUserDisplayName
     })
 
+    if (isMobile) {
+        return (
+            <MobileMeetingRoom
+                meetingId={meetingId}
+                meetingInput={meetingInput}
+                myDisplayName={myDisplayName}
+                localUserId={localUserId || ''}
+                isLocalHost={isLocalHost}
+                isRoomCreator={isRoomCreator}
+                participants={participants}
+                remoteStreams={remoteStreams}
+                localStream={localStream}
+                cameraStream={cameraStream}
+                isMuted={isMuted}
+                isVideoOff={isVideoOff}
+                toggleMute={toggleMute}
+                toggleVideo={toggleVideo}
+                replaceLocalStream={replaceLocalStream}
+                replaceTrackOnPeers={replaceTrackOnPeers}
+                leaveMeeting={leaveMeeting}
+                onLeave={onLeave}
+                messages={messages}
+                sendMessage={sendMessage}
+                activeSpeaker={activeSpeaker}
+                isHandRaised={handRaised}
+                toggleHandRaise={handleToggleHandRaise}
+                handsRaisedMap={handsRaisedMap}
+                remoteMuteStates={remoteMuteStates}
+                screenSharingUserId={screenSharingUserId}
+                screenSharingUserIds={screenSharingUserIds}
+                handleToggleNoiseSuppression={handleToggleNoiseSuppression}
+                isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
+                addToast={addToast}
+                socket={socket}
+            />
+        )
+    }
 
     return (
         <div style={{

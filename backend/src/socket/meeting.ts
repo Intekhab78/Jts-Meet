@@ -602,6 +602,35 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         })
     })
 
+    // Screen sharing broadcast relays
+    socket.on('screen:start', (payload: { meetingId: string }) => {
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId) return
+        io.to(`meeting:${mId}`).emit('screen:start', {
+            meetingId: mId,
+            userId: userId || socket.id
+        })
+    })
+
+    socket.on('screen:stop', (payload: { meetingId: string }) => {
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId) return
+        io.to(`meeting:${mId}`).emit('screen:stop', {
+            meetingId: mId,
+            userId: userId || socket.id
+        })
+    })
+
+    socket.on('screen:changed', (payload: { meetingId: string; active?: boolean }) => {
+        const mId = payload?.meetingId || authSocket.meetingId
+        if (!mId) return
+        io.to(`meeting:${mId}`).emit('screen:changed', {
+            meetingId: mId,
+            userId: userId || socket.id,
+            active: payload?.active !== false
+        })
+    })
+
     socket.on(SocketEvents.MEETING_LOCK_TOGGLE, async (payload: { meetingId: string; isLocked: boolean }) => {
         if (!userId || !payload?.meetingId) return
         const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId

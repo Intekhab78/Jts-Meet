@@ -32,7 +32,7 @@ router.get('/tenants', authenticate, requireSuperAdmin, asyncWrapper(adminContro
 router.post('/tenants/:orgId/impersonate', authenticate, requireSuperAdmin, asyncWrapper(adminController.impersonateTenantAction))
 router.patch('/tenants/:orgId/status', authenticate, requireSuperAdmin, asyncWrapper(adminController.updateTenantStatusAction))
 router.patch('/tenants/:orgId/quota', authenticate, requireSuperAdmin, asyncWrapper(adminController.updateTenantQuotaAction))
-router.get('/telemetry', authenticate, requireSuperAdmin, asyncWrapper(adminController.getTelemetryAction))
+router.get('/telemetry', authenticate, requireAdmin, asyncWrapper(adminController.getTelemetryAction))
 router.post('/meetings/:meetingId/terminate', authenticate, requireSuperAdmin, asyncWrapper(adminController.terminateMeetingAction))
 router.get('/broadcast/active', asyncWrapper(adminController.getActiveBroadcastNoticeAction))
 router.post('/broadcast', authenticate, requireSuperAdmin, asyncWrapper(adminController.broadcastNoticeAction))

@@ -1,6 +1,11 @@
-const ONLINE_URL = typeof window !== 'undefined' && window.location.hostname.includes('jtsmiddleeast.com')
-    ? 'https://meetapi.jtsmiddleeast.com'
-    : (typeof window !== 'undefined' ? window.location.origin : 'https://meetapi.jtsmiddleeast.com')
+const DEFAULT_ONLINE_API = 'https://meetapi.jtsmiddleeast.com'
+
+const isCapacitorNative = typeof window !== 'undefined' && (
+    Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
+    Boolean((window as any).Capacitor) ||
+    window.location.protocol === 'capacitor:' ||
+    /capacitor/i.test(navigator.userAgent)
+)
 
 const envUrl = import.meta.env.VITE_API_URL
 
@@ -18,10 +23,15 @@ const dynamicLocalUrl = typeof window !== 'undefined'
     ? `${window.location.protocol}//${window.location.hostname}:4000`
     : 'http://localhost:4000'
 
-let detectedUrl = ONLINE_URL
+let detectedUrl = DEFAULT_ONLINE_API
 
 if (typeof window !== 'undefined') {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    if (isCapacitorNative) {
+        // Mobile Android / iOS App: ALWAYS connect to the live online server!
+        detectedUrl = (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1'))
+            ? envUrl
+            : DEFAULT_ONLINE_API
+    } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         // Local machine development: prioritize local server
         detectedUrl = (envUrl && !envUrl.includes('jtsonline.shop') && !envUrl.includes('jtsmiddleeast.com')) ? envUrl : 'http://localhost:4000'
     } else if (isLocalHostname) {
@@ -32,13 +42,13 @@ if (typeof window !== 'undefined') {
         if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
             detectedUrl = envUrl
         } else if (window.location.hostname.includes('jtsmiddleeast.com')) {
-            detectedUrl = 'https://meetapi.jtsmiddleeast.com'
+            detectedUrl = DEFAULT_ONLINE_API
         } else {
             detectedUrl = window.location.origin
         }
     }
 } else {
-    detectedUrl = import.meta.env.PROD ? ONLINE_URL : (envUrl || 'http://localhost:4000')
+    detectedUrl = import.meta.env.PROD ? DEFAULT_ONLINE_API : (envUrl || 'http://localhost:4000')
 }
 
 export const API_BASE = detectedUrl

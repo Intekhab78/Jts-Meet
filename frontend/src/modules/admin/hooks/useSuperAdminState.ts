@@ -175,6 +175,8 @@ export function useSuperAdminState({ token }: UseSuperAdminStateProps) {
                     setBroadcastSeverity(data.data.activeBroadcast.severity || 'warning')
                     setBroadcastActive(data.data.activeBroadcast.active !== false)
                 }
+            } else if (res.status === 403) {
+                setAutoRefresh(false)
             }
         } catch (err) {
             console.error('Failed to fetch telemetry:', err)

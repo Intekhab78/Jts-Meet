@@ -60,8 +60,15 @@ app.use(cors({
             return callback(null, true)
         }
 
-        // Allow Electron custom schemes and local file origin
-        if (origin.startsWith('vscode-webview://') || origin.startsWith('electron://') || origin === 'null') {
+        // Allow Mobile Apps (Capacitor), Electron custom schemes and local file origin
+        if (
+            origin.startsWith('vscode-webview://') ||
+            origin.startsWith('electron://') ||
+            origin.startsWith('capacitor://') ||
+            origin === 'https://localhost' ||
+            origin === 'http://localhost' ||
+            origin === 'null'
+        ) {
             return callback(null, true)
         }
 
