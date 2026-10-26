@@ -47,23 +47,40 @@ jobs:
         working-directory: mobile
         run: npx cap sync ios
 
-      # Step 7: Build iOS archive
+      # Step 7: Build iOS archive & IPA
       - name: Build iOS App Archive
         working-directory: mobile/ios/App
         run: |
+          if [ -d "App.xcworkspace" ]; then
+            TARGET_ARG="-workspace App.xcworkspace"
+          else
+            TARGET_ARG="-project App.xcodeproj"
+          fi
+
+          echo "Using target: $TARGET_ARG"
+
           xcodebuild \
-            -workspace App.xcworkspace \
+            $TARGET_ARG \
             -scheme App \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath build/App.xcarchive \
             archive \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
 
-      # Step 8: Upload archive
-      - name: Upload iOS Archive Artifact
+          # Create installable JTS-Meet-iOS.ipa from the archived .app bundle
+          mkdir -p build/Payload
+          cp -r build/App.xcarchive/Products/Applications/App.app build/Payload/
+          cd build && zip -r JTS-Meet-iOS.ipa Payload
+
+      # Step 8: Upload iOS App (IPA and Archive)
+      - name: Upload iOS App (IPA & Archive)
         uses: actions/upload-artifact@v4
         with:
-          name: JTS-Meet-iOS-Archive
-          path: mobile/ios/App/build/App.xcarchive
-          if-no-files-found: error
+          name: JTS-Meet-iOS-Package
+          path: |
+            mobile/ios/App/build/JTS-Meet-iOS.ipa
+            mobile/ios/App/build/App.xcarchive
+          if-no-files-found: warn
