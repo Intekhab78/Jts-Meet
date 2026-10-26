@@ -111,6 +111,12 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                 io.to(`lobby:${payload.meetingId}`).emit('meeting:host-joined', { hostName, meetingId: payload.meetingId })
             }
 
+            // Sync user role so UI can accurately show host controls or hide them for guests
+            socket.emit('meeting:role', {
+                role: isHostOrCoHost ? 'host' : 'participant',
+                isHost: isHostOrCoHost
+            })
+
             // Sync virtual green room / backstage state to the joining user
             const currentBackstage = meetingBackstageMap.get(payload.meetingId)
             socket.emit(SocketEvents.STAGE_STATE_SYNC, {
@@ -263,6 +269,14 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         if (!userId || !payload?.meetingId) return
 
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_RAISE_HAND, { userId, meetingId: payload.meetingId, raised: payload.raised })
+    })
+
+    socket.on('meeting:speaking', (payload: { meetingId: string; isSpeaking: boolean }) => {
+        if (!payload?.meetingId) return
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:speaking', {
+            userId: userId || authSocket.userId || (socket as any).guestId,
+            isSpeaking: !!payload.isSpeaking
+        })
     })
 
     socket.on('meeting:record-toggle', (payload: { meetingId: string; isRecording: boolean }) => {

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
+import { io } from 'socket.io-client';
 import { MobileTopBar } from './components/MobileTopBar';
 import { MobileBottomNav, MobileTab } from './components/MobileBottomNav';
 import { MeetTab } from './components/screens/MeetTab';
@@ -11,7 +12,7 @@ import { NewMeetingModal } from './components/modals/NewMeetingModal';
 import { ScheduleMeetingModal } from './components/modals/ScheduleMeetingModal';
 import { MobileAuthModal } from './components/MobileAuthModal';
 import { MobileMeetingRoom } from './components/MobileMeetingRoom';
-import { getStoredToken, getStoredUser, setStoredToken, setStoredUser } from './config';
+import { getStoredToken, getStoredUser, setStoredToken, setStoredUser, SOCKET_URL } from './config';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<MobileTab>('meet');
@@ -33,6 +34,93 @@ export function App() {
     showInitialInvite?: boolean;
   } | null>(null);
 
+  // Incoming Call State (WhatsApp / iOS Call Ringing Alert)
+  const [incomingCall, setIncomingCall] = useState<{
+    meetingId: string;
+    callerName: string;
+    callerAvatar?: string;
+  } | null>(null);
+
+  const ringAudioRef = useRef<{ stop: () => void } | null>(null);
+
+  const startRingtone = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      let isPlaying = true;
+
+      const playChime = () => {
+        if (!isPlaying || ctx.state === 'closed') return;
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(840, now + 0.35);
+
+        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.85);
+      };
+
+      playChime();
+      const interval = setInterval(playChime, 2200);
+
+      ringAudioRef.current = {
+        stop: () => {
+          isPlaying = false;
+          clearInterval(interval);
+          ctx.close().catch(() => {});
+        },
+      };
+    } catch (_) {}
+  };
+
+  const stopRingtone = () => {
+    if (ringAudioRef.current) {
+      ringAudioRef.current.stop();
+      ringAudioRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (incomingCall) {
+      startRingtone();
+    } else {
+      stopRingtone();
+    }
+    return () => stopRingtone();
+  }, [incomingCall]);
+
+  // Background socket for incoming call alerts
+  useEffect(() => {
+    const bgSocket = io(SOCKET_URL, {
+      auth: { token: token || undefined },
+      transports: ['websocket', 'polling'],
+    });
+
+    bgSocket.on('call:incoming', (payload: any) => {
+      if (payload?.meetingId) {
+        setIncomingCall({
+          meetingId: payload.meetingId,
+          callerName: payload.callerName || 'Colleague',
+          callerAvatar: payload.callerAvatar,
+        });
+      }
+    });
+
+    return () => {
+      bgSocket.disconnect();
+    };
+  }, [token]);
+
   // Recent meetings
   const [recentMeetings, setRecentMeetings] = useState<string[]>(['jts-team-sync', 'all-hands']);
 
@@ -46,6 +134,8 @@ export function App() {
   ) => {
     setIsJoinOpen(false);
     setIsNewMeetingOpen(false);
+    setIncomingCall(null);
+    stopRingtone();
 
     const savedName = localStorage.getItem('jts_display_name') || localStorage.getItem('jts_user_name') || '';
     const resolvedName = (displayName && displayName !== 'Guest User')
@@ -76,8 +166,10 @@ export function App() {
           meetingId = fullUrl.split('?id=')[1]?.split('&')[0];
         } else if (fullUrl.includes('/meet/')) {
           meetingId = fullUrl.split('/meet/')[1]?.split('?')[0]?.split('#')[0];
+        } else if (fullUrl.includes('/room-')) {
+          meetingId = 'room-' + fullUrl.split('/room-')[1]?.split('?')[0]?.split('#')[0];
         } else if (fullUrl.startsWith('jtsmeet://')) {
-          meetingId = fullUrl.replace('jtsmeet://', '').split('?')[0];
+          meetingId = fullUrl.replace('jtsmeet://', '').replace('meet/', '').split('?')[0];
         }
         if (meetingId && meetingId.trim()) {
           const storedName = localStorage.getItem('jts_display_name') || user?.name || 'Mohit';
@@ -145,6 +237,117 @@ export function App() {
         overflow: 'hidden',
       }}
     >
+      {/* ── High-Priority Incoming Call Banner (WhatsApp / iOS Style) ── */}
+      {incomingCall && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 'calc(var(--safe-top, 24px) + 12px)',
+            left: 12,
+            right: 12,
+            zIndex: 9999,
+            backgroundColor: '#0f172a',
+            border: '1.5px solid #3b82f6',
+            borderRadius: 18,
+            padding: '14px 16px',
+            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.65), 0 0 24px rgba(59, 130, 246, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '1.1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.5)',
+              }}
+            >
+              {incomingCall.callerName.charAt(0).toUpperCase()}
+            </div>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.72rem', color: '#60a5fa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Incoming Video Call
+              </div>
+              <div style={{ fontSize: '0.92rem', color: '#ffffff', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {incomingCall.callerName}
+              </div>
+              <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                Meeting: {incomingCall.meetingId}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {/* Decline */}
+            <button
+              onClick={() => {
+                stopRingtone();
+                setIncomingCall(null);
+              }}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                backgroundColor: '#ef4444',
+                color: '#ffffff',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)',
+              }}
+              title="Decline"
+            >
+              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            {/* Accept */}
+            <button
+              onClick={() => {
+                stopRingtone();
+                const storedName = localStorage.getItem('jts_display_name') || user?.name || 'Mohit';
+                handleJoinMeeting(incomingCall.meetingId, storedName, false, false, false);
+                setIncomingCall(null);
+              }}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 20,
+                backgroundColor: '#22c55e',
+                color: '#ffffff',
+                border: 'none',
+                fontSize: '0.8rem',
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(34, 197, 94, 0.4)',
+              }}
+            >
+              <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+              </svg>
+              Join
+            </button>
+          </div>
+        </div>
+      )}
       {/* ── Active Video Meeting Room (Full-Screen or In-App PiP Floating Mini-Card) ── */}
       {activeMeeting && (
         <MobileMeetingRoom
