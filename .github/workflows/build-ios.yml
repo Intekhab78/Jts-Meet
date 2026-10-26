@@ -3,7 +3,9 @@ name: Build iOS App
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
 
 jobs:
   build-ios:
@@ -11,32 +13,46 @@ jobs:
     runs-on: macos-latest
 
     steps:
+      # Step 1: Checkout repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # Step 2: Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
+          cache: npm
           cache-dependency-path: mobile/package-lock.json
 
+      # Step 3: Update npm
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      # Step 4: Install dependencies
       - name: Install Dependencies
         working-directory: mobile
-        run: npm ci
+        run: |
+          node --version
+          npm --version
+          npm ci
 
+      # Step 5: Build web app
       - name: Build Web App
         working-directory: mobile
         run: npm run build
 
+      # Step 6: Sync Capacitor iOS
       - name: Sync Capacitor iOS
         working-directory: mobile
         run: npx cap sync ios
 
+      # Step 7: Build iOS archive
       - name: Build iOS App Archive
         working-directory: mobile/ios/App
         run: |
-          xcodebuild -workspace App.xcworkspace \
+          xcodebuild \
+            -workspace App.xcworkspace \
             -scheme App \
             -configuration Release \
             -destination 'generic/platform=iOS' \
@@ -44,8 +60,10 @@ jobs:
             archive \
             CODE_SIGNING_ALLOWED=NO
 
+      # Step 8: Upload archive
       - name: Upload iOS Archive Artifact
         uses: actions/upload-artifact@v4
         with:
           name: JTS-Meet-iOS-Archive
           path: mobile/ios/App/build/App.xcarchive
+          if-no-files-found: error
