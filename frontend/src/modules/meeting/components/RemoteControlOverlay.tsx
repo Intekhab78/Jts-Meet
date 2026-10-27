@@ -1,5 +1,24 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
-import { IconMonitor, IconX, IconCopy, IconCheck, IconAlertTriangle, IconZap } from '../../../components/common/Icons'
+import { IconMonitor, IconX, IconCopy, IconCheck, IconAlertTriangle, IconZap, IconFolder, IconType } from '../../../components/common/Icons'
+
+const IconWindowsLogo: React.FC<{ size?: number; color?: string }> = ({ size = 14, color = 'currentColor' }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+        <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.801" />
+    </svg>
+)
+
+const IconTerminalPrompt: React.FC<{ size?: number; color?: string }> = ({ size = 15, color = 'currentColor' }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="4 17 10 11 4 5" />
+        <line x1="12" y1="19" x2="20" y2="19" />
+    </svg>
+)
+
+const IconActivityPulse: React.FC<{ size?: number; color?: string }> = ({ size = 15, color = 'currentColor' }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+)
 
 export interface RemoteControlOverlayProps {
     meetingId: string
@@ -432,35 +451,47 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
             onContextMenu={handleContextMenu}
             onWheel={handleWheel}
         >
-            {/* PRESENTER SAFETY BANNER: Top Floating Control Pill */}
+            {/* PRESENTER SAFETY BANNER: Ultra-Compact Icon-Only Floating Pill */}
             {isPresenter && (
                 <div
                     style={{
                         position: 'absolute',
-                        top: 12,
+                        top: 10,
                         left: '50%',
                         transform: 'translateX(-50%)',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 12,
-                        padding: '6px 14px',
-                        background: 'rgba(13, 17, 23, 0.94)',
+                        gap: 6,
+                        padding: '4px 8px',
+                        background: 'rgba(10, 11, 15, 0.75)',
                         backdropFilter: 'blur(16px)',
                         WebkitBackdropFilter: 'blur(16px)',
-                        border: `1px solid ${isDesktopApp ? 'rgba(52, 211, 153, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`,
+                        border: `1px solid ${isDesktopApp ? 'rgba(52, 211, 153, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`,
                         borderRadius: '9999px',
-                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
                         zIndex: 100,
                         color: '#ffffff',
-                        fontSize: '0.8125rem',
                         pointerEvents: 'auto',
-                        whiteSpace: 'nowrap',
                         userSelect: 'none',
-                        maxWidth: '92vw'
+                        maxWidth: '92vw',
+                        flexShrink: 0,
+                        opacity: 0.45,
+                        transition: 'opacity 0.25s ease, background 0.25s ease, box-shadow 0.25s ease'
+                    }}
+                    onMouseEnter={e => {
+                        e.currentTarget.style.opacity = '1'
+                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.6)'
+                    }}
+                    onMouseLeave={e => {
+                        e.currentTarget.style.opacity = '0.45'
+                        e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.4)'
                     }}
                 >
-                    {/* Glowing Live Dot & Text */}
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    {/* Glowing Live Dot + Controller Icon */}
+                    <div
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 2px 0 4px', cursor: 'default' }}
+                        title={`${activeControllerName || 'Remote User'} is controlling your screen`}
+                    >
                         <span
                             style={{
                                 width: 8,
@@ -472,78 +503,87 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
                                 flexShrink: 0
                             }}
                         />
-                        <span style={{ color: '#cbd5e1', fontSize: '0.8125rem' }}>
-                            <strong style={{ color: '#ffffff', fontWeight: 700 }}>{activeControllerName || 'Remote User'}</strong> is controlling your screen
-                        </span>
+                        <IconMonitor size={14} color={isDesktopApp ? '#34d399' : '#fbbf24'} />
                     </div>
 
-                    {/* Mode Tag */}
+                    {/* Mode Tag Icon */}
                     {isDesktopApp ? (
-                        <span style={{
-                            fontSize: '0.65rem',
-                            color: '#34d399',
-                            background: 'rgba(52, 211, 153, 0.15)',
-                            border: '1px solid rgba(52, 211, 153, 0.3)',
-                            padding: '2px 8px',
-                            borderRadius: '6px',
-                            fontWeight: 700,
-                            letterSpacing: '0.04em',
-                            textTransform: 'uppercase',
-                            flexShrink: 0
-                        }}>
-                            AnyDesk Desktop Mode
-                        </span>
+                        <div
+                            style={{
+                                background: 'rgba(52, 211, 153, 0.15)',
+                                border: '1px solid rgba(52, 211, 153, 0.3)',
+                                color: '#34d399',
+                                width: 24,
+                                height: 24,
+                                borderRadius: '6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                cursor: 'help'
+                            }}
+                            title="AnyDesk Desktop Mode (Native Windows OS hardware control)"
+                        >
+                            <IconCheck size={12} color="#34d399" />
+                        </div>
                     ) : (
-                        <span style={{
-                            fontSize: '0.65rem',
-                            color: '#fbbf24',
-                            background: 'rgba(245, 158, 11, 0.15)',
-                            border: '1px solid rgba(245, 158, 11, 0.3)',
-                            padding: '2px 8px',
-                            borderRadius: '6px',
-                            fontWeight: 700,
-                            letterSpacing: '0.04em',
-                            textTransform: 'uppercase',
-                            flexShrink: 0,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4
-                        }} title="Presenter is on browser. For full Windows OS control, run JTS Meet Desktop App">
-                            <IconAlertTriangle size={11} color="#fbbf24" />
-                            Browser Web Mode
-                        </span>
+                        <div
+                            style={{
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                color: '#fbbf24',
+                                width: 24,
+                                height: 24,
+                                borderRadius: '6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                cursor: 'help'
+                            }}
+                            title="Browser Web Mode (Presenter is on browser. For full Windows OS control, run JTS Meet Desktop App)"
+                        >
+                            <IconAlertTriangle size={12} color="#fbbf24" />
+                        </div>
                     )}
 
-                    {/* Revoke Button */}
+                    <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)', margin: '0 1px' }} />
+
+                    {/* Revoke Button - Pure Red Icon Button */}
                     <button
+                        type="button"
                         onClick={onRevokeControl}
                         style={{
-                            background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                            border: 'none',
-                            color: '#ffffff',
-                            padding: '5px 12px',
-                            borderRadius: '9999px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
+                            background: 'rgba(239, 68, 68, 0.25)',
+                            border: '1px solid rgba(239, 68, 68, 0.5)',
+                            color: '#fca5a5',
+                            width: 26,
+                            height: 26,
+                            borderRadius: '50%',
+                            padding: 0,
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 5,
-                            boxShadow: '0 2px 8px rgba(239, 68, 68, 0.35)',
+                            justifyContent: 'center',
                             transition: 'all 0.15s ease',
                             flexShrink: 0
                         }}
-                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'}
-                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-                        title="Instantly revoke remote control (Press Esc)"
+                        onMouseEnter={e => {
+                            e.currentTarget.style.background = '#ef4444'
+                            e.currentTarget.style.color = '#ffffff'
+                        }}
+                        onMouseLeave={e => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)'
+                            e.currentTarget.style.color = '#fca5a5'
+                        }}
+                        title={`Revoke Remote Control from ${activeControllerName || 'User'} (Press Esc)`}
                     >
-                        <IconX size={12} color="#ffffff" />
-                        <span>Revoke (Esc)</span>
+                        <IconX size={13} />
                     </button>
                 </div>
             )}
 
-            {/* CONTROLLER TOOLBAR: AnyDesk Studio Bar */}
+            {/* CONTROLLER TOOLBAR: Sleek Icon-Only AnyDesk Studio Bar */}
             {isController && (
                 <div
                     style={{
@@ -553,25 +593,39 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
                         transform: 'translateX(-50%)',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 8,
-                        padding: '6px 14px',
-                        background: 'rgba(15, 23, 42, 0.92)',
+                        gap: 6,
+                        padding: '5px 8px',
+                        background: 'rgba(10, 11, 15, 0.78)',
                         backdropFilter: 'blur(16px)',
                         WebkitBackdropFilter: 'blur(16px)',
-                        border: '1px solid rgba(59, 130, 246, 0.4)',
+                        border: '1px solid rgba(59, 130, 246, 0.35)',
                         borderRadius: '9999px',
-                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 16px rgba(59, 130, 246, 0.25)',
+                        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
                         zIndex: 100,
                         color: '#ffffff',
                         pointerEvents: 'auto',
                         userSelect: 'none',
                         maxWidth: '96vw',
-                        flexWrap: 'wrap',
-                        justifyContent: 'center'
+                        flexWrap: 'nowrap',
+                        opacity: (showAppLauncher || showTextPrompt) ? 1 : 0.45,
+                        transition: 'opacity 0.25s ease, background 0.25s ease, box-shadow 0.25s ease'
+                    }}
+                    onMouseEnter={e => {
+                        e.currentTarget.style.opacity = '1'
+                        e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.6), 0 0 16px rgba(59, 130, 246, 0.3)'
+                    }}
+                    onMouseLeave={e => {
+                        if (!showAppLauncher && !showTextPrompt) {
+                            e.currentTarget.style.opacity = '0.45'
+                            e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.4)'
+                        }
                     }}
                 >
-                    {/* Status Dot */}
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 2 }}>
+                    {/* Status Indicator: Glowing Blue Dot & Screen Icon */}
+                    <div
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 4px 0 6px' }}
+                        title="Controlling Screen (Active)"
+                    >
                         <span
                             style={{
                                 width: 8,
@@ -579,83 +633,147 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
                                 borderRadius: '50%',
                                 background: '#3b82f6',
                                 boxShadow: '0 0 10px #3b82f6',
-                                display: 'inline-block'
+                                display: 'inline-block',
+                                flexShrink: 0
                             }}
                         />
-                        <span style={{ fontSize: '0.78125rem', color: '#e2e8f0', fontWeight: 600 }}>
-                            Controlling Screen
-                        </span>
-                        <span style={{
-                            fontSize: '0.625rem',
-                            background: 'rgba(59, 130, 246, 0.2)',
-                            color: '#93c5fd',
-                            padding: '1px 6px',
-                            borderRadius: '4px',
-                            fontWeight: 700,
-                            letterSpacing: '0.04em'
-                        }}>
-                            ANYDESK MODE
-                        </span>
+                        <IconMonitor size={15} color="#93c5fd" />
                     </div>
 
-                    <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)' }} />
+                    <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
 
-                    {/* Quick Windows OS Actions */}
+                    {/* Quick Windows OS Actions - PURE ICONS */}
+                    {/* 1. Windows Start Menu */}
                     <button
                         type="button"
                         onClick={() => sendHotkey('WIN')}
-                        style={actionButtonStyle}
-                        title="Open Windows Start Menu on remote system"
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)' }}
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            border: '1px solid rgba(255, 255, 255, 0.16)',
+                            color: '#f1f5f9',
+                            width: 34,
+                            height: 34,
+                            padding: 0,
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                            flexShrink: 0
+                        }}
+                        title="Windows Start Menu (Win)"
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)'; e.currentTarget.style.color = '#38bdf8' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#f1f5f9' }}
                     >
-                        <span>⊞ Start</span>
+                        <IconWindowsLogo size={14} />
                     </button>
 
+                    {/* 2. Run Dialog (Win + R) */}
                     <button
                         type="button"
                         onClick={() => sendHotkey('WIN_R')}
-                        style={actionButtonStyle}
-                        title="Open Windows Run Dialog (Win + R)"
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)' }}
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            border: '1px solid rgba(255, 255, 255, 0.16)',
+                            color: '#f1f5f9',
+                            width: 34,
+                            height: 34,
+                            padding: 0,
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                            flexShrink: 0
+                        }}
+                        title="Run Dialog (Win + R)"
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)'; e.currentTarget.style.color = '#38bdf8' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#f1f5f9' }}
                     >
-                        <span>Run (Win+R)</span>
+                        <IconTerminalPrompt size={15} />
                     </button>
 
+                    {/* 3. Show Desktop (Win + D) */}
                     <button
                         type="button"
                         onClick={() => sendHotkey('WIN_D')}
-                        style={actionButtonStyle}
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            border: '1px solid rgba(255, 255, 255, 0.16)',
+                            color: '#f1f5f9',
+                            width: 34,
+                            height: 34,
+                            padding: 0,
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                            flexShrink: 0
+                        }}
                         title="Show Desktop (Win + D)"
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)'; e.currentTarget.style.color = '#38bdf8' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#f1f5f9' }}
                     >
-                        <span>Desktop</span>
+                        <IconMonitor size={15} />
                     </button>
 
+                    {/* 4. File Explorer (Win + E) */}
                     <button
                         type="button"
                         onClick={() => sendHotkey('WIN_E')}
-                        style={actionButtonStyle}
-                        title="Open File Explorer (Win + E)"
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)' }}
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            border: '1px solid rgba(255, 255, 255, 0.16)',
+                            color: '#f1f5f9',
+                            width: 34,
+                            height: 34,
+                            padding: 0,
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                            flexShrink: 0
+                        }}
+                        title="File Explorer (Win + E)"
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)'; e.currentTarget.style.color = '#38bdf8' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#f1f5f9' }}
                     >
-                        <span>Explorer</span>
+                        <IconFolder size={15} />
                     </button>
 
+                    {/* 5. Task Manager (Ctrl + Shift + Esc) */}
                     <button
                         type="button"
                         onClick={() => sendHotkey('TASKMGR')}
-                        style={actionButtonStyle}
-                        title="Open Windows Task Manager (Ctrl + Shift + Esc)"
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)' }}
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            border: '1px solid rgba(255, 255, 255, 0.16)',
+                            color: '#f1f5f9',
+                            width: 34,
+                            height: 34,
+                            padding: 0,
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                            flexShrink: 0
+                        }}
+                        title="Task Manager (Ctrl + Shift + Esc)"
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)'; e.currentTarget.style.color = '#38bdf8' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#f1f5f9' }}
                     >
-                        <span>Task Mgr</span>
+                        <IconActivityPulse size={15} />
                     </button>
 
+                    {/* 6. Quick Launch App */}
                     <button
                         type="button"
                         onClick={() => {
@@ -663,19 +781,28 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
                             setShowTextPrompt(false)
                         }}
                         style={{
-                            ...actionButtonStyle,
-                            background: showAppLauncher ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.08)',
-                            borderColor: showAppLauncher ? '#3b82f6' : 'rgba(255, 255, 255, 0.16)',
-                            color: '#93c5fd'
+                            background: showAppLauncher ? 'rgba(59, 130, 246, 0.35)' : 'rgba(255, 255, 255, 0.08)',
+                            border: showAppLauncher ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.16)',
+                            color: showAppLauncher ? '#60a5fa' : '#93c5fd',
+                            width: 34,
+                            height: 34,
+                            padding: 0,
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                            flexShrink: 0
                         }}
-                        title="Quick launch Notepad, Calc, Chrome, CMD or custom Windows app"
+                        title="Quick App Launcher (Notepad, Calculator, Chrome, CMD...)"
                         onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.25)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = showAppLauncher ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.08)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = showAppLauncher ? 'rgba(59, 130, 246, 0.35)' : 'rgba(255, 255, 255, 0.08)' }}
                     >
-                        <IconZap size={13} color="#60a5fa" />
-                        <span>Launch App</span>
+                        <IconZap size={15} color={showAppLauncher ? '#93c5fd' : '#60a5fa'} />
                     </button>
 
+                    {/* 7. Type / Paste Text to remote window */}
                     <button
                         type="button"
                         onClick={() => {
@@ -683,45 +810,59 @@ export const RemoteControlOverlay: React.FC<RemoteControlOverlayProps> = ({
                             setShowAppLauncher(false)
                         }}
                         style={{
-                            ...actionButtonStyle,
-                            background: showTextPrompt ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.08)',
-                            borderColor: showTextPrompt ? '#3b82f6' : 'rgba(255, 255, 255, 0.16)',
-                            color: copiedFeedback ? '#34d399' : '#f1f5f9'
+                            background: showTextPrompt ? 'rgba(59, 130, 246, 0.35)' : 'rgba(255, 255, 255, 0.08)',
+                            border: showTextPrompt ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.16)',
+                            color: copiedFeedback ? '#34d399' : (showTextPrompt ? '#93c5fd' : '#f1f5f9'),
+                            width: 34,
+                            height: 34,
+                            padding: 0,
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                            flexShrink: 0
                         }}
-                        title="Send typed text directly to remote focused application"
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = showTextPrompt ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.08)' }}
+                        title="Type / Send Text to Remote Window"
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = showTextPrompt ? 'rgba(59, 130, 246, 0.35)' : 'rgba(255, 255, 255, 0.08)' }}
                     >
-                        {copiedFeedback ? <IconCheck size={13} color="#34d399" /> : <IconCopy size={13} color="#93c5fd" />}
-                        <span>{copiedFeedback ? 'Sent!' : 'Paste Text'}</span>
+                        {copiedFeedback ? <IconCheck size={15} color="#34d399" /> : <IconType size={15} />}
                     </button>
 
-                    <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.15)' }} />
+                    <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
 
-                    {/* Release Button */}
+                    {/* 8. Release Remote Control */}
                     <button
                         type="button"
                         onClick={onReleaseControl}
                         style={{
                             background: 'rgba(239, 68, 68, 0.2)',
-                            border: '1px solid rgba(239, 68, 68, 0.4)',
+                            border: '1px solid rgba(239, 68, 68, 0.45)',
                             color: '#fca5a5',
-                            padding: '4px 12px',
-                            borderRadius: '9999px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
+                            width: 34,
+                            height: 34,
+                            padding: 0,
+                            borderRadius: '8px',
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 5,
-                            transition: 'all 0.15s ease'
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                            flexShrink: 0
                         }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.35)'; e.currentTarget.style.color = '#fff' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; e.currentTarget.style.color = '#fca5a5' }}
-                        title="Release control (Esc)"
+                        onMouseEnter={e => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.4)'
+                            e.currentTarget.style.color = '#ffffff'
+                        }}
+                        onMouseLeave={e => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'
+                            e.currentTarget.style.color = '#fca5a5'
+                        }}
+                        title="Release Control (Esc)"
                     >
-                        <IconX size={12} />
-                        <span>Release (Esc)</span>
+                        <IconX size={15} />
                     </button>
                 </div>
             )}
