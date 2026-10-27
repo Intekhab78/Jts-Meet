@@ -74,8 +74,14 @@ export function ParticipantsPanel({
     const [newName, setNewName] = useState('')
 
     const getParticipantName = (id: string) => {
-        if (renamedUsers[id]) return renamedUsers[id]
-        if (id.toLowerCase().startsWith('guest_')) return 'Guest'
+        const targetLower = id.trim().toLowerCase()
+        const match = renamedUsers[id] || renamedUsers[targetLower] || Object.entries(renamedUsers).find(([k]) => k.trim().toLowerCase() === targetLower)?.[1]
+        if (match && match.trim()) return match.trim()
+        try {
+            const cached = sessionStorage.getItem(`jts_peer_name_${targetLower}`) || localStorage.getItem(`jts_peer_name_${targetLower}`)
+            if (cached && cached.trim()) return cached.trim()
+        } catch {}
+        if (targetLower.startsWith('guest_')) return 'Guest'
         return id
     }
 

@@ -17,10 +17,16 @@ export const useMeetingPeerStatus = ({
         if (!socket) return
 
         const handleUserJoinedName = (data: { userId: string; displayName?: string; isVideoOff?: boolean; isMuted?: boolean }) => {
-            if (data.displayName) {
+            if (data.displayName && data.displayName.trim()) {
+                const name = data.displayName.trim()
+                const uId = String(data.userId).trim()
+                try {
+                    sessionStorage.setItem(`jts_peer_name_${uId.toLowerCase()}`, name)
+                } catch {}
                 setRenamedUsers(prev => {
                     const next = { ...prev }
-                    next[data.userId] = data.displayName as string
+                    next[uId] = name
+                    next[uId.toLowerCase()] = name
                     return next
                 })
             }
@@ -41,10 +47,16 @@ export const useMeetingPeerStatus = ({
         }
 
         const handleOfferName = (data: { fromUserId: string; displayName?: string; isVideoOff?: boolean; isMuted?: boolean }) => {
-            if (data.displayName) {
+            if (data.displayName && data.displayName.trim()) {
+                const name = data.displayName.trim()
+                const uId = String(data.fromUserId).trim()
+                try {
+                    sessionStorage.setItem(`jts_peer_name_${uId.toLowerCase()}`, name)
+                } catch {}
                 setRenamedUsers(prev => {
                     const next = { ...prev }
-                    next[data.fromUserId] = data.displayName as string
+                    next[uId] = name
+                    next[uId.toLowerCase()] = name
                     return next
                 })
             }
@@ -89,8 +101,14 @@ export const useMeetingPeerStatus = ({
                 setRenamedUsers(prev => {
                     const next = { ...prev }
                     data.peers!.forEach(p => {
-                        if (p.displayName) {
-                            next[p.userId] = p.displayName
+                        if (p.displayName && p.displayName.trim()) {
+                            const name = p.displayName.trim()
+                            const uId = String(p.userId).trim()
+                            try {
+                                sessionStorage.setItem(`jts_peer_name_${uId.toLowerCase()}`, name)
+                            } catch {}
+                            next[uId] = name
+                            next[uId.toLowerCase()] = name
                         }
                     })
                     return next

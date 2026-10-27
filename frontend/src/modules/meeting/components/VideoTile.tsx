@@ -209,11 +209,14 @@ export const VideoTile = React.memo(function VideoTile({
             // Watchdog for screen share decoding: ensures decoder starts immediately even on low-fps static screen shares
             const checkDecoding = setInterval(() => {
                 if (el && isScreenShare && stream.getVideoTracks().length > 0) {
+                    if (el.srcObject !== stream) {
+                        el.srcObject = stream
+                    }
                     if (el.paused) {
                         el.play().catch(() => {})
                     }
                 }
-            }, 1000)
+            }, 600)
 
             return () => {
                 clearInterval(checkDecoding)

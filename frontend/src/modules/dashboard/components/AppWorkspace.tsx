@@ -324,10 +324,99 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
                     }}
                 />
 
+                {/* Active Background Meeting Floating Banner (Multitasking Pill) */}
+                {activeTab !== 'meeting' && joined && !userLeftMeetingRef.current && (
+                    <div
+                        style={{
+                            position: 'fixed',
+                            top: 14,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            zIndex: 9999,
+                            background: 'rgba(15, 17, 23, 0.94)',
+                            backdropFilter: 'blur(16px)',
+                            WebkitBackdropFilter: 'blur(16px)',
+                            border: '1px solid rgba(99, 102, 241, 0.45)',
+                            borderRadius: '9999px',
+                            padding: '6px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6), 0 0 16px rgba(99, 102, 241, 0.25)'
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                            <span
+                                style={{
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: '50%',
+                                    background: '#10b981',
+                                    boxShadow: '0 0 8px #10b981'
+                                }}
+                            />
+                            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#f1f5f9' }}>
+                                Meeting in progress
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace' }}>
+                                ({activeMeetingRoomId || meetingId})
+                            </span>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('meeting')}
+                            style={{
+                                background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '9999px',
+                                padding: '5px 12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(99,102,241,0.5)' }}
+                            onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none' }}
+                        >
+                            <span>Return to Room</span>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="15 3 21 3 21 9" />
+                                <line x1="10" y1="14" x2="21" y2="3" />
+                            </svg>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleLeaveMeetingRoom}
+                            title="Leave Meeting"
+                            style={{
+                                background: 'rgba(239, 68, 68, 0.18)',
+                                color: '#f87171',
+                                border: '1px solid rgba(239, 68, 68, 0.35)',
+                                borderRadius: '9999px',
+                                padding: '4px 10px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.35)'; e.currentTarget.style.color = '#fff' }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)'; e.currentTarget.style.color = '#f87171' }}
+                        >
+                            Leave
+                        </button>
+                    </div>
+                )}
+
                 <Suspense fallback={<WorkspaceTabSkeleton />}>
                     {/* MEETING TAB */}
-                    {activeTab === 'meeting' && (
-                        <div style={{ width: '100%', height: '100%' }}>
+                    {(activeTab === 'meeting' || (joined && !userLeftMeetingRef.current)) && (
+                        <div style={{ width: '100%', height: '100%', display: activeTab === 'meeting' ? 'block' : 'none' }}>
                             <MeetingRoom
                                 key={userLeftMeetingRef.current ? 'lobby' : (activeMeetingRoomId || meetingId || 'lobby')}
                                 initialToken={token}

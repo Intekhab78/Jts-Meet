@@ -79,6 +79,7 @@ export function optimizePeerConnectionForHd(pc: RTCPeerConnection, peerCount: nu
                 params.encodings[0].maxBitrate = 4_000_000
                 params.encodings[0].maxFramerate = 30
                 params.encodings[0].scaleResolutionDownBy = 1.0
+                ;(params as any).degradationPreference = 'maintain-resolution'
             } else {
                 // Adaptive Mesh Bitrate scaling for camera video:
                 // 1-2 participants: 3.5 Mbps (Crisp 1080p60)

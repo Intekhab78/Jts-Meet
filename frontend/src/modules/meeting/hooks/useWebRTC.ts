@@ -492,13 +492,15 @@ export function useWebRTC(
                         tc.direction = 'sendrecv'
                     }
                     if (tc.sender) {
+                        const hadNoTrack = !tc.sender.track
                         tc.sender.replaceTrack(newTrack).then(() => {
                             if (kind === 'video') {
                                 optimizePeerConnectionForHd(pc, peerCount, isScreen)
                             }
                             // In WebRTC, replaceTrack swaps the RTP source in-place without renegotiation or ICE tear down.
-                            // Only trigger renegotiation if transceiver direction flipped from recvonly/inactive!
-                            if (directionChanged) {
+                            // Trigger renegotiation if transceiver direction flipped from recvonly/inactive,
+                            // or if swapping to/from screen sharing, or if previously sending no track (camera off)!
+                            if (directionChanged || isScreen || (newTrack && hadNoTrack)) {
                                 triggerRenegotiation(targetUserId)
                             }
                         }).catch(err => {
@@ -510,9 +512,13 @@ export function useWebRTC(
 
                 const sender = pc.getSenders().find((s) => (s.track && s.track.kind === kind) || (!s.track && kind === 'video') || (!s.track && kind === 'audio'))
                 if (sender) {
+                    const hadNoTrack = !sender.track
                     sender.replaceTrack(newTrack).then(() => {
                         if (kind === 'video') {
                             optimizePeerConnectionForHd(pc, peerCount, isScreen)
+                        }
+                        if (isScreen || (newTrack && hadNoTrack)) {
+                            triggerRenegotiation(targetUserId)
                         }
                     }).catch(err => {
                         console.warn('Failed to replace track on peer:', err)
@@ -654,9 +660,19 @@ export function useWebRTC(
             replaceTrackOnPeers(screenTrack, 'video')
             setScreenSharingUserId('me')
             setScreenSharingUserIds(prev => prev.includes('me') ? prev : [...prev, 'me'])
+
+            // Trigger renegotiation with all connected peers so remote video decoders get immediate IDR keyframe and proper SDP format
+            Object.keys(peerConnectionsRef.current).forEach((targetUserId) => {
+                triggerRenegotiation(targetUserId)
+            })
+
             const activeMeetingId = meetingId || (typeof window !== 'undefined' ? new URLSearchParams(window.location.hash.split('?')[1]).get('id') : '') || sessionStorage.getItem('jts_active_meeting_id') || localStorage.getItem('jts_last_meeting_id') || ''
             if (activeMeetingId) {
-                socket.emit(SocketEvents.SCREEN_START, { meetingId: activeMeetingId })
+                const localId = getLocalUserId()
+                socket.emit(SocketEvents.SCREEN_START, { 
+                    meetingId: activeMeetingId,
+                    userId: localId || socket.id
+                })
                 socket.emit('meeting:camera-toggle', {
                     meetingId: activeMeetingId,
                     isVideoOff: false
@@ -964,7 +980,8 @@ export function useWebRTC(
         }
 
         const handleAnswer = async (payload: { fromUserId: string; meetingId: string; answer: RTCSessionDescriptionInit }) => {
-            const pc = peerConnectionsRef.current[payload.fromUserId]
+            const actualPeerId = Object.keys(peerConnectionsRef.current).find(id => id.toLowerCase() === payload.fromUserId?.toLowerCase()) || payload.fromUserId
+            const pc = peerConnectionsRef.current[actualPeerId]
             if (!pc) {
                 console.warn('handleAnswer: PeerConnection not found for user', payload.fromUserId)
                 return
@@ -972,7 +989,7 @@ export function useWebRTC(
             try {
                 if (pc.signalingState === 'have-local-offer') {
                     await pc.setRemoteDescription(new RTCSessionDescription(payload.answer))
-                    await processPendingCandidates(payload.fromUserId, pc)
+                    await processPendingCandidates(actualPeerId, pc)
                 }
             } catch (err) {
                 console.warn('Error handling WebRTC answer:', err)
@@ -981,18 +998,19 @@ export function useWebRTC(
 
         const handleIceCandidate = async (payload: { fromUserId: string; meetingId: string; candidate: RTCIceCandidateInit }) => {
             if (!payload?.candidate || !payload.candidate.candidate) return
-            const pc = peerConnectionsRef.current[payload.fromUserId]
+            const actualPeerId = Object.keys(peerConnectionsRef.current).find(id => id.toLowerCase() === payload.fromUserId?.toLowerCase()) || payload.fromUserId
+            const pc = peerConnectionsRef.current[actualPeerId]
             if (!pc || !pc.remoteDescription) {
-                if (!pendingCandidatesRef.current[payload.fromUserId]) {
-                    pendingCandidatesRef.current[payload.fromUserId] = []
+                if (!pendingCandidatesRef.current[actualPeerId]) {
+                    pendingCandidatesRef.current[actualPeerId] = []
                 }
-                pendingCandidatesRef.current[payload.fromUserId].push(payload.candidate)
+                pendingCandidatesRef.current[actualPeerId].push(payload.candidate)
                 return
             }
             try {
                 await pc.addIceCandidate(new RTCIceCandidate(payload.candidate))
             } catch (err) {
-                if (!ignoreOfferRef.current[payload.fromUserId]) {
+                if (!ignoreOfferRef.current[actualPeerId]) {
                     console.warn('Error adding ICE candidate:', err)
                 }
             }
@@ -1021,28 +1039,62 @@ export function useWebRTC(
             setScreenSharingUserIds(prev => prev.some(id => id.toLowerCase() === targetId.toLowerCase()) ? prev : [...prev, targetId])
             setScreenSharingUserId(targetId)
 
-            // Trigger fresh MediaStream reference so React components re-mount/play the screen video
-            setRemoteStreams(prev => {
-                const existing = prev[targetId] || prev[matchPeerId] || peerRemoteStreams.get(targetId) || peerRemoteStreams.get(matchPeerId)
-                if (existing) {
-                    const freshStream = new MediaStream(existing.getTracks())
-                    return { ...prev, [targetId]: freshStream, [matchPeerId]: freshStream }
-                }
-                return prev
-            })
+            const pc = peerConnectionsRef.current[matchPeerId] || peerConnectionsRef.current[targetId]
 
-            // In-band track replacement (Google Meet architecture):
-            // RTCRtpSender.replaceTrack already replaces the track seamlessly on the existing video transceiver.
-            // Request an IDR keyframe from the remote presenter so hardware decoders decode screen resolution instantly without SDP renegotiation glare.
-            const pc = peerConnectionsRef.current[matchPeerId]
+            // Ensure peerRemoteStreams has the active video track from the presenter's receiver
+            let pStream = peerRemoteStreams.get(targetId) || peerRemoteStreams.get(matchPeerId)
+            if (!pStream) {
+                pStream = new MediaStream()
+                peerRemoteStreams.set(targetId, pStream)
+                peerRemoteStreams.set(matchPeerId, pStream)
+            }
+
             if (pc) {
-                pc.getReceivers().forEach(receiver => {
-                    if (receiver.track && receiver.track.kind === 'video' && typeof (receiver as any).requestKeyFrame === 'function') {
-                        try {
-                            (receiver as any).requestKeyFrame().catch(() => {})
-                        } catch (_) {}
+                // If the peer connection has a video receiver whose track is missing from pStream, attach it immediately!
+                const videoReceivers = pc.getReceivers().filter(r => r.track && r.track.kind === 'video')
+                videoReceivers.forEach(r => {
+                    if (r.track && !pStream!.getTracks().some(t => t.id === r.track.id)) {
+                        console.log(`[WebRTC] Attached missing video track ${r.track.id} to remote stream for presenter ${targetId}`)
+                        pStream!.addTrack(r.track)
                     }
                 })
+            }
+
+            // Trigger fresh MediaStream reference so React components re-mount and play the screen video
+            const freshTracks = pStream.getTracks()
+            if (freshTracks.length > 0) {
+                const freshStream = new MediaStream(freshTracks)
+                setRemoteStreams(prev => ({
+                    ...prev,
+                    [targetId]: freshStream,
+                    [matchPeerId]: freshStream
+                }))
+            }
+
+            // In-band track replacement / Screen share IDR keyframe burst:
+            // Hardware and software decoders on static screens (dashboards, code, documents) require an IDR keyframe to start decoding.
+            // Burst requestKeyFrame multiple times (0ms, 250ms, 700ms, 1500ms) to ensure at least one keyframe is received even over UDP packet loss.
+            if (pc) {
+                const reqKeyframe = () => {
+                    pc.getReceivers().forEach(receiver => {
+                        if (receiver.track && receiver.track.kind === 'video' && typeof (receiver as any).requestKeyFrame === 'function') {
+                            try {
+                                (receiver as any).requestKeyFrame().catch(() => {})
+                            } catch (_) {}
+                        }
+                    })
+                }
+                reqKeyframe()
+                setTimeout(reqKeyframe, 250)
+                setTimeout(reqKeyframe, 700)
+                setTimeout(reqKeyframe, 1500)
+
+                // If no video track is currently present in the receiver, request immediate renegotiation from presenter
+                const hasVideo = pc.getReceivers().some(r => r.track && r.track.kind === 'video' && r.track.readyState !== 'ended')
+                if (!hasVideo) {
+                    console.log(`[WebRTC] Presenter ${targetId} has no receiving video track yet, requesting renegotiation...`)
+                    triggerRenegotiation(matchPeerId)
+                }
             }
 
             setTimeout(() => {
@@ -1052,6 +1104,13 @@ export function useWebRTC(
                     }
                 })
             }, 100)
+            setTimeout(() => {
+                document.querySelectorAll('video').forEach((el: any) => {
+                    if (el && typeof el.play === 'function' && el.paused) {
+                        el.play().catch(() => {})
+                    }
+                })
+            }, 600)
         }
 
         const handleScreenStop = (payload: { userId: string; meetingId: string; }) => {
@@ -1077,7 +1136,7 @@ export function useWebRTC(
             })
 
             // Request keyframe so remote camera decode resumes immediately without renegotiation glare
-            const pc = peerConnectionsRef.current[matchPeerId]
+            const pc = peerConnectionsRef.current[matchPeerId] || peerConnectionsRef.current[targetId]
             if (pc) {
                 pc.getReceivers().forEach(receiver => {
                     if (receiver.track && receiver.track.kind === 'video' && typeof (receiver as any).requestKeyFrame === 'function') {
@@ -1144,6 +1203,11 @@ export function useWebRTC(
                 payload.peers.forEach((peer) => {
                     if (peer.userId && peer.userId !== socket.id && (!localId || peer.userId.trim().toLowerCase() !== localId.trim().toLowerCase()) && peer.userId !== 'me') {
                         validPeerIds.push(peer.userId)
+                        if (peer.displayName && peer.displayName.trim()) {
+                            try {
+                                sessionStorage.setItem(`jts_peer_name_${peer.userId.trim().toLowerCase()}`, peer.displayName.trim())
+                            } catch {}
+                        }
                         addParticipant(peer.userId)
                         if (peer.isScreenSharing) {
                             setScreenSharingUserIds(prev => prev.some(id => id.trim().toLowerCase() === peer.userId.trim().toLowerCase()) ? prev : [...prev, peer.userId])

@@ -187,9 +187,15 @@ export function MeetingChatPanel({
     const getResolvedUserName = (uid: string, fallbackName?: string): string => {
         if (!uid) return fallbackName || 'Guest'
         if (uid === 'me' || (Boolean(currentUserId) && currentUserId !== 'me' && uid === currentUserId)) return 'You'
-        if (renamedUsers?.[uid]) return renamedUsers[uid]
+        const targetLower = uid.trim().toLowerCase()
+        const match = renamedUsers?.[uid] || renamedUsers?.[targetLower] || (renamedUsers ? Object.entries(renamedUsers).find(([k]) => k.trim().toLowerCase() === targetLower)?.[1] : null)
+        if (match && match.trim()) return match.trim()
         if (fallbackName && !fallbackName.toLowerCase().startsWith('guest_')) return fallbackName
-        if (uid.toLowerCase().startsWith('guest_')) return 'Guest'
+        try {
+            const cached = sessionStorage.getItem(`jts_peer_name_${targetLower}`) || localStorage.getItem(`jts_peer_name_${targetLower}`)
+            if (cached && cached.trim()) return cached.trim()
+        } catch {}
+        if (targetLower.startsWith('guest_')) return 'Guest'
         return uid
     }
 

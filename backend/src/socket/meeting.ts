@@ -617,30 +617,30 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     })
 
     // Screen sharing broadcast relays
-    socket.on('screen:start', (payload: { meetingId: string }) => {
+    socket.on('screen:start', (payload: { meetingId: string; userId?: string }) => {
         const mId = payload?.meetingId || authSocket.meetingId
         if (!mId) return
         io.to(`meeting:${mId}`).emit('screen:start', {
             meetingId: mId,
-            userId: userId || socket.id
+            userId: payload?.userId || userId || socket.id
         })
     })
 
-    socket.on('screen:stop', (payload: { meetingId: string }) => {
+    socket.on('screen:stop', (payload: { meetingId: string; userId?: string }) => {
         const mId = payload?.meetingId || authSocket.meetingId
         if (!mId) return
         io.to(`meeting:${mId}`).emit('screen:stop', {
             meetingId: mId,
-            userId: userId || socket.id
+            userId: payload?.userId || userId || socket.id
         })
     })
 
-    socket.on('screen:changed', (payload: { meetingId: string; active?: boolean }) => {
+    socket.on('screen:changed', (payload: { meetingId: string; userId?: string; active?: boolean }) => {
         const mId = payload?.meetingId || authSocket.meetingId
         if (!mId) return
         io.to(`meeting:${mId}`).emit('screen:changed', {
             meetingId: mId,
-            userId: userId || socket.id,
+            userId: payload?.userId || userId || socket.id,
             active: payload?.active !== false
         })
     })

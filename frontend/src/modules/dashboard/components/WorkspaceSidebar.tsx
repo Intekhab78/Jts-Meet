@@ -396,13 +396,41 @@ export function WorkspaceSidebar({
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 flexShrink: 0,
+                                position: 'relative',
                                 background: isActive ? 'rgba(99, 102, 241, 0.22)' : 'rgba(255, 255, 255, 0.04)',
                                 color: isActive ? '#a5b4fc' : '#94a3b8',
                                 transition: 'all 0.15s ease'
                             }}>
                                 {item.icon()}
+                                {item.id === 'meeting' && joined && !(mobileMenuOpen || showFullSidebar) && (
+                                    <span style={{ position: 'absolute', top: 2, right: 2, width: 6, height: 6, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981' }} />
+                                )}
                             </span>
-                            {(mobileMenuOpen || showFullSidebar) && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
+                            {(mobileMenuOpen || showFullSidebar) && (
+                                <span style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                                    <span>{item.label}</span>
+                                    {item.id === 'meeting' && joined && (
+                                        <span
+                                            style={{
+                                                marginLeft: 'auto',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 4,
+                                                background: 'rgba(16, 185, 129, 0.18)',
+                                                border: '1px solid rgba(16, 185, 129, 0.4)',
+                                                borderRadius: '9999px',
+                                                padding: '1px 6px',
+                                                fontSize: '0.625rem',
+                                                fontWeight: 700,
+                                                color: '#34d399'
+                                            }}
+                                        >
+                                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} />
+                                            LIVE
+                                        </span>
+                                    )}
+                                </span>
+                            )}
                         </button>
                     )
                 })}
