@@ -5,6 +5,7 @@ import { RemoteControlOverlay } from './RemoteControlOverlay'
 import { MeetingSidePanels, type ActiveMeetingPanel, type MeetingSidePanelsProps } from './MeetingSidePanels'
 import type { MeetingLayoutMode } from './LayoutSwitcherModal'
 import { peerRemoteStreams } from '../services/webrtc.service'
+import { useWebRTCContext } from '../context/WebRTCContext'
 import {
     IconInfo,
     IconX,
@@ -162,6 +163,7 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
     setActivePanel,
     sidePanelsProps
 }) => {
+    const { peerIceStates } = useWebRTCContext()
     const [hoveredTile, setHoveredTile] = useState<string | null>(null)
     const [isToolbarMinimized, setIsToolbarMinimized] = useState<boolean>(false)
     const [isToolbarHovered, setIsToolbarHovered] = useState<boolean>(false)
@@ -295,6 +297,7 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                     isCompact={isCompact}
                     isActiveSpeaker={isUserSpeaking}
                     isMutedProp={isMutedUser}
+                    isPeerReconnecting={userId !== 'me' && (peerIceStates?.[userId] === 'disconnected' || peerIceStates?.[userId] === 'checking')}
                 />
 
                 {/* Backstage Indicator Badge on Video Tile */}
@@ -632,6 +635,7 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                                     watermarkText={isWatermarkEnabled ? `${myDisplayName} • ${meetingInfo?.customId || meetingInfo?.id || meetingId || 'JTS-Meet'}` : undefined}
                                                     isActiveSpeaker={activeSpeaker === primaryUser}
                                                     isMutedProp={primaryUser === 'me' ? isMuted : (remoteMuteStates[primaryUser] !== undefined ? remoteMuteStates[primaryUser] : !primaryStream?.getAudioTracks()[0]?.enabled)}
+                                                    isPeerReconnecting={primaryUser !== 'me' && (peerIceStates?.[primaryUser] === 'disconnected' || peerIceStates?.[primaryUser] === 'checking')}
                                                 />
                                                 {isSelfPresenter && showSelfScreenPreview && (
                                                     <div style={{

@@ -139,6 +139,7 @@ export interface VideoTileProps {
     isActiveSpeaker?: boolean
     isMutedProp?: boolean
     objectFitProp?: 'contain' | 'cover'
+    isPeerReconnecting?: boolean
 }
 
 export const VideoTile = React.memo(function VideoTile({
@@ -158,7 +159,8 @@ export const VideoTile = React.memo(function VideoTile({
     isCompact = false,
     isActiveSpeaker = false,
     isMutedProp,
-    objectFitProp
+    objectFitProp,
+    isPeerReconnecting = false
 }: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const isLocalUser = label.toLowerCase().includes('you') || label === 'me'
@@ -478,14 +480,21 @@ export const VideoTile = React.memo(function VideoTile({
                             Camera is off
                         </span>
                         <span style={{ width: 1, height: 12, background: 'var(--color-border)' }} />
-                        <span style={{ display: 'inline-flex', alignItems: 'center', color: effectiveMuted ? 'var(--color-danger)' : 'var(--color-success)' }}>
-                            {effectiveMuted ? (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}><line x1="1" y1="1" x2="23" y2="23" /><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" /></svg>
-                            ) : (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v1a7 7 0 0 1-14 0v-1" /><line x1="12" y1="19" x2="12" y2="23" /></svg>
-                            )}
-                            {effectiveMuted ? 'Muted' : 'Live'}
-                        </span>
+                        {isPeerReconnecting ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', color: '#f59e0b', fontWeight: 600 }}>
+                                <span className="spinner-sm" style={{ width: 10, height: 10, borderWidth: 1.5, borderColor: '#f59e0b', borderTopColor: 'transparent', marginRight: 4 }} />
+                                Reconnecting…
+                            </span>
+                        ) : (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', color: effectiveMuted ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                                {effectiveMuted ? (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}><line x1="1" y1="1" x2="23" y2="23" /><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" /></svg>
+                                ) : (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 4 }}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v1a7 7 0 0 1-14 0v-1" /><line x1="12" y1="19" x2="12" y2="23" /></svg>
+                                )}
+                                {effectiveMuted ? 'Muted' : 'Live'}
+                            </span>
+                        )}
                         {isStudioLighting && (
                             <>
                                 <span style={{ width: 1, height: 12, background: 'rgba(251, 191, 36, 0.4)' }} />

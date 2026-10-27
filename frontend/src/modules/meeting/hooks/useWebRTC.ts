@@ -79,6 +79,20 @@ function enhanceSdpForHdVideo(sdp?: string, _peerCount: number = 1): string {
     return enhanced
 }
 
+function getLocalUserId(): string {
+    try {
+        const token = localStorage.getItem('jts_guest_token') || localStorage.getItem('jts_token') || ''
+        if (token) {
+            const parts = token.split('.')
+            if (parts.length === 3) {
+                const decoded = JSON.parse(atob(parts[1]))
+                return decoded.userId || decoded.id || decoded.sub || ''
+            }
+        }
+    } catch (_) {}
+    return ''
+}
+
 interface UseWebRTCResult {
     remoteStreams: Record<string, MediaStream>
     connectToMeeting: (meetingId: string, displayName?: string, isDirectCall?: boolean) => void
@@ -94,6 +108,7 @@ interface UseWebRTCResult {
     networkStatus: 'online' | 'offline' | 'reconnecting'
     isReconnecting: boolean
     retryConnection: () => Promise<void>
+    peerIceStates: Record<string, RTCIceConnectionState>
 }
 
 interface InternalPeerConnections {
@@ -119,6 +134,7 @@ export function useWebRTC(
     const [screenError, setScreenError] = useState<string | null>(null)
     const [networkStatus, setNetworkStatus] = useState<'online' | 'offline' | 'reconnecting'>(navigator.onLine ? 'online' : 'offline')
     const [isReconnecting, setIsReconnecting] = useState<boolean>(false)
+    const [peerIceStates, setPeerIceStates] = useState<Record<string, RTCIceConnectionState>>({})
     const peerConnectionsRef = useRef<InternalPeerConnections>({})
     const localStreamRef = useRef<MediaStream | null>(null)
     const pendingCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({})
@@ -151,48 +167,26 @@ export function useWebRTC(
     }, [clearReconnectFailsafe])
 
     const evaluateMeshHealth = useCallback(() => {
+        // Global call disconnection should ONLY occur if the local user is actually offline or socket disconnected!
         if (!navigator.onLine) {
             setNetworkStatus('offline')
             setIsReconnecting(true)
             return
         }
 
-        const pcs = Object.values(peerConnectionsRef.current)
-        if (pcs.length === 0) {
-            if (socket && !socket.connected) {
-                setNetworkStatus('reconnecting')
-                setIsReconnecting(true)
-                startReconnectFailsafe()
-            } else {
-                setNetworkStatus('online')
-                setIsReconnecting(false)
-                clearReconnectFailsafe()
-            }
-            return
-        }
-
-        const connectedPeers = pcs.filter(
-            (pc) => pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed'
-        )
-        const failedPeers = pcs.filter(
-            (pc) => pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed'
-        )
-
-        // In P2P mesh: If AT LEAST ONE remote peer is connected, the room call is healthy and active.
-        // A single remote peer's network blip must NOT show a global red banner to everyone else.
-        if (connectedPeers.length > 0) {
-            setIsReconnecting(false)
-            setNetworkStatus('online')
-            clearReconnectFailsafe()
-            return
-        }
-
-        // Only if ALL active peers have dropped simultaneously do we declare call reconnection
-        if (failedPeers.length === pcs.length) {
-            setIsReconnecting(true)
+        if (socket && !socket.connected) {
             setNetworkStatus('reconnecting')
+            setIsReconnecting(true)
             startReconnectFailsafe()
+            return
         }
+
+        // The local client has active internet and is connected to the signaling socket.
+        // Therefore, the local client is healthy and online!
+        // (A remote peer disconnecting in 1-on-1 is that peer's issue, not a global room failure for the local user)
+        setIsReconnecting(false)
+        setNetworkStatus('online')
+        clearReconnectFailsafe()
     }, [socket, startReconnectFailsafe, clearReconnectFailsafe])
 
     // Dynamically scale mesh video bitrates across all active peer senders
@@ -225,6 +219,13 @@ export function useWebRTC(
             delete makingOfferRef.current[pId]
             delete ignoreOfferRef.current[pId]
             peerRemoteStreams.delete(pId)
+        })
+
+        setPeerIceStates((prev) => {
+            const next = { ...prev }
+            delete next[userId]
+            delete next[targetId]
+            return next
         })
 
         setRemoteStreams((prev) => {
@@ -398,11 +399,22 @@ export function useWebRTC(
     }, [meetingId, socket])
 
     const handlePeerIceStateChange = useCallback((userId: string, state: RTCIceConnectionState) => {
+        setPeerIceStates((prev) => ({
+            ...prev,
+            [userId]: state,
+            [userId.toLowerCase()]: state
+        }))
+
         if (state === 'disconnected') {
             if (!iceRestartTimersRef.current[userId]) {
+                const localId = getLocalUserId()
+                const isPolite = String(localId || socket?.id) < String(userId)
+                // Deterministic jittered backoff prevents simultaneous ICE restart offer collision glare:
+                // Polite peer initiates at 1500ms, impolite waits until 4500ms
+                const delay = isPolite ? 1500 : 4500
                 iceRestartTimersRef.current[userId] = setTimeout(() => {
                     triggerIceRestart(userId)
-                }, 2500)
+                }, delay)
             }
             evaluateMeshHealth()
         } else if (state === 'failed') {
@@ -415,7 +427,7 @@ export function useWebRTC(
                         cleanupPeer(userId)
                         removeParticipant(userId)
                     }
-                }, 6000)
+                }, 8000)
             }
             evaluateMeshHealth()
         } else if (state === 'connected' || state === 'completed') {
@@ -425,7 +437,7 @@ export function useWebRTC(
             }
             evaluateMeshHealth()
         }
-    }, [triggerIceRestart, evaluateMeshHealth, cleanupPeer, removeParticipant])
+    }, [triggerIceRestart, evaluateMeshHealth, cleanupPeer, removeParticipant, socket])
 
     const retryConnection = useCallback(async () => {
         console.log('[WebRTC] User manually requested connection retry')
@@ -725,20 +737,6 @@ export function useWebRTC(
     useEffect(() => {
         if (!socket) {
             return
-        }
-
-        const getLocalUserId = () => {
-            try {
-                const token = localStorage.getItem('jts_guest_token') || localStorage.getItem('jts_token') || ''
-                if (token) {
-                    const parts = token.split('.')
-                    if (parts.length === 3) {
-                        const decoded = JSON.parse(atob(parts[1]))
-                        return decoded.userId || decoded.id || decoded.sub || ''
-                    }
-                }
-            } catch (_) {}
-            return ''
         }
 
         const handleUserJoined = async (payload: { userId: string; meetingId: string }) => {
@@ -1285,7 +1283,8 @@ export function useWebRTC(
             replaceTrackOnPeers,
             networkStatus,
             isReconnecting,
-            retryConnection
+            retryConnection,
+            peerIceStates
         }),
         [
             remoteStreams,
@@ -1301,7 +1300,8 @@ export function useWebRTC(
             replaceTrackOnPeers,
             networkStatus,
             isReconnecting,
-            retryConnection
+            retryConnection,
+            peerIceStates
         ]
     )
 }
