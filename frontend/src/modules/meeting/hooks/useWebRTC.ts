@@ -564,11 +564,6 @@ export function useWebRTC(
                     isVideoOff: isCamOff
                 })
             }
-
-            // Immediately renegotiate with peers so their decoders receive keyframes for camera restore
-            Object.keys(peerConnectionsRef.current).forEach(peerId => {
-                triggerRenegotiation(peerId)
-            })
         } catch (err) {
             console.warn('[ScreenShare] Error during screen cleanup:', err)
         } finally {
@@ -578,7 +573,7 @@ export function useWebRTC(
                 return remaining
             })
         }
-    }, [cameraStream, replaceLocalStream, replaceTrackOnPeers, socket, meetingId, triggerRenegotiation])
+    }, [cameraStream, replaceLocalStream, replaceTrackOnPeers, socket, meetingId])
 
     const startScreenShare = useCallback(async (existingStream?: MediaStream) => {
         if (!socket) {
@@ -609,6 +604,9 @@ export function useWebRTC(
                     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
                     if (AudioContextClass) {
                         const audioCtx = new AudioContextClass()
+                        if (audioCtx.state === 'suspended') {
+                            await audioCtx.resume().catch(() => {})
+                        }
                         const destination = audioCtx.createMediaStreamDestination()
 
                         // Connect screen tab/system audio
@@ -653,11 +651,6 @@ export function useWebRTC(
                 })
             }
 
-            // Immediately renegotiate with all peers to force instant IDR/Keyframe delivery at screen resolution
-            Object.keys(peerConnectionsRef.current).forEach(peerId => {
-                triggerRenegotiation(peerId)
-            })
-
             screenTrack.onended = () => {
                 stopScreenShare()
             }
@@ -681,7 +674,7 @@ export function useWebRTC(
                 setScreenError(null)
             }, 4000)
         }
-    }, [cameraStream, meetingId, replaceLocalStream, replaceTrackOnPeers, socket, stopScreenShare, triggerRenegotiation])
+    }, [cameraStream, meetingId, replaceLocalStream, replaceTrackOnPeers, socket, stopScreenShare])
 
     const clearScreenError = useCallback(() => {
         setScreenError(null)
@@ -1040,25 +1033,27 @@ export function useWebRTC(
                 return prev
             })
 
-            console.log(`[WebRTC] Remote user ${targetId} started screen share, triggering immediate renegotiation & IDR keyframe delivery...`)
-            // Immediately renegotiate so the presenter's video encoder transmits an instant IDR keyframe
-            // at screen resolution without requiring remote peers to refresh
-            setTimeout(() => {
-                triggerRenegotiation(matchPeerId)
-            }, 300)
-
-            // Backup watchdog check at 2s if track is stalled or muted
-            setTimeout(() => {
-                const currentStream = peerRemoteStreams.get(targetId) || peerRemoteStreams.get(matchPeerId)
-                const vTrack = currentStream?.getVideoTracks()[0]
-                const pc = peerConnectionsRef.current[matchPeerId]
-                if (pc && pc.signalingState === 'stable' && !makingOfferRef.current[matchPeerId]) {
-                    if (!vTrack || vTrack.readyState !== 'live' || vTrack.muted) {
-                        console.log(`[WebRTC] Backup renegotiation for screen video from ${targetId}...`)
-                        triggerRenegotiation(matchPeerId)
+            // In-band track replacement (Google Meet architecture):
+            // RTCRtpSender.replaceTrack already replaces the track seamlessly on the existing video transceiver.
+            // Request an IDR keyframe from the remote presenter so hardware decoders decode screen resolution instantly without SDP renegotiation glare.
+            const pc = peerConnectionsRef.current[matchPeerId]
+            if (pc) {
+                pc.getReceivers().forEach(receiver => {
+                    if (receiver.track && receiver.track.kind === 'video' && typeof (receiver as any).requestKeyFrame === 'function') {
+                        try {
+                            (receiver as any).requestKeyFrame().catch(() => {})
+                        } catch (_) {}
                     }
-                }
-            }, 2000)
+                })
+            }
+
+            setTimeout(() => {
+                document.querySelectorAll('video, audio').forEach((el: any) => {
+                    if (el && typeof el.play === 'function' && el.paused && !el.muted) {
+                        el.play().catch(() => {})
+                    }
+                })
+            }, 100)
         }
 
         const handleScreenStop = (payload: { userId: string; meetingId: string; }) => {
@@ -1082,7 +1077,26 @@ export function useWebRTC(
                 }
                 return prev
             })
-            triggerRenegotiation(matchPeerId)
+
+            // Request keyframe so remote camera decode resumes immediately without renegotiation glare
+            const pc = peerConnectionsRef.current[matchPeerId]
+            if (pc) {
+                pc.getReceivers().forEach(receiver => {
+                    if (receiver.track && receiver.track.kind === 'video' && typeof (receiver as any).requestKeyFrame === 'function') {
+                        try {
+                            (receiver as any).requestKeyFrame().catch(() => {})
+                        } catch (_) {}
+                    }
+                })
+            }
+
+            setTimeout(() => {
+                document.querySelectorAll('video, audio').forEach((el: any) => {
+                    if (el && typeof el.play === 'function' && el.paused && !el.muted) {
+                        el.play().catch(() => {})
+                    }
+                })
+            }, 100)
         }
 
         const handleScreenChanged = (payload: { userId: string; meetingId: string; active: boolean }) => {
@@ -1095,14 +1109,12 @@ export function useWebRTC(
             if (payload.active) {
                 setScreenSharingUserIds(prev => prev.some(id => String(id).toLowerCase() === targetId.toLowerCase()) ? prev : [...prev, targetId])
                 setScreenSharingUserId(targetId)
-                triggerRenegotiation(matchPeerId)
             } else {
                 setScreenSharingUserIds(prev => {
                     const remaining = prev.filter(id => String(id).toLowerCase() !== targetId.toLowerCase())
                     setScreenSharingUserId(curr => (curr && String(curr).toLowerCase() === targetId.toLowerCase() ? (remaining.length > 0 ? remaining[remaining.length - 1] : null) : curr))
                     return remaining
                 })
-                triggerRenegotiation(matchPeerId)
             }
             setRemoteStreams(prev => {
                 const existing = prev[targetId] || prev[matchPeerId] || peerRemoteStreams.get(targetId) || peerRemoteStreams.get(matchPeerId)
@@ -1112,6 +1124,17 @@ export function useWebRTC(
                 }
                 return prev
             })
+
+            const pc = peerConnectionsRef.current[matchPeerId]
+            if (pc) {
+                pc.getReceivers().forEach(receiver => {
+                    if (receiver.track && receiver.track.kind === 'video' && typeof (receiver as any).requestKeyFrame === 'function') {
+                        try {
+                            (receiver as any).requestKeyFrame().catch(() => {})
+                        } catch (_) {}
+                    }
+                })
+            }
         }
 
         const handleRosterSync = (payload: { meetingId: string; participants: number; peers?: Array<{ userId: string; displayName?: string; isVideoOff?: boolean; isMuted?: boolean; isScreenSharing?: boolean }> }) => {
