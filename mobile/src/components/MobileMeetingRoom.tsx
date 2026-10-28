@@ -1,7 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { App as CapacitorApp } from '@capacitor/app';
-import { API_BASE, SOCKET_URL, getStoredToken } from '../config';
+import { API_BASE, SOCKET_URL, getStoredToken, getStoredUser } from '../config';
+
+function parseJwtUserId(token: string): string {
+  try {
+    const parts = token.split('.');
+    if (parts.length === 3) {
+      const payload = JSON.parse(atob(parts[1]));
+      return payload.userId || payload.id || payload._id || '';
+    }
+  } catch (_) {}
+  return '';
+}
 
 // ── Web Audio Synthetic Chimes (Zero asset latency, offline support) ──
 function playToneChime(type: 'join' | 'leave' | 'chat') {
@@ -201,6 +212,8 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   const [isVideoOff, setIsVideoOff] = useState(initialVideoOff);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [isSpeaker, setIsSpeaker] = useState(true);
+  const [audioRoute, setAudioRoute] = useState<'speaker' | 'bluetooth' | 'earpiece'>('speaker');
+  const [bluetoothDeviceName, setBluetoothDeviceName] = useState<string | null>(null);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [activeSheet, setActiveSheet] = useState<'none' | 'chat' | 'participants' | 'invite' | 'more' | 'virtual_background'>(
     showInitialInvite ? 'invite' : 'none'
@@ -217,6 +230,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   const [inviteCopied, setInviteCopied] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [isNativePip, setIsNativePip] = useState(false);
   const [showMutedSpeakingToast, setShowMutedSpeakingToast] = useState(false);
   const mutedToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -316,6 +330,9 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   const [isNoiseShieldActive, setIsNoiseShieldActive] = useState(true);
   const bgFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Native In-App Screen Share Canvas Ref
+  const nativeScreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
   const currentPreset = MOBILE_BACKGROUND_PRESETS.find((p) => p.id === selectedBackgroundId);
   const currentWallpaperUrl = selectedBackgroundId === 'custom' ? customWallpaperUrl : currentPreset?.url;
 
@@ -396,6 +413,20 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
       backListener.then((h: any) => h.remove()).catch(() => {});
     };
   }, [showLeaveConfirm, isFullscreenShare]);
+
+  // 1a. Native Android PiP (Picture-in-Picture) Full-Screen Video Mode Listener
+  useEffect(() => {
+    (window as any).__onNativePiPModeChanged = (inPip: boolean) => {
+      setIsNativePip(Boolean(inPip));
+      if (inPip) {
+        setActiveSheet('none');
+        setShowLeaveConfirm(false);
+      }
+    };
+    return () => {
+      delete (window as any).__onNativePiPModeChanged;
+    };
+  }, []);
 
   // 1b. Active Speaker & Speaking While Muted Detector (Real-time Web Audio Analyser)
   useEffect(() => {
@@ -766,7 +797,9 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     async function initConnection() {
       let token = getStoredToken();
 
-      if (!token) {
+      if (token) {
+        myUserIdRef.current = getStoredUser()?._id || getStoredUser()?.id || parseJwtUserId(token) || '';
+      } else {
         try {
           const res = await fetch(`${API_BASE}/api/guest/request`, {
             method: 'POST',
@@ -1113,51 +1146,153 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     };
   }, [meetingId, displayName]);
 
-  // Mobile Screen Sharing (Broadcast Phone Screen to Call)
+  // ── Native Android In-App Screen Sharing Listeners (Zero Browser Redirect) ──
+  useEffect(() => {
+    (window as any).__onNativeScreenShareStarted = () => {
+      const canvas = nativeScreenCanvasRef.current || document.createElement('canvas');
+      canvas.width = 540;
+      canvas.height = 960;
+      nativeScreenCanvasRef.current = canvas;
+
+      try {
+        const stream = (canvas as any).captureStream ? (canvas as any).captureStream(15) : null;
+        if (stream) {
+          screenStreamRef.current = stream;
+          const track = stream.getVideoTracks()[0];
+          if (track) {
+            Object.values(peerConnectionsRef.current).forEach((pc) => {
+              const sender = pc.getSenders().find((s) => s.track?.kind === 'video' || (s as any).kind === 'video');
+              if (sender) {
+                sender.replaceTrack(track);
+              } else {
+                try { pc.addTrack(track, stream); } catch (_) {}
+              }
+            });
+
+            setIsSharingMyScreen(true);
+            setActiveSheet('none');
+            socketRef.current?.emit('screen:start', { meetingId });
+            try { (window as any).MobileAppBridge?.showToast?.('Screen sharing active in meeting'); } catch (_) {}
+          }
+        }
+      } catch (err) {
+        console.warn('Could not capture native canvas stream:', err);
+      }
+    };
+
+    let frameImage: HTMLImageElement | null = null;
+    let isDrawing = false;
+
+    (window as any).__onNativeScreenFrame = (base64: string) => {
+      const canvas = nativeScreenCanvasRef.current;
+      if (!canvas || isDrawing) return;
+      isDrawing = true;
+
+      if (!frameImage) {
+        frameImage = new Image();
+      }
+
+      frameImage.onload = () => {
+        try {
+          const ctx = canvas.getContext('2d');
+          if (ctx && frameImage) {
+            if (canvas.width !== frameImage.width) canvas.width = frameImage.width;
+            if (canvas.height !== frameImage.height) canvas.height = frameImage.height;
+            ctx.drawImage(frameImage, 0, 0);
+          }
+        } finally {
+          isDrawing = false;
+        }
+      };
+
+      frameImage.onerror = () => {
+        isDrawing = false;
+      };
+
+      frameImage.src = 'data:image/jpeg;base64,' + base64;
+    };
+
+    (window as any).__onNativeScreenShareCancelled = () => {
+      try { (window as any).MobileAppBridge?.showToast?.('Screen share cancelled'); } catch (_) {}
+    };
+
+    (window as any).__onNativeScreenShareStopped = () => {
+      stopPhoneScreenShare();
+    };
+
+    return () => {
+      delete (window as any).__onNativeScreenShareStarted;
+      delete (window as any).__onNativeScreenFrame;
+      delete (window as any).__onNativeScreenShareCancelled;
+      delete (window as any).__onNativeScreenShareStopped;
+    };
+  }, [meetingId]);
+
+  // ── Mobile Direct Phone Screen Sharing (100% In-App) ──
   const startPhoneScreenShare = async () => {
-    try {
-      if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: true,
+    // Priority 1: Native In-App Android Screen Capture (Direct system prompt, stays 100% inside app)
+    if ((window as any).MobileAppBridge?.startNativeScreenShare) {
+      try {
+        (window as any).MobileAppBridge.startNativeScreenShare();
+        return;
+      } catch (e) {
+        console.warn('Could not launch native screen share:', e);
+      }
+    }
+
+    // Priority 2: Direct device getDisplayMedia (if supported in browser/PWA)
+    if (navigator.mediaDevices && typeof (navigator.mediaDevices as any).getDisplayMedia === 'function') {
+      try {
+        const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+          video: {
+            displaySurface: 'monitor',
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+            frameRate: { ideal: 24, max: 30 }
+          },
+          audio: false
         });
-        screenStreamRef.current = stream;
-        const screenTrack = stream.getVideoTracks()[0];
-        if (screenTrack) {
+
+        if (stream && stream.getVideoTracks().length > 0) {
+          const screenTrack = stream.getVideoTracks()[0];
+          screenStreamRef.current = stream;
+
           Object.values(peerConnectionsRef.current).forEach((pc) => {
-            const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
+            const sender = pc.getSenders().find((s) => s.track?.kind === 'video' || (s as any).kind === 'video');
             if (sender) {
               sender.replaceTrack(screenTrack);
+            } else {
+              try { pc.addTrack(screenTrack, stream); } catch (_) {}
             }
           });
 
           setIsSharingMyScreen(true);
+          setActiveSheet('none');
           socketRef.current?.emit('screen:start', { meetingId });
 
           screenTrack.onended = () => {
             stopPhoneScreenShare();
           };
+
+          try { (window as any).MobileAppBridge?.showToast?.('Screen sharing active'); } catch (_) {}
+          return;
+        }
+      } catch (err: any) {
+        console.warn('[ScreenShare] getDisplayMedia error:', err);
+        if (err?.name === 'NotAllowedError') {
           return;
         }
       }
-    } catch (err: any) {
-      console.warn('[ScreenShare] Start cancelled or failed:', err);
-      if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
-        return;
-      }
     }
 
-    // Fallback: If Android WebView blocks getDisplayMedia, open in Chrome seamlessly
-    const meetingUrl = `https://meet.jtsmiddleeast.com/#meeting?id=${encodeURIComponent(meetingId)}&name=${encodeURIComponent(resolvedDisplayName)}`;
-    const shouldOpen = window.confirm(
-      'Phone screen sharing requires Chrome browser. Open this meeting in Chrome now to share your screen?'
-    );
-    if (shouldOpen) {
-      window.open(meetingUrl, '_system');
-    }
+    try { (window as any).MobileAppBridge?.showToast?.('Screen share not supported on this device'); } catch (_) {}
   };
 
   const stopPhoneScreenShare = () => {
+    try {
+      (window as any).MobileAppBridge?.stopNativeScreenShare?.();
+    } catch (_) {}
+
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach((t) => t.stop());
       screenStreamRef.current = null;
@@ -1165,7 +1300,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     const camTrack = localStreamRef.current?.getVideoTracks()[0];
     if (camTrack) {
       Object.values(peerConnectionsRef.current).forEach((pc) => {
-        const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
+        const sender = pc.getSenders().find((s) => s.track?.kind === 'video' || (s as any).kind === 'video');
         if (sender) {
           sender.replaceTrack(camTrack);
         }
@@ -1173,6 +1308,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     }
     setIsSharingMyScreen(false);
     socketRef.current?.emit('screen:stop', { meetingId });
+    try { (window as any).MobileAppBridge?.showToast?.('Screen sharing stopped'); } catch (_) {}
   };
 
   // Floating Emoji Reaction Helper
@@ -1229,24 +1365,88 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
   };
 
-  const toggleSpeaker = async () => {
-    const next = !isSpeaker;
-    setIsSpeaker(next);
+  // Seamless Bluetooth & Audio Device Routing
+  const applyAudioSink = async (route: 'speaker' | 'bluetooth' | 'earpiece') => {
     try {
       if (typeof (HTMLMediaElement.prototype as any).setSinkId === 'function') {
         const audioEls = document.querySelectorAll('audio, video');
         const devices = await navigator.mediaDevices?.enumerateDevices?.();
         const audioOutputs = devices?.filter((d) => d.kind === 'audiooutput') || [];
-        const target = next
-          ? audioOutputs.find((d) => d.label.toLowerCase().includes('speaker')) || audioOutputs[0]
-          : audioOutputs.find((d) => d.label.toLowerCase().includes('earpiece') || d.label.toLowerCase().includes('receiver')) || audioOutputs[1] || audioOutputs[0];
-        if (target) {
+
+        let targetDevice = audioOutputs[0];
+        if (route === 'bluetooth') {
+          targetDevice = audioOutputs.find((d) =>
+            /bluetooth|headset|headphone|airpod|buds|wireless/i.test(d.label)
+          ) || audioOutputs[0];
+        } else if (route === 'speaker') {
+          targetDevice = audioOutputs.find((d) =>
+            /speaker|loudspeaker/i.test(d.label)
+          ) || audioOutputs[0];
+        } else if (route === 'earpiece') {
+          targetDevice = audioOutputs.find((d) =>
+            /earpiece|receiver|phone/i.test(d.label)
+          ) || audioOutputs[1] || audioOutputs[0];
+        }
+
+        if (targetDevice) {
           audioEls.forEach((el: any) => {
-            el.setSinkId?.(target.deviceId).catch(() => {});
+            el.setSinkId?.(targetDevice.deviceId).catch(() => {});
           });
         }
       }
     } catch (_) {}
+
+    // Native Android AudioManager switching (speakerphone vs earpiece hardware routing)
+    try {
+      (window as any).MobileAppBridge?.setAudioMode?.(route);
+    } catch (_) {}
+  };
+
+  // Auto-detect Bluetooth connect/disconnect
+  useEffect(() => {
+    const handleDeviceChange = async () => {
+      try {
+        const devices = await navigator.mediaDevices?.enumerateDevices?.();
+        const bt = devices?.find((d) =>
+          d.kind === 'audiooutput' && /bluetooth|headset|headphone|airpod|buds|wireless/i.test(d.label)
+        );
+        if (bt) {
+          setBluetoothDeviceName(bt.label || 'Bluetooth Headset');
+          setAudioRoute('bluetooth');
+          setIsSpeaker(false);
+          applyAudioSink('bluetooth');
+        } else {
+          setBluetoothDeviceName(null);
+          if (audioRoute === 'bluetooth') {
+            setAudioRoute('speaker');
+            setIsSpeaker(true);
+            applyAudioSink('speaker');
+          }
+        }
+      } catch (_) {}
+    };
+
+    if (navigator.mediaDevices) {
+      navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+      handleDeviceChange();
+    }
+    return () => {
+      navigator.mediaDevices?.removeEventListener('devicechange', handleDeviceChange);
+    };
+  }, [audioRoute]);
+
+  const cycleAudioRoute = async () => {
+    let nextRoute: 'speaker' | 'bluetooth' | 'earpiece' = 'speaker';
+    if (audioRoute === 'speaker') {
+      nextRoute = bluetoothDeviceName ? 'bluetooth' : 'earpiece';
+    } else if (audioRoute === 'bluetooth') {
+      nextRoute = 'earpiece';
+    } else {
+      nextRoute = 'speaker';
+    }
+    setAudioRoute(nextRoute);
+    setIsSpeaker(nextRoute === 'speaker');
+    await applyAudioSink(nextRoute);
   };
 
   const toggleHand = () => {
@@ -1454,6 +1654,75 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     );
   }
 
+  // Native Android PiP (Full-Screen Edge-to-Edge Speaker Video inside Android Floating Window)
+  if (isNativePip) {
+    const presenterStream = screenSharingUserId
+      ? (remoteStreams[screenSharingUserId] || remoteStreams[screenSharingUserId.toLowerCase()] || (screenSharingUserId === 'local' ? screenStreamRef.current : null))
+      : null;
+    const activeRemoteStream = participants.length > 0
+      ? (remoteStreams[participants[0].userId] || remoteStreams[participants[0].userId.toLowerCase()])
+      : null;
+    const activePipStream = presenterStream || activeRemoteStream || localStream;
+
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 99999,
+          backgroundColor: '#000000',
+          width: '100vw',
+          height: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          padding: 0,
+          margin: 0,
+        }}
+      >
+        {activePipStream ? (
+          <video
+            autoPlay
+            playsInline
+            muted={activePipStream === localStream}
+            ref={(el) => {
+              if (el && activePipStream && el.srcObject !== activePipStream) {
+                el.srcObject = activePipStream;
+              }
+            }}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: presenterStream ? 'contain' : 'cover',
+            }}
+          />
+        ) : (
+          <div style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 700, textAlign: 'center', padding: 8 }}>
+            {displayName}
+          </div>
+        )}
+
+        {/* Keep remote audio streams playing in native PiP */}
+        <div style={{ display: 'none' }}>
+          {participants.map((peer) => {
+            const s = remoteStreams[peer.userId] || remoteStreams[peer.userId.toLowerCase()];
+            return s ? (
+              <audio
+                key={peer.userId}
+                autoPlay
+                playsInline
+                ref={(el) => {
+                  if (el && s && el.srcObject !== s) el.srcObject = s;
+                }}
+              />
+            ) : null;
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -1494,12 +1763,12 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
           pointerEvents: (!showControls && (isLandscape || isFullscreenShare)) ? 'none' : 'auto',
         }}
       >
-        {/* Left: Minimize (PiP) + Speaker + Flip Camera */}
+        {/* Left: Minimize (PiP) + Native Floating PiP + Speaker + Flip Camera */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {/* Minimize into PiP button */}
+          {/* Minimize into in-app mini card */}
           <button
             onClick={onMinimize}
-            title="Minimize to Picture-in-Picture"
+            title="Minimize to In-App Card"
             style={{
               width: 36,
               height: 36,
@@ -1516,24 +1785,58 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
             </svg>
           </button>
 
-          {/* Speaker route */}
+          {/* Native Android PiP (Floating Window over other apps) */}
           <button
-            onClick={toggleSpeaker}
+            onClick={() => {
+              if ((window as any).MobileAppBridge?.enterPipMode) {
+                (window as any).MobileAppBridge.enterPipMode();
+              } else if (onMinimize) {
+                onMinimize();
+              }
+            }}
+            title="Floating Window (Android PiP)"
             style={{
               width: 36,
               height: 36,
               borderRadius: '50%',
               backgroundColor: 'rgba(255, 255, 255, 0.12)',
-              color: isSpeaker ? '#38bdf8' : '#ffffff',
+              color: '#ffffff',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+            <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+              <rect x="11" y="9" width="9" height="6" rx="1" ry="1" fill="currentColor" fillOpacity="0.4" />
             </svg>
+          </button>
+
+          {/* Audio output routing (Speaker / Bluetooth / Earpiece) */}
+          <button
+            onClick={cycleAudioRoute}
+            title={audioRoute === 'bluetooth' ? (bluetoothDeviceName || 'Bluetooth') : audioRoute === 'speaker' ? 'Speakerphone' : 'Earpiece'}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              backgroundColor: audioRoute === 'bluetooth' ? 'rgba(34, 197, 94, 0.25)' : audioRoute === 'speaker' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.12)',
+              color: audioRoute === 'bluetooth' ? '#4ade80' : audioRoute === 'speaker' ? '#38bdf8' : '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {audioRoute === 'bluetooth' ? (
+              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="m7 7 10 10-5 5V2l5 5L7 17" />
+              </svg>
+            ) : (
+              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+              </svg>
+            )}
           </button>
 
           {/* Flip camera */}
@@ -3223,26 +3526,40 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                 </div>
               </button>
 
-              {/* Audio Route: Speaker vs Earpiece */}
+              {/* Audio Route: Speaker vs Bluetooth vs Earpiece */}
               <button
-                onClick={toggleSpeaker}
+                onClick={cycleAudioRoute}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
                   padding: '12px 14px',
                   borderRadius: 14,
-                  backgroundColor: isSpeaker ? '#eff6ff' : '#f8fafc',
-                  border: `1px solid ${isSpeaker ? '#bfdbfe' : '#e2e8f0'}`,
-                  color: isSpeaker ? '#1d4ed8' : '#0f172a',
+                  backgroundColor: audioRoute === 'bluetooth' ? '#f0fdf4' : audioRoute === 'speaker' ? '#eff6ff' : '#f8fafc',
+                  border: `1px solid ${audioRoute === 'bluetooth' ? '#86efac' : audioRoute === 'speaker' ? '#bfdbfe' : '#e2e8f0'}`,
+                  color: audioRoute === 'bluetooth' ? '#166534' : audioRoute === 'speaker' ? '#1d4ed8' : '#0f172a',
                   fontSize: '0.82rem',
                   fontWeight: 700,
                   cursor: 'pointer',
                   textAlign: 'left',
                 }}
               >
-                <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: isSpeaker ? '#dbeafe' : '#f1f5f9', color: isSpeaker ? '#2563eb' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {isSpeaker ? (
+                <div style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  backgroundColor: audioRoute === 'bluetooth' ? '#dcfce7' : audioRoute === 'speaker' ? '#dbeafe' : '#f1f5f9',
+                  color: audioRoute === 'bluetooth' ? '#15803d' : audioRoute === 'speaker' ? '#2563eb' : '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  {audioRoute === 'bluetooth' ? (
+                    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path d="m7 7 10 10-5 5V2l5 5L7 17" />
+                    </svg>
+                  ) : audioRoute === 'speaker' ? (
                     <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                       <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
                       <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
@@ -3256,8 +3573,16 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                 </div>
                 <div>
                   <div>Audio Output</div>
-                  <div style={{ fontSize: '0.68rem', color: isSpeaker ? '#2563eb' : '#64748b', fontWeight: 600 }}>
-                    {isSpeaker ? 'Speakerphone' : 'Earpiece'}
+                  <div style={{
+                    fontSize: '0.68rem',
+                    color: audioRoute === 'bluetooth' ? '#15803d' : audioRoute === 'speaker' ? '#2563eb' : '#64748b',
+                    fontWeight: 600,
+                    maxWidth: 140,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {audioRoute === 'bluetooth' ? (bluetoothDeviceName || 'Bluetooth Connected') : audioRoute === 'speaker' ? 'Speakerphone' : 'Earpiece'}
                   </div>
                 </div>
               </button>
@@ -3267,10 +3592,10 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                 onClick={() => {
                   if (isSharingMyScreen) {
                     stopPhoneScreenShare();
+                    setActiveSheet('none');
                   } else {
                     startPhoneScreenShare();
                   }
-                  setActiveSheet('none');
                 }}
                 style={{
                   display: 'flex',

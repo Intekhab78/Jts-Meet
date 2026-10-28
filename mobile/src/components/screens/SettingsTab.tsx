@@ -4,18 +4,19 @@ interface SettingsTabProps {
   user: any;
   onLogout: () => void;
   onOpenAuth: () => void;
-  onTestIncomingCall?: () => void;
+  onOpenProfileModal?: () => void;
 }
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
   user,
   onLogout,
   onOpenAuth,
-  onTestIncomingCall,
+  onOpenProfileModal,
 }) => {
   const [muteOnJoin, setMuteOnJoin] = useState(() => localStorage.getItem('jts_pref_mute_join') === 'true');
   const [videoOffOnJoin, setVideoOffOnJoin] = useState(() => localStorage.getItem('jts_pref_video_off_join') === 'true');
   const [mirrorVideo, setMirrorVideo] = useState(() => localStorage.getItem('jts_pref_mirror_video') !== 'false');
+  const [biometricLock, setBiometricLock] = useState(() => localStorage.getItem('jts_biometric_lock_enabled') === 'true');
 
   const handleToggleMuteOnJoin = (val: boolean) => {
     setMuteOnJoin(val);
@@ -30,6 +31,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const handleToggleMirrorVideo = (val: boolean) => {
     setMirrorVideo(val);
     localStorage.setItem('jts_pref_mirror_video', String(val));
+  };
+
+  const handleToggleBiometricLock = (val: boolean) => {
+    setBiometricLock(val);
+    localStorage.setItem('jts_biometric_lock_enabled', String(val));
+    if (val && !localStorage.getItem('jts_security_pin')) {
+      const pin = prompt('Enter a 4-digit backup PIN for your workspace:');
+      if (pin && pin.trim().length >= 4) {
+        localStorage.setItem('jts_security_pin', pin.trim());
+      } else {
+        localStorage.setItem('jts_security_pin', '1234');
+      }
+    }
   };
 
   return (
@@ -47,57 +61,98 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       {/* User Profile Card */}
       {user ? (
         <div
+          onClick={onOpenProfileModal}
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 12,
             padding: '14px',
             background: '#ffffff',
-            border: '1px solid #cbd5e1',
-            borderRadius: 14,
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+            border: '1px solid #bfdbfe',
+            borderRadius: 16,
+            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.08)',
+            cursor: 'pointer',
           }}
         >
           <div
             style={{
-              width: 48,
-              height: 48,
+              width: 52,
+              height: 52,
               borderRadius: '50%',
               background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
               color: '#ffffff',
               fontWeight: 800,
-              fontSize: '1.15rem',
+              fontSize: '1.25rem',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)',
+              overflow: 'hidden',
+              flexShrink: 0,
             }}
           >
-            {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+            {user.profileImage || user.avatar ? (
+              <img src={user.profileImage || user.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              user.name ? user.name.charAt(0).toUpperCase() : 'U'
+            )}
           </div>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0f172a' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+            <span style={{ fontSize: '0.94rem', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {user.name || 'JTS User'}
             </span>
-            <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
+            <span style={{ fontSize: '0.72rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {user.email || 'user@example.com'}
             </span>
-            <span
-              style={{
-                alignSelf: 'flex-start',
-                marginTop: 2,
-                padding: '2px 8px',
-                borderRadius: 10,
-                background: '#eff6ff',
-                color: '#2563eb',
-                fontSize: '0.65rem',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-              }}
-            >
-              PRO Member
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: 10,
+                  background: '#eff6ff',
+                  color: '#2563eb',
+                  fontSize: '0.62rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                }}
+              >
+                PRO Member
+              </span>
+              <span style={{ fontSize: '0.66rem', color: '#16a34a', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#22c55e' }} />
+                {user.status === 'in_meeting' ? 'In Call' : 'Online'}
+              </span>
+            </div>
           </div>
+
+          {/* Edit Profile Action Chip */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenProfileModal?.();
+            }}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 8,
+              backgroundColor: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              color: '#2563eb',
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <span>Edit</span>
+            <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+          </button>
         </div>
       ) : (
         <div
@@ -138,78 +193,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       )}
 
-      {/* WhatsApp / iOS Call Ringing Test Card */}
-      {onTestIncomingCall && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Incoming Call Ringing Alert
-          </span>
-          <div
-            style={{
-              background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
-              border: '1.5px solid #86efac',
-              borderRadius: 14,
-              padding: '14px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-              boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 12,
-                  backgroundColor: '#22c55e',
-                  color: '#ffffff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  boxShadow: '0 4px 10px rgba(34, 197, 94, 0.35)',
-                }}
-              >
-                <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                </svg>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#14532d' }}>
-                  WhatsApp / iOS Style Call Alert
-                </div>
-                <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: 2, lineHeight: 1.3 }}>
-                  Phone par incoming video call banner, ringtone audio chime aur vibration test karein.
-                </div>
-              </div>
-            </div>
 
-            <button
-              onClick={onTestIncomingCall}
-              style={{
-                width: '100%',
-                padding: '11px 16px',
-                borderRadius: 10,
-                backgroundColor: '#16a34a',
-                color: '#ffffff',
-                fontSize: '0.82rem',
-                fontWeight: 800,
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                boxShadow: '0 3px 10px rgba(22, 163, 74, 0.25)',
-              }}
-            >
-              <span>🔔</span>
-              <span>Test Incoming Call (Simulate Now)</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Meeting Preferences Section */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -283,6 +267,66 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               type="checkbox"
               checked={mirrorVideo}
               onChange={(e) => handleToggleMirrorVideo(e.target.checked)}
+              style={{ width: 17, height: 17, accentColor: '#2563eb' }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Enterprise Security Section */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          Enterprise Security
+        </span>
+        <div
+          style={{
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 14,
+            overflow: 'hidden',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
+          }}
+        >
+          {/* Biometric Lock */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  backgroundColor: biometricLock ? '#eff6ff' : '#f1f5f9',
+                  color: biometricLock ? '#2563eb' : '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.82rem', color: '#0f172a', fontWeight: 600 }}>
+                  Biometric App Lock (Fingerprint / PIN)
+                </div>
+                <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: 1 }}>
+                  Protect meetings & chats when returning to app
+                </div>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={biometricLock}
+              onChange={(e) => handleToggleBiometricLock(e.target.checked)}
               style={{ width: 17, height: 17, accentColor: '#2563eb' }}
             />
           </div>

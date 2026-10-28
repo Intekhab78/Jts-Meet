@@ -4,6 +4,7 @@ interface MeetTabProps {
   onStartNewMeeting: () => void;
   onOpenJoinModal: () => void;
   onOpenScheduleModal: () => void;
+  onOpenOrganizationModal?: () => void;
   onQuickJoin: (code: string) => void;
   recentMeetings?: string[];
   onTestIncomingCall?: () => void;
@@ -13,8 +14,9 @@ export const MeetTab: React.FC<MeetTabProps> = ({
   onStartNewMeeting,
   onOpenJoinModal,
   onOpenScheduleModal,
+  onOpenOrganizationModal,
   onQuickJoin,
-  recentMeetings = ['demo-sync', 'team-weekly'],
+  recentMeetings = [],
   onTestIncomingCall,
 }) => {
   const [meetingCode, setMeetingCode] = useState('');
@@ -51,12 +53,12 @@ export const MeetTab: React.FC<MeetTabProps> = ({
         backgroundColor: '#ffffff',
       }}
     >
-      {/* 3 Iconic Action Tiles (Zoom / Google Meet Style) */}
+      {/* 4 Iconic Action Tiles (Zoom / Google Meet Style) */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: 12,
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 10,
         }}
       >
         {/* New Meeting */}
@@ -67,12 +69,16 @@ export const MeetTab: React.FC<MeetTabProps> = ({
             flexDirection: 'column',
             alignItems: 'center',
             gap: 6,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
           }}
         >
           <div
             style={{
-              width: 52,
-              height: 52,
+              width: 50,
+              height: 50,
               borderRadius: 16,
               background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
               display: 'flex',
@@ -81,12 +87,12 @@ export const MeetTab: React.FC<MeetTabProps> = ({
               boxShadow: '0 4px 12px rgba(249, 115, 22, 0.25)',
             }}
           >
-            <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.2}>
+            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.2}>
               <polygon points="23 7 16 12 23 17 23 7" />
               <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
             </svg>
           </div>
-          <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#1e293b', textAlign: 'center' }}>
+          <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#1e293b', textAlign: 'center' }}>
             New Meeting
           </span>
         </button>
@@ -99,12 +105,16 @@ export const MeetTab: React.FC<MeetTabProps> = ({
             flexDirection: 'column',
             alignItems: 'center',
             gap: 6,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
           }}
         >
           <div
             style={{
-              width: 52,
-              height: 52,
+              width: 50,
+              height: 50,
               borderRadius: 16,
               background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
               display: 'flex',
@@ -113,12 +123,12 @@ export const MeetTab: React.FC<MeetTabProps> = ({
               boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
             }}
           >
-            <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.5}>
+            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.5}>
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
           </div>
-          <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#1e293b', textAlign: 'center' }}>
+          <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#1e293b', textAlign: 'center' }}>
             Join
           </span>
         </button>
@@ -131,12 +141,16 @@ export const MeetTab: React.FC<MeetTabProps> = ({
             flexDirection: 'column',
             alignItems: 'center',
             gap: 6,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
           }}
         >
           <div
             style={{
-              width: 52,
-              height: 52,
+              width: 50,
+              height: 50,
               borderRadius: 16,
               background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
               display: 'flex',
@@ -145,78 +159,60 @@ export const MeetTab: React.FC<MeetTabProps> = ({
               boxShadow: '0 4px 12px rgba(99, 102, 241, 0.25)',
             }}
           >
-            <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.2}>
+            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.2}>
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
               <line x1="8" y1="2" x2="8" y2="6" />
               <line x1="3" y1="10" x2="21" y2="10" />
             </svg>
           </div>
-          <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#1e293b', textAlign: 'center' }}>
+          <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#1e293b', textAlign: 'center' }}>
             Schedule
+          </span>
+        </button>
+
+        {/* Organization (Next to Schedule) */}
+        <button
+          onClick={onOpenOrganizationModal}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 6,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          <div
+            style={{
+              width: 50,
+              height: 50,
+              borderRadius: 16,
+              background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+            }}
+          >
+            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.2}>
+              <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
+              <path d="M6 12H4a2 2 0 0 0-2 2v8h4" />
+              <path d="M18 9h2a2 2 0 0 1 2 2v11h-4" />
+              <line x1="10" y1="6" x2="14" y2="6" />
+              <line x1="10" y1="10" x2="14" y2="10" />
+              <line x1="10" y1="14" x2="14" y2="14" />
+            </svg>
+          </div>
+          <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#1e293b', textAlign: 'center' }}>
+            Organization
           </span>
         </button>
       </div>
 
-      {/* WhatsApp / iOS Incoming Call Quick Test Chip */}
-      {onTestIncomingCall && (
-        <div
-          onClick={onTestIncomingCall}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '11px 14px',
-            borderRadius: 14,
-            background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
-            border: '1.5px solid #86efac',
-            cursor: 'pointer',
-            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                backgroundColor: '#22c55e',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-              </svg>
-            </div>
-            <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#14532d' }}>
-                Test WhatsApp / iOS Call Alert
-              </div>
-              <div style={{ fontSize: '0.68rem', color: '#166534' }}>
-                Ringtone chime & pop-up modal test
-              </div>
-            </div>
-          </div>
-          <span
-            style={{
-              fontSize: '0.72rem',
-              fontWeight: 800,
-              color: '#15803d',
-              background: '#ffffff',
-              padding: '5px 11px',
-              borderRadius: 8,
-              border: '1px solid #86efac',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-            }}
-          >
-            Test Now
-          </span>
-        </div>
-      )}
+
 
       {/* Quick Join Card */}
       <form

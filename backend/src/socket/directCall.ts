@@ -1,8 +1,10 @@
 import { Server, Socket } from 'socket.io'
+import { Types } from 'mongoose'
 import { AuthenticatedSocket } from './auth'
 import { SocketEvents } from './events'
 import { User } from '../models/user.model'
 import { Meeting } from '../modules/meeting/meeting.model'
+import { Channel } from '../modules/channel/channel.model'
 import { createMeeting } from '../modules/meeting/meeting.service'
 import { NotificationService } from '../modules/notification/notification.service'
 
@@ -30,6 +32,26 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
             targetUserIds = payload.targetUserIds.map(String).filter(id => id && id !== String(userId))
         } else if (singleTarget && String(singleTarget) !== String(userId)) {
             targetUserIds = [String(singleTarget)]
+        }
+
+        // Dynamically resolve all channel members if initiating a call in a channel
+        if (targetUserIds.length === 0 && (payload?.channelId || payload?.channelName)) {
+            try {
+                let channelDoc = null
+                if (payload.channelId && Types.ObjectId.isValid(payload.channelId)) {
+                    channelDoc = await Channel.findById(payload.channelId).select('members').lean().exec()
+                }
+                if (!channelDoc && payload.channelName) {
+                    channelDoc = await Channel.findOne({ name: payload.channelName }).select('members').lean().exec()
+                }
+                if (channelDoc && Array.isArray(channelDoc.members)) {
+                    targetUserIds = channelDoc.members
+                        .map((m: any) => m.userId?.toString())
+                        .filter((id: string) => id && id !== String(userId))
+                }
+            } catch (err) {
+                console.warn('[DirectCall] Error resolving channel members for group call:', err)
+            }
         }
 
         if (!userId || targetUserIds.length === 0) {

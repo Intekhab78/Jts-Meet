@@ -3,7 +3,7 @@ export const SOCKET_URL = 'https://meetapi.jtsmiddleeast.com';
 
 export function getStoredToken(): string | null {
   try {
-    return localStorage.getItem('jts_access_token');
+    return localStorage.getItem('jts_access_token') || localStorage.getItem('jts_token') || sessionStorage.getItem('jts_token') || null;
   } catch {
     return null;
   }

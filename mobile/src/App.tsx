@@ -12,7 +12,11 @@ import { NewMeetingModal } from './components/modals/NewMeetingModal';
 import { ScheduleMeetingModal } from './components/modals/ScheduleMeetingModal';
 import { MobileAuthModal } from './components/MobileAuthModal';
 import { MobileMeetingRoom } from './components/MobileMeetingRoom';
-import { getStoredToken, getStoredUser, setStoredToken, setStoredUser, SOCKET_URL } from './config';
+import { MobileOutgoingCallModal } from './components/chat/MobileOutgoingCallModal';
+import { MobileOrganizationModal } from './components/modals/MobileOrganizationModal';
+import { MobileBiometricLockScreen } from './components/modals/MobileBiometricLockScreen';
+import { MobileUserProfileModal } from './components/modals/MobileUserProfileModal';
+import { getStoredToken, getStoredUser, setStoredToken, setStoredUser, SOCKET_URL, API_BASE } from './config';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<MobileTab>('meet');
@@ -23,7 +27,9 @@ export function App() {
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [isNewMeetingOpen, setIsNewMeetingOpen] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [isOrganizationOpen, setIsOrganizationOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   // Active Meeting state
   const [activeMeeting, setActiveMeeting] = useState<{
@@ -32,7 +38,24 @@ export function App() {
     audioOff?: boolean;
     videoOff?: boolean;
     showInitialInvite?: boolean;
-  } | null>(null);
+  } | null>(() => {
+    try {
+      const stored = localStorage.getItem('jts_active_mobile_meeting');
+      if (stored) return JSON.parse(stored);
+    } catch (_) {}
+    return null;
+  });
+  const [isMeetingMinimized, setIsMeetingMinimized] = useState(false);
+
+  useEffect(() => {
+    if (activeMeeting) {
+      try {
+        localStorage.setItem('jts_active_mobile_meeting', JSON.stringify(activeMeeting));
+      } catch (_) {}
+    } else {
+      localStorage.removeItem('jts_active_mobile_meeting');
+    }
+  }, [activeMeeting]);
 
   // Incoming Call State (WhatsApp / iOS Call Ringing Alert)
   const [incomingCall, setIncomingCall] = useState<{
@@ -40,6 +63,24 @@ export function App() {
     callerName: string;
     callerAvatar?: string;
   } | null>(null);
+
+  const [outgoingCall, setOutgoingCall] = useState<{
+    targetUserId: string;
+    targetName: string;
+    targetAvatar?: string;
+    callType: 'audio' | 'video';
+    meetingId: string;
+    channelName?: string;
+  } | null>(null);
+
+  // Network Reconnection & Online/Offline Status (Enterprise 4G <-> Wi-Fi Sync)
+  const [networkState, setNetworkState] = useState<'online' | 'reconnecting' | 'offline' | 'restored'>('online');
+
+  // Enterprise Biometric App Lock
+  const [isAppLocked, setIsAppLocked] = useState(() => localStorage.getItem('jts_biometric_lock_enabled') === 'true');
+
+  const socketRef = useRef<any>(null);
+  const [socket, setSocket] = useState<any>(null);
 
   const ringAudioRef = useRef<{ stop: () => void } | null>(null);
 
@@ -129,14 +170,79 @@ export function App() {
     return () => stopRingtone();
   }, [incomingCall]);
 
-  // Background socket for incoming call alerts
+  // Biometric App Lock on app resume
   useEffect(() => {
+    let appStateHandle: any = null;
+    try {
+      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive && localStorage.getItem('jts_biometric_lock_enabled') === 'true') {
+          setIsAppLocked(true);
+        }
+      }).then((handle) => {
+        appStateHandle = handle;
+      });
+    } catch (_) {}
+
+    return () => {
+      appStateHandle?.remove();
+    };
+  }, []);
+
+  // Window Online / Offline Listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setNetworkState('reconnecting');
+      socketRef.current?.connect();
+    };
+    const handleOffline = () => {
+      setNetworkState('offline');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Background socket for incoming & outgoing call alerts & network synchronization
+  useEffect(() => {
+    const effectiveToken = token || getStoredToken();
     const bgSocket = io(SOCKET_URL, {
-      auth: { token: token || undefined },
-      transports: ['websocket', 'polling'],
+      auth: { token: effectiveToken || undefined },
+      transports: ['polling', 'websocket'],
+      reconnectionAttempts: 25,
+      reconnectionDelay: 1000,
+    });
+    socketRef.current = bgSocket;
+    setSocket(bgSocket);
+
+    bgSocket.on('connect', () => {
+      console.log('[MobileApp] Connected to background socket:', bgSocket.id);
+      setNetworkState((prev) => {
+        if (prev === 'reconnecting' || prev === 'offline') {
+          setTimeout(() => setNetworkState('online'), 2500);
+          return 'restored';
+        }
+        return 'online';
+      });
+    });
+
+    bgSocket.on('disconnect', (reason) => {
+      console.warn('[MobileApp] Socket disconnected:', reason);
+      if (reason !== 'io client disconnect') {
+        setNetworkState('reconnecting');
+      }
+    });
+
+    bgSocket.on('reconnect_attempt', () => {
+      setNetworkState('reconnecting');
     });
 
     bgSocket.on('call:incoming', (payload: any) => {
+      console.log('[MobileApp] Received incoming call:', payload);
       if (payload?.meetingId) {
         setIncomingCall({
           meetingId: payload.meetingId,
@@ -146,13 +252,119 @@ export function App() {
       }
     });
 
+    bgSocket.on('call:accepted', (payload: any) => {
+      console.log('[MobileApp] Outgoing call accepted:', payload);
+      setOutgoingCall((curr) => {
+        if (curr && (!payload?.meetingId || payload.meetingId === curr.meetingId)) {
+          stopRingtone();
+          const storedName = localStorage.getItem('jts_display_name') || user?.name || 'Mohit';
+          handleJoinMeeting(curr.meetingId, storedName, curr.callType === 'audio', false, false);
+          return null;
+        }
+        return curr;
+      });
+    });
+
+    bgSocket.on('call:rejected', (payload: any) => {
+      console.log('[MobileApp] Call rejected or unavailable:', payload);
+      setOutgoingCall((curr) => {
+        if (curr) {
+          stopRingtone();
+          alert(payload?.reason === 'no_answer' ? 'User is unavailable.' : 'Call declined.');
+          return null;
+        }
+        return curr;
+      });
+    });
+
+    bgSocket.on('call:cancelled', () => {
+      setIncomingCall(null);
+      stopRingtone();
+    });
+
     return () => {
       bgSocket.disconnect();
+      socketRef.current = null;
+      setSocket(null);
     };
   }, [token]);
 
-  // Recent meetings
-  const [recentMeetings, setRecentMeetings] = useState<string[]>(['jts-team-sync', 'all-hands']);
+  const handleStartCall = (
+    targetUserId: string,
+    targetName: string,
+    callType: 'audio' | 'video',
+    targetAvatar?: string,
+    channelName?: string
+  ) => {
+    const meetingId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const callerName = user?.name || localStorage.getItem('jts_display_name') || 'Mohit';
+    const callerAvatar = user?.avatar || '';
+
+    setOutgoingCall({
+      targetUserId,
+      targetName,
+      targetAvatar,
+      callType,
+      meetingId,
+      channelName,
+    });
+
+    startRingtone();
+
+    if (socketRef.current) {
+      if (!socketRef.current.connected) {
+        socketRef.current.connect();
+      }
+      socketRef.current.emit('call:initiate', {
+        targetUserId,
+        calleeId: targetUserId,
+        callerId: user?._id || user?.id,
+        callType,
+        callerName,
+        callerAvatar,
+        meetingId,
+        channelName,
+        channelId: channelName ? targetUserId : undefined,
+      });
+    }
+
+    // Auto timeout after 60 seconds if unanswered (matches server ringing timeout)
+    setTimeout(() => {
+      setOutgoingCall((curr) => {
+        if (curr && curr.meetingId === meetingId) {
+          stopRingtone();
+          if (socketRef.current) {
+            socketRef.current.emit('call:cancelled', {
+              targetUserId,
+              meetingId,
+            });
+          }
+          return null;
+        }
+        return curr;
+      });
+    }, 60000);
+  };
+
+  const handleCancelOutgoingCall = () => {
+    if (outgoingCall && socketRef.current) {
+      socketRef.current.emit('call:cancelled', {
+        targetUserId: outgoingCall.targetUserId,
+        meetingId: outgoingCall.meetingId,
+      });
+    }
+    stopRingtone();
+    setOutgoingCall(null);
+  };
+
+  // Recent meetings (dynamically loaded from local history)
+  const [recentMeetings, setRecentMeetings] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('jts_recent_meetings');
+      if (stored) return JSON.parse(stored);
+    } catch (_) {}
+    return [];
+  });
 
   // Handle joining a meeting
   const handleJoinMeeting = (
@@ -175,7 +387,11 @@ export function App() {
     localStorage.setItem('jts_display_name', resolvedName);
 
     // Add to recent meetings
-    setRecentMeetings((prev) => [meetingId, ...prev.filter((m) => m !== meetingId)].slice(0, 5));
+    setRecentMeetings((prev) => {
+      const updated = [meetingId, ...prev.filter((m) => m !== meetingId)].slice(0, 5);
+      try { localStorage.setItem('jts_recent_meetings', JSON.stringify(updated)); } catch (_) {}
+      return updated;
+    });
 
     setActiveMeeting({
       id: meetingId,
@@ -232,7 +448,7 @@ export function App() {
     handleJoinMeeting(code, storedName, false, false, false);
   };
 
-  // Scheduled Meetings (Persisted in localStorage)
+  // Scheduled Meetings (Dynamically fetched from backend API)
   const [scheduledMeetings, setScheduledMeetings] = useState<
     Array<{ id: string; title: string; date: string; time: string; meetingCode: string }>
   >(() => {
@@ -240,11 +456,36 @@ export function App() {
       const stored = localStorage.getItem('jts_scheduled_meetings');
       if (stored) return JSON.parse(stored);
     } catch (_) {}
-    return [
-      { id: 'daily-scrum', title: 'Daily Standup Call', date: 'Today', time: '10:00 AM - 10:30 AM', meetingCode: 'daily-scrum' },
-      { id: 'client-review', title: 'Project Demo & Review', date: 'Tomorrow', time: '03:00 PM - 04:00 PM', meetingCode: 'client-review' },
-    ];
+    return [];
   });
+
+  useEffect(() => {
+    if (!token) return;
+    const fetchMyMeetings = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/meeting/mine`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.data && Array.isArray(json.data)) {
+            const mapped = json.data
+              .filter((m: any) => m.status === 'scheduled' || m.status === 'active')
+              .map((m: any) => ({
+                id: m.meetingId,
+                title: m.title || `Meeting ${m.meetingId}`,
+                date: m.scheduledDate || (m.createdAt ? new Date(m.createdAt).toLocaleDateString() : 'Today'),
+                time: m.scheduledTime || (m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Scheduled'),
+                meetingCode: m.meetingId,
+              }));
+            setScheduledMeetings(mapped);
+            try { localStorage.setItem('jts_scheduled_meetings', JSON.stringify(mapped)); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    };
+    fetchMyMeetings();
+  }, [token]);
 
   const handleSchedule = (title: string, date: string, time: string) => {
     setIsScheduleOpen(false);
@@ -279,8 +520,6 @@ export function App() {
   };
 
   // Handle Logout
-  const [isMeetingMinimized, setIsMeetingMinimized] = useState(false);
-
   const handleLogout = () => {
     setStoredToken(null);
     setStoredUser(null);
@@ -301,7 +540,60 @@ export function App() {
         overflow: 'hidden',
       }}
     >
-      {/* ── High-Priority Incoming Call Banner (WhatsApp / iOS Style) ── */}
+      {/* ── Floating Network Reconnection Pill (4G <-> Wi-Fi Smooth Switch) ── */}
+      {networkState !== 'online' && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 'calc(var(--safe-top, 24px) + 6px)',
+            left: 0,
+            right: 0,
+            zIndex: 10000,
+            display: 'flex',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+            animation: 'fadeIn 0.2s ease-out',
+          }}
+        >
+          <div
+            style={{
+              padding: '6px 14px',
+              borderRadius: 20,
+              backgroundColor: networkState === 'restored' ? '#f0fdf4' : '#fffbeb',
+              border: `1px solid ${networkState === 'restored' ? '#86efac' : '#fde68a'}`,
+              color: networkState === 'restored' ? '#15803d' : '#b45309',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.08)',
+            }}
+          >
+            {networkState === 'restored' ? (
+              <>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#22c55e' }} />
+                <span>Connected to workspace</span>
+              </>
+            ) : (
+              <>
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    backgroundColor: '#f59e0b',
+                    animation: 'pulse 1s infinite',
+                  }}
+                />
+                <span>{networkState === 'offline' ? 'No internet connection' : 'Reconnecting to workspace...'}</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── High-Priority Incoming Call Banner (White Background Enterprise iOS Style) ── */}
       {incomingCall && (
         <div
           style={{
@@ -310,11 +602,11 @@ export function App() {
             left: 12,
             right: 12,
             zIndex: 9999,
-            backgroundColor: '#0f172a',
-            border: '1.5px solid #3b82f6',
+            backgroundColor: '#ffffff',
+            border: '1.5px solid #bfdbfe',
             borderRadius: 18,
             padding: '14px 16px',
-            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.65), 0 0 24px rgba(59, 130, 246, 0.4)',
+            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.12), 0 0 15px rgba(37, 99, 235, 0.15)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -335,19 +627,19 @@ export function App() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexShrink: 0,
-                boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.5)',
+                boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
               }}
             >
               {incomingCall.callerName.charAt(0).toUpperCase()}
             </div>
             <div style={{ overflow: 'hidden' }}>
-              <div style={{ fontSize: '0.72rem', color: '#60a5fa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Incoming Video Call
+              <div style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Incoming Call
               </div>
-              <div style={{ fontSize: '0.92rem', color: '#ffffff', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: '0.92rem', color: '#0f172a', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {incomingCall.callerName}
               </div>
-              <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+              <div style={{ fontSize: '0.66rem', color: '#64748b' }}>
                 Meeting: {incomingCall.meetingId}
               </div>
             </div>
@@ -381,7 +673,7 @@ export function App() {
               </svg>
             </button>
 
-            {/* Accept */}
+            {/* Accept - Icon only */}
             <button
               onClick={() => {
                 stopRingtone();
@@ -390,28 +682,40 @@ export function App() {
                 setIncomingCall(null);
               }}
               style={{
-                padding: '8px 14px',
-                borderRadius: 20,
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
                 backgroundColor: '#22c55e',
                 color: '#ffffff',
                 border: 'none',
-                fontSize: '0.8rem',
-                fontWeight: 800,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
+                justifyContent: 'center',
                 cursor: 'pointer',
                 boxShadow: '0 4px 14px rgba(34, 197, 94, 0.4)',
               }}
+              title="Accept Call"
             >
-              <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
               </svg>
-              Join
             </button>
           </div>
         </div>
       )}
+
+      {/* ── Mobile Outgoing Call Modal (Native iOS / WhatsApp Ringing Screen) ── */}
+      {outgoingCall && (
+        <MobileOutgoingCallModal
+          isOpen={Boolean(outgoingCall)}
+          targetName={outgoingCall.targetName}
+          targetAvatar={outgoingCall.targetAvatar}
+          callType={outgoingCall.callType}
+          isChannel={Boolean(outgoingCall.channelName)}
+          onCancel={handleCancelOutgoingCall}
+        />
+      )}
+
       {/* ── Active Video Meeting Room (Full-Screen or In-App PiP Floating Mini-Card) ── */}
       {activeMeeting && (
         <MobileMeetingRoom
@@ -433,7 +737,7 @@ export function App() {
       <MobileTopBar
         user={user}
         onOpenAuth={() => setIsAuthOpen(true)}
-        onOpenProfile={() => setActiveTab('settings')}
+        onOpenProfile={() => setIsProfileOpen(true)}
       />
 
       {/* ── Main Tab Content ── */}
@@ -443,6 +747,7 @@ export function App() {
             onStartNewMeeting={() => setIsNewMeetingOpen(true)}
             onOpenJoinModal={() => setIsJoinOpen(true)}
             onOpenScheduleModal={() => setIsScheduleOpen(true)}
+            onOpenOrganizationModal={() => setIsOrganizationOpen(true)}
             onQuickJoin={handleQuickJoin}
             recentMeetings={recentMeetings}
             onTestIncomingCall={handleTestIncomingCall}
@@ -460,7 +765,11 @@ export function App() {
 
         {activeTab === 'messages' && (
           <MessagesTab
+            token={token}
+            currentUser={user}
+            socket={socket}
             onStartMeeting={(code) => handleQuickJoin(code)}
+            onStartCall={handleStartCall}
           />
         )}
 
@@ -469,7 +778,7 @@ export function App() {
             user={user}
             onLogout={handleLogout}
             onOpenAuth={() => setIsAuthOpen(true)}
-            onTestIncomingCall={handleTestIncomingCall}
+            onOpenProfileModal={() => setIsProfileOpen(true)}
           />
         )}
       </main>
@@ -500,10 +809,35 @@ export function App() {
         onSchedule={handleSchedule}
       />
 
+      <MobileOrganizationModal
+        isOpen={isOrganizationOpen}
+        token={token}
+        onClose={() => setIsOrganizationOpen(false)}
+        onStartMeeting={(code) => handleQuickJoin(code)}
+      />
+
       <MobileAuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         onSuccess={handleAuthSuccess}
+      />
+
+      {/* ── Enterprise User Profile Modal ── */}
+      <MobileUserProfileModal
+        isOpen={isProfileOpen}
+        user={user}
+        token={token}
+        onClose={() => setIsProfileOpen(false)}
+        onUpdateUser={(updatedUser) => {
+          setUser(updatedUser);
+          setStoredUser(updatedUser);
+        }}
+      />
+
+      {/* ── Enterprise Biometric Screen Lock ── */}
+      <MobileBiometricLockScreen
+        isLocked={isAppLocked}
+        onUnlock={() => setIsAppLocked(false)}
       />
     </div>
   );

@@ -5,11 +5,13 @@ export type MobileTab = 'meet' | 'meetings' | 'messages' | 'settings';
 interface MobileBottomNavProps {
   activeTab: MobileTab;
   onTabChange: (tab: MobileTab) => void;
+  unreadMessagesCount?: number;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   activeTab,
   onTabChange,
+  unreadMessagesCount = 0,
 }) => {
   const tabs = [
     {
@@ -37,6 +39,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     {
       id: 'messages' as MobileTab,
       label: 'Messages',
+      badge: unreadMessagesCount,
       icon: (active: boolean) => (
         <svg width={20} height={20} viewBox="0 0 24 24" fill={active ? '#2563eb' : 'none'} stroke={active ? '#2563eb' : '#64748b'} strokeWidth={2.2}>
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -85,10 +88,14 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               color: isActive ? '#2563eb' : '#64748b',
               position: 'relative',
               padding: '4px 0',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
             }}
           >
             <div
               style={{
+                position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -96,6 +103,30 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               }}
             >
               {tab.icon(isActive)}
+              {Boolean(tab.badge && tab.badge > 0) && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: -3,
+                    right: -7,
+                    minWidth: 15,
+                    height: 15,
+                    borderRadius: 8,
+                    backgroundColor: '#ef4444',
+                    color: '#ffffff',
+                    fontSize: '0.58rem',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 3px',
+                    border: '1.5px solid #ffffff',
+                    boxShadow: '0 1px 3px rgba(239, 68, 68, 0.4)',
+                  }}
+                >
+                  {tab.badge}
+                </span>
+              )}
             </div>
             <span
               style={{

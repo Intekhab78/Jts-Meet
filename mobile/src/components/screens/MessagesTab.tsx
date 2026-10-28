@@ -1,213 +1,296 @@
+import React, { useState } from 'react';
+import { MobileDirectMessagesList } from '../chat/MobileDirectMessagesList';
+import { MobileChannelsList } from '../chat/MobileChannelsList';
+import { MobileConversationView } from '../chat/MobileConversationView';
+import { MobileContact, MobileChannel } from '../chat/types';
+
 interface MessagesTabProps {
+  token?: string | null;
+  currentUser?: any;
+  socket?: any;
   onStartMeeting?: (code: string) => void;
+  onStartCall?: (
+    targetUserId: string,
+    targetName: string,
+    callType: 'audio' | 'video',
+    targetAvatar?: string,
+    channelName?: string
+  ) => void;
 }
 
-export const MessagesTab: React.FC<MessagesTabProps> = ({ onStartMeeting }) => {
+export const MessagesTab: React.FC<MessagesTabProps> = ({
+  token,
+  currentUser,
+  socket,
+  onStartMeeting,
+  onStartCall,
+}) => {
+  const [activeSegment, setActiveSegment] = useState<'dm' | 'channel'>('dm');
   const [search, setSearch] = useState('');
-  const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
+  const [activeConversation, setActiveConversation] = useState<{
+    id: string;
+    name: string;
+    avatar?: string;
+    isChannel: boolean;
+    status?: string;
+  } | null>(null);
 
-  const chatChannels = [
-    { id: 'general', name: 'General Discussions', lastMsg: 'See you all in the all-hands meeting!', time: '12:45 PM', unread: 2, members: 18 },
-    { id: 'dev-team', name: 'Engineering Team', lastMsg: 'Mobile WebRTC layout is working perfectly.', time: '11:15 AM', unread: 0, members: 8 },
-    { id: 'design', name: 'Design & UX', lastMsg: 'New mobile icons and virtual backgrounds updated.', time: 'Yesterday', unread: 0, members: 5 },
-    { id: 'product', name: 'Product Roadmap', lastMsg: 'Sprint 24 review meeting notes published.', time: '2 days ago', unread: 0, members: 12 },
-  ];
-
-  const filteredChannels = chatChannels.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.lastMsg.toLowerCase().includes(search.toLowerCase())
-  );
+  // If a conversation is active, render the dedicated mobile conversation screen
+  if (activeConversation) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <MobileConversationView
+          chatId={activeConversation.id}
+          chatName={activeConversation.name}
+          chatAvatar={activeConversation.avatar}
+          isChannel={activeConversation.isChannel}
+          status={activeConversation.status || 'online'}
+          token={token}
+          currentUserId={currentUser?._id || currentUser?.id}
+          socket={socket}
+          onBack={() => setActiveConversation(null)}
+          onStartAudioCall={() => {
+            if (activeConversation.isChannel) {
+              if (onStartCall) {
+                onStartCall(
+                  activeConversation.id,
+                  activeConversation.name,
+                  'audio',
+                  undefined,
+                  activeConversation.name
+                );
+              }
+            } else if (onStartCall) {
+              onStartCall(
+                activeConversation.id,
+                activeConversation.name,
+                'audio',
+                activeConversation.avatar
+              );
+            }
+          }}
+          onStartVideoCall={() => {
+            if (activeConversation.isChannel) {
+              if (onStartCall) {
+                onStartCall(
+                  activeConversation.id,
+                  activeConversation.name,
+                  'video',
+                  undefined,
+                  activeConversation.name
+                );
+              }
+            } else if (onStartCall) {
+              onStartCall(
+                activeConversation.id,
+                activeConversation.name,
+                'video',
+                activeConversation.avatar
+              );
+            }
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
       style={{
         flex: 1,
-        overflowY: 'auto',
-        padding: '14px 16px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 14,
+        height: '100%',
         backgroundColor: '#ffffff',
+        overflow: 'hidden',
       }}
     >
-      {/* Search Input */}
+      {/* ── Top Header with Mobile Segmented Pill Switcher ── */}
       <div
         style={{
+          padding: '10px 14px 8px',
+          borderBottom: '1px solid #f1f5f9',
           display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          background: '#f8fafc',
-          border: '1px solid #cbd5e1',
-          borderRadius: 10,
-          padding: '0 10px',
-          height: 38,
+          flexDirection: 'column',
+          gap: 10,
         }}
       >
-        <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth={2}>
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input
-          type="text"
-          placeholder="Search channels & team messages"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+        {/* Segmented Controller (Direct Messages vs Teams/Channels) */}
+        <div
           style={{
-            flex: 1,
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            color: '#0f172a',
-            fontSize: '0.82rem',
+            display: 'flex',
+            backgroundColor: '#f1f5f9',
+            borderRadius: 10,
+            padding: 3,
+            gap: 4,
           }}
-        />
-        {search && (
+        >
+          {/* Direct Messages tab */}
           <button
-            onClick={() => setSearch('')}
-            style={{ fontSize: '0.75rem', color: '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer' }}
+            onClick={() => setActiveSegment('dm')}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '6px 10px',
+              borderRadius: 8,
+              border: 'none',
+              backgroundColor: activeSegment === 'dm' ? '#ffffff' : 'transparent',
+              color: activeSegment === 'dm' ? '#0f172a' : '#64748b',
+              fontWeight: activeSegment === 'dm' ? 700 : 500,
+              fontSize: '0.74rem',
+              cursor: 'pointer',
+              boxShadow: activeSegment === 'dm' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
           >
-            ✕
+            <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+            Direct Messages
           </button>
-        )}
-      </div>
 
-      {/* Chat list */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {filteredChannels.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#64748b', fontSize: '0.82rem' }}>
-            No channels found matching "{search}"
-          </div>
-        ) : (
-          filteredChannels.map((chat) => (
-            <div
-              key={chat.id}
-              onClick={() => setSelectedChannel(selectedChannel === chat.id ? null : chat.id)}
+          {/* Teams & Channels tab */}
+          <button
+            onClick={() => setActiveSegment('channel')}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '6px 10px',
+              borderRadius: 8,
+              border: 'none',
+              backgroundColor: activeSegment === 'channel' ? '#ffffff' : 'transparent',
+              color: activeSegment === 'channel' ? '#0f172a' : '#64748b',
+              fontWeight: activeSegment === 'channel' ? 700 : 500,
+              fontSize: '0.74rem',
+              cursor: 'pointer',
+              boxShadow: activeSegment === 'channel' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+              <line x1="4" y1="9" x2="20" y2="9" />
+              <line x1="4" y1="15" x2="20" y2="15" />
+              <line x1="10" y1="3" x2="8" y2="21" />
+              <line x1="16" y1="3" x2="14" y2="21" />
+            </svg>
+            Teams & Channels
+          </button>
+        </div>
+
+        {/* Compact Search Bar with SVG Icon */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+            padding: '0 10px',
+            height: 34,
+          }}
+        >
+          <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth={2.2}>
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="text"
+            placeholder={activeSegment === 'dm' ? 'Search direct contacts...' : 'Search team channels...'}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: '#0f172a',
+              fontSize: '0.78rem',
+            }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
               style={{
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                background: '#e2e8f0',
+                border: 'none',
                 display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                padding: '12px 14px',
-                borderRadius: 14,
-                background: selectedChannel === chat.id ? '#eff6ff' : '#ffffff',
-                border: selectedChannel === chat.id ? '1.5px solid #93c5fd' : '1px solid #e2e8f0',
+                alignItems: 'center',
+                justifyContent: 'center',
                 cursor: 'pointer',
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
-                transition: 'all 0.15s ease',
+                color: '#64748b',
+                padding: 0,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 12,
-                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                    color: '#ffffff',
-                    fontWeight: 800,
-                    fontSize: '1rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  #
-                </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.86rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {chat.name}
-                    </span>
-                    <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
-                      {chat.time}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '0.74rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {chat.lastMsg}
-                  </span>
-                </div>
-                {chat.unread > 0 && (
-                  <span
-                    style={{
-                      background: '#2563eb',
-                      color: '#ffffff',
-                      fontSize: '0.65rem',
-                      fontWeight: 700,
-                      width: 20,
-                      height: 20,
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {chat.unread}
-                  </span>
-                )}
-              </div>
+              <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
 
-              {/* Action buttons when expanded */}
-              {selectedChannel === chat.id && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 4, paddingTop: 8, borderTop: '1px solid #bfdbfe' }}>
-                  {onStartMeeting && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onStartMeeting(chat.id);
-                      }}
-                      style={{
-                        flex: 1,
-                        padding: '8px 12px',
-                        borderRadius: 8,
-                        backgroundColor: '#2563eb',
-                        color: '#ffffff',
-                        fontSize: '0.76rem',
-                        fontWeight: 700,
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6,
-                        boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)',
-                      }}
-                    >
-                      <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                        <polygon points="23 7 16 12 23 17 23 7" />
-                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                      </svg>
-                      Start Channel Video Call
-                    </button>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const url = `https://meet.jtsmiddleeast.com/meet/${chat.id}`;
-                      navigator.clipboard?.writeText(url);
-                      alert(`Meeting Link for #${chat.name} copied to clipboard!`);
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      backgroundColor: '#ffffff',
-                      color: '#1e293b',
-                      fontSize: '0.76rem',
-                      fontWeight: 700,
-                      border: '1px solid #cbd5e1',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Copy Link
-                  </button>
-                </div>
-              )}
-            </div>
-          ))
+      {/* ── Scrollable List Body ── */}
+      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        {activeSegment === 'dm' ? (
+          <MobileDirectMessagesList
+            token={token}
+            socket={socket}
+            searchQuery={search}
+            onSelectChat={(contact: MobileContact) => {
+              setActiveConversation({
+                id: contact.id,
+                name: contact.name,
+                avatar: contact.avatar,
+                isChannel: false,
+                status: contact.status,
+              });
+            }}
+            onStartAudioCall={(contact: MobileContact) => {
+              if (onStartCall) {
+                onStartCall(contact.id, contact.name, 'audio', contact.avatar);
+              }
+            }}
+            onStartVideoCall={(contact: MobileContact) => {
+              if (onStartCall) {
+                onStartCall(contact.id, contact.name, 'video', contact.avatar);
+              }
+            }}
+          />
+        ) : (
+          <MobileChannelsList
+            token={token}
+            searchQuery={search}
+            onSelectChannel={(channel: MobileChannel) => {
+              setActiveConversation({
+                id: channel.id,
+                name: channel.name,
+                isChannel: true,
+              });
+            }}
+            onStartChannelCall={(channel: MobileChannel) => {
+              if (onStartMeeting) {
+                onStartMeeting(channel.id);
+              } else if (onStartCall) {
+                onStartCall(channel.id, channel.name, 'video', undefined, channel.name);
+              }
+            }}
+          />
         )}
       </div>
     </div>
   );
 };
+
 export default MessagesTab;
