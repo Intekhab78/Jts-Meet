@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 
 interface JoinMeetingModalProps {
   isOpen: boolean;
@@ -20,8 +21,23 @@ export const JoinMeetingModal: React.FC<JoinMeetingModalProps> = ({
   const [audioOff, setAudioOff] = useState(() => localStorage.getItem('jts_pref_mute_join') === 'true');
   const [videoOff, setVideoOff] = useState(() => localStorage.getItem('jts_pref_video_off_join') === 'true');
 
+  useEffect(() => {
+    if (!isOpen) return;
+    let handle: any = null;
+    try {
+      CapacitorApp.addListener('backButton', () => {
+        onClose();
+      }).then((h) => {
+        handle = h;
+      });
+    } catch (_) {}
+    return () => {
+      handle?.remove?.();
+    };
+  }, [isOpen, onClose]);
+
   // Sync if defaultName or stored name becomes available
-  React.useEffect(() => {
+  useEffect(() => {
     if (defaultName) {
       setName(defaultName);
     } else {
@@ -52,7 +68,7 @@ export const JoinMeetingModal: React.FC<JoinMeetingModalProps> = ({
     e.preventDefault();
     const cleanId = cleanMeetingId(meetingId);
     if (!cleanId) return;
-    const finalName = name.trim() || defaultName || localStorage.getItem('jts_display_name') || 'Mohit';
+    const finalName = name.trim() || defaultName || localStorage.getItem('jts_display_name') || 'Participant';
     localStorage.setItem('jts_display_name', finalName);
     onJoin(cleanId, finalName, audioOff, videoOff);
   };
@@ -137,7 +153,7 @@ export const JoinMeetingModal: React.FC<JoinMeetingModalProps> = ({
             </label>
             <input
               type="text"
-              placeholder="Enter your full name (e.g. Mohit)"
+              placeholder="Enter your full name"
               value={name}
               onChange={(e) => {
                 setName(e.target.value);

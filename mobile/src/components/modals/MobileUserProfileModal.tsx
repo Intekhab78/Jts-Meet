@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { API_BASE, setStoredUser } from '../../config';
+import { App as CapacitorApp } from '@capacitor/app';
+import { API_BASE, getStoredToken, setStoredUser } from '../../config';
 
 interface MobileUserProfileModalProps {
   isOpen: boolean;
@@ -16,6 +17,7 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
   onClose,
   onUpdateUser,
 }) => {
+  const resolvedToken = token || getStoredToken();
   const [fullName, setFullName] = useState('');
   const [title, setTitle] = useState('');
   const [department, setDepartment] = useState('');
@@ -34,6 +36,22 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Hardware back button support
+  useEffect(() => {
+    if (!isOpen) return;
+    let handle: any = null;
+    try {
+      CapacitorApp.addListener('backButton', () => {
+        onClose();
+      }).then((h) => {
+        handle = h;
+      });
+    } catch (_) {}
+    return () => {
+      handle?.remove?.();
+    };
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (user) {
@@ -66,7 +84,7 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token) return;
+    if (!resolvedToken) return;
 
     setIsSaving(true);
     setSaveSuccess(false);
@@ -77,7 +95,7 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${resolvedToken}`,
         },
         body: JSON.stringify({
           fullName: fullName.trim(),
@@ -90,7 +108,7 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${resolvedToken}`,
         },
         body: JSON.stringify({
           status: presenceStatus,
@@ -109,7 +127,7 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${resolvedToken}`,
             },
             body: JSON.stringify({ oldPassword, newPassword }),
           });
@@ -228,10 +246,7 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
           {/* Large touch close button */}
           <button
             onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-            }}
-            onTouchEnd={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               onClose();
             }}

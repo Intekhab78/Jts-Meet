@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MobileContact } from './types';
 import { MobileOnlineStoriesBar } from './MobileOnlineStoriesBar';
-import { API_BASE } from '../../config';
+import { API_BASE, getStoredToken } from '../../config';
 
 interface MobileDirectMessagesListProps {
   token?: string | null;
@@ -25,12 +25,13 @@ export const MobileDirectMessagesList: React.FC<MobileDirectMessagesListProps> =
 
   // Fetch real contacts dynamically from backend
   useEffect(() => {
-    if (!token) return;
+    const resolvedToken = token || getStoredToken();
+    if (!resolvedToken) return;
     const loadContacts = async () => {
       setLoading(true);
       try {
         const res = await fetch(`${API_BASE}/api/chat/contacts`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${resolvedToken}` },
         });
         const data = await res.json();
         if (data?.success && Array.isArray(data.data) && data.data.length > 0) {

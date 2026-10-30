@@ -48,6 +48,8 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
   });
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>(status || 'offline');
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -164,8 +166,25 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
         if (!text) return;
 
         setMessages((prev) => {
-          // Prevent duplicates
+          // Prevent duplicates by ID
           if (payload._id && prev.some((p) => p.id === payload._id)) return prev;
+
+          // If incoming message was sent by me, reconcile optimistic local message
+          if (isMe) {
+            const localIdx = prev.findIndex((p) => p.id.startsWith('local-') && p.text === text);
+            if (localIdx !== -1) {
+              const updatedList = [...prev];
+              updatedList[localIdx] = {
+                ...updatedList[localIdx],
+                id: payload._id || updatedList[localIdx].id,
+              };
+              try {
+                localStorage.setItem(`jts_chat_cache_${chatId}`, JSON.stringify(updatedList));
+              } catch (_) {}
+              return updatedList;
+            }
+          }
+
           const updated = [
             ...prev,
             {
@@ -206,7 +225,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     const tempId = `local-${Date.now()}`;
     const newMsg: MobileChatMessage = {
       id: tempId,
-      senderId: currentUserId || 'me',
+      senderId: resolvedUserId || 'me',
       senderName: 'You',
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -214,40 +233,129 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     };
     setMessages((prev) => [...prev, newMsg]);
 
-    // Send to backend API and socket
-    if (token) {
+    // Send to backend API (REST endpoint saves to MongoDB and broadcasts CHAT_RECEIVE via socket)
+    if (resolvedToken) {
       try {
         if (isChannel) {
-          fetch(`${API_BASE}/api/channel/${chatId}/chat`, {
+          const res = await fetch(`${API_BASE}/api/channel/${chatId}/chat`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${resolvedToken}`,
             },
             body: JSON.stringify({ content: text }),
-          }).catch(() => {});
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const saved = json?.data || json;
+            if (saved?._id) {
+              setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: saved._id } : m)));
+            }
+          }
         } else {
-          fetch(`${API_BASE}/api/chat/send`, {
+          const res = await fetch(`${API_BASE}/api/chat/send`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${resolvedToken}`,
             },
             body: JSON.stringify({
               receiverId: chatId,
               message: text,
             }),
-          }).catch(() => {});
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const saved = json?.data || json;
+            if (saved?._id) {
+              setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: saved._id } : m)));
+            }
+          }
         }
-      } catch (_) {}
-    }
-
-    if (socket) {
-      if (isChannel) {
-        socket.emit('channel:chat:send', { channelId: chatId, content: text });
-      } else {
-        socket.emit('chat:send', { receiverId: chatId, message: text });
+      } catch (err) {
+        console.warn('[MobileChat] Failed to send message via REST:', err);
       }
+    }
+  };
+
+  const isImageUrl = (url: string) => {
+    return (
+      typeof url === 'string' &&
+      (/\.(jpeg|jpg|gif|png|webp|svg)($|\?)/i.test(url) || url.startsWith('data:image/'))
+    );
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('contextType', isChannel ? 'channel' : 'chat');
+      formData.append('contextId', chatId);
+
+      const res = await fetch(`${API_BASE}/api/file/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resolvedToken}`,
+        },
+        body: formData,
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        const fileUrl = json?.data?.fileUrl || json?.fileUrl || (json?.data?.filename ? `${API_BASE}/uploads/${json.data.filename}` : '');
+        const fullUrl = fileUrl.startsWith('http') ? fileUrl : `${API_BASE}${fileUrl.startsWith('/') ? '' : '/'}${fileUrl}`;
+        const fileName = file.name;
+        const msgText = fullUrl || `[Attachment: ${fileName}]`;
+
+        if (isChannel) {
+          await fetch(`${API_BASE}/api/channel/${chatId}/chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${resolvedToken}`,
+            },
+            body: JSON.stringify({ content: msgText, fileUrl: fullUrl, fileName }),
+          });
+        } else {
+          await fetch(`${API_BASE}/api/chat/send`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${resolvedToken}`,
+            },
+            body: JSON.stringify({
+              receiverId: chatId,
+              message: msgText,
+              fileUrl: fullUrl,
+              fileName,
+            }),
+          });
+        }
+
+        const newMsg: MobileChatMessage = {
+          id: `local-${Date.now()}`,
+          senderId: resolvedUserId || 'me',
+          senderName: 'You',
+          text: msgText,
+          fileUrl: fullUrl,
+          fileName,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isMe: true,
+        };
+        setMessages((prev) => [...prev, newMsg]);
+      } else {
+        alert('File upload failed. Please try a smaller file.');
+      }
+    } catch (err) {
+      console.warn('[MobileChat] Upload error:', err);
+      alert('Error uploading file.');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -498,7 +606,50 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
                 wordBreak: 'break-word',
               }}
             >
-              {msg.text}
+              {isImageUrl(msg.fileUrl || msg.text) ? (
+                <div style={{ marginBottom: 4 }}>
+                  <img
+                    src={msg.fileUrl || msg.text}
+                    alt="attachment"
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: 220,
+                      borderRadius: 10,
+                      display: 'block',
+                      objectFit: 'cover',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => window.open(msg.fileUrl || msg.text, '_blank')}
+                  />
+                  {msg.fileName && (
+                    <span style={{ fontSize: '0.64rem', opacity: 0.85, marginTop: 2, display: 'block' }}>
+                      {msg.fileName}
+                    </span>
+                  )}
+                </div>
+              ) : msg.fileUrl ? (
+                <a
+                  href={msg.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    color: msg.isMe ? '#ffffff' : '#2563eb',
+                    textDecoration: 'underline',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    marginBottom: 4,
+                  }}
+                >
+                  <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  {msg.fileName || 'Download File'}
+                </a>
+              ) : (
+                msg.text
+              )}
               <div
                 style={{
                   fontSize: '0.6rem',
@@ -535,28 +686,51 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
           backgroundColor: '#ffffff',
         }}
       >
+        {/* Hidden file input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          style={{ display: 'none' }}
+          accept="image/*,.pdf,.doc,.docx,.txt"
+        />
+
         {/* Attachment paperclip icon button (Icon only) */}
         <button
-          onClick={() => alert('Photo & document attachment option opened.')}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
           aria-label="Attach File"
-          title="Attach"
+          title="Attach Photo or Document"
           style={{
             width: 34,
             height: 34,
             borderRadius: '50%',
-            backgroundColor: '#f1f5f9',
+            backgroundColor: isUploading ? '#eff6ff' : '#f1f5f9',
             border: 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#64748b',
-            cursor: 'pointer',
+            color: isUploading ? '#2563eb' : '#64748b',
+            cursor: isUploading ? 'default' : 'pointer',
             flexShrink: 0,
           }}
         >
-          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-          </svg>
+          {isUploading ? (
+            <div
+              style={{
+                width: 14,
+                height: 14,
+                border: '2px solid #2563eb',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+              }}
+            />
+          ) : (
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          )}
         </button>
 
         <input

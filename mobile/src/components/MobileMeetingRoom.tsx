@@ -56,142 +56,40 @@ function playToneChime(type: 'join' | 'leave' | 'chat') {
   } catch (_) {}
 }
 
-const NetworkSignalIndicator: React.FC<{ isPoor?: boolean }> = ({ isPoor = false }) => (
-  <div
-    title={isPoor ? 'Weak Connection' : 'Great 4G / Wi-Fi Signal'}
-    style={{
-      display: 'inline-flex',
-      alignItems: 'flex-end',
-      gap: 1.5,
-      height: 10,
-      marginLeft: 2,
-    }}
-  >
-    <span style={{ width: 2.5, height: 4, borderRadius: 0.5, backgroundColor: isPoor ? '#ef4444' : '#22c55e' }} />
-    <span style={{ width: 2.5, height: 7, borderRadius: 0.5, backgroundColor: isPoor ? 'rgba(239, 68, 68, 0.3)' : '#22c55e' }} />
-    <span style={{ width: 2.5, height: 10, borderRadius: 0.5, backgroundColor: isPoor ? 'rgba(239, 68, 68, 0.2)' : '#22c55e' }} />
-  </div>
-);
+import {
+  RemoteParticipant,
+  MobileMeetingRoomProps,
+  MobileBgPreset,
+  MOBILE_BACKGROUND_PRESETS,
+  ICE_SERVERS,
+  ChatMessage,
+  ReactionItem,
+  NetworkSignalIndicator,
+  DirectAudioCallView,
+  DirectVideoCallView,
+  MeetingTopBar,
+  MeetingControlsBar,
+  LocalPipTile,
+  PipModeOverlay,
+  ReactionsOverlay,
+  ScreenShareStage,
+  ConferenceParticipantGrid,
+  LeaveConfirmModal,
+  InviteSheet,
+  ChatSheet,
+  ParticipantsSheet,
+  MoreOptionsSheet,
+  VirtualBackgroundSheet,
+  useAudioRouting,
+  useSpeakingDetector,
+  useWakeLockAndNetwork,
+  useScreenShare,
+  useVirtualBackground,
+} from './meeting';
 
-interface RemoteParticipant {
-  userId: string;
-  displayName: string;
-  isVideoOff?: boolean;
-  isMuted?: boolean;
-}
+export type { RemoteParticipant, MobileMeetingRoomProps, MobileBgPreset, ChatMessage, ReactionItem };
+export { MOBILE_BACKGROUND_PRESETS, ICE_SERVERS };
 
-interface MobileMeetingRoomProps {
-  meetingId: string;
-  displayName: string;
-  initialAudioOff?: boolean;
-  initialVideoOff?: boolean;
-  showInitialInvite?: boolean;
-  isMinimized?: boolean;
-  onMinimize?: () => void;
-  onMaximize?: () => void;
-  onLeave: () => void;
-}
-
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-  {
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:443',
-      'turn:openrelay.metered.ca:443?transport=tcp',
-      'turns:openrelay.metered.ca:443?transport=tcp',
-    ],
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-];
-
-export interface MobileBgPreset {
-  id: string;
-  title: string;
-  subtitle: string;
-  description: string;
-  category: 'none' | 'blur' | 'wallpaper' | 'custom';
-  thumbnail: string;
-  url?: string;
-  blurRadius?: number;
-}
-
-export const MOBILE_BACKGROUND_PRESETS: MobileBgPreset[] = [
-  {
-    id: 'none',
-    title: 'None',
-    subtitle: 'Original Camera',
-    description: 'Original camera background with zero effects',
-    category: 'none',
-    thumbnail: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=300&q=70',
-  },
-  {
-    id: 'office',
-    title: 'Modern Office',
-    subtitle: 'Executive Suite',
-    description: 'Executive luxury office (glass windows aur daylight ke sath)',
-    category: 'wallpaper',
-    thumbnail: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=300&q=70',
-    url: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1280&q=80',
-  },
-  {
-    id: 'library',
-    title: 'Cozy Library',
-    subtitle: 'Oak Bookshelves',
-    description: 'Warm wooden bookshelves aur soft ambient study light',
-    category: 'wallpaper',
-    thumbnail: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=300&q=70',
-    url: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=1280&q=80',
-  },
-  {
-    id: 'studio',
-    title: 'Minimal Studio',
-    subtitle: 'Acoustic Neon',
-    description: 'Clean modern acoustic studio light neon accents ke sath',
-    category: 'wallpaper',
-    thumbnail: 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=300&q=70',
-    url: 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=1280&q=80',
-  },
-  {
-    id: 'cafe',
-    title: 'Warm Cafe',
-    subtitle: 'Coffee House',
-    description: 'Stylish coffee house background with soft bokeh',
-    category: 'wallpaper',
-    thumbnail: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=300&q=70',
-    url: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=1280&q=80',
-  },
-  {
-    id: 'blur_light',
-    title: 'Slight Blur',
-    subtitle: 'Portrait Bokeh',
-    description: 'Halki portrait depth-of-field (chehra ekdum sharp, background halka blur)',
-    category: 'blur',
-    blurRadius: 8,
-    thumbnail: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=70',
-  },
-  {
-    id: 'blur_heavy',
-    title: 'Deep Blur',
-    subtitle: 'Complete Privacy',
-    description: 'Poora background completely blur (complete privacy ke liye)',
-    category: 'blur',
-    blurRadius: 20,
-    thumbnail: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=70',
-  },
-  {
-    id: 'custom',
-    title: 'Custom Wallpaper',
-    subtitle: 'Gallery / Company Logo',
-    description: 'Aap phone ki gallery se apni company ka logo ya photo laga sakte hain',
-    category: 'custom',
-    thumbnail: '',
-  },
-];
 
 export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   meetingId,
@@ -199,24 +97,43 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   initialAudioOff = false,
   initialVideoOff = false,
   showInitialInvite = false,
+  callType,
+  peerName,
   isMinimized = false,
   onMinimize,
   onMaximize,
   onLeave,
 }) => {
+  const isDirectCall = meetingId.startsWith('call_') || Boolean(callType);
+
   const resolvedDisplayName = (displayName && displayName !== 'Guest User')
     ? displayName
-    : (localStorage.getItem('jts_display_name') || localStorage.getItem('jts_user_name') || 'Mohit');
+    : (localStorage.getItem('jts_display_name') || localStorage.getItem('jts_user_name') || 'Guest User');
 
   const [isMuted, setIsMuted] = useState(initialAudioOff);
   const [isVideoOff, setIsVideoOff] = useState(initialVideoOff);
+  const [currentCallType, setCurrentCallType] = useState<'audio' | 'video'>(() => {
+    if (callType) return callType;
+    if (meetingId.startsWith('call_') && initialVideoOff) return 'audio';
+    return 'video';
+  });
+
+  useEffect(() => {
+    if (callType) {
+      setCurrentCallType(callType);
+    }
+  }, [callType]);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-  const [isSpeaker, setIsSpeaker] = useState(true);
-  const [audioRoute, setAudioRoute] = useState<'speaker' | 'bluetooth' | 'earpiece'>('speaker');
-  const [bluetoothDeviceName, setBluetoothDeviceName] = useState<string | null>(null);
+  const {
+    isSpeaker,
+    setIsSpeaker,
+    audioRoute,
+    bluetoothDeviceName,
+    cycleAudioRoute,
+  } = useAudioRouting();
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [activeSheet, setActiveSheet] = useState<'none' | 'chat' | 'participants' | 'invite' | 'more' | 'virtual_background'>(
-    showInitialInvite ? 'invite' : 'none'
+    (showInitialInvite && !isDirectCall) ? 'invite' : 'none'
   );
   const [chatMessages, setChatMessages] = useState<
     Array<{ id?: string; sender: string; text: string; time: string; timestamp?: number; isPending?: boolean }>
@@ -231,8 +148,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [isNativePip, setIsNativePip] = useState(false);
-  const [showMutedSpeakingToast, setShowMutedSpeakingToast] = useState(false);
-  const mutedToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const activeSheetRef = useRef(activeSheet);
   activeSheetRef.current = activeSheet;
@@ -299,6 +215,38 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     };
   }, [isFullscreenShare]);
 
+  // Android Native Hardware Back Button handler inside Meeting Room
+  useEffect(() => {
+    let backHandle: any = null;
+    try {
+      CapacitorApp.addListener('backButton', () => {
+        if (showLeaveConfirm) {
+          setShowLeaveConfirm(false);
+          return;
+        }
+        if (activeSheet !== 'none') {
+          setActiveSheet('none');
+          return;
+        }
+        if (isMinimized) {
+          return;
+        }
+        // Seamlessly minimize to floating PiP mini-card so meeting is never lost
+        if (onMinimize) {
+          onMinimize();
+        } else {
+          setShowLeaveConfirm(true);
+        }
+      }).then((handle) => {
+        backHandle = handle;
+      });
+    } catch (_) {}
+
+    return () => {
+      backHandle?.remove?.();
+    };
+  }, [showLeaveConfirm, activeSheet, isMinimized, onMinimize]);
+
   const handleStageTap = () => {
     if (isLandscape || isFullscreenShare) {
       if (!showControls) {
@@ -314,60 +262,67 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   };
 
   // Advanced & Mobile Premier Features
-  const [speakingUsers, setSpeakingUsers] = useState<Record<string, boolean>>({});
-  const [networkStatus, setNetworkStatus] = useState<'online' | 'reconnecting'>('online');
-  const [reconnectBannerText, setReconnectBannerText] = useState<string | null>(null);
   const [reactions, setReactions] = useState<Array<{ id: string; emoji: string; senderName: string; left: number }>>([]);
   const [showReactionsBar, setShowReactionsBar] = useState(false);
   const [isHost, setIsHost] = useState(showInitialInvite);
   const [isRoomLocked, setIsRoomLocked] = useState(false);
-  const [isSharingMyScreen, setIsSharingMyScreen] = useState(false);
   const [selfCorner, setSelfCorner] = useState<'bottom-right' | 'top-right' | 'bottom-left' | 'top-left' | 'minimized'>('bottom-right');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [isBlurActive, setIsBlurActive] = useState(false);
-  const [selectedBackgroundId, setSelectedBackgroundId] = useState<string>('none');
-  const [customWallpaperUrl, setCustomWallpaperUrl] = useState<string | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
   const [isNoiseShieldActive, setIsNoiseShieldActive] = useState(true);
-  const bgFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Native In-App Screen Share Canvas Ref
-  const nativeScreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const {
+    selectedBackgroundId,
+    setSelectedBackgroundId,
+    customWallpaperUrl,
+    currentPreset,
+    currentWallpaperUrl,
+    bgFileInputRef,
+    handleSelectBackground,
+    handleCustomWallpaperUpload,
+  } = useVirtualBackground(localStreamRef);
 
-  const currentPreset = MOBILE_BACKGROUND_PRESETS.find((p) => p.id === selectedBackgroundId);
-  const currentWallpaperUrl = selectedBackgroundId === 'custom' ? customWallpaperUrl : currentPreset?.url;
+  const socketRef = useRef<Socket | null>(null);
 
-  const handleSelectBackground = (presetId: string) => {
-    setSelectedBackgroundId(presetId);
-    const isBlur = presetId === 'blur_light' || presetId === 'blur_heavy';
-    setIsBlurActive(isBlur);
+  const {
+    speakingUsers,
+    setSpeakingUsers,
+    showMutedSpeakingToast,
+    setShowMutedSpeakingToast,
+  } = useSpeakingDetector({
+    localStream,
+    isMuted,
+    meetingId,
+    socketRef,
+  });
 
-    const track = localStreamRef.current?.getVideoTracks()[0];
-    if (track) {
-      try {
-        const capabilities = (track.getCapabilities && track.getCapabilities()) as any;
-        if (capabilities && 'backgroundBlur' in capabilities) {
-          track.applyConstraints({ advanced: [{ backgroundBlur: isBlur } as any] });
-        }
-      } catch (_) {}
+  const directPeerName = (participants[0]?.displayName && participants[0].displayName !== 'Guest User')
+    ? participants[0].displayName
+    : (peerName && peerName !== 'Guest User' ? peerName : 'Colleague');
+  const directPeerId = participants[0]?.userId?.toLowerCase() || '';
+
+  const isRemoteVideoActive = participants.some((p) => {
+    if (p.isVideoOff) return false;
+    const s = remoteStreams[p.userId] || remoteStreams[p.userId.toLowerCase()];
+    const vt = s?.getVideoTracks().find((t) => t.enabled && t.readyState === 'live');
+    return !!vt && !vt.muted;
+  });
+
+  // If remote peer turns on their video during an audio call, upgrade to video call
+  useEffect(() => {
+    if (isRemoteVideoActive && currentCallType === 'audio') {
+      setCurrentCallType('video');
     }
-  };
+  }, [isRemoteVideoActive, currentCallType]);
 
-  const handleCustomWallpaperUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const result = ev.target?.result as string;
-        if (result) {
-          setCustomWallpaperUrl(result);
-          setSelectedBackgroundId('custom');
-          setIsBlurActive(false);
-        }
-      };
-      reader.readAsDataURL(file);
-      e.target.value = '';
-    }
-  };
+  const isDirectAudioCall = isDirectCall && currentCallType === 'audio';
+
+  const isRemoteSpeaking = !!(
+    (directPeerId && speakingUsers[directPeerId]) ||
+    (participants[0]?.userId && speakingUsers[participants[0].userId.toLowerCase()])
+  );
 
   // Screen share only where the WebView actually supports it (Android WebView does not)
   const canScreenShare = typeof navigator !== 'undefined' && !!(navigator.mediaDevices as any)?.getDisplayMedia;
@@ -382,10 +337,6 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   }
   const peerIdMapRef = useRef<Record<string, string>>({});
 
-  const localVideoRef = useRef<HTMLVideoElement | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
-  const socketRef = useRef<Socket | null>(null);
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
   const peerStreamsRef = useRef<Record<string, MediaStream>>({});
   const timerSecRef = useRef(0);
@@ -428,88 +379,6 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     };
   }, []);
 
-  // 1b. Active Speaker & Speaking While Muted Detector (Real-time Web Audio Analyser)
-  useEffect(() => {
-    if (!localStream) return;
-
-    let audioCtx: AudioContext | null = null;
-    let analyser: AnalyserNode | null = null;
-    let animFrame: number | null = null;
-
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const audioTracks = localStream.getAudioTracks();
-      if (audioTracks.length === 0) return;
-
-      audioCtx = new AudioCtx();
-      const rawTrackStream = new MediaStream([audioTracks[0].clone()]);
-      const source = audioCtx.createMediaStreamSource(rawTrackStream);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 128;
-      source.connect(analyser);
-
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      let speakingFrames = 0;
-      let quietFrames = 0;
-
-      const checkVolume = () => {
-        if (!analyser) return;
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-        const avg = sum / dataArray.length;
-
-        if (isMuted) {
-          if (avg > 24) {
-            speakingFrames++;
-            if (speakingFrames > 8) {
-              setShowMutedSpeakingToast(true);
-              if (mutedToastTimeoutRef.current) clearTimeout(mutedToastTimeoutRef.current);
-              mutedToastTimeoutRef.current = setTimeout(() => {
-                setShowMutedSpeakingToast(false);
-              }, 3200);
-              speakingFrames = 0;
-            }
-          } else {
-            speakingFrames = Math.max(0, speakingFrames - 1);
-          }
-          setSpeakingUsers((prev) => (prev['local'] ? { ...prev, local: false } : prev));
-        } else {
-          if (avg > 18) {
-            quietFrames = 0;
-            setSpeakingUsers((prev) => {
-              if (!prev['local']) {
-                socketRef.current?.emit('meeting:speaking', { meetingId, isSpeaking: true });
-                return { ...prev, local: true };
-              }
-              return prev;
-            });
-          } else {
-            quietFrames++;
-            if (quietFrames > 14) {
-              setSpeakingUsers((prev) => {
-                if (prev['local']) {
-                  socketRef.current?.emit('meeting:speaking', { meetingId, isSpeaking: false });
-                  return { ...prev, local: false };
-                }
-                return prev;
-              });
-            }
-          }
-        }
-        animFrame = requestAnimationFrame(checkVolume);
-      };
-
-      animFrame = requestAnimationFrame(checkVolume);
-    } catch (_) {}
-
-    return () => {
-      if (animFrame) cancelAnimationFrame(animFrame);
-      if (audioCtx) audioCtx.close().catch(() => {});
-    };
-  }, [localStream, isMuted, meetingId]);
-
   // 2. Call Timer
   useEffect(() => {
     const interval = setInterval(() => {
@@ -521,58 +390,15 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // 3. Screen WakeLock (Prevent Phone Screen from Turning Off) & Network Watchdog
-  useEffect(() => {
-    let wakeLockSentinel: any = null;
-    async function requestWakeLock() {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLockSentinel = await (navigator as any).wakeLock.request('screen');
-        }
-      } catch (_) {}
-    }
-    requestWakeLock();
+  const {
+    networkStatus,
+    reconnectBannerText,
+  } = useWakeLockAndNetwork({
+    peerConnectionsRef,
+    audioContextRef,
+  });
 
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        requestWakeLock();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    const handleOnline = () => {
-      setNetworkStatus('online');
-      setReconnectBannerText('Connected! Re-syncing audio & video...');
-      Object.values(peerConnectionsRef.current).forEach((pc) => {
-        try { pc.restartIce(); } catch (_) {}
-      });
-      setTimeout(() => setReconnectBannerText(null), 2500);
-    };
-
-    const handleOffline = () => {
-      setNetworkStatus('reconnecting');
-      setReconnectBannerText('Network disconnected. Reconnecting...');
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      if (wakeLockSentinel) {
-        wakeLockSentinel.release().catch(() => {});
-      }
-      try {
-        if (audioContextRef.current) {
-          audioContextRef.current.close().catch(() => {});
-        }
-      } catch (_) {}
-    };
-  }, []);
-
-  // Attach local tracks to a peer connection. Returns true if renegotiation is required.
+    // Attach local tracks to a peer connection. Returns true if renegotiation is required.
   const attachLocalTracks = (pc: RTCPeerConnection, stream: MediaStream): boolean => {
     let needsNegotiation = false;
     stream.getTracks().forEach((track) => {
@@ -997,21 +823,37 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         setScreenSharingUserId(null);
       });
 
-      // User Left -> Clean up properly and play soft leave chime
-      socket.on('webrtc:user-left', (payload: { userId: string }) => {
+      // User Left -> Clean up properly, play chime, and auto-exit if direct call
+      const handleUserLeft = (leftUserId: string) => {
         playToneChime('leave');
-        cleanupPeer(payload.userId);
+        cleanupPeer(leftUserId);
+        if (isDirectCall) {
+          try {
+            (window as any).MobileAppBridge?.showToast?.('Call ended');
+          } catch (_) {}
+          onLeave();
+        }
+      };
+
+      socket.on('webrtc:user-left', (payload: { userId: string }) => {
+        handleUserLeft(payload.userId);
       });
       socket.on('meeting:leave', (payload: { userId: string }) => {
         if (payload?.userId) {
-          playToneChime('leave');
-          cleanupPeer(payload.userId);
+          handleUserLeft(payload.userId);
         }
       });
       socket.on('meeting:user-left', (payload: { userId: string }) => {
         if (payload?.userId) {
-          playToneChime('leave');
-          cleanupPeer(payload.userId);
+          handleUserLeft(payload.userId);
+        }
+      });
+      socket.on('call:ended', () => {
+        if (isDirectCall) {
+          try {
+            (window as any).MobileAppBridge?.showToast?.('Call ended');
+          } catch (_) {}
+          onLeave();
         }
       });
 
@@ -1137,181 +979,37 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
 
     return () => {
       isCancelled = true;
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+        localStreamRef.current = null;
+      }
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach((t) => t.stop());
+        screenStreamRef.current = null;
       }
       Object.keys(peerConnectionsRef.current).forEach((id) => cleanupPeer(id));
+      if (isDirectCall) {
+        try { socket?.emit('call:ended', { meetingId }); } catch (_) {}
+      }
       socket?.emit('meeting:leave', { meetingId });
       socket?.disconnect();
     };
   }, [meetingId, displayName]);
 
-  // ── Native Android In-App Screen Sharing Listeners (Zero Browser Redirect) ──
-  useEffect(() => {
-    (window as any).__onNativeScreenShareStarted = () => {
-      const canvas = nativeScreenCanvasRef.current || document.createElement('canvas');
-      canvas.width = 540;
-      canvas.height = 960;
-      nativeScreenCanvasRef.current = canvas;
+  const {
+    isSharingMyScreen,
+    startPhoneScreenShare,
+    stopPhoneScreenShare,
+  } = useScreenShare({
+    meetingId,
+    socketRef,
+    peerConnectionsRef,
+    localStreamRef,
+    screenStreamRef,
+    onCloseSheet: () => setActiveSheet('none'),
+  });
 
-      try {
-        const stream = (canvas as any).captureStream ? (canvas as any).captureStream(15) : null;
-        if (stream) {
-          screenStreamRef.current = stream;
-          const track = stream.getVideoTracks()[0];
-          if (track) {
-            Object.values(peerConnectionsRef.current).forEach((pc) => {
-              const sender = pc.getSenders().find((s) => s.track?.kind === 'video' || (s as any).kind === 'video');
-              if (sender) {
-                sender.replaceTrack(track);
-              } else {
-                try { pc.addTrack(track, stream); } catch (_) {}
-              }
-            });
-
-            setIsSharingMyScreen(true);
-            setActiveSheet('none');
-            socketRef.current?.emit('screen:start', { meetingId });
-            try { (window as any).MobileAppBridge?.showToast?.('Screen sharing active in meeting'); } catch (_) {}
-          }
-        }
-      } catch (err) {
-        console.warn('Could not capture native canvas stream:', err);
-      }
-    };
-
-    let frameImage: HTMLImageElement | null = null;
-    let isDrawing = false;
-
-    (window as any).__onNativeScreenFrame = (base64: string) => {
-      const canvas = nativeScreenCanvasRef.current;
-      if (!canvas || isDrawing) return;
-      isDrawing = true;
-
-      if (!frameImage) {
-        frameImage = new Image();
-      }
-
-      frameImage.onload = () => {
-        try {
-          const ctx = canvas.getContext('2d');
-          if (ctx && frameImage) {
-            if (canvas.width !== frameImage.width) canvas.width = frameImage.width;
-            if (canvas.height !== frameImage.height) canvas.height = frameImage.height;
-            ctx.drawImage(frameImage, 0, 0);
-          }
-        } finally {
-          isDrawing = false;
-        }
-      };
-
-      frameImage.onerror = () => {
-        isDrawing = false;
-      };
-
-      frameImage.src = 'data:image/jpeg;base64,' + base64;
-    };
-
-    (window as any).__onNativeScreenShareCancelled = () => {
-      try { (window as any).MobileAppBridge?.showToast?.('Screen share cancelled'); } catch (_) {}
-    };
-
-    (window as any).__onNativeScreenShareStopped = () => {
-      stopPhoneScreenShare();
-    };
-
-    return () => {
-      delete (window as any).__onNativeScreenShareStarted;
-      delete (window as any).__onNativeScreenFrame;
-      delete (window as any).__onNativeScreenShareCancelled;
-      delete (window as any).__onNativeScreenShareStopped;
-    };
-  }, [meetingId]);
-
-  // ── Mobile Direct Phone Screen Sharing (100% In-App) ──
-  const startPhoneScreenShare = async () => {
-    // Priority 1: Native In-App Android Screen Capture (Direct system prompt, stays 100% inside app)
-    if ((window as any).MobileAppBridge?.startNativeScreenShare) {
-      try {
-        (window as any).MobileAppBridge.startNativeScreenShare();
-        return;
-      } catch (e) {
-        console.warn('Could not launch native screen share:', e);
-      }
-    }
-
-    // Priority 2: Direct device getDisplayMedia (if supported in browser/PWA)
-    if (navigator.mediaDevices && typeof (navigator.mediaDevices as any).getDisplayMedia === 'function') {
-      try {
-        const stream = await (navigator.mediaDevices as any).getDisplayMedia({
-          video: {
-            displaySurface: 'monitor',
-            width: { ideal: 1280, max: 1920 },
-            height: { ideal: 720, max: 1080 },
-            frameRate: { ideal: 24, max: 30 }
-          },
-          audio: false
-        });
-
-        if (stream && stream.getVideoTracks().length > 0) {
-          const screenTrack = stream.getVideoTracks()[0];
-          screenStreamRef.current = stream;
-
-          Object.values(peerConnectionsRef.current).forEach((pc) => {
-            const sender = pc.getSenders().find((s) => s.track?.kind === 'video' || (s as any).kind === 'video');
-            if (sender) {
-              sender.replaceTrack(screenTrack);
-            } else {
-              try { pc.addTrack(screenTrack, stream); } catch (_) {}
-            }
-          });
-
-          setIsSharingMyScreen(true);
-          setActiveSheet('none');
-          socketRef.current?.emit('screen:start', { meetingId });
-
-          screenTrack.onended = () => {
-            stopPhoneScreenShare();
-          };
-
-          try { (window as any).MobileAppBridge?.showToast?.('Screen sharing active'); } catch (_) {}
-          return;
-        }
-      } catch (err: any) {
-        console.warn('[ScreenShare] getDisplayMedia error:', err);
-        if (err?.name === 'NotAllowedError') {
-          return;
-        }
-      }
-    }
-
-    try { (window as any).MobileAppBridge?.showToast?.('Screen share not supported on this device'); } catch (_) {}
-  };
-
-  const stopPhoneScreenShare = () => {
-    try {
-      (window as any).MobileAppBridge?.stopNativeScreenShare?.();
-    } catch (_) {}
-
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((t) => t.stop());
-      screenStreamRef.current = null;
-    }
-    const camTrack = localStreamRef.current?.getVideoTracks()[0];
-    if (camTrack) {
-      Object.values(peerConnectionsRef.current).forEach((pc) => {
-        const sender = pc.getSenders().find((s) => s.track?.kind === 'video' || (s as any).kind === 'video');
-        if (sender) {
-          sender.replaceTrack(camTrack);
-        }
-      });
-    }
-    setIsSharingMyScreen(false);
-    socketRef.current?.emit('screen:stop', { meetingId });
-    try { (window as any).MobileAppBridge?.showToast?.('Screen sharing stopped'); } catch (_) {}
-  };
-
-  // Floating Emoji Reaction Helper
+    // Floating Emoji Reaction Helper
   const sendReaction = (emoji: string) => {
     setShowReactionsBar(false);
     socketRef.current?.emit('meeting:reaction', {
@@ -1363,90 +1061,6 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
 
   const flipCamera = () => {
     setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
-  };
-
-  // Seamless Bluetooth & Audio Device Routing
-  const applyAudioSink = async (route: 'speaker' | 'bluetooth' | 'earpiece') => {
-    try {
-      if (typeof (HTMLMediaElement.prototype as any).setSinkId === 'function') {
-        const audioEls = document.querySelectorAll('audio, video');
-        const devices = await navigator.mediaDevices?.enumerateDevices?.();
-        const audioOutputs = devices?.filter((d) => d.kind === 'audiooutput') || [];
-
-        let targetDevice = audioOutputs[0];
-        if (route === 'bluetooth') {
-          targetDevice = audioOutputs.find((d) =>
-            /bluetooth|headset|headphone|airpod|buds|wireless/i.test(d.label)
-          ) || audioOutputs[0];
-        } else if (route === 'speaker') {
-          targetDevice = audioOutputs.find((d) =>
-            /speaker|loudspeaker/i.test(d.label)
-          ) || audioOutputs[0];
-        } else if (route === 'earpiece') {
-          targetDevice = audioOutputs.find((d) =>
-            /earpiece|receiver|phone/i.test(d.label)
-          ) || audioOutputs[1] || audioOutputs[0];
-        }
-
-        if (targetDevice) {
-          audioEls.forEach((el: any) => {
-            el.setSinkId?.(targetDevice.deviceId).catch(() => {});
-          });
-        }
-      }
-    } catch (_) {}
-
-    // Native Android AudioManager switching (speakerphone vs earpiece hardware routing)
-    try {
-      (window as any).MobileAppBridge?.setAudioMode?.(route);
-    } catch (_) {}
-  };
-
-  // Auto-detect Bluetooth connect/disconnect
-  useEffect(() => {
-    const handleDeviceChange = async () => {
-      try {
-        const devices = await navigator.mediaDevices?.enumerateDevices?.();
-        const bt = devices?.find((d) =>
-          d.kind === 'audiooutput' && /bluetooth|headset|headphone|airpod|buds|wireless/i.test(d.label)
-        );
-        if (bt) {
-          setBluetoothDeviceName(bt.label || 'Bluetooth Headset');
-          setAudioRoute('bluetooth');
-          setIsSpeaker(false);
-          applyAudioSink('bluetooth');
-        } else {
-          setBluetoothDeviceName(null);
-          if (audioRoute === 'bluetooth') {
-            setAudioRoute('speaker');
-            setIsSpeaker(true);
-            applyAudioSink('speaker');
-          }
-        }
-      } catch (_) {}
-    };
-
-    if (navigator.mediaDevices) {
-      navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
-      handleDeviceChange();
-    }
-    return () => {
-      navigator.mediaDevices?.removeEventListener('devicechange', handleDeviceChange);
-    };
-  }, [audioRoute]);
-
-  const cycleAudioRoute = async () => {
-    let nextRoute: 'speaker' | 'bluetooth' | 'earpiece' = 'speaker';
-    if (audioRoute === 'speaker') {
-      nextRoute = bluetoothDeviceName ? 'bluetooth' : 'earpiece';
-    } else if (audioRoute === 'bluetooth') {
-      nextRoute = 'earpiece';
-    } else {
-      nextRoute = 'speaker';
-    }
-    setAudioRoute(nextRoute);
-    setIsSpeaker(nextRoute === 'speaker');
-    await applyAudioSink(nextRoute);
   };
 
   const toggleHand = () => {
@@ -1518,208 +1132,23 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     ? remoteStreams[activePresenterId] || remoteStreams[activePresenterId.toLowerCase()]
     : null;
 
-  // ── PICTURE IN PICTURE MINI-CARD VIEW ──
-  if (isMinimized) {
-    const activePipStream = presenterStream || Object.values(remoteStreams)[0] || localStreamRef.current;
-
+  // ── PICTURE IN PICTURE MINI-CARD & NATIVE PIP OVERLAY ──
+  if (isMinimized || isNativePip) {
     return (
-      <div
-        onClick={onMaximize}
-        style={{
-          position: 'fixed',
-          bottom: 78,
-          right: 12,
-          width: 148,
-          height: 218,
-          borderRadius: 16,
-          backgroundColor: '#090d16',
-          boxShadow: '0 12px 36px rgba(0, 0, 0, 0.75)',
-          border: '2px solid #2563eb',
-          zIndex: 99999,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          cursor: 'pointer',
-        }}
-      >
-        {/* Top Header of Mini PiP */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            padding: '6px 8px',
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0.85), transparent)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            zIndex: 10,
-          }}
-        >
-          <span style={{ fontSize: '0.68rem', color: '#60a5fa', fontWeight: 800 }}>
-            {timer}
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMaximize?.();
-              }}
-              title="Expand Meeting"
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: '50%',
-                backgroundColor: 'rgba(255, 255, 255, 0.25)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                <polyline points="15 3 21 3 21 9" />
-                <polyline points="9 21 3 21 3 15" />
-                <line x1="21" y1="3" x2="14" y2="10" />
-                <line x1="3" y1="21" x2="10" y2="14" />
-              </svg>
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onLeave();
-              }}
-              title="Leave Call"
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: '50%',
-                backgroundColor: '#ef4444',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Mini Video Feed */}
-        <div style={{ flex: 1, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#020617' }}>
-          {activePipStream ? (
-            <video
-              autoPlay
-              playsInline
-              ref={(el) => {
-                if (el && activePipStream && el.srcObject !== activePipStream) {
-                  el.srcObject = activePipStream;
-                }
-              }}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: presenterStream ? 'contain' : 'cover',
-              }}
-            />
-          ) : (
-            <div style={{ fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center', padding: 8 }}>
-              {displayName}
-            </div>
-          )}
-        </div>
-
-        {/* Keep audio tracks alive in mini PiP mode */}
-        <div style={{ display: 'none' }}>
-          {participants.map((peer) => {
-            const s = remoteStreams[peer.userId] || remoteStreams[peer.userId.toLowerCase()];
-            return s ? (
-              <audio
-                key={peer.userId}
-                autoPlay
-                playsInline
-                ref={(el) => {
-                  if (el && s && el.srcObject !== s) el.srcObject = s;
-                }}
-              />
-            ) : null;
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  // Native Android PiP (Full-Screen Edge-to-Edge Speaker Video inside Android Floating Window)
-  if (isNativePip) {
-    const presenterStream = screenSharingUserId
-      ? (remoteStreams[screenSharingUserId] || remoteStreams[screenSharingUserId.toLowerCase()] || (screenSharingUserId === 'local' ? screenStreamRef.current : null))
-      : null;
-    const activeRemoteStream = participants.length > 0
-      ? (remoteStreams[participants[0].userId] || remoteStreams[participants[0].userId.toLowerCase()])
-      : null;
-    const activePipStream = presenterStream || activeRemoteStream || localStream;
-
-    return (
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 99999,
-          backgroundColor: '#000000',
-          width: '100vw',
-          height: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          padding: 0,
-          margin: 0,
-        }}
-      >
-        {activePipStream ? (
-          <video
-            autoPlay
-            playsInline
-            muted={activePipStream === localStream}
-            ref={(el) => {
-              if (el && activePipStream && el.srcObject !== activePipStream) {
-                el.srcObject = activePipStream;
-              }
-            }}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: presenterStream ? 'contain' : 'cover',
-            }}
-          />
-        ) : (
-          <div style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 700, textAlign: 'center', padding: 8 }}>
-            {displayName}
-          </div>
-        )}
-
-        {/* Keep remote audio streams playing in native PiP */}
-        <div style={{ display: 'none' }}>
-          {participants.map((peer) => {
-            const s = remoteStreams[peer.userId] || remoteStreams[peer.userId.toLowerCase()];
-            return s ? (
-              <audio
-                key={peer.userId}
-                autoPlay
-                playsInline
-                ref={(el) => {
-                  if (el && s && el.srcObject !== s) el.srcObject = s;
-                }}
-              />
-            ) : null;
-          })}
-        </div>
-      </div>
+      <PipModeOverlay
+        isMinimized={isMinimized}
+        isNativePip={isNativePip}
+        onMaximize={onMaximize}
+        onLeave={onLeave}
+        timer={timer}
+        displayName={displayName}
+        presenterStream={presenterStream}
+        remoteStreams={remoteStreams}
+        localStream={localStream}
+        participants={participants}
+        screenSharingUserId={screenSharingUserId}
+        screenStream={screenStreamRef.current}
+      />
     );
   }
 
@@ -1729,162 +1158,29 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         position: 'fixed',
         inset: 0,
         zIndex: 200,
-        backgroundColor: '#090d16',
+        backgroundColor: isDirectAudioCall ? '#ffffff' : '#090d16',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
       }}
     >
-      {/* ── Top Bar (Clean & Uncluttered: Minimize, Audio, Flip, Code & Leave) ── */}
-      <div
-        onClick={(e) => {
-          e.stopPropagation();
-          resetControlsTimer();
-        }}
-        style={{
-          paddingTop: 'calc(var(--safe-top) + 8px)',
-          paddingBottom: 10,
-          paddingLeft: 12,
-          paddingRight: 12,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'rgba(15, 23, 42, 0.85)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          zIndex: 35,
-          position: (isLandscape || isFullscreenShare) ? 'absolute' : 'relative',
-          top: 0,
-          left: 0,
-          right: 0,
-          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease',
-          transform: (!showControls && (isLandscape || isFullscreenShare)) ? 'translateY(-100%)' : 'translateY(0)',
-          opacity: (!showControls && (isLandscape || isFullscreenShare)) ? 0 : 1,
-          pointerEvents: (!showControls && (isLandscape || isFullscreenShare)) ? 'none' : 'auto',
-        }}
-      >
-        {/* Left: Minimize (PiP) + Native Floating PiP + Speaker + Flip Camera */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {/* Minimize into in-app mini card */}
-          <button
-            onClick={onMinimize}
-            title="Minimize to In-App Card"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              backgroundColor: 'rgba(255, 255, 255, 0.12)',
-              color: '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
-
-          {/* Native Android PiP (Floating Window over other apps) */}
-          <button
-            onClick={() => {
-              if ((window as any).MobileAppBridge?.enterPipMode) {
-                (window as any).MobileAppBridge.enterPipMode();
-              } else if (onMinimize) {
-                onMinimize();
-              }
-            }}
-            title="Floating Window (Android PiP)"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              backgroundColor: 'rgba(255, 255, 255, 0.12)',
-              color: '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <rect x="11" y="9" width="9" height="6" rx="1" ry="1" fill="currentColor" fillOpacity="0.4" />
-            </svg>
-          </button>
-
-          {/* Audio output routing (Speaker / Bluetooth / Earpiece) */}
-          <button
-            onClick={cycleAudioRoute}
-            title={audioRoute === 'bluetooth' ? (bluetoothDeviceName || 'Bluetooth') : audioRoute === 'speaker' ? 'Speakerphone' : 'Earpiece'}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              backgroundColor: audioRoute === 'bluetooth' ? 'rgba(34, 197, 94, 0.25)' : audioRoute === 'speaker' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.12)',
-              color: audioRoute === 'bluetooth' ? '#4ade80' : audioRoute === 'speaker' ? '#38bdf8' : '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {audioRoute === 'bluetooth' ? (
-              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path d="m7 7 10 10-5 5V2l5 5L7 17" />
-              </svg>
-            ) : (
-              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-              </svg>
-            )}
-          </button>
-
-          {/* Flip camera */}
-          <button
-            onClick={flipCamera}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              backgroundColor: 'rgba(255, 255, 255, 0.12)',
-              color: '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path d="M20 10c0-4.418-3.582-8-8-8s-8 3.582-8 8c0 2.008.74 3.843 1.967 5.25L4 17h5v-5l-1.84 1.84C6.34 12.67 6 11.38 6 10c0-3.314 2.686-6 6-6s6 2.686 6 6c0 1.38-.34 2.67-1.16 3.84L15 12v5h5l-1.967-1.75C19.26 13.843 20 12.008 20 10z" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Center: Meeting Code & Call Duration */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.86rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '0.02em' }}>
-            {meetingId}
-          </span>
-          <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
-            {timer}
-          </span>
-        </div>
-
-        {/* Right: Leave Button with Accidental Tap Protection */}
-        <button
-          onClick={() => setShowLeaveConfirm(true)}
-          style={{
-            padding: '6px 14px',
-            borderRadius: 16,
-            backgroundColor: '#ef4444',
-            color: '#ffffff',
-            fontSize: '0.78rem',
-            fontWeight: 800,
-            boxShadow: '0 2px 8px rgba(239, 68, 68, 0.35)',
-          }}
-        >
-          Leave
-        </button>
-      </div>
+      {/* ── Top Bar for Conference Meetings (Hidden during Direct 1-on-1 Calls) ── */}
+      {!isDirectCall && (
+        <MeetingTopBar
+          meetingId={meetingId}
+          timer={timer}
+          isLandscape={isLandscape}
+          isFullscreenShare={isFullscreenShare}
+          showControls={showControls}
+          audioRoute={audioRoute}
+          bluetoothDeviceName={bluetoothDeviceName}
+          cycleAudioRoute={cycleAudioRoute}
+          flipCamera={flipCamera}
+          onMinimize={onMinimize}
+          onLeaveClick={() => setShowLeaveConfirm(true)}
+          resetControlsTimer={resetControlsTimer}
+        />
+      )}
 
       {/* ── Network Reconnecting / Offline Banner ── */}
       {reconnectBannerText && (
@@ -1955,48 +1251,6 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         </div>
       )}
 
-      {/* ── Floating Emoji Reactions Overlay ── */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          pointerEvents: 'none',
-          overflow: 'hidden',
-          zIndex: 80,
-        }}
-      >
-        {reactions.map((r) => (
-          <div
-            key={r.id}
-            style={{
-              position: 'absolute',
-              bottom: 90,
-              left: `${r.left}%`,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              animation: 'floatUpSway 2.8s ease-out forwards',
-            }}
-          >
-            <span style={{ fontSize: '2.2rem', filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.5))' }}>
-              {r.emoji}
-            </span>
-            <span
-              style={{
-                fontSize: '0.62rem',
-                color: '#ffffff',
-                backgroundColor: 'rgba(0,0,0,0.6)',
-                padding: '1px 6px',
-                borderRadius: 8,
-                marginTop: 2,
-              }}
-            >
-              {r.senderName}
-            </span>
-          </div>
-        ))}
-      </div>
-
       {/* ── Main Stage Area (Handles Screen Sharing & Video Tiles) ── */}
       <div
         onClick={handleStageTap}
@@ -2032,2069 +1286,199 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
 
         {/* CASE 1: SCREEN SHARING ACTIVE OR USER PINNED -> SCREEN TAKES FULL STAGE */}
         {activePresenterId ? (
-          <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
-            {/* Top-Left Presenter Badge (Safe from notch/status bar) */}
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                resetControlsTimer();
-              }}
-              style={{
-                position: 'absolute',
-                top: (isLandscape || isFullscreenShare)
-                  ? (showControls ? 'calc(var(--safe-top, 28px) + 54px)' : 'calc(var(--safe-top, 28px) + 12px)')
-                  : 'calc(var(--safe-top, 28px) + 10px)',
-                left: 12,
-                zIndex: 35,
-                padding: '6px 12px',
-                borderRadius: 20,
-                background: 'rgba(15, 23, 42, 0.85)',
-                backdropFilter: 'blur(12px)',
-                color: '#60a5fa',
-                fontSize: '0.74rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                border: '1px solid rgba(59, 130, 246, 0.35)',
-                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                opacity: (!showControls && (isLandscape || isFullscreenShare)) ? 0.5 : 1,
-                pointerEvents: 'auto',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-                maxWidth: '55%',
-              }}
-            >
-              <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} style={{ flexShrink: 0 }}>
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {presenter?.displayName || 'Someone'}'s Screen
-              </span>
-            </div>
-
-            {/* Top-Right Floating Controls (PURE ICONS, ALWAYS ACCESSIBLE & SAFE FROM STATUS BAR) */}
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: 'absolute',
-                top: (isLandscape || isFullscreenShare)
-                  ? (showControls ? 'calc(var(--safe-top, 28px) + 54px)' : 'calc(var(--safe-top, 28px) + 12px)')
-                  : 'calc(var(--safe-top, 28px) + 10px)',
-                right: 12,
-                zIndex: 40,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '4px 6px',
-                borderRadius: 24,
-                background: 'rgba(15, 23, 42, 0.85)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255, 255, 255, 0.18)',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-                transition: 'opacity 0.25s ease, top 0.25s ease',
-                opacity: (!showControls && (isLandscape || isFullscreenShare)) ? 0.65 : 1,
-                pointerEvents: 'auto',
-              }}
-            >
-              {/* Aspect Ratio Fit / Fill Toggle (ICON ONLY) */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setVideoFit((prev) => (prev === 'contain' ? 'cover' : 'contain'));
-                  resetControlsTimer();
-                }}
-                title={videoFit === 'contain' ? 'Crop to Fill' : 'Fit to Screen'}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '50%',
-                  backgroundColor: videoFit === 'cover' ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255, 255, 255, 0.12)',
-                  color: '#ffffff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.2s',
-                }}
-              >
-                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <rect x="3" y="5" width="18" height="14" rx="2" />
-                  {videoFit === 'contain' ? (
-                    <path d="M7 12h10M12 9l3 3-3 3" />
-                  ) : (
-                    <path d="M12 8v8M9 11l3-3 3 3" />
-                  )}
-                </svg>
-              </button>
-
-              {/* Fullscreen Expand / Compress Toggle (ICON ONLY) */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsFullscreenShare((prev) => !prev);
-                  resetControlsTimer();
-                }}
-                title={isFullscreenShare ? 'Exit Full Screen' : 'Full Screen'}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '50%',
-                  backgroundColor: isFullscreenShare ? '#2563eb' : 'rgba(255, 255, 255, 0.12)',
-                  color: '#ffffff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  border: isFullscreenShare ? '1.5px solid #60a5fa' : '1px solid rgba(255, 255, 255, 0.2)',
-                  boxShadow: isFullscreenShare ? '0 0 12px rgba(37, 99, 235, 0.6)' : 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                }}
-              >
-                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                  {isFullscreenShare ? (
-                    <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7" />
-                  ) : (
-                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-                  )}
-                </svg>
-              </button>
-
-              {/* Unpin Presenter Button if user pinned (ICON ONLY) */}
-              {focusedUserId && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFocusedUserId(null);
-                    resetControlsTimer();
-                  }}
-                  title="Unpin"
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: '50%',
-                    backgroundColor: 'rgba(239, 68, 68, 0.85)',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '1px solid rgba(239, 68, 68, 0.5)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <line x1="2" y1="2" x2="22" y2="22" />
-                    <line x1="12" y1="17" x2="12" y2="22" />
-                    <path d="M5 17h14v-2l-2-3V9" />
-                    <path d="M9 3h6a2 2 0 0 1 2 2v4" />
-                  </svg>
-                </button>
-              )}
-            </div>
-
-            {/* Screen Video Element (objectFit: contain for sharp text, toggleable to cover) */}
-            <div
-              onClick={() => {
-                if (isLandscape || isFullscreenShare) {
-                  setShowControls((prev) => !prev);
-                  resetControlsTimer();
-                }
-              }}
-              style={{ flex: 1, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000000', cursor: 'pointer' }}
-              onDoubleClick={() => setVideoFit((prev) => (prev === 'contain' ? 'cover' : 'contain'))}
-            >
-              {presenterStream ? (
-                <video
-                  autoPlay
-                  playsInline
-                  muted
-                  ref={(el) => {
-                    if (el && presenterStream && el.srcObject !== presenterStream) {
-                      el.srcObject = presenterStream;
-                      el.play().catch(() => {});
-                    }
-                  }}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: videoFit,
-                    transition: 'all 0.2s ease',
-                  }}
-                />
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: '#94a3b8' }}>
-                  <svg width={40} height={40} viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth={2}>
-                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                    <line x1="8" y1="21" x2="16" y2="21" />
-                    <line x1="12" y1="17" x2="12" y2="21" />
-                  </svg>
-                  <span style={{ fontSize: '0.85rem' }}>Loading {presenter?.displayName || 'screen'}...</span>
-                </div>
-              )}
-            </div>
-
-            {/* Bottom thumbnail strip of meeting participants (Hidden during Full Screen mode for 100% full view) */}
-            {!isFullscreenShare && (
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: (isLandscape ? 12 : 12),
-                  left: 12,
-                  right: 12,
-                  display: 'flex',
-                  gap: 8,
-                  zIndex: 20,
-                  overflowX: 'auto',
-                  paddingBottom: 4,
-                  transition: 'opacity 0.3s ease',
-                  opacity: (!showControls && isLandscape) ? 0 : 1,
-                  pointerEvents: (!showControls && isLandscape) ? 'none' : 'auto',
-                }}
-              >
-                {participants.map((p) => (
-                  <div
-                    key={p.userId}
-                    style={{
-                      width: 72,
-                      height: 90,
-                      borderRadius: 10,
-                      backgroundColor: 'rgba(15, 23, 42, 0.85)',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: 4,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div style={{ width: 34, height: 34, borderRadius: '50%', backgroundColor: '#2563eb', color: '#fff', fontSize: '0.8rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {p.displayName.charAt(0).toUpperCase()}
-                    </div>
-                    <span style={{ fontSize: '0.62rem', color: '#fff', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 64 }}>
-                      {p.displayName}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : participants.length > 0 ? (
-          /* CASE 2: NORMAL PARTICIPANT VIDEO/AVATAR GRID (Google Meet Style 1 to 10+ Dynamic Grid) */
-          <div
-            style={{
-              width: '100%',
-              height: '100%',
-              display: 'grid',
-              gridTemplateColumns:
-                participants.length <= 1
-                  ? '1fr'
-                  : participants.length === 2
-                  ? (isLandscape ? '1fr 1fr' : '1fr')
-                  : participants.length <= 4
-                  ? '1fr 1fr'
-                  : isLandscape
-                  ? 'repeat(3, 1fr)'
-                  : '1fr 1fr',
-              gridTemplateRows:
-                participants.length <= 1
-                  ? '1fr'
-                  : participants.length === 2
-                  ? (isLandscape ? '1fr' : '1fr 1fr')
-                  : participants.length <= 4
-                  ? '1fr 1fr'
-                  : participants.length <= 6
-                  ? (isLandscape ? '1fr 1fr' : 'repeat(3, 1fr)')
-                  : undefined,
-              gridAutoRows: participants.length > 6 ? (isLandscape ? 'calc(50% - 6px)' : 'calc(33.33% - 6px)') : undefined,
-              overflowY: participants.length > 6 ? 'auto' : 'hidden',
-              gap: participants.length === 1 ? 0 : 8,
-              padding: participants.length === 1 ? 0 : 8,
-              backgroundColor: '#030712',
+          <ScreenShareStage
+            presenter={presenter || undefined}
+            presenterStream={presenterStream}
+            isLandscape={isLandscape}
+            isFullscreenShare={isFullscreenShare}
+            showControls={showControls}
+            resetControlsTimer={resetControlsTimer}
+            videoFit={videoFit}
+            setVideoFit={setVideoFit}
+            setIsFullscreenShare={setIsFullscreenShare}
+            setShowControls={setShowControls}
+            focusedUserId={focusedUserId}
+            setFocusedUserId={setFocusedUserId}
+            participants={participants}
+          />
+        ) : isDirectAudioCall ? (
+          <DirectAudioCallView
+            directPeerName={directPeerName}
+            timer={timer}
+            participantsCount={participants.length}
+            isRemoteSpeaking={isRemoteSpeaking}
+            audioRoute={audioRoute}
+            bluetoothDeviceName={bluetoothDeviceName}
+            cycleAudioRoute={cycleAudioRoute}
+            isMuted={isMuted}
+            toggleMute={toggleMute}
+            isVideoOff={isVideoOff}
+            onUpgradeToVideo={() => {
+              setCurrentCallType('video');
+              if (isVideoOff) toggleVideo();
             }}
-          >
-            {participants.map((peer) => {
-              const stream = remoteStreams[peer.userId] || remoteStreams[peer.userId.toLowerCase()];
-              const hasLiveVideoTrack = !!stream?.getVideoTracks().some((t) => t.enabled && t.readyState === 'live');
-              const isScreen = activePresenterId?.toLowerCase() === peer.userId.toLowerCase() ||
-                !!stream?.getVideoTracks().some((t) => t.label?.toLowerCase().includes('screen') || t.label?.toLowerCase().includes('display'));
-              // Do NOT let peer.isVideoOff block live video! If live frames are present, display video!
-              const shouldShowVideo = stream && hasLiveVideoTrack && (!peer.isVideoOff || isScreen);
-              const normPeerId = peer.userId.toLowerCase();
-              const isSpeaking = !!speakingUsers[normPeerId] && !peer.isMuted;
-
-              return (
-                <div
-                  key={peer.userId}
-                  style={{
-                    position: 'relative',
-                    width: '100%',
-                    height: '100%',
-                    minHeight: participants.length > 6 ? 140 : 'auto',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: '#0f172a',
-                    overflow: 'hidden',
-                    border: isSpeaking ? '2.5px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.08)',
-                    boxShadow: isSpeaking ? '0 0 0 2px #3b82f6, 0 0 16px rgba(59, 130, 246, 0.65)' : 'none',
-                    borderRadius: participants.length > 1 ? 14 : 0,
-                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                  }}
-                >
-
-                  {/* Remote Video Stream Player */}
-                  {shouldShowVideo ? (
-                    <video
-                      autoPlay
-                      playsInline
-                      muted
-                      ref={(el) => {
-                        if (el && stream && el.srcObject !== stream) {
-                          el.srcObject = stream;
-                          el.play().catch(() => {});
-                        }
-                      }}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: isScreen ? 'contain' : 'cover',
-                      }}
-                    />
-                  ) : (
-                    /* Remote Participant Avatar */
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                      <div
-                        style={{
-                          width: participants.length > 4 ? 54 : 76,
-                          height: participants.length > 4 ? 54 : 76,
-                          borderRadius: '50%',
-                          background: isSpeaking ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                          color: '#ffffff',
-                          fontSize: participants.length > 4 ? '1.4rem' : '1.8rem',
-                          fontWeight: 800,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          boxShadow: isSpeaking ? '0 0 20px rgba(59, 130, 246, 0.7)' : '0 8px 24px rgba(37, 99, 235, 0.35)',
-                          transition: 'all 0.2s ease',
-                        }}
-                      >
-                        {peer.displayName.charAt(0).toUpperCase()}
-                      </div>
-                      <span style={{ fontSize: participants.length > 4 ? '0.78rem' : '0.9rem', fontWeight: 700, color: '#f8fafc' }}>
-                        {peer.displayName}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Pin / Focus Screen Button (PURE ICON, NO TEXT, SAFE FROM STATUS BAR) */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFocusedUserId(focusedUserId === peer.userId ? null : peer.userId);
-                    }}
-                    title={focusedUserId === peer.userId ? 'Unpin' : 'Pin to screen'}
-                    style={{
-                      position: 'absolute',
-                      top: 8,
-                      right: 8,
-                      width: 32,
-                      height: 32,
-                      borderRadius: '50%',
-                      backgroundColor: focusedUserId === peer.userId ? '#2563eb' : 'rgba(0, 0, 0, 0.65)',
-                      backdropFilter: 'blur(8px)',
-                      color: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      border: focusedUserId === peer.userId ? '1.5px solid #60a5fa' : '1px solid rgba(255, 255, 255, 0.2)',
-                      boxShadow: focusedUserId === peer.userId ? '0 0 10px rgba(37, 99, 235, 0.5)' : 'none',
-                      zIndex: 15,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <svg width={14} height={14} viewBox="0 0 24 24" fill={focusedUserId === peer.userId ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2}>
-                      <line x1="12" y1="17" x2="12" y2="22" />
-                      <path d="M5 17h14v-2l-2-3V5a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v7l-2 3v2z" />
-                    </svg>
-                  </button>
-
-                  {/* Name badge */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      bottom: 8,
-                      left: 8,
-                      padding: '4px 8px',
-                      borderRadius: 8,
-                      background: isSpeaking ? 'rgba(37, 99, 235, 0.9)' : 'rgba(0, 0, 0, 0.72)',
-                      backdropFilter: 'blur(8px)',
-                      color: '#ffffff',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      border: isSpeaking ? '1px solid #60a5fa' : '1px solid rgba(255, 255, 255, 0.12)',
-                      maxWidth: '80%',
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    {isSpeaking && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1.5, height: 12 }}>
-                        <span style={{ width: 2, height: 8, background: '#93c5fd', borderRadius: 1, animation: 'soundWave 0.6s infinite ease-in-out' }} />
-                        <span style={{ width: 2, height: 12, background: '#93c5fd', borderRadius: 1, animation: 'soundWave 0.8s infinite ease-in-out 0.2s' }} />
-                        <span style={{ width: 2, height: 6, background: '#93c5fd', borderRadius: 1, animation: 'soundWave 0.5s infinite ease-in-out 0.4s' }} />
-                      </span>
-                    )}
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{peer.displayName}</span>
-                    <NetworkSignalIndicator isPoor={networkStatus === 'reconnecting'} />
-                    {peer.isMuted && (
-                      <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth={2.5} style={{ flexShrink: 0 }}>
-                        <line x1="1" y1="1" x2="23" y2="23" />
-                        <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
-                        <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
-                      </svg>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+            onEndCall={onLeave}
+            onMinimize={onMinimize}
+          />
+        ) : isDirectCall && !isDirectAudioCall ? (
+          <DirectVideoCallView
+            directPeerName={directPeerName}
+            directPeerId={directPeerId}
+            timer={timer}
+            participants={participants}
+            remoteStreams={remoteStreams}
+            isRemoteSpeaking={isRemoteSpeaking}
+            audioRoute={audioRoute}
+            bluetoothDeviceName={bluetoothDeviceName}
+            cycleAudioRoute={cycleAudioRoute}
+            isMuted={isMuted}
+            toggleMute={toggleMute}
+            isVideoOff={isVideoOff}
+            toggleVideo={toggleVideo}
+            flipCamera={flipCamera}
+            onEndCall={onLeave}
+            onMinimize={onMinimize}
+          />
         ) : (
-          /* CASE 3: ALONE IN MEETING -> SINGLE CLEAN CARD */
-          <div
-            style={{
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#0f172a',
-              padding: 24,
-              textAlign: 'center',
-            }}
-          >
-            <div
-              style={{
-                width: 76,
-                height: 76,
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)',
-                color: '#ffffff',
-                fontSize: '1.8rem',
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 6px 20px rgba(37, 99, 235, 0.35)',
-              }}
-            >
-              {resolvedDisplayName.charAt(0).toUpperCase()}
-            </div>
-            <span style={{ marginTop: 12, fontSize: '0.95rem', fontWeight: 700, color: '#f8fafc' }}>
-              {resolvedDisplayName} (You)
-            </span>
-
-            {/* Exactly 1 clean invite button */}
-            <div
-              style={{
-                marginTop: 20,
-                padding: '14px 18px',
-                borderRadius: 14,
-                backgroundColor: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 10,
-                maxWidth: 290,
-              }}
-            >
-              <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                You're the only one here
-              </span>
-              <button
-                onClick={() => setActiveSheet('invite')}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 10,
-                  backgroundColor: '#2563eb',
-                  color: '#ffffff',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
-                }}
-              >
-                <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <circle cx="18" cy="5" r="3" />
-                  <circle cx="6" cy="12" r="3" />
-                  <circle cx="18" cy="19" r="3" />
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                </svg>
-                Share Invite Link
-              </button>
-            </div>
-          </div>
+          /* CASE 3: NORMAL PARTICIPANT VIDEO/AVATAR GRID OR ALONE IN MEETING */
+          <ConferenceParticipantGrid
+            participants={participants}
+            remoteStreams={remoteStreams}
+            isLandscape={isLandscape}
+            activePresenterId={activePresenterId}
+            isDirectAudioCall={isDirectAudioCall}
+            currentCallType={currentCallType}
+            speakingUsers={speakingUsers}
+            focusedUserId={focusedUserId}
+            setFocusedUserId={setFocusedUserId}
+            networkStatus={networkStatus}
+            isDirectCall={isDirectCall}
+            directPeerName={directPeerName}
+            timer={timer}
+            resolvedDisplayName={resolvedDisplayName}
+            onOpenInvite={() => setActiveSheet('invite')}
+          />
         )}
 
-        {/* Floating Local PiP Tile (Tap to cycle corners or minimize; hidden in fullscreen) */}
-        {!isFullscreenShare && (
-          <div
-            onClick={() => {
-              setSelfCorner((prev) => {
-                if (prev === 'bottom-right') return 'top-right';
-                if (prev === 'top-right') return 'top-left';
-                if (prev === 'top-left') return 'bottom-left';
-                if (prev === 'bottom-left') return 'minimized';
-                return 'bottom-right';
-              });
-            }}
-            title="Tap to move camera tile out of the way"
-            style={{
-              position: 'absolute',
-              ...(selfCorner === 'bottom-right'
-                ? { bottom: (isLandscape ? 16 : 84), right: 12 }
-                : selfCorner === 'top-right'
-                ? { top: 64, right: 12 }
-                : selfCorner === 'top-left'
-                ? { top: 64, left: 12 }
-                : selfCorner === 'bottom-left'
-                ? { bottom: (isLandscape ? 16 : 84), left: 12 }
-                : { bottom: 84, right: 12, width: 40, height: 40, borderRadius: '50%' }),
-              ...(selfCorner !== 'minimized' ? { width: 92, height: 132, borderRadius: 12 } : {}),
-              backgroundColor: '#111827',
-              border: (speakingUsers['local'] && !isMuted) ? '2.5px solid #3b82f6' : '2px solid rgba(255, 255, 255, 0.25)',
-              boxShadow: (speakingUsers['local'] && !isMuted) ? '0 0 0 2px #3b82f6, 0 0 16px rgba(59, 130, 246, 0.65)' : '0 8px 24px rgba(0, 0, 0, 0.55)',
-              zIndex: 25,
-              overflow: 'hidden',
-              cursor: 'pointer',
-              transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease',
-              opacity: (!showControls && isLandscape) ? 0 : 1,
-              pointerEvents: (!showControls && isLandscape) ? 'none' : 'auto',
-            }}
-          >
-            {selfCorner === 'minimized' ? (
-              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa', fontSize: '0.8rem', fontWeight: 800 }}>
-                {resolvedDisplayName.charAt(0).toUpperCase()}
-              </div>
-            ) : (
-              <>
-                <video
-                  ref={(el) => {
-                    localVideoRef.current = el;
-                    if (el && localStreamRef.current && el.srcObject !== localStreamRef.current) {
-                      el.srcObject = localStreamRef.current;
-                      el.play().catch(() => {});
-                    }
-                  }}
-                  autoPlay
-                  playsInline
-                  muted
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                    transform: (facingMode === 'user' && localStorage.getItem('jts_pref_mirror_video') !== 'false') ? 'scaleX(-1)' : 'none',
-                    filter: selectedBackgroundId === 'blur_heavy'
-                      ? 'contrast(1.08) brightness(1.03) saturate(1.05)'
-                      : selectedBackgroundId === 'blur_light'
-                      ? 'contrast(1.04) brightness(1.02)'
-                      : 'none',
-                    display: isVideoOff ? 'none' : 'block',
-                  }}
-                />
-                {/* Active Wallpaper Backdrop if video is off or backdrop is active */}
-                {currentWallpaperUrl && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      backgroundImage: `url(${currentWallpaperUrl})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                      opacity: isVideoOff ? 0.9 : 0.25,
-                      pointerEvents: 'none',
-                    }}
-                  />
-                )}
-                {isVideoOff && (
-                  <div
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: '#111827',
-                      color: '#94a3b8',
-                      fontSize: '0.7rem',
-                      fontWeight: 700,
-                    }}
-                  >
-                    Camera Off
-                  </div>
-                )}
-                {isMuted && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 5,
-                      right: 5,
-                      padding: 3,
-                      borderRadius: '50%',
-                      backgroundColor: '#ef4444',
-                      color: '#ffffff',
-                    }}
-                  >
-                    <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                      <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
-                      <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
-                    </svg>
-                  </div>
-                )}
-
-                {/* Local Name Badge & Signal */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 4,
-                    left: 4,
-                    padding: '2px 5px',
-                    borderRadius: 6,
-                    background: (speakingUsers['local'] && !isMuted) ? 'rgba(37, 99, 235, 0.9)' : 'rgba(0, 0, 0, 0.65)',
-                    backdropFilter: 'blur(6px)',
-                    color: '#ffffff',
-                    fontSize: '0.62rem',
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 3,
-                    border: (speakingUsers['local'] && !isMuted) ? '1px solid #60a5fa' : '1px solid rgba(255, 255, 255, 0.1)',
-                  }}
-                >
-                  {(speakingUsers['local'] && !isMuted) && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1, height: 8 }}>
-                      <span style={{ width: 1.5, height: 6, background: '#93c5fd', borderRadius: 0.5, animation: 'soundWave 0.6s infinite ease-in-out' }} />
-                      <span style={{ width: 1.5, height: 8, background: '#93c5fd', borderRadius: 0.5, animation: 'soundWave 0.8s infinite ease-in-out 0.2s' }} />
-                      <span style={{ width: 1.5, height: 5, background: '#93c5fd', borderRadius: 0.5, animation: 'soundWave 0.5s infinite ease-in-out 0.4s' }} />
-                    </span>
-                  )}
-                  <span>You</span>
-                  <NetworkSignalIndicator isPoor={networkStatus === 'reconnecting'} />
-                </div>
-
-                {selectedBackgroundId !== 'none' && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 4,
-                      left: 4,
-                      padding: '1px 5px',
-                      borderRadius: 4,
-                      backgroundColor: 'rgba(37, 99, 235, 0.9)',
-                      color: '#ffffff',
-                      fontSize: '0.52rem',
-                      fontWeight: 800,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                    }}
-                  >
-                    {currentPreset?.title || 'EFFECT'}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
+        {/* Floating Local PiP Tile (Tap to cycle corners or minimize; hidden in fullscreen or direct audio call) */}
+        <LocalPipTile
+          isFullscreenShare={isFullscreenShare}
+          isDirectAudioCall={isDirectAudioCall}
+          selfCorner={selfCorner}
+          setSelfCorner={setSelfCorner}
+          isLandscape={isLandscape}
+          showControls={showControls}
+          speakingUsers={speakingUsers}
+          isMuted={isMuted}
+          isVideoOff={isVideoOff}
+          facingMode={facingMode}
+          selectedBackgroundId={selectedBackgroundId}
+          currentWallpaperUrl={currentWallpaperUrl}
+          currentPreset={currentPreset}
+          resolvedDisplayName={resolvedDisplayName}
+          networkStatus={networkStatus}
+          localVideoRef={localVideoRef}
+          localStream={localStream}
+        />
       </div>
 
-      {/* ── Quick Reactions Float Bar (Above Bottom Controls) ── */}
-      {showReactionsBar && showControls && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: (isLandscape || isFullscreenShare) ? 'calc(var(--safe-bottom) + 60px)' : 'calc(var(--safe-bottom) + 72px)',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '8px 12px',
-            borderRadius: 30,
-            background: 'rgba(15, 23, 42, 0.95)',
-            backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            boxShadow: '0 8px 30px rgba(0, 0, 0, 0.65)',
-            zIndex: 40,
-          }}
-        >
-          {['👍', '❤️', '👏', '🎉', '😂', '🔥'].map((emoji) => (
-            <button
-              key={emoji}
-              onClick={() => sendReaction(emoji)}
-              style={{
-                fontSize: '1.35rem',
-                padding: '3px 6px',
-                borderRadius: 8,
-                transition: 'transform 0.15s ease',
-              }}
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
+      {/* ── Floating Emoji Reactions & Quick Floating Reactions Bar ── */}
+      <ReactionsOverlay
+        reactions={reactions}
+        showReactionsBar={showReactionsBar}
+        showControls={showControls}
+        isLandscape={isLandscape}
+        isFullscreenShare={isFullscreenShare}
+        onSendReaction={sendReaction}
+      />
+
+      {/* ── Bottom Controls Bar for Conference Meetings (Hidden during Direct 1-on-1 Calls) ── */}
+      {!isDirectCall && (
+        <MeetingControlsBar
+          isMuted={isMuted}
+          toggleMute={toggleMute}
+          isVideoOff={isVideoOff}
+          toggleVideo={toggleVideo}
+          showReactionsBar={showReactionsBar}
+          setShowReactionsBar={setShowReactionsBar}
+          isHandRaised={isHandRaised}
+          toggleHand={toggleHand}
+          activeSheet={activeSheet}
+          setActiveSheet={setActiveSheet}
+          unreadChatCount={unreadChatCount}
+          participantsCount={participants.length}
+          isLandscape={isLandscape}
+          isFullscreenShare={isFullscreenShare}
+          showControls={showControls}
+          resetControlsTimer={resetControlsTimer}
+        />
       )}
 
-      {/* ── Bottom Controls Bar (Mic, Video, Share, React, Hand, Chat, People, More) ── */}
-      <div
-        onClick={(e) => {
-          e.stopPropagation();
-          resetControlsTimer();
-        }}
-        style={{
-          paddingTop: 8,
-          paddingBottom: 'calc(var(--safe-bottom) + 8px)',
-          paddingLeft: 8,
-          paddingRight: 8,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-around',
-          gap: 6,
-          background: 'rgba(15, 23, 42, 0.96)',
-          backdropFilter: 'blur(20px)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          zIndex: 35,
-          overflowX: 'auto',
-          position: (isLandscape || isFullscreenShare) ? 'absolute' : 'relative',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease',
-          transform: (!showControls && (isLandscape || isFullscreenShare)) ? 'translateY(100%)' : 'translateY(0)',
-          opacity: (!showControls && (isLandscape || isFullscreenShare)) ? 0 : 1,
-          pointerEvents: (!showControls && (isLandscape || isFullscreenShare)) ? 'none' : 'auto',
-        }}
-      >
-        {/* Mic */}
-        <button
-          onClick={toggleMute}
-          title={isMuted ? 'Unmute' : 'Mute'}
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: '50%',
-            backgroundColor: isMuted ? '#ef4444' : '#1e293b',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            boxShadow: isMuted ? '0 3px 10px rgba(239, 68, 68, 0.4)' : 'none',
-          }}
-        >
-          {isMuted ? (
-            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-              <line x1="1" y1="1" x2="23" y2="23" />
-              <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
-              <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-          ) : (
-            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-          )}
-        </button>
+      {/* ── Slide-up Sheets (Invite, Chat, Participants, More, Virtual Background) ── */}
+      <InviteSheet
+        isOpen={activeSheet === 'invite'}
+        onClose={() => setActiveSheet('none')}
+        meetingId={meetingId}
+        meetingUrl={meetingUrl}
+        inviteCopied={inviteCopied}
+        onCopyInvite={handleCopyInvite}
+        onNativeShare={handleNativeShareInvite}
+        onWhatsAppShare={handleWhatsAppShareInvite}
+      />
 
-        {/* Video */}
-        <button
-          onClick={toggleVideo}
-          title={isVideoOff ? 'Turn Camera On' : 'Turn Camera Off'}
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: '50%',
-            backgroundColor: isVideoOff ? '#ef4444' : '#1e293b',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            boxShadow: isVideoOff ? '0 3px 10px rgba(239, 68, 68, 0.4)' : 'none',
-          }}
-        >
-          {isVideoOff ? (
-            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-              <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10" />
-              <line x1="1" y1="1" x2="23" y2="23" />
-            </svg>
-          ) : (
-            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-              <polygon points="23 7 16 12 23 17 23 7" />
-              <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-            </svg>
-          )}
-        </button>
+      <ChatSheet
+        isOpen={activeSheet === 'chat'}
+        onClose={() => setActiveSheet('none')}
+        chatMessages={chatMessages}
+        msgInput={msgInput}
+        setMsgInput={setMsgInput}
+        onSendChat={handleSendChat}
+        chatEndRef={chatEndRef}
+      />
 
+      <ParticipantsSheet
+        isOpen={activeSheet === 'participants'}
+        onClose={() => setActiveSheet('none')}
+        onOpenInvite={() => setActiveSheet('invite')}
+        participants={participants}
+        resolvedDisplayName={resolvedDisplayName}
+        screenSharingUserId={screenSharingUserId}
+      />
 
-        {/* Emoji Reactions */}
-        <button
-          onClick={() => setShowReactionsBar((prev) => !prev)}
-          title="Send Reaction"
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: '50%',
-            backgroundColor: showReactionsBar ? '#3b82f6' : '#1e293b',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-            <circle cx="12" cy="12" r="10" />
-            <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-            <line x1="9" y1="9" x2="9.01" y2="9" />
-            <line x1="15" y1="9" x2="15.01" y2="9" />
-          </svg>
-        </button>
+      <MoreOptionsSheet
+        isOpen={activeSheet === 'more'}
+        onClose={() => setActiveSheet('none')}
+        facingMode={facingMode}
+        flipCamera={flipCamera}
+        audioRoute={audioRoute}
+        bluetoothDeviceName={bluetoothDeviceName}
+        cycleAudioRoute={cycleAudioRoute}
+        isSharingMyScreen={isSharingMyScreen}
+        startPhoneScreenShare={startPhoneScreenShare}
+        stopPhoneScreenShare={stopPhoneScreenShare}
+        onMinimize={onMinimize}
+        selectedBackgroundId={selectedBackgroundId}
+        currentPreset={currentPreset}
+        onOpenVirtualBackground={() => setActiveSheet('virtual_background')}
+        isNoiseShieldActive={isNoiseShieldActive}
+        onToggleNoiseShield={() => setIsNoiseShieldActive((prev) => !prev)}
+        onOpenInvite={() => setActiveSheet('invite')}
+        isHost={isHost}
+        onHostMuteAll={handleHostMuteAll}
+        isRoomLocked={isRoomLocked}
+        onHostToggleLock={handleHostToggleLock}
+      />
 
-        {/* Raise Hand */}
-        <button
-          onClick={toggleHand}
-          title={isHandRaised ? 'Lower Hand' : 'Raise Hand'}
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: '50%',
-            backgroundColor: isHandRaised ? '#f59e0b' : '#1e293b',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            boxShadow: isHandRaised ? '0 3px 10px rgba(245, 158, 11, 0.4)' : 'none',
-          }}
-        >
-          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-            <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0" />
-            <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2" />
-            <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8" />
-            <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
-          </svg>
-        </button>
-
-        {/* Chat with Unread Notification Badge */}
-        <button
-          onClick={() => {
-            setActiveSheet('chat');
-            setUnreadChatCount(0);
-          }}
-          title="Chat"
-          style={{
-            position: 'relative',
-            width: 42,
-            height: 42,
-            borderRadius: '50%',
-            backgroundColor: activeSheet === 'chat' ? '#2563eb' : '#1e293b',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          {unreadChatCount > 0 && activeSheet !== 'chat' && (
-            <span
-              style={{
-                position: 'absolute',
-                top: -2,
-                right: -2,
-                backgroundColor: '#ef4444',
-                color: '#ffffff',
-                fontSize: '0.62rem',
-                fontWeight: 800,
-                minWidth: 17,
-                height: 17,
-                borderRadius: 9,
-                padding: '0 4px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 6px rgba(239, 68, 68, 0.6)',
-              }}
-            >
-              {unreadChatCount}
-            </span>
-          )}
-        </button>
-
-        {/* Participants (shows live count) */}
-        <button
-          onClick={() => setActiveSheet('participants')}
-          title="Participants"
-          style={{
-            position: 'relative',
-            width: 42,
-            height: 42,
-            borderRadius: '50%',
-            backgroundColor: '#1e293b',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
-          <span
-            style={{
-              position: 'absolute',
-              top: -2,
-              right: -2,
-              backgroundColor: '#2563eb',
-              color: '#ffffff',
-              fontSize: '0.62rem',
-              fontWeight: 800,
-              width: 17,
-              height: 17,
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {participants.length + 1}
-          </span>
-        </button>
-
-        {/* More Actions (Host Controls, Audio, Settings) */}
-        <button
-          onClick={() => setActiveSheet('more')}
-          title="More Options"
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: '50%',
-            backgroundColor: activeSheet === 'more' ? '#3b82f6' : '#1e293b',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-            <circle cx="12" cy="12" r="1" />
-            <circle cx="19" cy="12" r="1" />
-            <circle cx="5" cy="12" r="1" />
-          </svg>
-        </button>
-      </div>
-
-      {/* ── Slide-up Invite Sheet ── */}
-      {activeSheet === 'invite' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 100,
-            backgroundColor: 'rgba(15, 23, 42, 0.55)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
-          }}
-          onClick={() => setActiveSheet('none')}
-        >
-          <div
-            className="anim-slide-up"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: '#ffffff',
-              borderTopLeftRadius: 22,
-              borderTopRightRadius: 22,
-              padding: '16px 18px calc(var(--safe-bottom) + 16px) 18px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14,
-              boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.15)',
-            }}
-          >
-            <div style={{ width: 36, height: 4, borderRadius: 2, background: '#cbd5e1', margin: '0 auto' }} />
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
-                  Invite Others
-                </span>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
-                  Share this meeting link with people you want to join
-                </div>
-              </div>
-              <button
-                onClick={() => setActiveSheet('none')}
-                style={{ padding: 6, color: '#64748b', fontSize: '1rem' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div
-              style={{
-                backgroundColor: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: 14,
-                padding: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
-                  Meeting Code
-                </span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#2563eb' }}>
-                  {meetingId}
-                </span>
-              </div>
-
-              <div
-                style={{
-                  padding: '8px 10px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: 8,
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  color: '#0f172a',
-                  wordBreak: 'break-all',
-                }}
-              >
-                {meetingUrl}
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <button
-                onClick={handleCopyInvite}
-                style={{
-                  padding: '11px',
-                  borderRadius: 10,
-                  backgroundColor: inviteCopied ? '#ecfdf5' : '#f1f5f9',
-                  border: `1px solid ${inviteCopied ? '#a7f3d0' : '#cbd5e1'}`,
-                  color: inviteCopied ? '#059669' : '#0f172a',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                }}
-              >
-                {inviteCopied ? (
-                  <>
-                    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth={2.5}>
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    Link Copied!
-                  </>
-                ) : (
-                  <>
-                    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                    </svg>
-                    Copy Link
-                  </>
-                )}
-              </button>
-
-              <button
-                onClick={handleNativeShareInvite}
-                style={{
-                  padding: '11px',
-                  borderRadius: 10,
-                  backgroundColor: '#eff6ff',
-                  border: '1px solid #bfdbfe',
-                  color: '#2563eb',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                }}
-              >
-                <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <circle cx="18" cy="5" r="3" />
-                  <circle cx="6" cy="12" r="3" />
-                  <circle cx="18" cy="19" r="3" />
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                </svg>
-                Share Apps
-              </button>
-            </div>
-
-            <button
-              onClick={handleWhatsAppShareInvite}
-              style={{
-                padding: '11px',
-                borderRadius: 10,
-                backgroundColor: '#25D366',
-                color: '#ffffff',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                boxShadow: '0 2px 8px rgba(37, 211, 102, 0.25)',
-              }}
-            >
-              <svg width={18} height={18} viewBox="0 0 24 24" fill="currentColor">
-                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
-              </svg>
-              Share via WhatsApp
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Slide-up Chat Sheet ── */}
-      {activeSheet === 'chat' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 100,
-            backgroundColor: 'rgba(15, 23, 42, 0.55)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
-          }}
-          onClick={() => setActiveSheet('none')}
-        >
-          <div
-            className="anim-slide-up"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              height: '75%',
-              backgroundColor: '#ffffff',
-              borderTopLeftRadius: 22,
-              borderTopRightRadius: 22,
-              padding: '16px 18px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-              boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.15)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
-                In-Call Chat
-              </span>
-              <button onClick={() => setActiveSheet('none')} style={{ padding: 6, color: '#64748b' }}>
-                ✕
-              </button>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {chatMessages.length === 0 ? (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.82rem' }}>
-                  No messages yet. Say hello!
-                </div>
-              ) : (
-                chatMessages.map((msg, i) => (
-                  <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: '#64748b' }}>
-                      <span style={{ fontWeight: 700 }}>{msg.sender}</span>
-                      <span>{msg.time}</span>
-                    </div>
-                    <div style={{ padding: '8px 12px', borderRadius: 10, backgroundColor: '#f1f5f9', color: '#0f172a', fontSize: '0.82rem' }}>
-                      {msg.text}
-                    </div>
-                  </div>
-                ))
-              )}
-              <div ref={chatEndRef} />
-            </div>
-
-            <form onSubmit={handleSendChat} style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                placeholder="Send a message..."
-                value={msgInput}
-                onChange={(e) => setMsgInput(e.target.value)}
-                style={{
-                  flex: 1,
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #cbd5e1',
-                  color: '#0f172a',
-                  outline: 'none',
-                  fontSize: '0.85rem',
-                }}
-              />
-              <button
-                type="submit"
-                style={{
-                  padding: '0 14px',
-                  borderRadius: 10,
-                  backgroundColor: '#2563eb',
-                  color: '#ffffff',
-                  fontWeight: 700,
-                  fontSize: '0.82rem',
-                }}
-              >
-                Send
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── Slide-up Participants Sheet ── */}
-      {activeSheet === 'participants' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 100,
-            backgroundColor: 'rgba(15, 23, 42, 0.55)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
-          }}
-          onClick={() => setActiveSheet('none')}
-        >
-          <div
-            className="anim-slide-up"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              height: '70%',
-              backgroundColor: '#ffffff',
-              borderTopLeftRadius: 22,
-              borderTopRightRadius: 22,
-              padding: '16px 18px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-              boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.15)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
-                Participants ({participants.length + 1})
-              </span>
-              <button onClick={() => setActiveSheet('none')} style={{ padding: 6, color: '#64748b' }}>
-                ✕
-              </button>
-            </div>
-
-            <button
-              onClick={() => setActiveSheet('invite')}
-              style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                backgroundColor: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                color: '#2563eb',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-              }}
-            >
-              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                <circle cx="18" cy="5" r="3" />
-                <circle cx="6" cy="12" r="3" />
-                <circle cx="18" cy="19" r="3" />
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-              </svg>
-              + Invite More Participants
-            </button>
-
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {/* You */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '8px 12px',
-                  borderRadius: 10,
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: '50%',
-                      backgroundColor: '#2563eb',
-                      color: '#ffffff',
-                      fontWeight: 700,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '0.8rem',
-                    }}
-                  >
-                    {resolvedDisplayName.charAt(0).toUpperCase()}
-                  </div>
-                  <span style={{ fontSize: '0.85rem', color: '#0f172a', fontWeight: 600 }}>
-                    {resolvedDisplayName} (You)
-                  </span>
-                </div>
-              </div>
-
-              {/* Remote Participants */}
-              {participants.map((p) => (
-                <div
-                  key={p.userId}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: '50%',
-                        backgroundColor: '#3b82f6',
-                        color: '#ffffff',
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.8rem',
-                      }}
-                    >
-                      {p.displayName.charAt(0).toUpperCase()}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: '0.85rem', color: '#0f172a', fontWeight: 600 }}>
-                        {p.displayName}
-                      </span>
-                      {screenSharingUserId && screenSharingUserId.toLowerCase() === p.userId.toLowerCase() && (
-                        <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 700 }}>
-                          Sharing screen
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {p.isMuted && (
-                    <span style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600 }}>
-                      Muted
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Slide-up More Options / Host Controls Sheet ── */}
-      {activeSheet === 'more' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 100,
-            backgroundColor: 'rgba(15, 23, 42, 0.55)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
-          }}
-          onClick={() => setActiveSheet('none')}
-        >
-          <div
-            className="anim-slide-up"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: '#ffffff',
-              borderTopLeftRadius: 22,
-              borderTopRightRadius: 22,
-              padding: '16px 18px calc(var(--safe-bottom) + 16px) 18px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14,
-              boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.15)',
-              maxHeight: '85%',
-              overflowY: 'auto',
-            }}
-          >
-            <div style={{ width: 36, height: 4, borderRadius: 2, background: '#cbd5e1', margin: '0 auto' }} />
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
-                  Meeting Controls
-                </span>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
-                  Audio routing, presentation & meeting options
-                </div>
-              </div>
-              <button
-                onClick={() => setActiveSheet('none')}
-                style={{ padding: 6, color: '#64748b', fontSize: '1rem', background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Grid of Quick Actions */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              {/* Flip Camera */}
-              <button
-                onClick={() => {
-                  flipCamera();
-                  setActiveSheet('none');
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 14px',
-                  borderRadius: 14,
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  color: '#0f172a',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path d="M23 4v6h-6" />
-                    <path d="M1 20v-6h6" />
-                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                  </svg>
-                </div>
-                <div>
-                  <div>Flip Camera</div>
-                  <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 500 }}>
-                    {facingMode === 'user' ? 'Front' : 'Back'}
-                  </div>
-                </div>
-              </button>
-
-              {/* Audio Route: Speaker vs Bluetooth vs Earpiece */}
-              <button
-                onClick={cycleAudioRoute}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 14px',
-                  borderRadius: 14,
-                  backgroundColor: audioRoute === 'bluetooth' ? '#f0fdf4' : audioRoute === 'speaker' ? '#eff6ff' : '#f8fafc',
-                  border: `1px solid ${audioRoute === 'bluetooth' ? '#86efac' : audioRoute === 'speaker' ? '#bfdbfe' : '#e2e8f0'}`,
-                  color: audioRoute === 'bluetooth' ? '#166534' : audioRoute === 'speaker' ? '#1d4ed8' : '#0f172a',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: 10,
-                  backgroundColor: audioRoute === 'bluetooth' ? '#dcfce7' : audioRoute === 'speaker' ? '#dbeafe' : '#f1f5f9',
-                  color: audioRoute === 'bluetooth' ? '#15803d' : audioRoute === 'speaker' ? '#2563eb' : '#64748b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}>
-                  {audioRoute === 'bluetooth' ? (
-                    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <path d="m7 7 10 10-5 5V2l5 5L7 17" />
-                    </svg>
-                  ) : audioRoute === 'speaker' ? (
-                    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-                    </svg>
-                  ) : (
-                    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                    </svg>
-                  )}
-                </div>
-                <div>
-                  <div>Audio Output</div>
-                  <div style={{
-                    fontSize: '0.68rem',
-                    color: audioRoute === 'bluetooth' ? '#15803d' : audioRoute === 'speaker' ? '#2563eb' : '#64748b',
-                    fontWeight: 600,
-                    maxWidth: 140,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {audioRoute === 'bluetooth' ? (bluetoothDeviceName || 'Bluetooth Connected') : audioRoute === 'speaker' ? 'Speakerphone' : 'Earpiece'}
-                  </div>
-                </div>
-              </button>
-
-              {/* Mobile Screen Share */}
-              <button
-                onClick={() => {
-                  if (isSharingMyScreen) {
-                    stopPhoneScreenShare();
-                    setActiveSheet('none');
-                  } else {
-                    startPhoneScreenShare();
-                  }
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 14px',
-                  borderRadius: 14,
-                  backgroundColor: isSharingMyScreen ? '#fef2f2' : '#f8fafc',
-                  border: `1px solid ${isSharingMyScreen ? '#fecaca' : '#e2e8f0'}`,
-                  color: isSharingMyScreen ? '#dc2626' : '#0f172a',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: isSharingMyScreen ? '#fee2e2' : '#eff6ff', color: isSharingMyScreen ? '#dc2626' : '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                    <line x1="8" y1="21" x2="16" y2="21" />
-                    <line x1="12" y1="17" x2="12" y2="21" />
-                  </svg>
-                </div>
-                <div>
-                  <div>{isSharingMyScreen ? 'Stop Sharing' : 'Share Screen'}</div>
-                  <div style={{ fontSize: '0.68rem', color: isSharingMyScreen ? '#dc2626' : '#64748b', fontWeight: 500 }}>
-                    {isSharingMyScreen ? 'Active now' : 'Present your phone screen'}
-                  </div>
-                </div>
-              </button>
-
-              {/* Minimize to PiP */}
-              <button
-                onClick={() => {
-                  setActiveSheet('none');
-                  onMinimize?.();
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 14px',
-                  borderRadius: 14,
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  color: '#0f172a',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: '#f1f5f9', color: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <rect x="12" y="12" width="7" height="7" rx="1" fill="currentColor" fillOpacity="0.2" />
-                  </svg>
-                </div>
-                <div>
-                  <div>Minimize (PiP)</div>
-                  <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 500 }}>
-                    Keep in corner
-                  </div>
-                </div>
-              </button>
-
-              {/* Virtual Background & Studio Wallpapers */}
-              <button
-                onClick={() => {
-                  setActiveSheet('virtual_background');
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 14px',
-                  borderRadius: 14,
-                  backgroundColor: selectedBackgroundId !== 'none' ? '#eff6ff' : '#f8fafc',
-                  border: `1px solid ${selectedBackgroundId !== 'none' ? '#93c5fd' : '#e2e8f0'}`,
-                  color: selectedBackgroundId !== 'none' ? '#1d4ed8' : '#0f172a',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: selectedBackgroundId !== 'none' ? '#dbeafe' : '#f1f5f9', color: selectedBackgroundId !== 'none' ? '#2563eb' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <polyline points="21 15 16 10 5 21" />
-                  </svg>
-                </div>
-                <div>
-                  <div>Virtual Background</div>
-                  <div style={{ fontSize: '0.68rem', color: selectedBackgroundId !== 'none' ? '#2563eb' : '#64748b', fontWeight: 600 }}>
-                    {selectedBackgroundId === 'none' ? 'Office, Library & Blur' : (currentPreset?.title || 'Applied')}
-                  </div>
-                </div>
-              </button>
-
-              {/* Noise Shield / Voice Isolation */}
-              <button
-                onClick={() => {
-                  const next = !isNoiseShieldActive;
-                  setIsNoiseShieldActive(next);
-                  const track = localStreamRef.current?.getAudioTracks()[0];
-                  if (track) {
-                    try {
-                      track.applyConstraints({
-                        echoCancellation: next,
-                        noiseSuppression: next,
-                        autoGainControl: next,
-                      } as any);
-                    } catch (_) {}
-                  }
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 14px',
-                  borderRadius: 14,
-                  backgroundColor: isNoiseShieldActive ? '#ecfdf5' : '#f8fafc',
-                  border: `1px solid ${isNoiseShieldActive ? '#a7f3d0' : '#e2e8f0'}`,
-                  color: isNoiseShieldActive ? '#065f46' : '#0f172a',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: isNoiseShieldActive ? '#d1fae5' : '#f1f5f9', color: isNoiseShieldActive ? '#059669' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                    <polyline points="9 12 11 14 15 10" />
-                  </svg>
-                </div>
-                <div>
-                  <div>Voice Shield</div>
-                  <div style={{ fontSize: '0.68rem', color: isNoiseShieldActive ? '#059669' : '#64748b', fontWeight: 600 }}>
-                    {isNoiseShieldActive ? 'Active (Noise Isolated)' : 'Standard Mic'}
-                  </div>
-                </div>
-              </button>
-            </div>
-
-            {/* Invite Button Shortcut */}
-            <button
-              onClick={() => setActiveSheet('invite')}
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                borderRadius: 14,
-                backgroundColor: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                color: '#1d4ed8',
-                fontSize: '0.84rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                cursor: 'pointer',
-              }}
-            >
-              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                <circle cx="18" cy="5" r="3" />
-                <circle cx="6" cy="12" r="3" />
-                <circle cx="18" cy="19" r="3" />
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-              </svg>
-              Invite Participants (WhatsApp / Copy Link)
-            </button>
-
-            {/* Host Section - Only shown to Host */}
-            {isHost && (
-              <div
-                style={{
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 14,
-                  padding: '12px 14px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Host Controls
-                  </span>
-                  <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 10, backgroundColor: '#dcfce7', color: '#15803d', fontWeight: 700 }}>
-                    You are Host
-                  </span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {/* Mute All */}
-                  <button
-                    onClick={handleHostMuteAll}
-                    style={{
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      backgroundColor: '#fff1f2',
-                      border: '1px solid #fecdd3',
-                      color: '#e11d48',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                      <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
-                      <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
-                    </svg>
-                    Mute Everyone
-                  </button>
-
-                  {/* Lock Room */}
-                  <button
-                    onClick={handleHostToggleLock}
-                    style={{
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      backgroundColor: isRoomLocked ? '#fef3c7' : '#f1f5f9',
-                      border: `1px solid ${isRoomLocked ? '#fde68a' : '#cbd5e1'}`,
-                      color: isRoomLocked ? '#b45309' : '#334155',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {isRoomLocked ? (
-                      <>
-                        <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                        </svg>
-                        Room Locked
-                      </>
-                    ) : (
-                      <>
-                        <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                          <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-                        </svg>
-                        Lock Meeting
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Slide-up Virtual Background & Wallpapers Sheet ── */}
-      {activeSheet === 'virtual_background' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 110,
-            backgroundColor: 'rgba(15, 23, 42, 0.55)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
-          }}
-          onClick={() => setActiveSheet('none')}
-        >
-          <div
-            className="anim-slide-up"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: '#ffffff',
-              borderTopLeftRadius: 22,
-              borderTopRightRadius: 22,
-              padding: '16px 18px calc(var(--safe-bottom) + 16px) 18px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-              maxHeight: '82vh',
-              overflowY: 'auto',
-              boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.25)',
-            }}
-          >
-            {/* Grab Handle */}
-            <div style={{ width: 36, height: 4, borderRadius: 2, background: '#cbd5e1', margin: '0 auto' }} />
-
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>
-                  Virtual Background & Wallpapers
-                </span>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
-                  Modern office, cozy library ya phone gallery se custom photo choose karein
-                </div>
-              </div>
-              <button
-                onClick={() => setActiveSheet('none')}
-                style={{ padding: 6, color: '#64748b', fontSize: '1.1rem', background: 'transparent', border: 'none', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Currently Active Status Chip */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 12px',
-                borderRadius: 10,
-                backgroundColor: '#eff6ff',
-                border: '1px solid #bfdbfe',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.74rem', color: '#1d4ed8', fontWeight: 700 }}>
-                <span>✨ Active:</span>
-                <span>{selectedBackgroundId === 'custom' ? 'Custom Wallpaper' : (currentPreset?.title || 'None (Original Camera)')}</span>
-              </div>
-              {selectedBackgroundId !== 'none' && (
-                <button
-                  onClick={() => handleSelectBackground('none')}
-                  style={{
-                    fontSize: '0.7rem',
-                    color: '#dc2626',
-                    fontWeight: 700,
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Reset to Camera
-                </button>
-              )}
-            </div>
-
-            {/* Hidden File Input for Custom Gallery Wallpaper */}
-            <input
-              type="file"
-              ref={bgFileInputRef}
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={handleCustomWallpaperUpload}
-            />
-
-            {/* Presets Grid (2 Columns, Mobile-First) */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: 10,
-              }}
-            >
-              {MOBILE_BACKGROUND_PRESETS.map((preset) => {
-                const isSelected = selectedBackgroundId === preset.id;
-                const isCustom = preset.id === 'custom';
-
-                return (
-                  <button
-                    key={preset.id}
-                    onClick={() => {
-                      if (isCustom) {
-                        bgFileInputRef.current?.click();
-                      } else {
-                        handleSelectBackground(preset.id);
-                      }
-                    }}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      borderRadius: 14,
-                      overflow: 'hidden',
-                      border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                      backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
-                      boxShadow: isSelected ? '0 4px 14px rgba(37, 99, 235, 0.2)' : '0 1px 3px rgba(0,0,0,0.04)',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      position: 'relative',
-                      padding: 0,
-                    }}
-                  >
-                    {/* Thumbnail preview image */}
-                    <div
-                      style={{
-                        height: 76,
-                        width: '100%',
-                        backgroundColor: '#1e293b',
-                        backgroundImage: isCustom && customWallpaperUrl
-                          ? `url(${customWallpaperUrl})`
-                          : preset.thumbnail
-                          ? `url(${preset.thumbnail})`
-                          : undefined,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        position: 'relative',
-                      }}
-                    >
-                      {preset.id === 'none' && (
-                        <div style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700, backgroundColor: 'rgba(0,0,0,0.4)', padding: '3px 8px', borderRadius: 6 }}>
-                          No Effect
-                        </div>
-                      )}
-                      {preset.category === 'blur' && (
-                        <div style={{ color: '#ffffff', fontSize: '0.68rem', fontWeight: 800, backgroundColor: 'rgba(37, 99, 235, 0.75)', padding: '3px 8px', borderRadius: 6, backdropFilter: 'blur(4px)' }}>
-                          {preset.id === 'blur_light' ? 'Soft Bokeh' : 'Full Privacy'}
-                        </div>
-                      )}
-                      {isCustom && !customWallpaperUrl && (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, color: '#60a5fa' }}>
-                          <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="17 8 12 3 7 8" />
-                            <line x1="12" y1="3" x2="12" y2="15" />
-                          </svg>
-                          <span style={{ fontSize: '0.66rem', fontWeight: 700 }}>Choose from Gallery</span>
-                        </div>
-                      )}
-
-                      {/* Checkmark badge */}
-                      {isSelected && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: 6,
-                            right: 6,
-                            width: 22,
-                            height: 22,
-                            borderRadius: '50%',
-                            backgroundColor: '#2563eb',
-                            color: '#ffffff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 2px 6px rgba(0,0,0,0.35)',
-                          }}
-                        >
-                          <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Text Details */}
-                    <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <div style={{ fontSize: '0.78rem', fontWeight: 800, color: isSelected ? '#1d4ed8' : '#0f172a' }}>
-                        {preset.title}
-                      </div>
-                      <div style={{ fontSize: '0.65rem', color: '#64748b', lineHeight: 1.25 }}>
-                        {preset.description}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Done CTA */}
-            <button
-              onClick={() => setActiveSheet('none')}
-              style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: 12,
-                backgroundColor: '#2563eb',
-                color: '#ffffff',
-                fontSize: '0.84rem',
-                fontWeight: 700,
-                border: 'none',
-                cursor: 'pointer',
-                marginTop: 4,
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
-              }}
-            >
-              Apply & Done
-            </button>
-          </div>
-        </div>
-      )}
+      <VirtualBackgroundSheet
+        isOpen={activeSheet === 'virtual_background'}
+        onClose={() => setActiveSheet('none')}
+        selectedBackgroundId={selectedBackgroundId}
+        customWallpaperUrl={customWallpaperUrl}
+        currentPreset={currentPreset}
+        onSelectBackground={handleSelectBackground}
+        bgFileInputRef={bgFileInputRef}
+        onCustomWallpaperUpload={handleCustomWallpaperUpload}
+      />
 
       {/* ── "You are Speaking while Muted" Alert Toast ── */}
       {showMutedSpeakingToast && isMuted && (
@@ -4129,105 +1513,14 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
       )}
 
       {/* ── Leave Meeting Confirmation Dialog (Accidental Exit Protection) ── */}
-      {showLeaveConfirm && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 300,
-            backgroundColor: 'rgba(0, 0, 0, 0.65)',
-            backdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 24,
-          }}
-          onClick={() => setShowLeaveConfirm(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%',
-              maxWidth: 320,
-              backgroundColor: '#1e293b',
-              borderRadius: 22,
-              padding: '22px 20px',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 16,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 14,
-                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#ef4444',
-                  flexShrink: 0,
-                }}
-              >
-                <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                  <polyline points="16 17 21 12 16 7" />
-                  <line x1="21" y1="12" x2="9" y2="12" />
-                </svg>
-              </div>
-              <div>
-                <div style={{ fontSize: '1rem', fontWeight: 800, color: '#f8fafc' }}>
-                  Leave Meeting?
-                </div>
-                <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: 2 }}>
-                  Are you sure you want to leave this call?
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-              <button
-                onClick={() => setShowLeaveConfirm(false)}
-                style={{
-                  flex: 1,
-                  padding: '11px 0',
-                  borderRadius: 12,
-                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                  color: '#cbd5e1',
-                  fontSize: '0.84rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowLeaveConfirm(false);
-                  onLeave();
-                }}
-                style={{
-                  flex: 1,
-                  padding: '11px 0',
-                  borderRadius: 12,
-                  backgroundColor: '#ef4444',
-                  color: '#ffffff',
-                  fontSize: '0.84rem',
-                  fontWeight: 800,
-                  boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)',
-                  cursor: 'pointer',
-                }}
-              >
-                Leave
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LeaveConfirmModal
+        isOpen={showLeaveConfirm}
+        onCancel={() => setShowLeaveConfirm(false)}
+        onConfirm={() => {
+          setShowLeaveConfirm(false);
+          onLeave();
+        }}
+      />
     </div>
   );
 };

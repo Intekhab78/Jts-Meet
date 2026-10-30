@@ -16,6 +16,10 @@ interface MessagesTabProps {
     targetAvatar?: string,
     channelName?: string
   ) => void;
+  onOpenTeamHub?: () => void;
+  registerCloseConversation?: (fn: (() => boolean) | null) => void;
+  targetConversation?: { id: string; name: string; avatar?: string; isChannel: boolean } | null;
+  onClearTargetConversation?: () => void;
 }
 
 export const MessagesTab: React.FC<MessagesTabProps> = ({
@@ -24,6 +28,10 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({
   socket,
   onStartMeeting,
   onStartCall,
+  onOpenTeamHub,
+  registerCloseConversation,
+  targetConversation,
+  onClearTargetConversation,
 }) => {
   const [activeSegment, setActiveSegment] = useState<'dm' | 'channel'>('dm');
   const [search, setSearch] = useState('');
@@ -34,6 +42,37 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({
     isChannel: boolean;
     status?: string;
   } | null>(null);
+
+  // Auto-open target conversation if passed from outside (e.g. Teams Hub)
+  React.useEffect(() => {
+    if (targetConversation) {
+      setActiveSegment(targetConversation.isChannel ? 'channel' : 'dm');
+      setActiveConversation({
+        id: targetConversation.id,
+        name: targetConversation.name,
+        avatar: targetConversation.avatar,
+        isChannel: targetConversation.isChannel,
+      });
+      onClearTargetConversation?.();
+    }
+  }, [targetConversation, onClearTargetConversation]);
+
+  // Inform root Android back handler when conversation is active
+  React.useEffect(() => {
+    if (registerCloseConversation) {
+      if (activeConversation) {
+        registerCloseConversation(() => {
+          setActiveConversation(null);
+          return true; // handled
+        });
+      } else {
+        registerCloseConversation(null);
+      }
+    }
+    return () => {
+      registerCloseConversation?.(null);
+    };
+  }, [activeConversation, registerCloseConversation]);
 
   // If a conversation is active, render the dedicated mobile conversation screen
   if (activeConversation) {
@@ -272,6 +311,7 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({
           <MobileChannelsList
             token={token}
             searchQuery={search}
+            onOpenTeamHub={onOpenTeamHub}
             onSelectChannel={(channel: MobileChannel) => {
               setActiveConversation({
                 id: channel.id,

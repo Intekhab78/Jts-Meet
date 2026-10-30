@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 
 interface ScheduleMeetingModalProps {
   isOpen: boolean;
@@ -18,6 +19,21 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
     d.setMinutes(d.getMinutes() + 30);
     return d.toTimeString().substring(0, 5);
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let handle: any = null;
+    try {
+      CapacitorApp.addListener('backButton', () => {
+        onClose();
+      }).then((h) => {
+        handle = h;
+      });
+    } catch (_) {}
+    return () => {
+      handle?.remove?.();
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 

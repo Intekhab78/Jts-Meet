@@ -29,4 +29,6 @@ export interface MobileChatMessage {
   timestamp: string;
   isMe: boolean;
   type?: 'text' | 'system' | 'call';
+  fileUrl?: string;
+  fileName?: string;
 }

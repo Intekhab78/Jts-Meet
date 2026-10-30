@@ -5,13 +5,12 @@ import { User } from '../models/user.model'
 import { createSession } from '../services/auth.service'
 import crypto from 'crypto'
 
-const callbackURL = `${BACKEND_API_URL}/api/auth/google/callback`
-
 if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
     passport.use(new GoogleStrategy({
         clientID: GOOGLE_CLIENT_ID,
         clientSecret: GOOGLE_CLIENT_SECRET,
-        callbackURL,
+        callbackURL: '/api/auth/google/callback',
+        proxy: true,
         passReqToCallback: true
     }, async (req, accessToken, refreshToken, profile, done) => {
         try {

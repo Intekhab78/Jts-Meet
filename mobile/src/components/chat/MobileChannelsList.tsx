@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { MobileChannel } from './types';
 import { MobileCreateChannelModal } from './MobileCreateChannelModal';
-import { API_BASE } from '../../config';
+import { API_BASE, getStoredToken } from '../../config';
 
 interface MobileChannelsListProps {
   token?: string | null;
   searchQuery: string;
   onSelectChannel: (channel: MobileChannel) => void;
   onStartChannelCall: (channel: MobileChannel) => void;
+  onOpenTeamHub?: () => void;
 }
 
 export const MobileChannelsList: React.FC<MobileChannelsListProps> = ({
@@ -15,19 +16,22 @@ export const MobileChannelsList: React.FC<MobileChannelsListProps> = ({
   searchQuery,
   onSelectChannel,
   onStartChannelCall,
+  onOpenTeamHub,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const lastModalClosedRef = React.useRef(0);
   const [channels, setChannels] = useState<MobileChannel[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Load real channels dynamically from the backend
   const loadDynamicChannels = async () => {
-    if (!token) return;
+    const resolvedToken = token || getStoredToken();
+    if (!resolvedToken) return;
     setLoading(true);
     try {
       // 1. Get user's organizations
       const orgRes = await fetch(`${API_BASE}/api/organization/mine`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${resolvedToken}` },
       });
       if (!orgRes.ok) throw new Error('Org fetch failed');
       const orgJson = await orgRes.json();
@@ -43,7 +47,7 @@ export const MobileChannelsList: React.FC<MobileChannelsListProps> = ({
 
       // 2. Get teams for this organization
       const teamsRes = await fetch(`${API_BASE}/api/team/organization/${activeOrgId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${resolvedToken}` },
       });
       if (!teamsRes.ok) throw new Error('Teams fetch failed');
       const teamsJson = await teamsRes.json();
@@ -60,7 +64,7 @@ export const MobileChannelsList: React.FC<MobileChannelsListProps> = ({
       for (const team of teamsList) {
         try {
           const chanRes = await fetch(`${API_BASE}/api/channel/team/${team._id}`, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${resolvedToken}` },
           });
           if (chanRes.ok) {
             const chanJson = await chanRes.json();
@@ -131,30 +135,63 @@ export const MobileChannelsList: React.FC<MobileChannelsListProps> = ({
           Team Channels ({channels.length})
         </span>
 
-        {/* Pure Icon Button to Add Channel or Invite Member */}
-        <button
-          onClick={() => setIsModalOpen(true)}
-          aria-label="Create Channel"
-          title="Create Channel or Invite Member"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: '50%',
-            backgroundColor: '#eff6ff',
-            border: '1px solid #bfdbfe',
-            color: '#2563eb',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            boxShadow: '0 1px 3px rgba(37, 99, 235, 0.1)',
-          }}
-        >
-          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        </button>
+        {/* Actions: Teams Hub & Add Channel */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {onOpenTeamHub && (
+            <button
+              onClick={onOpenTeamHub}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '4px 9px',
+                borderRadius: 8,
+                backgroundColor: '#f8fafc',
+                border: '1px solid #cbd5e1',
+                color: '#1e293b',
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+              </svg>
+              Teams Hub
+            </button>
+          )}
+
+          {/* Pure Icon Button to Add Channel or Invite Member */}
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (Date.now() - lastModalClosedRef.current < 450) return;
+              setIsModalOpen(true);
+            }}
+            aria-label="Create Channel"
+            title="Create Channel or Invite Member"
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              backgroundColor: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              color: '#2563eb',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 1px 3px rgba(37, 99, 235, 0.1)',
+            }}
+          >
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* ── Channels List ── */}
@@ -203,7 +240,12 @@ export const MobileChannelsList: React.FC<MobileChannelsListProps> = ({
               Create a channel to collaborate, send team messages, and launch group video conferences.
             </span>
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (Date.now() - lastModalClosedRef.current < 450) return;
+                setIsModalOpen(true);
+              }}
               style={{
                 marginTop: 6,
                 padding: '8px 16px',
@@ -346,7 +388,10 @@ export const MobileChannelsList: React.FC<MobileChannelsListProps> = ({
       <MobileCreateChannelModal
         isOpen={isModalOpen}
         token={token}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          lastModalClosedRef.current = Date.now();
+          setIsModalOpen(false);
+        }}
         onChannelCreated={(newChan) => {
           setChannels((prev) => [newChan, ...prev]);
         }}

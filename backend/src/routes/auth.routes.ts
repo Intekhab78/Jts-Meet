@@ -19,9 +19,13 @@ router.get('/google', passport.authenticate('google', { scope: ['profile', 'emai
 router.get('/google/callback', passport.authenticate('google', { session: false }), (req: any, res: any) => {
     try {
         const { accessToken } = req.user as any
-        res.redirect(`${FRONTEND_URL}/?token=${accessToken}`)
+        const host = req.get('host') || ''
+        const targetFrontend = host.includes('jtsmiddleeast.com') ? 'https://meet.jtsmiddleeast.com' : FRONTEND_URL
+        res.redirect(`${targetFrontend}/?token=${accessToken}`)
     } catch (err: any) {
-        res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent(err.message || 'Google Auth failed')}`)
+        const host = req.get('host') || ''
+        const targetFrontend = host.includes('jtsmiddleeast.com') ? 'https://meet.jtsmiddleeast.com' : FRONTEND_URL
+        res.redirect(`${targetFrontend}/login?error=${encodeURIComponent(err.message || 'Google Auth failed')}`)
     }
 })
 router.post('/microsoft', asyncWrapper(authController.microsoftLogin))

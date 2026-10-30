@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
+import { MobileCalendarScheduleCard } from '../calendar/MobileCalendarScheduleCard';
 
 interface MeetTabProps {
   onStartNewMeeting: () => void;
   onOpenJoinModal: () => void;
   onOpenScheduleModal: () => void;
   onOpenOrganizationModal?: () => void;
+  onOpenTeamHub?: () => void;
+  onOpenAdminConsole?: () => void;
   onQuickJoin: (code: string) => void;
   recentMeetings?: string[];
   onTestIncomingCall?: () => void;
@@ -15,6 +18,8 @@ export const MeetTab: React.FC<MeetTabProps> = ({
   onOpenJoinModal,
   onOpenScheduleModal,
   onOpenOrganizationModal,
+  onOpenTeamHub,
+  onOpenAdminConsole,
   onQuickJoin,
   recentMeetings = [],
   onTestIncomingCall,
@@ -212,7 +217,63 @@ export const MeetTab: React.FC<MeetTabProps> = ({
         </button>
       </div>
 
+      {/* Enterprise Shortcuts: Teams Hub & Admin Console */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        {onOpenTeamHub && (
+          <button
+            onClick={onOpenTeamHub}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '8px 12px',
+              borderRadius: 10,
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              color: '#1e293b',
+              fontSize: '0.74rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+            }}
+          >
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth={2.2}>
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+            </svg>
+            Teams Hub
+          </button>
+        )}
 
+        {onOpenAdminConsole && (
+          <button
+            onClick={onOpenAdminConsole}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '8px 12px',
+              borderRadius: 10,
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              color: '#1e293b',
+              fontSize: '0.74rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+            }}
+          >
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth={2.2}>
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            Admin Console
+          </button>
+        )}
+      </div>
 
       {/* Quick Join Card */}
       <form
@@ -282,6 +343,12 @@ export const MeetTab: React.FC<MeetTabProps> = ({
           </button>
         </div>
       </form>
+
+      {/* ── Enterprise 1-Tap Calendar & Agenda Sync Card ── */}
+      <MobileCalendarScheduleCard
+        onJoinMeeting={onQuickJoin}
+        onOpenScheduleModal={onOpenScheduleModal}
+      />
 
       {/* Recent Meetings */}
       <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: 8 }}>

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 
 interface NewMeetingModalProps {
   isOpen: boolean;
@@ -19,7 +20,22 @@ export const NewMeetingModal: React.FC<NewMeetingModalProps> = ({
   const [createdCode, setCreatedCode] = useState<string>('');
   const [copied, setCopied] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    if (!isOpen) return;
+    let handle: any = null;
+    try {
+      CapacitorApp.addListener('backButton', () => {
+        onClose();
+      }).then((h) => {
+        handle = h;
+      });
+    } catch (_) {}
+    return () => {
+      handle?.remove?.();
+    };
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
     if (isOpen) {
       setVideoOn(localStorage.getItem('jts_pref_video_off_join') !== 'true');
     }

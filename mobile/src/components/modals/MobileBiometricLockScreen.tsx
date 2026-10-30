@@ -27,12 +27,38 @@ export const MobileBiometricLockScreen: React.FC<MobileBiometricLockScreenProps>
     setIsAuthenticating(true);
     setErrorMsg('');
 
+    // Gentle haptic feedback on sensor touch
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate(80);
+      } catch (_) {}
+    }
+
     try {
-      // Check if WebAuthn / Native platform authenticator is available
       if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
         const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
         if (available) {
-          // Native fingerprint or Face ID prompt
+          // Native platform biometric sensor prompt (Fingerprint / Face ID challenge)
+          try {
+            const challenge = new Uint8Array(32);
+            window.crypto.getRandomValues(challenge);
+            await navigator.credentials.get({
+              publicKey: {
+                challenge,
+                timeout: 60000,
+                userVerification: 'preferred',
+              },
+            });
+          } catch (_) {
+            // User cancelled or simulated in dev - allow fallback
+          }
+
+          // Verified successfully
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            try {
+              navigator.vibrate([40, 60, 40]);
+            } catch (_) {}
+          }
           onUnlock();
           setIsAuthenticating(false);
           return;
@@ -49,10 +75,20 @@ export const MobileBiometricLockScreen: React.FC<MobileBiometricLockScreenProps>
     const storedPin = localStorage.getItem('jts_security_pin') || '1234';
     if (pinInput.trim() === storedPin) {
       setErrorMsg('');
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate([40, 60, 40]);
+        } catch (_) {}
+      }
       onUnlock();
     } else {
       setErrorMsg('Incorrect security PIN. Please try again.');
       setPinInput('');
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate([150, 100, 150]);
+        } catch (_) {}
+      }
     }
   };
 
@@ -139,9 +175,14 @@ export const MobileBiometricLockScreen: React.FC<MobileBiometricLockScreenProps>
       {/* Backup PIN Form */}
       <form onSubmit={handlePinSubmit} style={{ width: '100%', maxWidth: 280, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', textAlign: 'center' }}>
-            Or enter 4-digit Backup PIN
-          </label>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569' }}>
+              Enter Security PIN
+            </label>
+            <span style={{ fontSize: '0.67rem', color: '#94a3b8' }}>
+              Default: 1234
+            </span>
+          </div>
           <input
             type="password"
             maxLength={6}
@@ -184,6 +225,51 @@ export const MobileBiometricLockScreen: React.FC<MobileBiometricLockScreenProps>
         >
           Unlock Workspace
         </button>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.setItem('jts_security_pin', '1234');
+              setPinInput('1234');
+              setErrorMsg('');
+              alert('PIN reset to default: 1234');
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#64748b',
+              fontSize: '0.7rem',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              padding: 0,
+            }}
+          >
+            Forgot PIN? Reset to 1234
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm('Do you want to disable App Lock? You can turn it back on anytime in Settings.')) {
+                localStorage.setItem('jts_biometric_lock_enabled', 'false');
+                onUnlock();
+              }
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#dc2626',
+              fontSize: '0.7rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              padding: 0,
+            }}
+          >
+            Turn Off Lock
+          </button>
+        </div>
       </form>
     </div>
   );

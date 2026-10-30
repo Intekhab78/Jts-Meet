@@ -200,7 +200,11 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public void onStop() {
                     super.onStop();
-                    runOnUiThread(() -> stopScreenCaptureInternal());
+                    runOnUiThread(() -> {
+                        if (isCapturingScreen) {
+                            stopScreenCaptureInternal();
+                        }
+                    });
                 }
             }, backgroundHandler);
 
@@ -283,6 +287,10 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void stopScreenCaptureInternal() {
+        if (!isCapturingScreen && mediaProjection == null && virtualDisplay == null && imageReader == null) {
+            return;
+        }
+        boolean wasCapturing = isCapturingScreen;
         isCapturingScreen = false;
         try {
             if (virtualDisplay != null) {
@@ -293,9 +301,10 @@ public class MainActivity extends BridgeActivity {
                 imageReader.close();
                 imageReader = null;
             }
-            if (mediaProjection != null) {
-                mediaProjection.stop();
-                mediaProjection = null;
+            MediaProjection mp = mediaProjection;
+            mediaProjection = null;
+            if (mp != null) {
+                try { mp.stop(); } catch (Throwable ignored) {}
             }
             if (backgroundThread != null) {
                 backgroundThread.quitSafely();
@@ -305,7 +314,7 @@ public class MainActivity extends BridgeActivity {
             stopService(new Intent(this, ScreenCaptureService.class));
         } catch (Throwable ignored) {}
 
-        if (bridge != null && bridge.getWebView() != null) {
+        if (wasCapturing && bridge != null && bridge.getWebView() != null) {
             runOnUiThread(() -> {
                 try {
                     if (bridge != null && bridge.getWebView() != null) {
