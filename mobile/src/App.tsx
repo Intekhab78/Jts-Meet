@@ -611,6 +611,20 @@ export function App() {
     });
   };
 
+  const isCallExpired = (data: any): boolean => {
+    if (!data) return true;
+    const now = Date.now();
+    if (data.timestamp && (now - Number(data.timestamp) > 45000)) return true;
+    if (data.meetingId && typeof data.meetingId === 'string' && data.meetingId.startsWith('call_')) {
+      const parts = data.meetingId.split('_');
+      const time = Number(parts[1]);
+      if (time && !isNaN(time) && (now - time > 45000)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   // ── Unified Push Notification & Call Action Routing (WhatsApp / MS Teams style) ──
   const handleNotificationAction = useCallback((data: any) => {
     if (!data) return;
@@ -618,6 +632,11 @@ export function App() {
 
     // 1. Incoming Call Action
     if (data.type === 'incoming_call' || data.type === 'call_incoming' || data.meetingId) {
+      if (isCallExpired(data)) {
+        console.log('[Call] Discarded expired call notification:', data.meetingId);
+        return;
+      }
+
       if (data.actionId === 'decline') {
         setIncomingCall(null);
         stopRingtone();
@@ -671,7 +690,7 @@ export function App() {
         if (raw && raw.trim() && raw !== '{}') {
           bridge.clearPendingCallData();
           const callData = JSON.parse(raw);
-          if (callData.meetingId) {
+          if (callData.meetingId && !isCallExpired(callData)) {
             setIncomingCall({
               meetingId: callData.meetingId,
               callerId: callData.callerId,
@@ -690,14 +709,20 @@ export function App() {
       if (pendingRaw) {
         localStorage.removeItem('jts_pending_notification');
         const pending = JSON.parse(pendingRaw);
-        setTimeout(() => handleNotificationAction(pending), 400);
+        if (!isCallExpired(pending)) {
+          setTimeout(() => handleNotificationAction(pending), 400);
+        }
       }
     } catch (_) {}
 
     // 2. Live event listeners while app is active or in memory
-    const onAction = (e: any) => handleNotificationAction(e.detail);
+    const onAction = (e: any) => {
+      if (!isCallExpired(e.detail)) {
+        handleNotificationAction(e.detail);
+      }
+    };
     const onCallPush = (e: any) => {
-      if (e.detail?.meetingId) {
+      if (e.detail?.meetingId && !isCallExpired(e.detail)) {
         setIncomingCall({
           meetingId: e.detail.meetingId,
           callerId: e.detail.callerId,

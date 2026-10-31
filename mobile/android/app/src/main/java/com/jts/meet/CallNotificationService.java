@@ -83,6 +83,20 @@ public class CallNotificationService extends FirebaseMessagingService {
         String callerId = data.get("callerId");
         boolean isAudio = "audio".equalsIgnoreCase(callType);
 
+        // Discard stale/queued calls (older than 45 seconds)
+        if (meetingId != null && meetingId.startsWith("call_")) {
+            try {
+                String[] parts = meetingId.split("_");
+                if (parts.length >= 2) {
+                    long t = Long.parseLong(parts[1]);
+                    if (t > 0 && (System.currentTimeMillis() - t > 45000)) {
+                        // Expired call, do not ring or notify
+                        return;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
         if (callerName == null || callerName.isEmpty()) {
             callerName = "Colleague";
         }
@@ -153,6 +167,7 @@ public class CallNotificationService extends FirebaseMessagingService {
         fullScreenIntent.putExtra("callerAvatar", callerAvatar);
         fullScreenIntent.putExtra("callType", callType);
         fullScreenIntent.putExtra("callerId", callerId);
+        fullScreenIntent.putExtra("callTimestamp", System.currentTimeMillis());
 
         // 5. Try direct startActivity to immediately display UI over lock screen
         try {

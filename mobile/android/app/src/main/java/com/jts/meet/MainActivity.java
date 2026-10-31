@@ -437,6 +437,27 @@ public class MainActivity extends BridgeActivity {
         }
 
         if ("incoming_call".equals(type) && meetingId != null && !meetingId.isEmpty()) {
+            long callTimestamp = intent.getLongExtra("callTimestamp", 0);
+            long now = System.currentTimeMillis();
+            if (callTimestamp > 0 && (now - callTimestamp > 45000)) {
+                pendingCallDataJson = null;
+                resetIntent(intent);
+                return;
+            }
+            if (meetingId.startsWith("call_")) {
+                try {
+                    String[] parts = meetingId.split("_");
+                    if (parts.length >= 2) {
+                        long t = Long.parseLong(parts[1]);
+                        if (t > 0 && (now - t > 45000)) {
+                            pendingCallDataJson = null;
+                            resetIntent(intent);
+                            return;
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+
             String callerName = intent.getStringExtra("callerName");
             String callerAvatar = intent.getStringExtra("callerAvatar");
             String callType = intent.getStringExtra("callType");
@@ -451,12 +472,13 @@ public class MainActivity extends BridgeActivity {
                 obj.put("callType", callType != null ? callType : "audio");
                 obj.put("callerId", callerId != null ? callerId : "");
                 obj.put("autoAccept", "true".equals(autoAccept) ? "true" : "false");
+                obj.put("timestamp", now);
                 pendingCallDataJson = obj.toString();
             } catch (Exception ignored) {}
 
             final String script = String.format(
                 "try { " +
-                "  var payload = { meetingId: '%s', callerName: '%s', callerAvatar: '%s', callType: '%s', callerId: '%s', autoAccept: '%s' }; " +
+                "  var payload = { meetingId: '%s', callerName: '%s', callerAvatar: '%s', callType: '%s', callerId: '%s', autoAccept: '%s', timestamp: %d }; " +
                 "  localStorage.setItem('jts_pending_notification', JSON.stringify(payload)); " +
                 "  window.dispatchEvent(new CustomEvent('jts:incoming-call-push', { detail: payload })); " +
                 "} catch (e) { console.error(e); }",
@@ -465,8 +487,12 @@ public class MainActivity extends BridgeActivity {
                 callerAvatar != null ? callerAvatar.replace("'", "\\'") : "",
                 callType != null ? callType : "audio",
                 callerId != null ? callerId : "",
-                "true".equals(autoAccept) ? "true" : "false"
+                "true".equals(autoAccept) ? "true" : "false",
+                now
             );
+
+            // Reset intent extras so opening the app normally does not re-trigger an old call
+            resetIntent(intent);
 
             runOnUiThread(() -> {
                 int[] delays = { 300, 1000, 2500, 4000 };
@@ -481,5 +507,20 @@ public class MainActivity extends BridgeActivity {
                 }
             });
         }
+    }
+
+    private void resetIntent(Intent intent) {
+        if (intent == null) return;
+        try {
+            intent.removeExtra("type");
+            intent.removeExtra("meetingId");
+            intent.removeExtra("callerName");
+            intent.removeExtra("callerAvatar");
+            intent.removeExtra("callType");
+            intent.removeExtra("callerId");
+            intent.removeExtra("autoAccept");
+            intent.removeExtra("callTimestamp");
+            setIntent(new Intent(this, MainActivity.class));
+        } catch (Exception ignored) {}
     }
 }
