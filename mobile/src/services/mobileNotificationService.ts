@@ -1,5 +1,6 @@
 import { PushNotifications } from '@capacitor/push-notifications';
 import { Capacitor } from '@capacitor/core';
+import { API_BASE, getStoredToken } from '../config';
 
 // Mobile Real-time High-Priority Notification & Ringing Service
 
@@ -101,9 +102,9 @@ class MobileNotificationService {
 
         // Sync FCM token to backend
         try {
-          const authKey = localStorage.getItem('jts_auth_key') || localStorage.getItem('jts_token');
+          const authKey = getStoredToken() || localStorage.getItem('jts_access_token') || localStorage.getItem('jts_auth_key') || localStorage.getItem('jts_token');
           if (authKey) {
-            await fetch('https://meetapi.jtsmiddleeast.com/api/notifications/fcm-token', {
+            const res = await fetch(`${API_BASE}/api/notifications/fcm-token`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -111,6 +112,8 @@ class MobileNotificationService {
               },
               body: JSON.stringify({ fcmToken: token.value, platform: 'android' }),
             });
+            const resJson = await res.json().catch(() => ({}));
+            console.log('[FCM] Successfully registered device token on server:', resJson);
           }
         } catch (err) {
           console.warn('[FCM] Error saving token to backend:', err);
@@ -161,10 +164,13 @@ class MobileNotificationService {
    */
   public async syncStoredFcmToken(token?: string): Promise<void> {
     try {
+      if (Capacitor.isNativePlatform() && !this.hasInitializedPush) {
+        await this.initNativePush();
+      }
       const fcmToken = localStorage.getItem('jts_fcm_token');
-      const authKey = token || localStorage.getItem('jts_auth_key') || localStorage.getItem('jts_token');
+      const authKey = token || getStoredToken() || localStorage.getItem('jts_access_token') || localStorage.getItem('jts_auth_key') || localStorage.getItem('jts_token');
       if (fcmToken && authKey) {
-        await fetch('https://meetapi.jtsmiddleeast.com/api/notifications/fcm-token', {
+        const res = await fetch(`${API_BASE}/api/notifications/fcm-token`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -172,9 +178,12 @@ class MobileNotificationService {
           },
           body: JSON.stringify({ fcmToken, platform: 'android' }),
         });
-        console.log('[FCM] Successfully synced FCM device token to user account');
+        const resJson = await res.json().catch(() => ({}));
+        console.log('[FCM] Successfully synced FCM device token to user account:', resJson);
       }
-    } catch (_) {}
+    } catch (err) {
+      console.warn('[FCM] Error in syncStoredFcmToken:', err);
+    }
   }
 
   /**

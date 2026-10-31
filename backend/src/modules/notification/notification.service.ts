@@ -123,8 +123,15 @@ export class NotificationService {
                     const isAudio = callData.callType === 'audio'
 
                     try {
+                        const callTitle = isAudio ? `📞 Incoming Audio Call` : `📹 Incoming Video Call`
+                        const callBody = `${callData.callerName || 'A colleague'} is calling you on JTS Meet...`
+
                         const fcmResponse = await messaging.sendEachForMulticast({
                             tokens,
+                            notification: {
+                                title: callTitle,
+                                body: callBody,
+                            },
                             data: {
                                 type: 'incoming_call',
                                 meetingId: String(callData.meetingId),
@@ -137,12 +144,13 @@ export class NotificationService {
                                 priority: 'high',
                                 ttl: 60 * 1000,
                                 notification: {
-                                    title: isAudio ? `📞 Incoming Audio Call` : `📹 Incoming Video Call`,
-                                    body: `${callData.callerName || 'A colleague'} is calling you on JTS Meet...`,
+                                    title: callTitle,
+                                    body: callBody,
                                     channelId: 'incoming_calls',
                                     priority: 'max',
                                     defaultSound: true,
                                     defaultVibrateTimings: true,
+                                    visibility: 'public',
                                 }
                             }
                         })
@@ -313,6 +321,10 @@ export class NotificationService {
                 try {
                     const fcmResponse = await messaging.sendEachForMulticast({
                         tokens,
+                        notification: {
+                            title,
+                            body: bodyPreview,
+                        },
                         data: {
                             type: 'chat_message',
                             senderId: String(messageData.senderId),

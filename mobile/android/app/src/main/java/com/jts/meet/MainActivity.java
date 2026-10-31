@@ -54,7 +54,15 @@ public class MainActivity extends BridgeActivity {
             );
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            String[] perms = {
+                android.Manifest.permission.CAMERA,
+                android.Manifest.permission.RECORD_AUDIO,
+                android.Manifest.permission.MODIFY_AUDIO_SETTINGS,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            };
+            requestPermissions(perms, 101);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             String[] perms = {
                 android.Manifest.permission.CAMERA,
                 android.Manifest.permission.RECORD_AUDIO,
