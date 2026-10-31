@@ -205,13 +205,12 @@ public class CallNotificationService extends FirebaseMessagingService {
             pendingFlags
         );
 
-        // Decline Action Button
-        Intent declineIntent = new Intent(this, MainActivity.class);
-        declineIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        declineIntent.putExtra("type", "decline_call");
+        // Decline Action Button (Handled purely in background by CallActionReceiver)
+        Intent declineIntent = new Intent(this, CallActionReceiver.class);
+        declineIntent.setAction("com.jts.meet.ACTION_DECLINE_CALL");
         declineIntent.putExtra("meetingId", meetingId);
         declineIntent.putExtra("callerId", callerId);
-        PendingIntent declinePendingIntent = PendingIntent.getActivity(
+        PendingIntent declinePendingIntent = PendingIntent.getBroadcast(
             this,
             (int) System.currentTimeMillis() + 2,
             declineIntent,

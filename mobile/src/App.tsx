@@ -733,12 +733,19 @@ export function App() {
       }
     };
 
+    const onNativeDecline = () => {
+      setIncomingCall(null);
+      stopRingtone();
+    };
+
     window.addEventListener('jts:notification-action', onAction);
     window.addEventListener('jts:incoming-call-push', onCallPush);
+    window.addEventListener('jts:call-declined-native', onNativeDecline);
 
     return () => {
       window.removeEventListener('jts:notification-action', onAction);
       window.removeEventListener('jts:incoming-call-push', onCallPush);
+      window.removeEventListener('jts:call-declined-native', onNativeDecline);
     };
   }, [handleNotificationAction]);
 
@@ -978,14 +985,26 @@ export function App() {
       <MobileIncomingCallModal
         call={incomingCall}
         onDecline={() => {
+          const currentCall = incomingCall;
           try { (window as any).MobileAppBridge?.cancelCallNotification?.(); } catch (_) {}
           stopRingtone();
-          if (socketRef.current && incomingCall?.callerId) {
+          if (socketRef.current && currentCall?.callerId) {
             socketRef.current.emit('call:rejected', {
-              callerId: incomingCall.callerId,
-              meetingId: incomingCall.meetingId,
+              callerId: currentCall.callerId,
+              meetingId: currentCall.meetingId,
               reason: 'declined',
             });
+          }
+          if (currentCall?.meetingId) {
+            fetch(`${API_BASE}/api/notifications/call-reject`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                meetingId: currentCall.meetingId,
+                callerId: currentCall.callerId || '',
+                reason: 'declined',
+              }),
+            }).catch(() => {});
           }
           setIncomingCall(null);
         }}

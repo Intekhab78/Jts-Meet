@@ -36,10 +36,12 @@ public class MainActivity extends BridgeActivity {
     private HandlerThread backgroundThread;
     private boolean isCapturingScreen = false;
     private static String pendingCallDataJson = null;
+    private static MainActivity activeInstance = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        activeInstance = this;
 
         handleIncomingCallIntent(getIntent());
 
@@ -504,6 +506,22 @@ public class MainActivity extends BridgeActivity {
                             } catch (Exception ignored) {}
                         }
                     }, delay);
+                }
+            });
+        }
+    }
+
+    public static void notifyCallDeclined(String meetingId, String callerId) {
+        pendingCallDataJson = null;
+        if (activeInstance != null) {
+            activeInstance.runOnUiThread(() -> {
+                if (activeInstance.bridge != null && activeInstance.bridge.getWebView() != null) {
+                    try {
+                        activeInstance.bridge.getWebView().evaluateJavascript(
+                            "try { window.dispatchEvent(new CustomEvent('jts:call-declined-native', { detail: { meetingId: '" + (meetingId != null ? meetingId : "") + "' } })); } catch(e){}",
+                            null
+                        );
+                    } catch (Exception ignored) {}
                 }
             });
         }
