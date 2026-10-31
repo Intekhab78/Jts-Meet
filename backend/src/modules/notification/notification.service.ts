@@ -126,12 +126,11 @@ export class NotificationService {
                         const callTitle = isAudio ? `📞 Incoming Audio Call` : `📹 Incoming Video Call`
                         const callBody = `${callData.callerName || 'A colleague'} is calling you on JTS Meet...`
 
+                        // For incoming calls, send as High-Priority DATA-ONLY FCM message.
+                        // This guarantees Android OS always invokes CallNotificationService.onMessageReceived()
+                        // even when the app is completely closed or phone is locked, allowing FullScreenIntent to wake up screen.
                         const fcmResponse = await messaging.sendEachForMulticast({
                             tokens,
-                            notification: {
-                                title: callTitle,
-                                body: callBody,
-                            },
                             data: {
                                 type: 'incoming_call',
                                 meetingId: String(callData.meetingId),
@@ -139,19 +138,12 @@ export class NotificationService {
                                 callerAvatar: String(callData.callerAvatar || ''),
                                 callType: String(callData.callType || 'video'),
                                 callerId: String(callData.callerId || ''),
+                                title: callTitle,
+                                body: callBody,
                             },
                             android: {
                                 priority: 'high',
-                                ttl: 60 * 1000,
-                                notification: {
-                                    title: callTitle,
-                                    body: callBody,
-                                    channelId: 'incoming_calls',
-                                    priority: 'max',
-                                    defaultSound: true,
-                                    defaultVibrateTimings: true,
-                                    visibility: 'public',
-                                }
+                                ttl: 60, // 60 seconds TTL (seconds in FCM Admin SDK)
                             }
                         })
                         console.log(`[FCM] Dispatched incoming call push: ${fcmResponse.successCount}/${tokens.length} delivered`)

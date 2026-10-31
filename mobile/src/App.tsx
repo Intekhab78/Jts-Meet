@@ -478,6 +478,7 @@ export function App() {
     });
 
     bgSocket.on('call:cancelled', () => {
+      try { (window as any).MobileAppBridge?.cancelCallNotification?.(); } catch (_) {}
       setIncomingCall(null);
       stopRingtone();
     });
@@ -662,13 +663,34 @@ export function App() {
 
   // Listen for background push actions and app launches from notifications
   useEffect(() => {
+    // 0. Check native pending call intent from Android Full-Screen Intent (Lockscreen / Background cold start)
+    try {
+      const bridge = (window as any).MobileAppBridge;
+      if (bridge && typeof bridge.getPendingCallData === 'function') {
+        const raw = bridge.getPendingCallData();
+        if (raw && raw.trim() && raw !== '{}') {
+          bridge.clearPendingCallData();
+          const callData = JSON.parse(raw);
+          if (callData.meetingId) {
+            setIncomingCall({
+              meetingId: callData.meetingId,
+              callerId: callData.callerId,
+              callerName: callData.callerName || 'Colleague',
+              callerAvatar: callData.callerAvatar || '',
+              callType: callData.callType || 'audio',
+            });
+          }
+        }
+      }
+    } catch (_) {}
+
     // 1. Check if app was launched from an Android Notification
     try {
       const pendingRaw = localStorage.getItem('jts_pending_notification');
       if (pendingRaw) {
         localStorage.removeItem('jts_pending_notification');
         const pending = JSON.parse(pendingRaw);
-        setTimeout(() => handleNotificationAction(pending), 600);
+        setTimeout(() => handleNotificationAction(pending), 400);
       }
     } catch (_) {}
 
@@ -931,6 +953,7 @@ export function App() {
       <MobileIncomingCallModal
         call={incomingCall}
         onDecline={() => {
+          try { (window as any).MobileAppBridge?.cancelCallNotification?.(); } catch (_) {}
           stopRingtone();
           if (socketRef.current && incomingCall?.callerId) {
             socketRef.current.emit('call:rejected', {
@@ -943,6 +966,7 @@ export function App() {
         }}
         onAccept={() => {
           if (!incomingCall) return;
+          try { (window as any).MobileAppBridge?.cancelCallNotification?.(); } catch (_) {}
           stopRingtone();
           if (socketRef.current) {
             socketRef.current.emit('call:accepted', {

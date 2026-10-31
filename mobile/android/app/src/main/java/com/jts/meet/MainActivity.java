@@ -35,10 +35,13 @@ public class MainActivity extends BridgeActivity {
     private Handler backgroundHandler;
     private HandlerThread backgroundThread;
     private boolean isCapturingScreen = false;
+    private static String pendingCallDataJson = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        handleIncomingCallIntent(getIntent());
 
         // Keep the phone screen awake during meetings and wake screen for calls
         getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -138,6 +141,26 @@ public class MainActivity extends BridgeActivity {
                 @android.webkit.JavascriptInterface
                 public void showToast(String message) {
                     runOnUiThread(() -> android.widget.Toast.makeText(MainActivity.this, message, android.widget.Toast.LENGTH_SHORT).show());
+                }
+
+                @android.webkit.JavascriptInterface
+                public String getPendingCallData() {
+                    return pendingCallDataJson != null ? pendingCallDataJson : "";
+                }
+
+                @android.webkit.JavascriptInterface
+                public void clearPendingCallData() {
+                    pendingCallDataJson = null;
+                }
+
+                @android.webkit.JavascriptInterface
+                public void cancelCallNotification() {
+                    try {
+                        android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                        if (nm != null) {
+                            nm.cancel(2026);
+                        }
+                    } catch (Exception ignored) {}
                 }
             }, "MobileAppBridge");
         }
@@ -370,18 +393,56 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, android.content.res.Configuration newConfig) {
-        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
-        if (bridge != null && bridge.getWebView() != null) {
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingCallIntent(intent);
+    }
+
+    private void handleIncomingCallIntent(Intent intent) {
+        if (intent == null) return;
+        String type = intent.getStringExtra("type");
+        String meetingId = intent.getStringExtra("meetingId");
+        if ("incoming_call".equals(type) && meetingId != null && !meetingId.isEmpty()) {
+            String callerName = intent.getStringExtra("callerName");
+            String callerAvatar = intent.getStringExtra("callerAvatar");
+            String callType = intent.getStringExtra("callType");
+            String callerId = intent.getStringExtra("callerId");
+
+            try {
+                org.json.JSONObject obj = new org.json.JSONObject();
+                obj.put("meetingId", meetingId);
+                obj.put("callerName", callerName != null ? callerName : "Colleague");
+                obj.put("callerAvatar", callerAvatar != null ? callerAvatar : "");
+                obj.put("callType", callType != null ? callType : "audio");
+                obj.put("callerId", callerId != null ? callerId : "");
+                pendingCallDataJson = obj.toString();
+            } catch (Exception ignored) {}
+
+            final String script = String.format(
+                "try { " +
+                "  var payload = { meetingId: '%s', callerName: '%s', callerAvatar: '%s', callType: '%s', callerId: '%s' }; " +
+                "  localStorage.setItem('jts_pending_notification', JSON.stringify(payload)); " +
+                "  window.dispatchEvent(new CustomEvent('jts:incoming-call-push', { detail: payload })); " +
+                "} catch (e) { console.error(e); }",
+                meetingId,
+                callerName != null ? callerName.replace("'", "\\'") : "Colleague",
+                callerAvatar != null ? callerAvatar.replace("'", "\\'") : "",
+                callType != null ? callType : "audio",
+                callerId != null ? callerId : ""
+            );
+
             runOnUiThread(() -> {
-                try {
-                    if (bridge != null && bridge.getWebView() != null) {
-                        bridge.getWebView().evaluateJavascript(
-                            "window.__onNativePiPModeChanged && window.__onNativePiPModeChanged(" + isInPictureInPictureMode + ")",
-                            null
-                        );
-                    }
-                } catch (Throwable ignored) {}
+                int[] delays = { 300, 1000, 2500, 4000 };
+                for (int delay : delays) {
+                    new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                        if (bridge != null && bridge.getWebView() != null) {
+                            try {
+                                bridge.getWebView().evaluateJavascript(script, null);
+                            } catch (Exception ignored) {}
+                        }
+                    }, delay);
+                }
             });
         }
     }
