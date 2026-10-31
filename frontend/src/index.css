@@ -602,6 +602,15 @@
     opacity: 0.4;
     cursor: not-allowed;
   }
+  .input:-webkit-autofill,
+  .input:-webkit-autofill:hover, 
+  .input:-webkit-autofill:focus, 
+  .input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #1a1d27 inset !important;
+    -webkit-text-fill-color: #f1f5f9 !important;
+    caret-color: #f1f5f9 !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
   .input[class*="pl-8"],
   .input.input-search {
     padding-left: 38px !important;
