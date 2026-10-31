@@ -105,7 +105,7 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
         position: 'fixed',
         inset: 0,
         zIndex: 99999,
-        background: 'radial-gradient(circle at 50% 30%, #1e293b 0%, #0f172a 100%)',
+        backgroundColor: '#ffffff',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
@@ -114,10 +114,19 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
         paddingBottom: 'calc(var(--safe-bottom, 20px) + 36px)',
         paddingLeft: 24,
         paddingRight: 24,
-        color: '#ffffff',
+        color: '#0f172a',
         animation: 'fadeIn 0.25s ease-out',
+        userSelect: 'none',
       }}
     >
+      <style>{`
+        @keyframes incomingPulseRing {
+          0% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.28); }
+          70% { transform: scale(1.04); box-shadow: 0 0 0 22px rgba(37, 99, 235, 0); }
+          100% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+        }
+      `}</style>
+
       {/* ── Top Header: Call Type & Security Pill ── */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
         <div
@@ -127,11 +136,11 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
             gap: 6,
             padding: '6px 14px',
             borderRadius: 20,
-            background: 'rgba(37, 99, 235, 0.2)',
-            border: '1px solid rgba(59, 130, 246, 0.4)',
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
             fontSize: '0.72rem',
             fontWeight: 800,
-            color: '#60a5fa',
+            color: '#2563eb',
             letterSpacing: '0.04em',
             textTransform: 'uppercase',
           }}
@@ -141,15 +150,15 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: '#60a5fa',
-              boxShadow: '0 0 8px #60a5fa',
+              backgroundColor: '#2563eb',
+              boxShadow: '0 0 8px #2563eb',
               display: 'inline-block',
             }}
           />
           Incoming {call.callType === 'video' ? 'Video Conference' : 'HD Audio Call'}
         </div>
 
-        <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>
+        <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
           JTS Meet Enterprise Direct Line
         </span>
       </div>
@@ -157,23 +166,23 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
       {/* ── Center: Pulsating Caller Avatar & Identity ── */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
         {/* Pulsating Glowing Ring Container */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div
-            style={{
-              position: 'absolute',
-              width: 140,
-              height: 140,
-              borderRadius: '50%',
-              background: 'rgba(37, 99, 235, 0.25)',
-              filter: 'blur(10px)',
-              animation: 'pulse 1.8s infinite ease-in-out',
-            }}
-          />
+        <div
+          style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 120,
+            height: 120,
+            borderRadius: '50%',
+            animation: 'incomingPulseRing 2s infinite ease-in-out',
+          }}
+        >
           <MobileAvatar
             src={call.callerAvatar}
             name={call.callerName}
             size={104}
-            border="3px solid rgba(255, 255, 255, 0.3)"
+            border="3px solid #ffffff"
           />
         </div>
 
@@ -183,17 +192,17 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
             style={{
               fontSize: '1.65rem',
               fontWeight: 800,
-              color: '#ffffff',
+              color: '#0f172a',
               margin: 0,
               letterSpacing: '-0.02em',
             }}
           >
             {call.callerName}
           </h1>
-          <span style={{ fontSize: '0.82rem', color: '#cbd5e1', fontWeight: 500 }}>
+          <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 500 }}>
             Meeting Code: {call.meetingId}
           </span>
-          <span style={{ fontSize: '0.74rem', color: '#38bdf8', fontWeight: 600, marginTop: 4 }}>
+          <span style={{ fontSize: '0.76rem', color: '#2563eb', fontWeight: 700, marginTop: 4 }}>
             Ringing...
           </span>
         </div>
@@ -239,7 +248,7 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
-          <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#f87171' }}>
+          <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#ef4444' }}>
             Decline
           </span>
         </div>
@@ -279,7 +288,7 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
               </svg>
             )}
           </button>
-          <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#4ade80' }}>
+          <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#16a34a' }}>
             Accept
           </span>
         </div>
