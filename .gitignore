@@ -32,4 +32,7 @@ backend/uploads/chat/*
 !backend/uploads/chat/.gitkeep
 backend/uploads/clips/*
 !backend/uploads/clips/.gitkeep
-
+# Firebase Secrets
+*firebase-adminsdk*.json
+*firebase-service-account*.json
+google-services.json

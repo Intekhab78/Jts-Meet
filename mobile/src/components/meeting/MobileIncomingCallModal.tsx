@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { mobileNotificationService } from '../../services/mobileNotificationService';
 import { resolveAvatarUrl } from '../../config';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 export interface IncomingCallData {
   callerName: string;
@@ -168,43 +169,12 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
               animation: 'pulse 1.8s infinite ease-in-out',
             }}
           />
-          <div
-            style={{
-              position: 'relative',
-              width: 104,
-              height: 104,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-              border: '3px solid rgba(255, 255, 255, 0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '2.5rem',
-              fontWeight: 800,
-              color: '#ffffff',
-              overflow: 'hidden',
-            }}
-          >
-            {initial}
-            {call.callerAvatar && (
-              <img
-                src={resolveAvatarUrl(call.callerAvatar)}
-                alt=""
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  borderRadius: '50%',
-                  objectFit: 'cover',
-                }}
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            )}
-          </div>
+          <MobileAvatar
+            src={call.callerAvatar}
+            name={call.callerName}
+            size={104}
+            border="3px solid rgba(255, 255, 255, 0.3)"
+          />
         </div>
 
         {/* Caller Name & Meeting Info */}

@@ -1,3 +1,6 @@
+import { PushNotifications } from '@capacitor/push-notifications';
+import { Capacitor } from '@capacitor/core';
+
 // Mobile Real-time High-Priority Notification & Ringing Service
 
 export interface IncomingCallPayload {
@@ -18,9 +21,11 @@ export interface MeetingReminderPayload {
 class MobileNotificationService {
   private hasPermission: boolean = false;
   private ringtoneInterval: any = null;
+  private hasInitializedPush: boolean = false;
 
   constructor() {
     this.checkPermission();
+    this.initNativePush();
   }
 
   public async checkPermission(): Promise<boolean> {
@@ -37,6 +42,102 @@ class MobileNotificationService {
       }
     }
     return this.hasPermission;
+  }
+
+  /**
+   * Initializes native Android Firebase Cloud Messaging (FCM) Push Notifications
+   */
+  public async initNativePush(): Promise<void> {
+    if (!Capacitor.isNativePlatform() || this.hasInitializedPush) return;
+    this.hasInitializedPush = true;
+
+    try {
+      let permStatus = await PushNotifications.checkPermissions();
+
+      if (permStatus.receive === 'prompt') {
+        permStatus = await PushNotifications.requestPermissions();
+      }
+
+      if (permStatus.receive !== 'granted') {
+        console.warn('[FCM] Push notification permission not granted');
+        return;
+      }
+
+      await PushNotifications.register();
+
+      // Listen for FCM Device Token Registration
+      PushNotifications.addListener('registration', async (token) => {
+        console.log('[FCM] Native Device Registered. Token:', token.value);
+        localStorage.setItem('jts_fcm_token', token.value);
+
+        // Sync FCM token to backend
+        try {
+          const authKey = localStorage.getItem('jts_auth_key') || localStorage.getItem('jts_token');
+          if (authKey) {
+            await fetch('https://meetapi.jtsmiddleeast.com/api/notifications/fcm-token', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${authKey}`,
+              },
+              body: JSON.stringify({ fcmToken: token.value, platform: 'android' }),
+            });
+          }
+        } catch (err) {
+          console.warn('[FCM] Error saving token to backend:', err);
+        }
+      });
+
+      PushNotifications.addListener('registrationError', (err) => {
+        console.error('[FCM] Registration Error:', err);
+      });
+
+      // When push notification arrives while app is open or backgrounded
+      PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        console.log('[FCM] Push Received:', notification);
+        const data = notification.data || {};
+        if (data.type === 'incoming_call' || data.type === 'call_incoming') {
+          // Vibrate in phone call rhythm
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            try {
+              navigator.vibrate([600, 300, 600, 300, 1200]);
+            } catch (_) {}
+          }
+        }
+      });
+
+      // When user clicks the call push notification from lock screen or status bar
+      PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
+        console.log('[FCM] Action Performed:', notification);
+        const data = notification.notification?.data || {};
+        if (data.meetingId) {
+          window.location.href = `/?callMeetingId=${encodeURIComponent(data.meetingId)}&callerId=${encodeURIComponent(data.callerId || '')}&callerName=${encodeURIComponent(data.callerName || '')}&callType=${encodeURIComponent(data.callType || 'video')}&autoAccept=true`;
+        }
+      });
+    } catch (e) {
+      console.warn('[FCM] Failed to setup native push:', e);
+    }
+  }
+
+  /**
+   * Explicitly syncs the locally stored FCM token with the backend whenever user logs in
+   */
+  public async syncStoredFcmToken(token?: string): Promise<void> {
+    try {
+      const fcmToken = localStorage.getItem('jts_fcm_token');
+      const authKey = token || localStorage.getItem('jts_auth_key') || localStorage.getItem('jts_token');
+      if (fcmToken && authKey) {
+        await fetch('https://meetapi.jtsmiddleeast.com/api/notifications/fcm-token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authKey}`,
+          },
+          body: JSON.stringify({ fcmToken, platform: 'android' }),
+        });
+        console.log('[FCM] Successfully synced FCM device token to user account');
+      }
+    } catch (_) {}
   }
 
   /**

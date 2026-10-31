@@ -137,6 +137,11 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
                 }
                 for (const tId of targetUserIds) {
                     io.to(`user:${tId}`).emit(SocketEvents.CALL_CANCELLED, timeoutPayload)
+                    NotificationService.sendMissedCallPush(tId, {
+                        callerName,
+                        callerAvatar,
+                        callType: payload.callType || 'video',
+                    }).catch(() => {})
                 }
                 io.to(`user:${userId}`).emit(SocketEvents.CALL_REJECTED, timeoutPayload)
                 io.to(`meeting:${meetingId}`).emit(SocketEvents.CALL_CANCELLED, timeoutPayload)

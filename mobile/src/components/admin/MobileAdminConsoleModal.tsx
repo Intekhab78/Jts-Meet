@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { API_BASE, getStoredToken, resolveAvatarUrl } from '../../config';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 export interface AdminConsoleUser {
   userId: string;
@@ -988,33 +989,11 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                          <div
-                            style={{
-                              width: 38,
-                              height: 38,
-                              borderRadius: '50%',
-                              backgroundColor: '#eff6ff',
-                              color: '#2563eb',
-                              fontWeight: 800,
-                              fontSize: '0.9rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              flexShrink: 0,
-                              border: '1px solid #bfdbfe',
-                            }}
-                          >
-                            {u.profileImage ? (
-                              <img
-                                src={resolveAvatarUrl(u.profileImage)}
-                                alt=""
-                                style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
-                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                              />
-                            ) : (
-                              u.fullName.charAt(0).toUpperCase()
-                            )}
-                          </div>
+                          <MobileAvatar
+                            src={u.profileImage}
+                            name={u.fullName}
+                            size={38}
+                          />
 
                           <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

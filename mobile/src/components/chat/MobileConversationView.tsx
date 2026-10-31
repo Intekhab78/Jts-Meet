@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MobileChatMessage } from './types';
 import { API_BASE, resolveAvatarUrl } from '../../config';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 interface MobileConversationViewProps {
   chatId: string;
@@ -428,15 +429,15 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               position: 'relative',
             }}
           >
-            {isChannel ? '#' : chatAvatar ? (
-              <img
-                src={resolveAvatarUrl(chatAvatar)}
-                alt=""
-                style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
+            {isChannel ? (
+              <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>#</span>
             ) : (
-              chatName.charAt(0).toUpperCase()
+              <MobileAvatar
+                src={chatAvatar}
+                name={chatName}
+                size={34}
+                backgroundColor="transparent"
+              />
             )}
             {!isChannel && (
               <span
@@ -614,8 +615,11 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               {isImageUrl(msg.fileUrl || msg.text) ? (
                 <div style={{ marginBottom: 4 }}>
                   <img
-                    src={msg.fileUrl || msg.text}
+                    src={resolveAvatarUrl(msg.fileUrl || msg.text)}
                     alt="attachment"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = 'none';
+                    }}
                     style={{
                       maxWidth: '100%',
                       maxHeight: 220,
@@ -624,7 +628,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
                       objectFit: 'cover',
                       cursor: 'pointer',
                     }}
-                    onClick={() => window.open(msg.fileUrl || msg.text, '_blank')}
+                    onClick={() => window.open(resolveAvatarUrl(msg.fileUrl || msg.text), '_blank')}
                   />
                   {msg.fileName && (
                     <span style={{ fontSize: '0.64rem', opacity: 0.85, marginTop: 2, display: 'block' }}>
@@ -634,7 +638,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
                 </div>
               ) : msg.fileUrl ? (
                 <a
-                  href={msg.fileUrl}
+                  href={resolveAvatarUrl(msg.fileUrl)}
                   target="_blank"
                   rel="noreferrer"
                   style={{

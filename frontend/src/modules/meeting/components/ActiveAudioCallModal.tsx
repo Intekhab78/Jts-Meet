@@ -9,6 +9,7 @@ import {
     IconVideoOff,
     IconMonitor
 } from '../../../components/common/Icons'
+import { normalizeMediaUrl } from '../../../config'
 
 const IconMaximize2 = ({ size = 14 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -553,8 +554,9 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                     >
                         {call.peerAvatar ? (
                             <img
-                                src={call.peerAvatar}
+                                src={normalizeMediaUrl(call.peerAvatar)}
                                 alt={call.peerName}
+                                onError={(e) => { e.currentTarget.style.display = 'none' }}
                                 style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover' }}
                             />
                         ) : (
@@ -739,8 +741,9 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
                                 )}
                                 {call.peerAvatar ? (
                                     <img
-                                        src={call.peerAvatar}
+                                        src={normalizeMediaUrl(call.peerAvatar)}
                                         alt={call.peerName}
+                                        onError={(e) => { e.currentTarget.style.display = 'none' }}
                                         style={{
                                             width: '100%',
                                             height: '100%',
@@ -1228,8 +1231,9 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
 
                     {call.peerAvatar ? (
                         <img
-                            src={call.peerAvatar}
+                            src={normalizeMediaUrl(call.peerAvatar)}
                             alt={call.peerName}
+                            onError={(e) => { e.currentTarget.style.display = 'none' }}
                             style={{
                                 width: '100%',
                                 height: '100%',

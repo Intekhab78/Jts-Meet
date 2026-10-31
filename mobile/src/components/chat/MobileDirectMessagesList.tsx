@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MobileContact } from './types';
 import { MobileOnlineStoriesBar } from './MobileOnlineStoriesBar';
 import { API_BASE, getStoredToken, resolveAvatarUrl } from '../../config';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 interface MobileDirectMessagesListProps {
   token?: string | null;
@@ -187,44 +188,12 @@ export const MobileDirectMessagesList: React.FC<MobileDirectMessagesListProps> =
                 {/* Avatar & Contact Info */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
                   <div style={{ position: 'relative', flexShrink: 0 }}>
-                    <div
-                      style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: '50%',
-                        background: isInMeeting
-                          ? 'linear-gradient(135deg, #ef4444, #dc2626)'
-                          : 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                        color: '#ffffff',
-                        fontWeight: 800,
-                        fontSize: '0.86rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        position: 'relative',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {contact.name.charAt(0).toUpperCase()}
-                      {contact.avatar && (
-                        <img
-                          src={resolveAvatarUrl(contact.avatar)}
-                          alt=""
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            borderRadius: '50%',
-                            objectFit: 'cover',
-                          }}
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      )}
-                    </div>
+                    <MobileAvatar
+                      src={contact.avatar}
+                      name={contact.name}
+                      size={40}
+                      backgroundColor={isInMeeting ? 'linear-gradient(135deg, #ef4444, #dc2626)' : undefined}
+                    />
                     {/* Status Dot */}
                     <span
                       style={{

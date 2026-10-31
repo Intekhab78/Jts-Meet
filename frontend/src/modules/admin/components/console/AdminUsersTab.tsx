@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { normalizeMediaUrl } from '../../../../config'
 import type { AdminUser, LicenseMetrics } from '../../adminConsole.types'
 import {
     IconUsers,
@@ -411,7 +412,12 @@ export function AdminUsersTab({
                                             <td style={{ padding: '12px 16px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                                     {u.profileImage ? (
-                                                        <img src={u.profileImage} alt={u.fullName} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+                                                        <img
+                                                            src={normalizeMediaUrl(u.profileImage)}
+                                                            alt={u.fullName}
+                                                            onError={(e) => { e.currentTarget.style.display = 'none' }}
+                                                            style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }}
+                                                        />
                                                     ) : (
                                                         <div style={{
                                                             width: 32,

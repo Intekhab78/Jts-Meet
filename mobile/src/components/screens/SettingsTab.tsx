@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ChangePinModal } from '../modals/ChangePinModal';
 import { resolveAvatarUrl } from '../../config';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 interface SettingsTabProps {
   user: any;
@@ -78,34 +79,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             cursor: 'pointer',
           }}
         >
-          <div
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
-              color: '#ffffff',
-              fontWeight: 800,
-              fontSize: '1.25rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)',
-              overflow: 'hidden',
-              flexShrink: 0,
-            }}
-          >
-            {user.profileImage || user.avatar ? (
-              <img
-                src={resolveAvatarUrl(user.profileImage || user.avatar)}
-                alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
-            ) : (
-              user.name ? user.name.charAt(0).toUpperCase() : 'U'
-            )}
-          </div>
+          <MobileAvatar
+            src={user.profileImage || user.avatar}
+            name={user.name}
+            size={52}
+            border="2px solid #ffffff"
+          />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
             <span style={{ fontSize: '0.94rem', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {user.name || 'JTS User'}

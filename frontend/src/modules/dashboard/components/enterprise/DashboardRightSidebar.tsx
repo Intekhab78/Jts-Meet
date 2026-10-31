@@ -9,6 +9,7 @@ import {
     IconZap,
     IconSparkles
 } from '../../../../components/common/Icons'
+import { normalizeMediaUrl } from '../../../../config'
 
 interface DashboardRightSidebarProps {
     scheduledItems: any[]
@@ -263,7 +264,12 @@ export const DashboardRightSidebar: React.FC<DashboardRightSidebarProps> = ({
                                             fontSize: '0.8rem', fontWeight: 700, color: '#fff', overflow: 'hidden'
                                         }}>
                                             {member.profileImage ? (
-                                                <img src={member.profileImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                <img
+                                                    src={normalizeMediaUrl(member.profileImage)}
+                                                    alt=""
+                                                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                />
                                             ) : (
                                                 member.name.slice(0, 2).toUpperCase()
                                             )}

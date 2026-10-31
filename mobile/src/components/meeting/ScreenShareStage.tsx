@@ -1,5 +1,6 @@
 import React from 'react';
 import { RemoteParticipant } from './types';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 export interface ScreenShareStageProps {
   presenter?: RemoteParticipant;
@@ -271,9 +272,10 @@ export const ScreenShareStage: React.FC<ScreenShareStageProps> = ({
                 flexShrink: 0,
               }}
             >
-              <div style={{ width: 34, height: 34, borderRadius: '50%', backgroundColor: '#2563eb', color: '#fff', fontSize: '0.8rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {p.displayName.charAt(0).toUpperCase()}
-              </div>
+              <MobileAvatar
+                name={p.displayName}
+                size={34}
+              />
               <span style={{ fontSize: '0.62rem', color: '#fff', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 64 }}>
                 {p.displayName}
               </span>

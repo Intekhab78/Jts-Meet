@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { startRingtone, stopRingtone } from '../services/chime.service'
 import { IconPhone, IconVideo, IconMonitor } from '../../../components/common/Icons'
+import { normalizeMediaUrl } from '../../../config'
 
 export interface IncomingCallData {
     meetingId: string
@@ -20,6 +21,11 @@ interface IncomingCallModalProps {
 }
 
 export function IncomingCallModal({ call, onAccept, onDecline }: IncomingCallModalProps) {
+    const [avatarFailed, setAvatarFailed] = useState(false)
+
+    useEffect(() => {
+        setAvatarFailed(false)
+    }, [call?.callerAvatar])
     useEffect(() => {
         if (call) {
             startRingtone()
@@ -68,10 +74,11 @@ export function IncomingCallModal({ call, onAccept, onDecline }: IncomingCallMod
                         background: 'radial-gradient(circle, rgba(99,102,241,0.5) 0%, rgba(99,102,241,0) 70%)',
                         animation: 'pulse 1.8s infinite'
                     }} />
-                    {call.callerAvatar ? (
+                    {call.callerAvatar && !avatarFailed ? (
                         <img
-                            src={call.callerAvatar}
+                            src={normalizeMediaUrl(call.callerAvatar)}
                             alt={call.callerName}
+                            onError={() => setAvatarFailed(true)}
                             style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--color-accent)' }}
                         />
                     ) : (

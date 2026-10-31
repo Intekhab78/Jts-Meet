@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { resolveAvatarUrl } from '../../config';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 interface MobileOutgoingCallModalProps {
   isOpen: boolean;
@@ -178,17 +179,15 @@ export const MobileOutgoingCallModal: React.FC<MobileOutgoingCallModalProps> = (
             overflow: 'hidden',
           }}
         >
-          {targetAvatar ? (
-            <img
-              src={resolveAvatarUrl(targetAvatar)}
-              alt={targetName}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              onError={(e) => { e.currentTarget.style.display = 'none'; }}
-            />
-          ) : isChannel ? (
-            '#'
+          {isChannel ? (
+            <span style={{ fontSize: '2.5rem', fontWeight: 800 }}>#</span>
           ) : (
-            targetName.charAt(0).toUpperCase()
+            <MobileAvatar
+              src={targetAvatar}
+              name={targetName}
+              size={96}
+              backgroundColor="transparent"
+            />
           )}
         </div>
       </div>

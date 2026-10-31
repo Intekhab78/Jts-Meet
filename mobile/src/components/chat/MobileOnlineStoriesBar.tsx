@@ -1,6 +1,7 @@
 import React from 'react';
 import { MobileContact } from './types';
 import { resolveAvatarUrl } from '../../config';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 interface MobileOnlineStoriesBarProps {
   contacts: MobileContact[];
@@ -128,45 +129,12 @@ export const MobileOnlineStoriesBar: React.FC<MobileOnlineStoriesBarProps> = ({
                     overflow: 'hidden',
                   }}
                 >
-                  <div
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      background: isInMeeting
-                        ? 'linear-gradient(135deg, #fee2e2 0%, #fef2f2 100%)'
-                        : isOnline
-                        ? 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%)'
-                        : '#f1f5f9',
-                      color: isInMeeting ? '#dc2626' : isOnline ? '#2563eb' : '#64748b',
-                      fontWeight: 700,
-                      fontSize: '0.85rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      borderRadius: '50%',
-                    }}
-                  >
-                    {contact.name.charAt(0).toUpperCase()}
-                    {contact.avatar && (
-                      <img
-                        src={resolveAvatarUrl(contact.avatar)}
-                        alt={contact.name}
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                        }}
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    )}
-                  </div>
+                  <MobileAvatar
+                    src={contact.avatar}
+                    name={contact.name}
+                    size={46}
+                    backgroundColor={isInMeeting ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : undefined}
+                  />
                 </div>
 
                 {/* Status Dot: Green if Online, Red if In Call, Neutral Gray if Offline */}

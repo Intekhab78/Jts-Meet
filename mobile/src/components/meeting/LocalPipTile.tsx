@@ -1,6 +1,7 @@
 import React from 'react';
 import { MobileBgPreset } from './types';
 import NetworkSignalIndicator from './NetworkSignalIndicator';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 export interface LocalPipTileProps {
   isFullscreenShare: boolean;
@@ -79,9 +80,10 @@ export const LocalPipTile: React.FC<LocalPipTileProps> = ({
       }}
     >
       {selfCorner === 'minimized' ? (
-        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa', fontSize: '0.8rem', fontWeight: 800 }}>
-          {resolvedDisplayName.charAt(0).toUpperCase()}
-        </div>
+        <MobileAvatar
+          name={resolvedDisplayName}
+          size={40}
+        />
       ) : (
         <>
           <video

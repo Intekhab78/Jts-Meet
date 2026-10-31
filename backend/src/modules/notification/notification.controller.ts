@@ -128,6 +128,23 @@ export const notificationController = {
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to process rejection')
         }
+    },
+
+    registerFcmToken: async (req: AuthRequest, res: Response) => {
+        const userId = req.userId
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        const { fcmToken, platform } = req.body
+        if (!fcmToken) {
+            return sendError(res, 400, 'fcmToken is required')
+        }
+        try {
+            await NotificationService.registerFcmDevice(userId, fcmToken, platform || 'android')
+            return sendSuccess(res, { registered: true }, 'FCM token registered successfully')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to register FCM token')
+        }
     }
 }
 

@@ -13,6 +13,7 @@ router.post('/:id/read', authenticate, asyncWrapper(notificationController.markR
 router.get('/vapid-public-key', authenticate, asyncWrapper(notificationController.getVapidPublicKey))
 router.post('/push-subscribe', authenticate, asyncWrapper(notificationController.subscribePush))
 router.post('/push-unsubscribe', authenticate, asyncWrapper(notificationController.unsubscribePush))
+router.post('/fcm-token', authenticate, asyncWrapper(notificationController.registerFcmToken))
 router.post('/call-reject', asyncWrapper(notificationController.rejectCallFromPush))
 
 export default router

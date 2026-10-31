@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { startOutgoingRingback, stopOutgoingRingback } from '../services/chime.service'
 import { IconPhone, IconPhoneOff, IconVideo, IconMonitor } from '../../../components/common/Icons'
 
+import { normalizeMediaUrl } from '../../../config'
+
 export interface OutgoingCallData {
     meetingId: string
     targetUserId?: string
@@ -22,6 +24,11 @@ interface OutgoingCallModalProps {
 
 export function OutgoingCallModal({ call, onCancel }: OutgoingCallModalProps) {
     const [secondsElapsed, setSecondsElapsed] = useState(0)
+    const [avatarFailed, setAvatarFailed] = useState(false)
+
+    useEffect(() => {
+        setAvatarFailed(false)
+    }, [call?.targetAvatar])
 
     useEffect(() => {
         if (!call) {
@@ -112,10 +119,11 @@ export function OutgoingCallModal({ call, onCancel }: OutgoingCallModalProps) {
                         </>
                     )}
 
-                    {call.targetAvatar ? (
+                    {call.targetAvatar && !avatarFailed ? (
                         <img
-                            src={call.targetAvatar}
+                            src={normalizeMediaUrl(call.targetAvatar)}
                             alt={call.targetName}
+                            onError={() => setAvatarFailed(true)}
                             style={{
                                 width: '100%',
                                 height: '100%',

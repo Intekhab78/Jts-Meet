@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import type { OrganizationMember, OrganizationRole } from './organization.types'
-import { API_BASE } from '../../config'
+import { API_BASE, normalizeMediaUrl } from '../../config'
 import { updateOrganizationMemberRole } from './organization.service'
 import {
     IconPlus,
@@ -519,8 +519,9 @@ export function MemberList({
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                                 {userObj?.profileImage ? (
                                                     <img
-                                                        src={userObj.profileImage}
+                                                        src={normalizeMediaUrl(userObj.profileImage)}
                                                         alt={fullName}
+                                                        onError={(e) => { e.currentTarget.style.display = 'none' }}
                                                         style={{ width: 32, height: 32, minWidth: 32, borderRadius: '50%', objectFit: 'cover' }}
                                                     />
                                                 ) : (

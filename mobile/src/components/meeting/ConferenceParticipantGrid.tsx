@@ -1,6 +1,7 @@
 import React from 'react';
 import { RemoteParticipant } from './types';
 import NetworkSignalIndicator from './NetworkSignalIndicator';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 export interface ConferenceParticipantGridProps {
   participants: RemoteParticipant[];
@@ -123,24 +124,11 @@ export const ConferenceParticipantGrid: React.FC<ConferenceParticipantGridProps>
               ) : (
                 /* Remote Participant Avatar */
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                  <div
-                    style={{
-                      width: participants.length > 4 ? 54 : 76,
-                      height: participants.length > 4 ? 54 : 76,
-                      borderRadius: '50%',
-                      background: isSpeaking ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                      color: '#ffffff',
-                      fontSize: participants.length > 4 ? '1.4rem' : '1.8rem',
-                      fontWeight: 800,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: isSpeaking ? '0 0 20px rgba(59, 130, 246, 0.7)' : '0 8px 24px rgba(37, 99, 235, 0.35)',
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    {peer.displayName.charAt(0).toUpperCase()}
-                  </div>
+                  <MobileAvatar
+                    name={peer.displayName}
+                    size={participants.length > 4 ? 54 : 76}
+                    border={isSpeaking ? '3px solid #3b82f6' : undefined}
+                  />
                   <span style={{ fontSize: participants.length > 4 ? '0.78rem' : '0.9rem', fontWeight: 700, color: '#f8fafc' }}>
                     {peer.displayName}
                   </span>
@@ -239,24 +227,11 @@ export const ConferenceParticipantGrid: React.FC<ConferenceParticipantGridProps>
           textAlign: 'center',
         }}
       >
-        <div
-          style={{
-            width: 100,
-            height: 100,
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            fontSize: '2.5rem',
-            fontWeight: 800,
-            boxShadow: '0 8px 30px rgba(37, 99, 235, 0.4)',
-            marginBottom: 16,
-          }}
-        >
-          {directPeerName.charAt(0).toUpperCase()}
-        </div>
+        <MobileAvatar
+          name={directPeerName}
+          size={100}
+          style={{ marginBottom: 16 }}
+        />
         <div style={{ color: '#ffffff', fontSize: '1.25rem', fontWeight: 800, marginBottom: 6 }}>
           {directPeerName}
         </div>
@@ -282,23 +257,10 @@ export const ConferenceParticipantGrid: React.FC<ConferenceParticipantGridProps>
         backgroundColor: '#090d16',
       }}
     >
-      <div
-        style={{
-          width: 80,
-          height: 80,
-          borderRadius: '50%',
-          background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-          color: '#ffffff',
-          fontSize: '2.2rem',
-          fontWeight: 800,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 6px 20px rgba(37, 99, 235, 0.35)',
-        }}
-      >
-        {resolvedDisplayName.charAt(0).toUpperCase()}
-      </div>
+      <MobileAvatar
+        name={resolvedDisplayName}
+        size={80}
+      />
       <span style={{ marginTop: 12, fontSize: '0.95rem', fontWeight: 700, color: '#f8fafc' }}>
         {resolvedDisplayName} (You)
       </span>

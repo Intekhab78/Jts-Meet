@@ -2,6 +2,8 @@ import webpush from 'web-push'
 import { Types } from 'mongoose'
 import { Notification, INotification } from './notification.model'
 import { PushSubscription } from '../../models/pushSubscription.model'
+import { FcmDevice } from '../../models/fcmDevice.model'
+import { getFirebaseMessaging } from '../../config/firebase'
 import { sendOTPEmail, sendResetPasswordEmail, sendMeetingInvitationEmail, sendOrganizationInvitationEmail, sendTeamInvitationEmail } from '../../services/email.service'
 
 export interface NotificationPayload {
@@ -75,9 +77,27 @@ export class NotificationService {
         }).exec()
     }
 
+    static async registerFcmDevice(userId: string, fcmToken: string, platform: string = 'android') {
+        if (!userId || !fcmToken) return null
+        return FcmDevice.findOneAndUpdate(
+            { fcmToken },
+            {
+                userId: new Types.ObjectId(userId),
+                fcmToken,
+                platform
+            },
+            { upsert: true, new: true }
+        ).exec()
+    }
+
+    static async removeFcmDevice(fcmToken: string) {
+        if (!fcmToken) return
+        return FcmDevice.deleteOne({ fcmToken }).exec()
+    }
+
     /**
-     * Dispatches a high-priority Incoming Call Web Push notification.
-     * Rings/alerts the target user even if all their browser tabs are closed.
+     * Dispatches a high-priority Incoming Call Push notification via both Web Push & Native Android FCM.
+     * Rings/alerts the target user even if all their browser tabs or mobile apps are closed.
      */
     static async sendIncomingCallPush(targetUserId: string, callData: {
         meetingId: string
@@ -88,73 +108,171 @@ export class NotificationService {
     }): Promise<{ dispatched: number }> {
         if (!targetUserId || !callData?.meetingId) return { dispatched: 0 }
 
+        let successCount = 0
+
         try {
+            // ── 1. Native Android FCM High-Priority Push (Wakes up phone & Rings like WhatsApp) ──
+            const fcmDevices = await FcmDevice.find({
+                userId: new Types.ObjectId(targetUserId)
+            }).exec()
+
+            if (fcmDevices && fcmDevices.length > 0) {
+                const messaging = getFirebaseMessaging()
+                if (messaging) {
+                    const tokens = fcmDevices.map((d) => d.fcmToken)
+                    const isAudio = callData.callType === 'audio'
+
+                    try {
+                        const fcmResponse = await messaging.sendEachForMulticast({
+                            tokens,
+                            data: {
+                                type: 'incoming_call',
+                                meetingId: String(callData.meetingId),
+                                callerName: String(callData.callerName || 'Colleague'),
+                                callerAvatar: String(callData.callerAvatar || ''),
+                                callType: String(callData.callType || 'video'),
+                                callerId: String(callData.callerId || ''),
+                            },
+                            android: {
+                                priority: 'high',
+                                ttl: 60 * 1000,
+                                notification: {
+                                    title: isAudio ? `📞 Incoming Audio Call` : `📹 Incoming Video Call`,
+                                    body: `${callData.callerName || 'A colleague'} is calling you on JTS Meet...`,
+                                    channelId: 'incoming_calls',
+                                    priority: 'max',
+                                    defaultSound: true,
+                                    defaultVibrateTimings: true,
+                                }
+                            }
+                        })
+                        console.log(`[FCM] Dispatched incoming call push: ${fcmResponse.successCount}/${tokens.length} delivered`)
+                        successCount += fcmResponse.successCount
+
+                        // Purge invalid tokens
+                        if (fcmResponse.failureCount > 0) {
+                            const invalidTokens: string[] = []
+                            fcmResponse.responses.forEach((resp: any, idx: number) => {
+                                if (!resp.success && resp.error?.code === 'messaging/registration-token-not-registered') {
+                                    invalidTokens.push(tokens[idx])
+                                }
+                            })
+                            if (invalidTokens.length > 0) {
+                                FcmDevice.deleteMany({ fcmToken: { $in: invalidTokens } }).exec().catch(() => {})
+                            }
+                        }
+                    } catch (fcmErr: any) {
+                        console.warn('[FCM] Error dispatching incoming call push:', fcmErr?.message || fcmErr)
+                    }
+                }
+            }
+
+            // ── 2. Browser Web Push (VAPID) ──
             const subscriptions = await PushSubscription.find({
                 userId: new Types.ObjectId(targetUserId)
             }).exec()
 
-            if (!subscriptions || subscriptions.length === 0) {
-                return { dispatched: 0 }
-            }
-
-            const isAudio = callData.callType === 'audio'
-            const payload = JSON.stringify({
-                type: 'call_incoming',
-                title: isAudio ? `📞 Incoming Audio Call` : `📹 Incoming Video Call`,
-                body: `${callData.callerName || 'A colleague'} is calling you on JTS Meet...`,
-                icon: callData.callerAvatar || '/favicon.ico',
-                tag: `call-${callData.meetingId}`,
-                data: {
-                    meetingId: callData.meetingId,
-                    callerName: callData.callerName,
-                    callerAvatar: callData.callerAvatar,
-                    callerId: callData.callerId,
-                    callType: callData.callType || 'video',
-                    url: `/?callMeetingId=${encodeURIComponent(callData.meetingId)}&callerId=${encodeURIComponent(callData.callerId || '')}&callerName=${encodeURIComponent(callData.callerName || '')}&callType=${encodeURIComponent(callData.callType || 'video')}&autoAccept=true`
-                }
-            })
-
-            let successCount = 0
-            const staleEndpoints: string[] = []
-
-            await Promise.all(
-                subscriptions.map(async (sub) => {
-                    try {
-                        await webpush.sendNotification(
-                            {
-                                endpoint: sub.endpoint,
-                                keys: {
-                                    p256dh: sub.keys.p256dh,
-                                    auth: sub.keys.auth
-                                }
-                            },
-                            payload,
-                            {
-                                TTL: 60, // 60 seconds TTL (calls are immediate)
-                                urgency: 'high'
-                            }
-                        )
-                        successCount++
-                    } catch (err: any) {
-                        // 404 Not Found or 410 Gone means the subscription is no longer valid / revoked
-                        if (err?.statusCode === 404 || err?.statusCode === 410) {
-                            staleEndpoints.push(sub.endpoint)
-                        } else {
-                            console.warn('[Push] Error sending push to endpoint:', err?.message || err)
-                        }
+            if (subscriptions && subscriptions.length > 0) {
+                const isAudio = callData.callType === 'audio'
+                const payload = JSON.stringify({
+                    type: 'call_incoming',
+                    title: isAudio ? `📞 Incoming Audio Call` : `📹 Incoming Video Call`,
+                    body: `${callData.callerName || 'A colleague'} is calling you on JTS Meet...`,
+                    icon: callData.callerAvatar || '/favicon.ico',
+                    tag: `call-${callData.meetingId}`,
+                    data: {
+                        meetingId: callData.meetingId,
+                        callerName: callData.callerName,
+                        callerAvatar: callData.callerAvatar,
+                        callerId: callData.callerId,
+                        callType: callData.callType || 'video',
+                        url: `/?callMeetingId=${encodeURIComponent(callData.meetingId)}&callerId=${encodeURIComponent(callData.callerId || '')}&callerName=${encodeURIComponent(callData.callerName || '')}&callType=${encodeURIComponent(callData.callType || 'video')}&autoAccept=true`
                     }
                 })
-            )
 
-            // Cleanup stale/expired push subscriptions
-            if (staleEndpoints.length > 0) {
-                await PushSubscription.deleteMany({ endpoint: { $in: staleEndpoints } }).exec()
+                const staleEndpoints: string[] = []
+
+                await Promise.all(
+                    subscriptions.map(async (sub) => {
+                        try {
+                            await webpush.sendNotification(
+                                {
+                                    endpoint: sub.endpoint,
+                                    keys: {
+                                        p256dh: sub.keys.p256dh,
+                                        auth: sub.keys.auth
+                                    }
+                                },
+                                payload,
+                                {
+                                    TTL: 60, // 60 seconds TTL (calls are immediate)
+                                    urgency: 'high'
+                                }
+                            )
+                            successCount++
+                        } catch (err: any) {
+                            if ([400, 401, 403, 404, 410].includes(err?.statusCode)) {
+                                staleEndpoints.push(sub.endpoint)
+                            } else {
+                                console.warn('[Push] Error sending push to endpoint:', err?.message || err)
+                            }
+                        }
+                    })
+                )
+
+                if (staleEndpoints.length > 0) {
+                    await PushSubscription.deleteMany({ endpoint: { $in: staleEndpoints } }).exec()
+                }
             }
 
             return { dispatched: successCount }
         } catch (error) {
             console.error('[NotificationService] sendIncomingCallPush error:', error)
-            return { dispatched: 0 }
+            return { dispatched: successCount }
+        }
+    }
+
+    /**
+     * Dispatches Missed Call notification via FCM & Web Push when a call rings out without answer
+     */
+    static async sendMissedCallPush(targetUserId: string, data: {
+        callerName: string
+        callerAvatar?: string
+        callType?: string
+    }): Promise<void> {
+        if (!targetUserId) return
+
+        try {
+            const fcmDevices = await FcmDevice.find({
+                userId: new Types.ObjectId(targetUserId)
+            }).exec()
+
+            const messaging = getFirebaseMessaging()
+            if (messaging && fcmDevices && fcmDevices.length > 0) {
+                const tokens = fcmDevices.map((d) => d.fcmToken)
+                await messaging.sendEachForMulticast({
+                    tokens,
+                    data: {
+                        type: 'missed_call',
+                        callerName: String(data.callerName || 'Colleague'),
+                        callType: String(data.callType || 'video'),
+                    },
+                    notification: {
+                        title: 'Missed Call',
+                        body: `You missed a ${data.callType || 'video'} call from ${data.callerName}`,
+                    },
+                    android: {
+                        priority: 'high',
+                        notification: {
+                            channelId: 'missed_calls',
+                            priority: 'high',
+                            defaultSound: true,
+                        }
+                    }
+                }).catch(() => {})
+            }
+        } catch (e) {
+            console.warn('[NotificationService] sendMissedCallPush error:', e)
         }
     }
 
@@ -237,7 +355,7 @@ export class NotificationService {
                             { TTL: 86400, urgency: 'normal' }
                         )
                     } catch (e: any) {
-                        if (e?.statusCode === 404 || e?.statusCode === 410) {
+                        if ([400, 401, 403, 404, 410].includes(e?.statusCode)) {
                             await PushSubscription.deleteOne({ _id: sub._id }).exec()
                         }
                     }

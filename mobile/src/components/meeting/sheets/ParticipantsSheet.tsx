@@ -1,5 +1,6 @@
 import React from 'react';
 import { RemoteParticipant } from '../types';
+import { MobileAvatar } from '../../common/MobileAvatar';
 
 export interface ParticipantsSheetProps {
   isOpen: boolean;
@@ -102,22 +103,10 @@ export const ParticipantsSheet: React.FC<ParticipantsSheetProps> = ({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: '50%',
-                  backgroundColor: '#2563eb',
-                  color: '#ffffff',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.8rem',
-                }}
-              >
-                {resolvedDisplayName.charAt(0).toUpperCase()}
-              </div>
+              <MobileAvatar
+                name={resolvedDisplayName}
+                size={32}
+              />
               <span style={{ fontSize: '0.85rem', color: '#0f172a', fontWeight: 600 }}>
                 {resolvedDisplayName} (You)
               </span>
@@ -139,22 +128,10 @@ export const ParticipantsSheet: React.FC<ParticipantsSheetProps> = ({
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: '50%',
-                    backgroundColor: '#3b82f6',
-                    color: '#ffffff',
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.8rem',
-                  }}
-                >
-                  {p.displayName.charAt(0).toUpperCase()}
-                </div>
+                <MobileAvatar
+                  name={p.displayName}
+                  size={32}
+                />
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <span style={{ fontSize: '0.85rem', color: '#0f172a', fontWeight: 600 }}>
                     {p.displayName}

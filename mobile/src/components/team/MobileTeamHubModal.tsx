@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { API_BASE, getStoredToken, resolveAvatarUrl } from '../../config';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 export interface MobileTeamMember {
   userId: any;
@@ -1049,33 +1050,11 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                      <div
-                        style={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: '50%',
-                          backgroundColor: '#eff6ff',
-                          color: '#2563eb',
-                          fontWeight: 800,
-                          fontSize: '0.85rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                          border: '1px solid #bfdbfe',
-                        }}
-                      >
-                        {userObj?.profileImage ? (
-                          <img
-                            src={resolveAvatarUrl(userObj.profileImage)}
-                            alt=""
-                            style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
-                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                          />
-                        ) : (
-                          memberName.charAt(0).toUpperCase()
-                        )}
-                      </div>
+                      <MobileAvatar
+                        src={userObj?.profileImage}
+                        name={memberName}
+                        size={36}
+                      />
 
                       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

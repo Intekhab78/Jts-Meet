@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { API_BASE, getStoredToken, setStoredUser, resolveAvatarUrl } from '../../config';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 interface MobileUserProfileModalProps {
   isOpen: boolean;
@@ -323,33 +324,12 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
           }}
         >
           <div style={{ position: 'relative' }}>
-            <div
-              style={{
-                width: 60,
-                height: 60,
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-                color: '#ffffff',
-                fontWeight: 800,
-                fontSize: '1.4rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
-              }}
-            >
-              {avatarUrl ? (
-                <img
-                  src={resolveAvatarUrl(avatarUrl)}
-                  alt=""
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                />
-              ) : (
-                fullName ? fullName.charAt(0).toUpperCase() : 'U'
-              )}
-            </div>
+            <MobileAvatar
+              src={avatarUrl}
+              name={fullName}
+              size={60}
+              border="2px solid #ffffff"
+            />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { resolveAvatarUrl } from '../config';
+import { MobileAvatar } from './common/MobileAvatar';
 
 interface MobileTopBarProps {
   user: any;
@@ -122,29 +123,21 @@ export const MobileTopBar: React.FC<MobileTopBarProps> = ({
               width: 34,
               height: 34,
               borderRadius: '50%',
-              background: 'linear-gradient(135deg, #3b82f6 0%, #6366f1 100%)',
-              color: '#ffffff',
-              fontWeight: 700,
-              fontSize: '0.8rem',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 2px 6px rgba(59, 130, 246, 0.25)',
-              overflow: 'hidden',
               padding: 0,
-              border: '2px solid #ffffff',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
             }}
           >
-            {user.profileImage || user.avatar ? (
-              <img
-                src={resolveAvatarUrl(user.profileImage || user.avatar)}
-                alt="Avatar"
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
-            ) : (
-              user.name ? user.name.charAt(0).toUpperCase() : 'U'
-            )}
+            <MobileAvatar
+              src={user.profileImage || user.avatar}
+              name={user.name}
+              size={34}
+              border="2px solid #ffffff"
+            />
           </button>
         ) : (
           <button

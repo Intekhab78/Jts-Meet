@@ -1,4 +1,5 @@
 import React from 'react';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 export interface DirectAudioCallViewProps {
   directPeerName: string;
@@ -184,29 +185,18 @@ export const DirectAudioCallView: React.FC<DirectAudioCallViewProps> = ({
             </>
           )}
 
-          {/* Avatar Bubble */}
-          <div
+          <MobileAvatar
+            name={directPeerName}
+            size={132}
+            border={isRemoteSpeaking ? '4px solid #60a5fa' : '4px solid rgba(255, 255, 255, 0.9)'}
             style={{
-              width: '100%',
-              height: '100%',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)',
-              color: '#ffffff',
-              fontSize: '3.4rem',
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: isRemoteSpeaking ? '4px solid #60a5fa' : '4px solid rgba(255, 255, 255, 0.9)',
               boxShadow: isRemoteSpeaking
                 ? '0 0 35px rgba(59, 130, 246, 0.45), 0 16px 40px rgba(59, 130, 246, 0.25)'
                 : '0 16px 36px rgba(0, 0, 0, 0.12)',
               transition: 'all 0.25s ease',
               zIndex: 3,
             }}
-          >
-            {directPeerName.charAt(0).toUpperCase()}
-          </div>
+          />
         </div>
 
         {/* Contact Name */}

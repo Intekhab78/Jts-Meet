@@ -20,6 +20,7 @@ import { MobileBiometricLockScreen } from './components/modals/MobileBiometricLo
 import { MobileUserProfileModal } from './components/modals/MobileUserProfileModal';
 import { MobileIncomingCallModal } from './components/meeting/MobileIncomingCallModal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { mobileNotificationService } from './services/mobileNotificationService';
 import { getStoredToken, getStoredUser, setStoredToken, setStoredUser, clearAllSessionStorageAndData, SOCKET_URL, API_BASE } from './config';
 
 export function App() {
@@ -334,8 +335,16 @@ export function App() {
   // Window Online / Offline Listeners
   useEffect(() => {
     const handleOnline = () => {
-      setNetworkState('reconnecting');
-      socketRef.current?.connect();
+      if (socketRef.current?.connected) {
+        setNetworkState('online');
+      } else {
+        setNetworkState('reconnecting');
+        socketRef.current?.connect();
+        // Failsafe: Return to online after 3s so banner never hangs
+        setTimeout(() => {
+          setNetworkState((s) => (s === 'reconnecting' ? 'online' : s));
+        }, 3000);
+      }
     };
     const handleOffline = () => {
       setNetworkState('offline');
@@ -353,20 +362,37 @@ export function App() {
   // Background socket for incoming & outgoing call alerts & network synchronization
   useEffect(() => {
     const effectiveToken = token || getStoredToken();
+    if (!effectiveToken) {
+      setNetworkState('online');
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+        setSocket(null);
+      }
+      return;
+    }
+
+    // Ensure FCM token is linked to the authenticated user on backend
+    mobileNotificationService.syncStoredFcmToken(effectiveToken);
+
     const bgSocket = io(SOCKET_URL, {
-      auth: { token: effectiveToken || undefined },
-      transports: ['polling', 'websocket'],
-      reconnectionAttempts: 25,
-      reconnectionDelay: 1000,
+      auth: { token: effectiveToken },
+      transports: ['websocket', 'polling'], // WebSocket first for instant, stable mobile connection
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1500,
+      timeout: 10000,
     });
     socketRef.current = bgSocket;
     setSocket(bgSocket);
 
+    let reconnectTimer: any = null;
+
     bgSocket.on('connect', () => {
       console.log('[MobileApp] Connected to background socket:', bgSocket.id);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       setNetworkState((prev) => {
         if (prev === 'reconnecting' || prev === 'offline') {
-          setTimeout(() => setNetworkState('online'), 2500);
+          setTimeout(() => setNetworkState('online'), 2000);
           return 'restored';
         }
         return 'online';
@@ -375,13 +401,34 @@ export function App() {
 
     bgSocket.on('disconnect', (reason) => {
       console.warn('[MobileApp] Socket disconnected:', reason);
-      if (reason !== 'io client disconnect') {
-        setNetworkState('reconnecting');
+      if (reason === 'io server disconnect') {
+        // Server rejected auth - do not loop in reconnecting state
+        setNetworkState('online');
+      } else if (reason !== 'io client disconnect') {
+        if (!navigator.onLine) {
+          setNetworkState('offline');
+        } else {
+          setNetworkState('reconnecting');
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(() => {
+            setNetworkState((s) => (s === 'reconnecting' ? 'online' : s));
+          }, 3500);
+        }
       }
     });
 
+    bgSocket.on('connect_error', (err) => {
+      console.warn('[MobileApp] Socket connect error:', err?.message || err);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => {
+        setNetworkState((s) => (s === 'reconnecting' ? 'online' : s));
+      }, 3500);
+    });
+
     bgSocket.on('reconnect_attempt', () => {
-      setNetworkState('reconnecting');
+      if (!navigator.onLine) {
+        setNetworkState('offline');
+      }
     });
 
     bgSocket.on('call:incoming', (payload: any) => {

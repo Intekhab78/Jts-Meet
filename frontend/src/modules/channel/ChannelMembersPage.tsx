@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import type { ChannelMember, ChannelRole } from './channel.types'
 import { IconUsers, IconUser, IconCrown, IconShield, IconSearch, IconPlus, IconCopy, IconCheck, IconMail, IconTrash } from '../../components/common/Icons'
+import { normalizeMediaUrl } from '../../config'
 
 interface ChannelMembersPageProps {
     members: ChannelMember[]
@@ -283,8 +284,9 @@ export function ChannelMembersPage({
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                                 {profileImage ? (
                                                     <img
-                                                        src={profileImage}
+                                                        src={normalizeMediaUrl(profileImage)}
                                                         alt={fullName}
+                                                        onError={(e) => { e.currentTarget.style.display = 'none' }}
                                                         style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(255, 255, 255, 0.1)' }}
                                                     />
                                                 ) : (

@@ -1134,6 +1134,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
 
   // ── PICTURE IN PICTURE MINI-CARD & NATIVE PIP OVERLAY ──
   if (isMinimized || isNativePip) {
+    const targetPeerName = peerName || (participants[0]?.displayName) || displayName;
     return (
       <PipModeOverlay
         isMinimized={isMinimized}
@@ -1142,6 +1143,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         onLeave={onLeave}
         timer={timer}
         displayName={displayName}
+        peerName={targetPeerName}
         presenterStream={presenterStream}
         remoteStreams={remoteStreams}
         localStream={localStream}

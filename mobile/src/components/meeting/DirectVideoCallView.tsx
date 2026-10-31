@@ -1,5 +1,6 @@
 import React from 'react';
 import { RemoteParticipant } from './types';
+import { MobileAvatar } from '../common/MobileAvatar';
 
 export interface DirectVideoCallViewProps {
   directPeerName: string;
@@ -71,22 +72,10 @@ export const DirectVideoCallView: React.FC<DirectVideoCallViewProps> = ({
           pointerEvents: 'auto',
         }}
       >
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #6264a7 0%, #464775 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 800,
-            fontSize: '0.85rem',
-            color: '#fff',
-          }}
-        >
-          {directPeerName.charAt(0).toUpperCase()}
-        </div>
+        <MobileAvatar
+          name={directPeerName}
+          size={32}
+        />
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
             <span>{directPeerName}</span>
@@ -194,25 +183,15 @@ export const DirectVideoCallView: React.FC<DirectVideoCallViewProps> = ({
                   />
                 </>
               )}
-              <div
+              <MobileAvatar
+                name={directPeerName}
+                size={110}
+                border={isRemoteSpeaking ? '4px solid #818cf8' : '4px solid rgba(255, 255, 255, 0.15)'}
                 style={{
-                  width: '100%',
-                  height: '100%',
-                  borderRadius: '50%',
-                  background: 'linear-gradient(135deg, #6264a7 0%, #464775 100%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '2.8rem',
-                  fontWeight: 800,
-                  color: '#fff',
-                  border: isRemoteSpeaking ? '4px solid #818cf8' : '4px solid rgba(255, 255, 255, 0.15)',
                   boxShadow: '0 12px 35px rgba(0, 0, 0, 0.6)',
                   zIndex: 2,
                 }}
-              >
-                {directPeerName.charAt(0).toUpperCase()}
-              </div>
+              />
             </div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', marginBottom: 4 }}>
