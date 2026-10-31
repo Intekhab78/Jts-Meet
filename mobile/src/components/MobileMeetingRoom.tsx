@@ -90,6 +90,65 @@ import {
 export type { RemoteParticipant, MobileMeetingRoomProps, MobileBgPreset, ChatMessage, ReactionItem };
 export { MOBILE_BACKGROUND_PRESETS, ICE_SERVERS };
 
+const MobileRemoteAudioStream: React.FC<{ peerId: string; stream: MediaStream }> = ({ peerId, stream }) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el || !stream) return;
+
+    const playAudio = () => {
+      if (el.srcObject !== stream) {
+        el.srcObject = stream;
+      }
+      const p = el.play();
+      if (p !== undefined) {
+        p.catch((err) => {
+          console.warn(`[Mobile Audio] Autoplay deferred for ${peerId}:`, err);
+          const unlock = () => {
+            el.play().catch(() => {});
+            window.removeEventListener('click', unlock);
+            window.removeEventListener('touchstart', unlock);
+            window.removeEventListener('touchend', unlock);
+          };
+          window.addEventListener('click', unlock, { once: true });
+          window.addEventListener('touchstart', unlock, { once: true });
+          window.addEventListener('touchend', unlock, { once: true });
+        });
+      }
+    };
+
+    playAudio();
+
+    const onTrackChange = () => playAudio();
+    stream.addEventListener('addtrack', onTrackChange);
+    stream.addEventListener('removetrack', onTrackChange);
+
+    return () => {
+      stream.removeEventListener('addtrack', onTrackChange);
+      stream.removeEventListener('removetrack', onTrackChange);
+    };
+  }, [stream, peerId]);
+
+  return (
+    <audio
+      ref={audioRef}
+      autoPlay
+      playsInline
+      data-peer-id={peerId}
+      style={{
+        position: 'fixed',
+        top: -9999,
+        left: -9999,
+        width: 1,
+        height: 1,
+        opacity: 0.001,
+        pointerEvents: 'none',
+      }}
+    />
+  );
+};
+
 
 export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   meetingId,
@@ -338,6 +397,18 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   const peerIdMapRef = useRef<Record<string, string>>({});
 
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
+  const iceServersRef = useRef<RTCIceServer[]>(ICE_SERVERS);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/webrtc/ice-servers`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.success && Array.isArray(data?.iceServers) && data.iceServers.length > 0) {
+          iceServersRef.current = data.iceServers;
+        }
+      })
+      .catch(() => {});
+  }, []);
   const peerStreamsRef = useRef<Record<string, MediaStream>>({});
   const timerSecRef = useRef(0);
   const myUserIdRef = useRef<string>('');
@@ -528,7 +599,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     }
 
     const pc = new RTCPeerConnection({
-      iceServers: ICE_SERVERS,
+      iceServers: iceServersRef.current || ICE_SERVERS,
       bundlePolicy: 'max-bundle',
     });
     peerConnectionsRef.current[normId] = pc;
@@ -723,6 +794,9 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         });
 
         try {
+          if (mediaReadyPromiseRef.current) {
+            await mediaReadyPromiseRef.current;
+          }
           const pc = getOrCreatePeerConnection(payload.userId, payload.displayName || 'Participant');
           if (localStreamRef.current) {
             attachLocalTracks(pc, localStreamRef.current);
@@ -745,6 +819,9 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
       // Offer from peer
       socket.on('webrtc:offer', async (payload: { fromUserId: string; offer: any; displayName?: string; isVideoOff?: boolean; isMuted?: boolean }) => {
         try {
+          if (mediaReadyPromiseRef.current) {
+            await mediaReadyPromiseRef.current;
+          }
           const pc = getOrCreatePeerConnection(payload.fromUserId, payload.displayName || 'Participant');
           if (pc.signalingState === 'have-local-offer') {
             // Offer collision: rollback local offer and accept incoming remote offer
@@ -1279,20 +1356,22 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
           cursor: 'pointer',
         }}
       >
-        {/* ── Global Continuous Remote Audio (Never cuts out during screen share or pinning) ── */}
-        <div style={{ display: 'none' }}>
+        {/* ── Global Continuous Remote Audio (Always in active render tree, never display:none) ── */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            top: -9999,
+            left: -9999,
+            width: 1,
+            height: 1,
+            opacity: 0.001,
+            pointerEvents: 'none',
+            overflow: 'hidden',
+          }}
+        >
           {Object.entries(remoteStreams).map(([peerId, stream]) => (
-            <audio
-              key={`global_audio_${peerId}`}
-              autoPlay
-              playsInline
-              ref={(el) => {
-                if (el && stream && el.srcObject !== stream) {
-                  el.srcObject = stream;
-                  el.play().catch(() => {});
-                }
-              }}
-            />
+            <MobileRemoteAudioStream key={`global_audio_${peerId}`} peerId={peerId} stream={stream} />
           ))}
         </div>
 

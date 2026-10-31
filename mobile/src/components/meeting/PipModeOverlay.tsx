@@ -478,8 +478,8 @@ export const PipModeOverlay: React.FC<PipModeOverlayProps> = ({
           )}
         </div>
 
-        {/* Keep audio tracks alive in mini PiP mode */}
-        <div style={{ display: 'none' }}>
+        {/* Keep audio tracks alive in mini PiP mode (Always in layout tree, off-screen) */}
+        <div style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, opacity: 0.001, pointerEvents: 'none' }}>
           {participants.map((peer) => {
             const s = remoteStreams[peer.userId] || remoteStreams[peer.userId.toLowerCase()];
             return s ? (
@@ -547,8 +547,8 @@ export const PipModeOverlay: React.FC<PipModeOverlayProps> = ({
           </div>
         )}
 
-        {/* Keep remote audio streams playing in native PiP */}
-        <div style={{ display: 'none' }}>
+        {/* Keep remote audio streams playing in native PiP (Always in layout tree, off-screen) */}
+        <div style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, opacity: 0.001, pointerEvents: 'none' }}>
           {participants.map((peer) => {
             const s = remoteStreams[peer.userId] || remoteStreams[peer.userId.toLowerCase()];
             return s ? (

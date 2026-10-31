@@ -106,7 +106,6 @@ export const ConferenceParticipantGrid: React.FC<ConferenceParticipantGridProps>
                   autoPlay
                   playsInline
                   webkit-playsinline="true"
-                  muted
                   controls={false}
                   ref={(el) => {
                     if (el && stream && el.srcObject !== stream) {
