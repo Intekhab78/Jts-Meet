@@ -988,11 +988,21 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         screenStreamRef.current = null;
       }
       Object.keys(peerConnectionsRef.current).forEach((id) => cleanupPeer(id));
-      if (isDirectCall) {
-        try { socket?.emit('call:ended', { meetingId }); } catch (_) {}
-      }
-      socket?.emit('meeting:leave', { meetingId });
-      socket?.disconnect();
+      try {
+        if (isDirectCall) {
+          socket?.emit('call:ended', { meetingId });
+          socket?.emit('call:cancelled', { meetingId });
+        }
+        socket?.emit('meeting:leave', { meetingId });
+        socket?.emit('webrtc:user-left', { meetingId });
+      } catch (_) {}
+
+      // Allow 350ms for outgoing TCP frames to flush before disconnecting the socket
+      setTimeout(() => {
+        try {
+          socket?.disconnect();
+        } catch (_) {}
+      }, 350);
     };
   }, [meetingId, displayName]);
 

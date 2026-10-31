@@ -886,6 +886,13 @@ export function App() {
           onMinimize={() => setIsMeetingMinimized(true)}
           onMaximize={() => setIsMeetingMinimized(false)}
           onLeave={() => {
+            if (activeMeeting) {
+              try {
+                socketRef.current?.emit('call:ended', { meetingId: activeMeeting.id });
+                socketRef.current?.emit('call:cancelled', { meetingId: activeMeeting.id });
+                socketRef.current?.emit('meeting:leave', { meetingId: activeMeeting.id });
+              } catch (_) {}
+            }
             setActiveMeeting(null);
             setIsMeetingMinimized(false);
           }}

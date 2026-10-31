@@ -222,7 +222,7 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
         }
     })
 
-    socket.on(SocketEvents.CALL_CANCELLED, (payload: {
+    const handleEndDirectCall = async (payload: {
         targetUserId?: string
         calleeId?: string
         targetUserIds?: string[]
@@ -230,15 +230,17 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
     }) => {
         if (!userId) return
 
+        const mId = payload?.meetingId
         // Clear 60s ringing timeout
-        if (payload?.meetingId && activeRingTimeouts.has(payload.meetingId)) {
-            clearTimeout(activeRingTimeouts.get(payload.meetingId))
-            activeRingTimeouts.delete(payload.meetingId)
+        if (mId && activeRingTimeouts.has(mId)) {
+            clearTimeout(activeRingTimeouts.get(mId))
+            activeRingTimeouts.delete(mId)
         }
 
         const cancelData = {
             callerId: userId,
-            meetingId: payload?.meetingId
+            userId,
+            meetingId: mId
         }
 
         const targets = new Set<string>()
@@ -250,16 +252,46 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
             })
         }
 
+        // If target not provided directly in payload, lookup meeting host and participants in database
+        if (mId && targets.size === 0) {
+            try {
+                const meetingDoc = await Meeting.findOne({ meetingId: mId }).select('participants host').lean().exec()
+                if (meetingDoc) {
+                    if (meetingDoc.host && String(meetingDoc.host) !== String(userId)) {
+                        targets.add(String(meetingDoc.host))
+                    }
+                    if (Array.isArray(meetingDoc.participants)) {
+                        meetingDoc.participants.forEach((p: any) => {
+                            const pId = String(p?._id || p)
+                            if (pId && pId !== String(userId)) {
+                                targets.add(pId)
+                            }
+                        })
+                    }
+                }
+            } catch (_) {}
+        }
+
         targets.forEach(tId => {
             io.to(`user:${tId}`).emit(SocketEvents.CALL_CANCELLED, cancelData)
+            io.to(`user:${tId}`).emit('call:ended', cancelData)
         })
 
-        if (payload?.meetingId) {
-            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.CALL_CANCELLED, cancelData)
-            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
+        if (mId) {
+            io.to(`meeting:${mId}`).emit(SocketEvents.CALL_CANCELLED, cancelData)
+            io.to(`meeting:${mId}`).emit('call:ended', cancelData)
+            io.to(`meeting:${mId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
                 userId,
-                meetingId: payload.meetingId
+                meetingId: mId
+            })
+            io.to(`meeting:${mId}`).emit(SocketEvents.MEETING_LEAVE, {
+                userId,
+                meetingId: mId
             })
         }
-    })
+    }
+
+    socket.on(SocketEvents.CALL_CANCELLED, handleEndDirectCall)
+    socket.on('call:ended', handleEndDirectCall)
+    socket.on('call:hangup', handleEndDirectCall)
 }

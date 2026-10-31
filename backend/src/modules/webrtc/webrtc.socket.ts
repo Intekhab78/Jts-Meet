@@ -278,6 +278,14 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
                     userId: sUserId,
                     meetingId: targetMeetingId
                 })
+                io.to(`meeting:${targetMeetingId}`).emit('call:ended', {
+                    userId: sUserId,
+                    meetingId: targetMeetingId
+                })
+                io.to(`meeting:${targetMeetingId}`).emit(SocketEvents.CALL_CANCELLED, {
+                    userId: sUserId,
+                    meetingId: targetMeetingId
+                })
             }
         }
     }
@@ -315,6 +323,13 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
 
         if (!targetMeetingId || !sUserId) {
             handleLeaveOrDisconnect()
+            return
+        }
+
+        // Direct 1-on-1 calls end immediately on disconnect to avoid holding peer's call screen
+        if (targetMeetingId.startsWith('call_')) {
+            console.log(`[WebRTC Socket] Direct call socket ${socket.id} disconnected. Ending call immediately.`)
+            handleLeaveOrDisconnect(targetMeetingId, sUserId)
             return
         }
 

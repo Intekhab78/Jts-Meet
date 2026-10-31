@@ -28,7 +28,7 @@ export function useWorkspaceCalls({
 }: UseWorkspaceCallsProps) {
     const { joined } = useMeetingContext()
     const { socket, connectSocket, connected } = useSocketContext()
-    const { connectToMeeting, leaveMeeting, requestMedia, stopMedia, startScreenShare } = useWebRTCContext()
+    const { connectToMeeting, leaveMeeting, requestMedia, stopMedia, startScreenShare, remoteStreams } = useWebRTCContext()
 
     const [incomingCall, setIncomingCall] = useState<IncomingCallData | null>(null)
     const [outgoingCall, setOutgoingCall] = useState<OutgoingCallData | null>(null)
@@ -279,29 +279,51 @@ export function useWorkspaceCalls({
         }
 
         const handleDirectCallPeerLeft = (data: any) => {
-            if (activeAudioCallRef.current) {
-                const currentPeerId = activeAudioCallRef.current.peerId
-                if (!data?.userId || data.userId === currentPeerId) {
-                    console.log('[AppWorkspace] Peer left active direct call:', data)
-                    handleCallCancelled(data)
-                }
+            const currentCall = activeAudioCallRef.current
+            if (!currentCall) return
+
+            const isMatchingMeeting = !data?.meetingId || data.meetingId === currentCall.meetingId
+            const isMatchingPeer = !data?.userId || 
+                String(data.userId).toLowerCase() === String(currentCall.peerId).toLowerCase() ||
+                String(data.userId).toLowerCase() === String(currentCall.peerName).toLowerCase()
+
+            if (!currentCall.isGroupCall && (isMatchingMeeting || isMatchingPeer)) {
+                console.log('[AppWorkspace] Peer left active 1-on-1 direct call:', data)
+                handleCallCancelled(data)
+            } else if (isMatchingMeeting && isMatchingPeer) {
+                console.log('[AppWorkspace] Target peer left call:', data)
+                handleCallCancelled(data)
             }
         }
 
         socket.on(SocketEvents.CALL_INCOMING, handleIncomingCall)
         socket.on(SocketEvents.CALL_CANCELLED, handleCallCancelled)
+        socket.on('call:ended', handleCallCancelled)
+        socket.on('call:hangup', handleCallCancelled)
         socket.on(SocketEvents.CALL_ACCEPTED, handleCallAccepted)
         socket.on(SocketEvents.CALL_REJECTED, handleCallRejected)
         socket.on('call:initiated', handleCallInitiated)
         socket.on(SocketEvents.WEBRTC_USER_LEFT, handleDirectCallPeerLeft)
+        socket.on(SocketEvents.MEETING_LEAVE, handleDirectCallPeerLeft)
+        socket.on('meeting:leave', handleDirectCallPeerLeft)
+        socket.on('meeting:user-left', handleDirectCallPeerLeft)
+        socket.on(SocketEvents.MEETING_END, handleCallCancelled)
+        socket.on('meeting:end', handleCallCancelled)
 
         return () => {
             socket.off(SocketEvents.CALL_INCOMING, handleIncomingCall)
             socket.off(SocketEvents.CALL_CANCELLED, handleCallCancelled)
+            socket.off('call:ended', handleCallCancelled)
+            socket.off('call:hangup', handleCallCancelled)
             socket.off(SocketEvents.CALL_ACCEPTED, handleCallAccepted)
             socket.off(SocketEvents.CALL_REJECTED, handleCallRejected)
             socket.off('call:initiated', handleCallInitiated)
             socket.off(SocketEvents.WEBRTC_USER_LEFT, handleDirectCallPeerLeft)
+            socket.off(SocketEvents.MEETING_LEAVE, handleDirectCallPeerLeft)
+            socket.off('meeting:leave', handleDirectCallPeerLeft)
+            socket.off('meeting:user-left', handleDirectCallPeerLeft)
+            socket.off(SocketEvents.MEETING_END, handleCallCancelled)
+            socket.off('meeting:end', handleCallCancelled)
         }
     }, [socket, profileName, connectToMeeting, leaveMeeting, requestMedia, stopMedia, startScreenShare, activeTab])
 
@@ -430,11 +452,56 @@ export function useWorkspaceCalls({
                 targetUserId: activeAudioCall.peerId,
                 meetingId: activeAudioCall.meetingId
             })
+            socket.emit('call:ended', {
+                targetUserId: activeAudioCall.peerId,
+                meetingId: activeAudioCall.meetingId
+            })
         }
         leaveMeeting()
         stopMedia()
         setActiveAudioCall(null)
     }
+
+    // Failsafe Watchdog: Auto-terminate direct 1-on-1 call if remote peer stream drops completely
+    const callConnectedAtRef = useRef<number>(0)
+    useEffect(() => {
+        if (activeAudioCall) {
+            callConnectedAtRef.current = Date.now()
+        } else {
+            callConnectedAtRef.current = 0
+        }
+    }, [activeAudioCall?.meetingId])
+
+    useEffect(() => {
+        if (!activeAudioCall || activeAudioCall.isGroupCall) return
+
+        const activeRemoteCount = Object.keys(remoteStreams || {}).length
+        if (activeRemoteCount > 0) return
+
+        const elapsedSinceStart = Date.now() - callConnectedAtRef.current
+        if (elapsedSinceStart < 7000) {
+            const initialGrace = setTimeout(() => {
+                if (activeAudioCallRef.current && !activeAudioCallRef.current.isGroupCall) {
+                    if (Object.keys(remoteStreams || {}).length === 0) {
+                        console.log('[AppWorkspace] Direct call timeout: No remote peer joined. Auto-closing.')
+                        handleEndActiveAudioCall()
+                    }
+                }
+            }, 7000 - elapsedSinceStart)
+            return () => clearTimeout(initialGrace)
+        }
+
+        const watchdogTimer = setTimeout(() => {
+            if (activeAudioCallRef.current && !activeAudioCallRef.current.isGroupCall) {
+                if (Object.keys(remoteStreams || {}).length === 0) {
+                    console.log('[AppWorkspace] Remote peer stream disconnected for >4s. Auto-closing direct call.')
+                    handleEndActiveAudioCall()
+                }
+            }
+        }, 4000)
+
+        return () => clearTimeout(watchdogTimer)
+    }, [activeAudioCall, remoteStreams])
 
     const handleStartDirectCall = (
         targetId: string,
