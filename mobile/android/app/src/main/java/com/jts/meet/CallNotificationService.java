@@ -1,15 +1,19 @@
 package com.jts.meet;
 
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioAttributes;
+import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import com.capacitorjs.plugins.pushnotifications.PushNotificationsPlugin;
@@ -18,15 +22,37 @@ import com.google.firebase.messaging.RemoteMessage;
 import java.util.Map;
 
 /**
- * Native Android Firebase Messaging Service with Full-Screen Intent Support.
- * Enables WhatsApp / MS Teams style incoming call experience:
- * Automatically turns on screen, displays incoming call UI over the lock screen, and rings.
+ * Enterprise Native Android Firebase Messaging Service with Full-Screen Intent Support.
+ * Ensures incoming calls ring loudly (even on lock screen) and automatically display
+ * the incoming call UI over the lock screen like WhatsApp / Microsoft Teams.
  */
 public class CallNotificationService extends FirebaseMessagingService {
 
-    private static final String CHANNEL_CALLS_ID = "incoming_calls";
-    private static final String CHANNEL_MESSAGES_ID = "chat_messages";
-    private static final int CALL_NOTIFICATION_ID = 2026;
+    public static final String CHANNEL_CALLS_ID = "jts_incoming_calls_v3";
+    public static final String CHANNEL_MESSAGES_ID = "chat_messages";
+    public static final int CALL_NOTIFICATION_ID = 2026;
+
+    private static Ringtone activeRingtone = null;
+    private static Vibrator activeVibrator = null;
+
+    /**
+     * Instantly stops native ringtone and vibration when call is answered, declined, or cancelled.
+     */
+    public static synchronized void stopRinging() {
+        try {
+            if (activeRingtone != null && activeRingtone.isPlaying()) {
+                activeRingtone.stop();
+            }
+            activeRingtone = null;
+        } catch (Exception ignored) {}
+
+        try {
+            if (activeVibrator != null) {
+                activeVibrator.cancel();
+            }
+            activeVibrator = null;
+        } catch (Exception ignored) {}
+    }
 
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
@@ -35,13 +61,13 @@ public class CallNotificationService extends FirebaseMessagingService {
         Map<String, String> data = remoteMessage.getData();
         String type = data.get("type");
 
-        // Handle High-Priority Incoming Call with Full-Screen Lockscreen Overlay
+        // High-Priority Incoming Call with Full-Screen Overlay & Loud Ringtone
         if ("incoming_call".equals(type) || "call_incoming".equals(type)) {
             handleIncomingCall(data);
             return;
         }
 
-        // Delegate chat messages and other standard notifications to Capacitor plugin
+        // Delegate chat messages and standard notifications to Capacitor plugin
         try {
             PushNotificationsPlugin.sendRemoteMessage(remoteMessage);
         } catch (Exception e) {
@@ -61,26 +87,65 @@ public class CallNotificationService extends FirebaseMessagingService {
             callerName = "Colleague";
         }
 
-        // 1. Wake up the device CPU and turn screen on immediately
+        // 1. Wake up screen and CPU immediately (hold for 30s)
         try {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
                 PowerManager.WakeLock wakeLock = pm.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
+                    PowerManager.FULL_WAKE_LOCK |
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP |
+                    PowerManager.ON_AFTER_RELEASE,
                     "JTSMeet:CallWakeLock"
                 );
-                wakeLock.acquire(15000); // Hold for 15s while ringing
+                wakeLock.acquire(30000);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
 
-        // 2. Prepare Intent to launch MainActivity over lockscreen
+        // 2. Play continuous native ringtone via RingtoneManager (LOUD & REPEATING)
+        try {
+            stopRinging();
+            Uri ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            if (ringtoneUri == null) {
+                ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            }
+            activeRingtone = RingtoneManager.getRingtone(getApplicationContext(), ringtoneUri);
+            if (activeRingtone != null) {
+                AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .build();
+                activeRingtone.setAudioAttributes(audioAttributes);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    activeRingtone.setLooping(true);
+                }
+                activeRingtone.play();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // 3. Start continuous phone vibration
+        try {
+            activeVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (activeVibrator != null) {
+                long[] pattern = {0, 1000, 800, 1000, 800, 1000};
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    activeVibrator.vibrate(VibrationEffect.createWaveform(pattern, 1));
+                } else {
+                    activeVibrator.vibrate(pattern, 1);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // 4. Prepare Full-Screen Intent for MainActivity
         Intent fullScreenIntent = new Intent(this, MainActivity.class);
         fullScreenIntent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK |
             Intent.FLAG_ACTIVITY_CLEAR_TOP |
-            Intent.FLAG_ACTIVITY_SINGLE_TOP
+            Intent.FLAG_ACTIVITY_SINGLE_TOP |
+            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
         );
         fullScreenIntent.putExtra("type", "incoming_call");
         fullScreenIntent.putExtra("meetingId", meetingId);
@@ -88,6 +153,13 @@ public class CallNotificationService extends FirebaseMessagingService {
         fullScreenIntent.putExtra("callerAvatar", callerAvatar);
         fullScreenIntent.putExtra("callType", callType);
         fullScreenIntent.putExtra("callerId", callerId);
+
+        // 5. Try direct startActivity to immediately display UI over lock screen
+        try {
+            startActivity(fullScreenIntent);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -101,6 +173,36 @@ public class CallNotificationService extends FirebaseMessagingService {
             pendingFlags
         );
 
+        // Accept Action Button
+        Intent acceptIntent = new Intent(this, MainActivity.class);
+        acceptIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        acceptIntent.putExtra("type", "incoming_call");
+        acceptIntent.putExtra("autoAccept", "true");
+        acceptIntent.putExtra("meetingId", meetingId);
+        acceptIntent.putExtra("callerName", callerName);
+        acceptIntent.putExtra("callerAvatar", callerAvatar);
+        acceptIntent.putExtra("callType", callType);
+        acceptIntent.putExtra("callerId", callerId);
+        PendingIntent acceptPendingIntent = PendingIntent.getActivity(
+            this,
+            (int) System.currentTimeMillis() + 1,
+            acceptIntent,
+            pendingFlags
+        );
+
+        // Decline Action Button
+        Intent declineIntent = new Intent(this, MainActivity.class);
+        declineIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        declineIntent.putExtra("type", "decline_call");
+        declineIntent.putExtra("meetingId", meetingId);
+        declineIntent.putExtra("callerId", callerId);
+        PendingIntent declinePendingIntent = PendingIntent.getActivity(
+            this,
+            (int) System.currentTimeMillis() + 2,
+            declineIntent,
+            pendingFlags
+        );
+
         NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (notificationManager == null) return;
 
@@ -109,17 +211,22 @@ public class CallNotificationService extends FirebaseMessagingService {
             ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
         }
 
-        // 3. Ensure High-Priority Notification Channel exists
+        // 6. Create Fresh High-Priority Call Notification Channel
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                notificationManager.deleteNotificationChannel("incoming_calls");
+            } catch (Exception ignored) {}
+
             NotificationChannel callChannel = new NotificationChannel(
                 CHANNEL_CALLS_ID,
                 "Incoming Calls",
                 NotificationManager.IMPORTANCE_HIGH
             );
             callChannel.setDescription("Incoming voice and video calls with continuous ringtone");
-            callChannel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+            callChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             callChannel.enableVibration(true);
             callChannel.setVibrationPattern(new long[]{0, 1000, 800, 1000, 800, 1000});
+            callChannel.setBypassDnd(true);
 
             AudioAttributes audioAttributes = new AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -132,7 +239,7 @@ public class CallNotificationService extends FirebaseMessagingService {
         String callTitle = isAudio ? "📞 Incoming Audio Call" : "📹 Incoming Video Call";
         String callBody = callerName + " is calling you on JTS Meet...";
 
-        // 4. Build Notification with setFullScreenIntent(..., true)
+        // 7. Build Notification with setFullScreenIntent(..., true) and action buttons
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_CALLS_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(callTitle)
@@ -145,7 +252,9 @@ public class CallNotificationService extends FirebaseMessagingService {
             .setAutoCancel(true)
             .setOngoing(true)
             .setContentIntent(fullScreenPendingIntent)
-            .setFullScreenIntent(fullScreenPendingIntent, true); // <── Wakes lockscreen & pops up incoming call modal!
+            .setFullScreenIntent(fullScreenPendingIntent, true)
+            .addAction(android.R.drawable.ic_menu_call, "Accept", acceptPendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);
 
         notificationManager.notify(CALL_NOTIFICATION_ID, builder.build());
     }

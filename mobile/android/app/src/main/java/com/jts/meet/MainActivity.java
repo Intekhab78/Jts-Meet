@@ -44,17 +44,22 @@ public class MainActivity extends BridgeActivity {
         handleIncomingCallIntent(getIntent());
 
         // Keep the phone screen awake during meetings and wake screen for calls
-        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        getWindow().addFlags(
+            android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
+            android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+            android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
+            android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+        );
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true);
             setTurnScreenOn(true);
-        } else {
-            getWindow().addFlags(
-                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
-                android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
-            );
+            try {
+                android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+                if (km != null) {
+                    km.requestDismissKeyguard(this, null);
+                }
+            } catch (Exception ignored) {}
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -156,6 +161,7 @@ public class MainActivity extends BridgeActivity {
                 @android.webkit.JavascriptInterface
                 public void cancelCallNotification() {
                     try {
+                        CallNotificationService.stopRinging();
                         android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                         if (nm != null) {
                             nm.cancel(2026);
@@ -403,11 +409,39 @@ public class MainActivity extends BridgeActivity {
         if (intent == null) return;
         String type = intent.getStringExtra("type");
         String meetingId = intent.getStringExtra("meetingId");
+
+        if ("decline_call".equals(type)) {
+            CallNotificationService.stopRinging();
+            try {
+                android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    nm.cancel(2026);
+                }
+            } catch (Exception ignored) {}
+
+            final String rejectScript = String.format(
+                "try { " +
+                "  var payload = { meetingId: '%s', callerId: '%s', actionId: 'decline' }; " +
+                "  window.dispatchEvent(new CustomEvent('jts:notification-action', { detail: payload })); " +
+                "} catch (e) {} ",
+                meetingId != null ? meetingId : "",
+                intent.getStringExtra("callerId") != null ? intent.getStringExtra("callerId") : ""
+            );
+            runOnUiThread(() -> {
+                if (bridge != null && bridge.getWebView() != null) {
+                    bridge.getWebView().evaluateJavascript(rejectScript, null);
+                }
+            });
+            finish();
+            return;
+        }
+
         if ("incoming_call".equals(type) && meetingId != null && !meetingId.isEmpty()) {
             String callerName = intent.getStringExtra("callerName");
             String callerAvatar = intent.getStringExtra("callerAvatar");
             String callType = intent.getStringExtra("callType");
             String callerId = intent.getStringExtra("callerId");
+            String autoAccept = intent.getStringExtra("autoAccept");
 
             try {
                 org.json.JSONObject obj = new org.json.JSONObject();
@@ -416,12 +450,13 @@ public class MainActivity extends BridgeActivity {
                 obj.put("callerAvatar", callerAvatar != null ? callerAvatar : "");
                 obj.put("callType", callType != null ? callType : "audio");
                 obj.put("callerId", callerId != null ? callerId : "");
+                obj.put("autoAccept", "true".equals(autoAccept) ? "true" : "false");
                 pendingCallDataJson = obj.toString();
             } catch (Exception ignored) {}
 
             final String script = String.format(
                 "try { " +
-                "  var payload = { meetingId: '%s', callerName: '%s', callerAvatar: '%s', callType: '%s', callerId: '%s' }; " +
+                "  var payload = { meetingId: '%s', callerName: '%s', callerAvatar: '%s', callType: '%s', callerId: '%s', autoAccept: '%s' }; " +
                 "  localStorage.setItem('jts_pending_notification', JSON.stringify(payload)); " +
                 "  window.dispatchEvent(new CustomEvent('jts:incoming-call-push', { detail: payload })); " +
                 "} catch (e) { console.error(e); }",
@@ -429,7 +464,8 @@ public class MainActivity extends BridgeActivity {
                 callerName != null ? callerName.replace("'", "\\'") : "Colleague",
                 callerAvatar != null ? callerAvatar.replace("'", "\\'") : "",
                 callType != null ? callType : "audio",
-                callerId != null ? callerId : ""
+                callerId != null ? callerId : "",
+                "true".equals(autoAccept) ? "true" : "false"
             );
 
             runOnUiThread(() -> {

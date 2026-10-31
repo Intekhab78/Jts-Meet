@@ -69,7 +69,7 @@ class MobileNotificationService {
       // Create High-Priority Notification Channels for Android 8.0+
       try {
         await PushNotifications.createChannel({
-          id: 'incoming_calls',
+          id: 'jts_incoming_calls_v3',
           name: 'Incoming Calls',
           description: 'High-priority incoming voice and video calls with ringtone',
           importance: 5, // MAX importance (Heads-up banner + ring + screen turn on)
