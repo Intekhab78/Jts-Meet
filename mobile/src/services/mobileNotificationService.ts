@@ -65,6 +65,35 @@ class MobileNotificationService {
 
       await PushNotifications.register();
 
+      // Create High-Priority Notification Channels for Android 8.0+
+      try {
+        await PushNotifications.createChannel({
+          id: 'incoming_calls',
+          name: 'Incoming Calls',
+          description: 'High-priority incoming voice and video calls with ringtone',
+          importance: 5, // MAX importance (Heads-up banner + ring + screen turn on)
+          visibility: 1, // Public on lockscreen
+          sound: 'default',
+          vibration: true,
+          lights: true,
+          lightColor: '#2563eb',
+        });
+
+        await PushNotifications.createChannel({
+          id: 'chat_messages',
+          name: 'Messages',
+          description: 'Direct messages and team channel chats',
+          importance: 4, // HIGH importance
+          visibility: 1,
+          sound: 'default',
+          vibration: true,
+          lights: true,
+          lightColor: '#2563eb',
+        });
+      } catch (channelErr) {
+        console.warn('[FCM] Error registering notification channels:', channelErr);
+      }
+
       // Listen for FCM Device Token Registration
       PushNotifications.addListener('registration', async (token) => {
         console.log('[FCM] Native Device Registered. Token:', token.value);
@@ -100,19 +129,27 @@ class MobileNotificationService {
           // Vibrate in phone call rhythm
           if (typeof navigator !== 'undefined' && navigator.vibrate) {
             try {
-              navigator.vibrate([600, 300, 600, 300, 1200]);
+              navigator.vibrate([800, 400, 800, 400, 1200]);
             } catch (_) {}
           }
+          window.dispatchEvent(new CustomEvent('jts:incoming-call-push', { detail: data }));
+        } else if (data.type === 'chat_message') {
+          window.dispatchEvent(new CustomEvent('jts:chat-message-push', { detail: data }));
         }
       });
 
-      // When user clicks the call push notification from lock screen or status bar
+      // When user clicks the push notification (call or chat message) from lock screen or status bar
       PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-        console.log('[FCM] Action Performed:', notification);
+        console.log('[FCM] Push Action Performed:', notification);
         const data = notification.notification?.data || {};
-        if (data.meetingId) {
-          window.location.href = `/?callMeetingId=${encodeURIComponent(data.meetingId)}&callerId=${encodeURIComponent(data.callerId || '')}&callerName=${encodeURIComponent(data.callerName || '')}&callType=${encodeURIComponent(data.callType || 'video')}&autoAccept=true`;
-        }
+        const actionId = notification.actionId;
+
+        const payload = { ...data, actionId };
+        try {
+          localStorage.setItem('jts_pending_notification', JSON.stringify(payload));
+        } catch (_) {}
+
+        window.dispatchEvent(new CustomEvent('jts:notification-action', { detail: payload }));
       });
     } catch (e) {
       console.warn('[FCM] Failed to setup native push:', e);

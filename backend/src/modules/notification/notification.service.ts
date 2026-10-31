@@ -276,6 +276,131 @@ export class NotificationService {
         }
     }
 
+    /**
+     * Dispatches real-time WhatsApp-style Push Notification for Direct & Channel chat messages
+     * Rings/alerts Android device & browser even when app is closed.
+     */
+    static async sendChatMessagePush(targetUserId: string, messageData: {
+        senderId: string
+        senderName: string
+        senderAvatar?: string
+        text: string
+        messageId?: string
+        isChannel?: boolean
+        channelName?: string
+    }): Promise<{ dispatched: number }> {
+        if (!targetUserId || !messageData?.text) return { dispatched: 0 }
+
+        let successCount = 0
+
+        try {
+            const fcmDevices = await FcmDevice.find({
+                userId: new Types.ObjectId(targetUserId)
+            }).exec()
+
+            const title = messageData.isChannel && messageData.channelName
+                ? `#${messageData.channelName} • ${messageData.senderName}`
+                : messageData.senderName
+
+            const bodyPreview = messageData.text.length > 120
+                ? messageData.text.substring(0, 117) + '...'
+                : messageData.text
+
+            // 1. Native Android FCM Push
+            const messaging = getFirebaseMessaging()
+            if (messaging && fcmDevices && fcmDevices.length > 0) {
+                const tokens = fcmDevices.map((d) => d.fcmToken)
+                try {
+                    const fcmResponse = await messaging.sendEachForMulticast({
+                        tokens,
+                        data: {
+                            type: 'chat_message',
+                            senderId: String(messageData.senderId),
+                            senderName: String(messageData.senderName),
+                            senderAvatar: String(messageData.senderAvatar || ''),
+                            message: String(bodyPreview),
+                            isChannel: messageData.isChannel ? 'true' : 'false',
+                            channelName: String(messageData.channelName || ''),
+                            messageId: String(messageData.messageId || '')
+                        },
+                        android: {
+                            priority: 'high',
+                            notification: {
+                                title,
+                                body: bodyPreview,
+                                channelId: 'chat_messages',
+                                priority: 'high',
+                                defaultSound: true,
+                                defaultVibrateTimings: true,
+                                tag: `chat_${messageData.senderId}`
+                            }
+                        }
+                    })
+                    successCount += fcmResponse.successCount
+                    console.log(`[FCM] Dispatched chat push to ${targetUserId}: ${fcmResponse.successCount}/${tokens.length} delivered`)
+
+                    // Clean stale tokens if any
+                    if (fcmResponse.failureCount > 0) {
+                        const invalidTokens: string[] = []
+                        fcmResponse.responses.forEach((resp: any, idx: number) => {
+                            if (!resp.success && resp.error?.code === 'messaging/registration-token-not-registered') {
+                                invalidTokens.push(tokens[idx])
+                            }
+                        })
+                        if (invalidTokens.length > 0) {
+                            FcmDevice.deleteMany({ fcmToken: { $in: invalidTokens } }).exec().catch(() => {})
+                        }
+                    }
+                } catch (fcmErr) {
+                    console.warn('[FCM] Error dispatching chat message push:', fcmErr)
+                }
+            }
+
+            // 2. Web Push (VAPID)
+            const subscriptions = await PushSubscription.find({
+                userId: new Types.ObjectId(targetUserId)
+            }).exec()
+
+            if (subscriptions && subscriptions.length > 0) {
+                const payload = JSON.stringify({
+                    type: 'chat_message',
+                    title,
+                    body: bodyPreview,
+                    icon: messageData.senderAvatar || '/favicon.ico',
+                    tag: `chat-${messageData.senderId}`,
+                    data: {
+                        senderId: messageData.senderId,
+                        senderName: messageData.senderName,
+                        isChannel: messageData.isChannel,
+                        channelName: messageData.channelName,
+                        url: `/#chat?userId=${encodeURIComponent(messageData.senderId)}`
+                    }
+                })
+
+                await Promise.all(
+                    subscriptions.map(async (sub) => {
+                        try {
+                            await webpush.sendNotification(
+                                {
+                                    endpoint: sub.endpoint,
+                                    keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }
+                                },
+                                payload,
+                                { TTL: 24 * 3600, urgency: 'high' }
+                            )
+                            successCount++
+                        } catch (_) {}
+                    })
+                )
+            }
+
+            return { dispatched: successCount }
+        } catch (error) {
+            console.error('[NotificationService] sendChatMessagePush error:', error)
+            return { dispatched: successCount }
+        }
+    }
+
     static async send(payload: NotificationPayload): Promise<INotification> {
         // 1. In-App Notification (Persisted in DB)
         const notif = new Notification({

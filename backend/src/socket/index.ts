@@ -23,6 +23,7 @@ import { Types } from 'mongoose'
 import { Meeting } from '../modules/meeting/meeting.model'
 import { User } from '../models/user.model'
 import { Message } from '../modules/chat/chat.model'
+import { NotificationService } from '../modules/notification/notification.service'
 
 let ioInstance: Server | null = null
 
@@ -260,6 +261,18 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
                     deliveredAt: new Date()
                 })
             }
+
+            // Real-Time High Priority FCM / Web Push (WhatsApp style banner & ringtone)
+            try {
+                const senderDoc = (populatedMessage as any)?.sender || {}
+                NotificationService.sendChatMessagePush(payload.receiverId, {
+                    senderId: userId,
+                    senderName: senderDoc.fullName || senderDoc.name || 'Colleague',
+                    senderAvatar: senderDoc.profileImage || '',
+                    text: payload.message,
+                    messageId: chatMessage._id.toString()
+                }).catch(() => {})
+            } catch (_) {}
         })
 
         socket.on(SocketEvents.CHAT_SEEN, async (payload: { senderId: string }) => {

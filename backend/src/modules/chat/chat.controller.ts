@@ -20,6 +20,7 @@ import {
 import { validateSendMessage, validateConversationQuery, validateRecentChatsQuery } from './chat.validator'
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { parseCursorQuery, executeCursorQuery } from '../../utils/paginationHelper'
+import { NotificationService } from '../notification/notification.service'
 
 export const chatController = {
     sendMessage: async (req: AuthRequest, res: Response) => {
@@ -54,6 +55,18 @@ export const chatController = {
                 receiverId: req.body.receiverId,
                 delivered: true
             })
+
+            // Dispatch High Priority Push Notification (WhatsApp style)
+            try {
+                const senderDoc = (populated as any)?.sender || {}
+                NotificationService.sendChatMessagePush(req.body.receiverId, {
+                    senderId: userId,
+                    senderName: senderDoc.fullName || senderDoc.name || 'Colleague',
+                    senderAvatar: senderDoc.profileImage || '',
+                    text: req.body.message,
+                    messageId: message._id.toString()
+                }).catch(() => {})
+            } catch (_) {}
         }
 
         return sendSuccess(res, message, 'Message sent')

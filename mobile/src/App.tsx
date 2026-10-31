@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { io } from 'socket.io-client';
 import { MobileTopBar } from './components/MobileTopBar';
@@ -610,11 +610,115 @@ export function App() {
     });
   };
 
+  // ── Unified Push Notification & Call Action Routing (WhatsApp / MS Teams style) ──
+  const handleNotificationAction = useCallback((data: any) => {
+    if (!data) return;
+    console.log('[App] Processing notification action:', data);
+
+    // 1. Incoming Call Action
+    if (data.type === 'incoming_call' || data.type === 'call_incoming' || data.meetingId) {
+      if (data.actionId === 'decline') {
+        setIncomingCall(null);
+        stopRingtone();
+        return;
+      }
+
+      if (data.actionId === 'accept' || data.autoAccept === 'true') {
+        const storedName = localStorage.getItem('jts_display_name') || user?.name || 'Mohit';
+        handleJoinMeeting(
+          data.meetingId,
+          storedName,
+          false,
+          data.callType === 'audio',
+          false,
+          data.callType || 'audio',
+          data.callerName || 'Colleague'
+        );
+        return;
+      }
+
+      // Show full-screen incoming call modal with ringing like WhatsApp / MS Teams
+      setIncomingCall({
+        meetingId: data.meetingId,
+        callerId: data.callerId,
+        callerName: data.callerName || 'Colleague',
+        callerAvatar: data.callerAvatar || '',
+        callType: data.callType || 'audio',
+      });
+      return;
+    }
+
+    // 2. Chat Message Action -> Directly switch to messages tab and open conversation
+    if (data.type === 'chat_message' || data.senderId) {
+      setActiveTab('messages');
+      setTargetChat({
+        id: data.senderId,
+        name: data.senderName || 'Colleague',
+        avatar: data.senderAvatar || '',
+        isChannel: data.isChannel === 'true' || Boolean(data.isChannel),
+      });
+    }
+  }, [user]);
+
+  // Listen for background push actions and app launches from notifications
+  useEffect(() => {
+    // 1. Check if app was launched from an Android Notification
+    try {
+      const pendingRaw = localStorage.getItem('jts_pending_notification');
+      if (pendingRaw) {
+        localStorage.removeItem('jts_pending_notification');
+        const pending = JSON.parse(pendingRaw);
+        setTimeout(() => handleNotificationAction(pending), 600);
+      }
+    } catch (_) {}
+
+    // 2. Live event listeners while app is active or in memory
+    const onAction = (e: any) => handleNotificationAction(e.detail);
+    const onCallPush = (e: any) => {
+      if (e.detail?.meetingId) {
+        setIncomingCall({
+          meetingId: e.detail.meetingId,
+          callerId: e.detail.callerId,
+          callerName: e.detail.callerName || 'Colleague',
+          callerAvatar: e.detail.callerAvatar || '',
+          callType: e.detail.callType || 'audio',
+        });
+      }
+    };
+
+    window.addEventListener('jts:notification-action', onAction);
+    window.addEventListener('jts:incoming-call-push', onCallPush);
+
+    return () => {
+      window.removeEventListener('jts:notification-action', onAction);
+      window.removeEventListener('jts:incoming-call-push', onCallPush);
+    };
+  }, [handleNotificationAction]);
+
   // ── Deep Linking for WhatsApp & Web Meeting Links ──
   useEffect(() => {
     const checkUrlForMeeting = (fullUrl: string) => {
       try {
         if (!fullUrl) return;
+
+        // Check query params for direct call from URL or push click
+        if (fullUrl.includes('callMeetingId=')) {
+          const u = new URL(fullUrl, window.location.origin);
+          const mId = u.searchParams.get('callMeetingId');
+          if (mId) {
+            handleNotificationAction({
+              type: 'incoming_call',
+              meetingId: mId,
+              callerId: u.searchParams.get('callerId') || '',
+              callerName: u.searchParams.get('callerName') || '',
+              callType: (u.searchParams.get('callType') as any) || 'audio',
+              autoAccept: u.searchParams.get('autoAccept')
+            });
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+          }
+        }
+
         let meetingId = '';
         if (fullUrl.includes('?id=')) {
           meetingId = fullUrl.split('?id=')[1]?.split('&')[0];
@@ -641,7 +745,7 @@ export function App() {
     return () => {
       listener.then((h) => h.remove()).catch(() => {});
     };
-  }, [user]);
+  }, [user, handleNotificationAction]);
 
   // Handle starting a new meeting (auto-opens invite sheet on enter)
   const handleStartNewMeeting = (videoOn: boolean, usePmi: boolean, customCode?: string) => {
