@@ -20,7 +20,7 @@ import { MobileBiometricLockScreen } from './components/modals/MobileBiometricLo
 import { MobileUserProfileModal } from './components/modals/MobileUserProfileModal';
 import { MobileIncomingCallModal } from './components/meeting/MobileIncomingCallModal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
-import { getStoredToken, getStoredUser, setStoredToken, setStoredUser, SOCKET_URL, API_BASE } from './config';
+import { getStoredToken, getStoredUser, setStoredToken, setStoredUser, clearAllSessionStorageAndData, SOCKET_URL, API_BASE } from './config';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<MobileTab>('meet');
@@ -450,8 +450,8 @@ export function App() {
     channelName?: string
   ) => {
     const meetingId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const callerName = user?.name || localStorage.getItem('jts_display_name') || 'Mohit';
-    const callerAvatar = user?.avatar || '';
+    const callerName = user?.fullName || user?.name || localStorage.getItem('jts_display_name') || 'Enterprise User';
+    const callerAvatar = user?.profileImage || user?.avatar || '';
 
     setOutgoingCall({
       targetUserId,
@@ -510,9 +510,10 @@ export function App() {
     setOutgoingCall(null);
   };
 
-  // Recent meetings (dynamically loaded from local history)
+  // Recent meetings (dynamically loaded from local history for authenticated user)
   const [recentMeetings, setRecentMeetings] = useState<string[]>(() => {
     try {
+      if (!getStoredToken()) return [];
       const stored = localStorage.getItem('jts_recent_meetings');
       if (stored) return JSON.parse(stored);
     } catch (_) {}
@@ -608,11 +609,12 @@ export function App() {
     handleJoinMeeting(code, storedName, false, false, false);
   };
 
-  // Scheduled Meetings (Dynamically fetched from backend API)
+  // Scheduled Meetings (Dynamically fetched from backend API for authenticated user)
   const [scheduledMeetings, setScheduledMeetings] = useState<
     Array<{ id: string; title: string; date: string; time: string; meetingCode: string }>
   >(() => {
     try {
+      if (!getStoredToken()) return [];
       const stored = localStorage.getItem('jts_scheduled_meetings');
       if (stored) return JSON.parse(stored);
     } catch (_) {}
@@ -620,7 +622,10 @@ export function App() {
   });
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setScheduledMeetings([]);
+      return;
+    }
     const fetchMyMeetings = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/meeting/mine`, {
@@ -677,14 +682,32 @@ export function App() {
   const handleAuthSuccess = (loggedUser: any, authToken: string) => {
     setUser(loggedUser);
     setToken(authToken);
+    try {
+      const storedRecent = localStorage.getItem('jts_recent_meetings');
+      if (storedRecent) setRecentMeetings(JSON.parse(storedRecent));
+    } catch (_) {}
   };
 
-  // Handle Logout
+  // Handle Logout - Strict Enterprise Data Isolation & Cache Purge
   const handleLogout = () => {
-    setStoredToken(null);
-    setStoredUser(null);
+    clearAllSessionStorageAndData();
     setUser(null);
     setToken(null);
+    setRecentMeetings([]);
+    setScheduledMeetings([]);
+    setTargetChat(null);
+    setIsOrganizationOpen(false);
+    setIsTeamHubOpen(false);
+    setIsAdminConsoleOpen(false);
+    setIsProfileOpen(false);
+    if (socketRef.current) {
+      try {
+        socketRef.current.disconnect();
+      } catch (_) {}
+      socketRef.current = null;
+      setSocket(null);
+    }
+    setActiveTab('meet');
   };
 
   return (
@@ -836,33 +859,62 @@ export function App() {
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', backgroundColor: '#ffffff' }}>
         {activeTab === 'meet' && (
           <MeetTab
+            user={user}
+            onOpenAuth={() => setIsAuthOpen(true)}
             onStartNewMeeting={() => setIsNewMeetingOpen(true)}
             onOpenJoinModal={() => setIsJoinOpen(true)}
-            onOpenScheduleModal={() => setIsScheduleOpen(true)}
+            onOpenScheduleModal={() => {
+              if (!user) {
+                setIsAuthOpen(true);
+              } else {
+                setIsScheduleOpen(true);
+              }
+            }}
             onOpenOrganizationModal={() => {
+              if (!user) {
+                setIsAuthOpen(true);
+                return;
+              }
               if (Date.now() - lastOrgModalClosedRef.current < 450) return;
               setIsOrganizationOpen(true);
             }}
             onOpenTeamHub={() => {
+              if (!user) {
+                setIsAuthOpen(true);
+                return;
+              }
               if (Date.now() - lastTeamHubClosedRef.current < 450) return;
               setIsTeamHubOpen(true);
             }}
             onOpenAdminConsole={() => {
+              if (!user) {
+                setIsAuthOpen(true);
+                return;
+              }
               if (Date.now() - lastAdminConsoleClosedRef.current < 450) return;
               setIsAdminConsoleOpen(true);
             }}
             onQuickJoin={handleQuickJoin}
-            recentMeetings={recentMeetings}
+            recentMeetings={user ? recentMeetings : []}
             onTestIncomingCall={handleTestIncomingCall}
           />
         )}
 
         {activeTab === 'meetings' && (
           <MeetingsTab
+            user={user}
+            onOpenAuth={() => setIsAuthOpen(true)}
+            pmi={user ? (user.personalMeetingId || (user._id || user.id ? String(user._id || user.id).replace(/\D/g, '').padEnd(9, '7').slice(0, 9).replace(/(\d{3})(\d{3})(\d{3})/, '$1-$2-$3') : '789-456-123')) : undefined}
             onStartMeeting={(code) => handleQuickJoin(code)}
-            scheduledMeetings={scheduledMeetings}
+            scheduledMeetings={user ? scheduledMeetings : []}
             onDeleteMeeting={handleDeleteScheduled}
-            onOpenScheduleModal={() => setIsScheduleOpen(true)}
+            onOpenScheduleModal={() => {
+              if (!user) {
+                setIsAuthOpen(true);
+              } else {
+                setIsScheduleOpen(true);
+              }
+            }}
           />
         )}
 
@@ -871,6 +923,7 @@ export function App() {
             token={token}
             currentUser={user}
             socket={socket}
+            onOpenAuth={() => setIsAuthOpen(true)}
             onStartMeeting={(code) => handleQuickJoin(code)}
             onStartCall={handleStartCall}
             onOpenTeamHub={() => {

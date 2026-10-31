@@ -65,7 +65,13 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
 
   // 1. Fetch user's real organizations dynamically
   const fetchOrganizations = async () => {
-    if (!resolvedToken) return;
+    if (!resolvedToken) {
+      setOrganizations([]);
+      setSelectedOrgId('');
+      setTeams([]);
+      setMembers([]);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/organization/mine`, {
@@ -135,7 +141,7 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
     }
   }, [selectedOrgId, resolvedToken]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !resolvedToken) return null;
 
   const currentOrg = organizations.find((o) => o._id === selectedOrgId) || organizations[0];
 

@@ -26,7 +26,10 @@ export const MobileCalendarScheduleCard: React.FC<MobileCalendarScheduleCardProp
 
   const fetchMeetings = async () => {
     const token = getStoredToken();
-    if (!token) return;
+    if (!token) {
+      setMeetings([]);
+      return;
+    }
 
     try {
       setLoading(true);
@@ -98,23 +101,7 @@ export const MobileCalendarScheduleCard: React.FC<MobileCalendarScheduleCardProp
     return `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=${title}&body=${details}`;
   };
 
-  // If no backend meetings returned, show smart enterprise sample cards
-  const activeList = meetings.length > 0 ? meetings.slice(0, 3) : [
-    {
-      id: 'demo-1',
-      meetingId: 'eng-sync-99',
-      title: 'Daily Engineering Standup',
-      scheduledTime: '10:30 AM',
-      status: 'scheduled',
-    },
-    {
-      id: 'demo-2',
-      meetingId: 'exec-q3-brief',
-      title: 'Enterprise Strategy Sync',
-      scheduledTime: '03:00 PM',
-      status: 'scheduled',
-    },
-  ];
+  const activeList = meetings.slice(0, 3);
 
   return (
     <div
@@ -180,89 +167,105 @@ export const MobileCalendarScheduleCard: React.FC<MobileCalendarScheduleCardProp
 
       {/* Meeting Cards List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-        {activeList.map((m) => (
+        {activeList.length === 0 ? (
           <div
-            key={m.id}
             style={{
-              padding: '10px 12px',
+              padding: '16px 12px',
               borderRadius: 12,
               backgroundColor: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
+              border: '1px dashed #cbd5e1',
+              textAlign: 'center',
+              color: '#64748b',
+              fontSize: '0.74rem',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>
-                  {m.title}
+            No upcoming meetings scheduled for today
+          </div>
+        ) : (
+          activeList.map((m) => (
+            <div
+              key={m.id}
+              style={{
+                padding: '10px 12px',
+                borderRadius: 12,
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>
+                    {m.title}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                    <span style={{ fontWeight: 600, color: '#2563eb' }}>🕒 {m.scheduledTime}</span>
+                    <span>•</span>
+                    <span>Code: {m.meetingId}</span>
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.68rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                  <span style={{ fontWeight: 600, color: '#2563eb' }}>🕒 {m.scheduledTime}</span>
-                  <span>•</span>
-                  <span>Code: {m.meetingId}</span>
-                </div>
+
+                {/* 1-Tap Join Button */}
+                <button
+                  onClick={() => onJoinMeeting(m.meetingId)}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: 8,
+                    backgroundColor: '#2563eb',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)',
+                  }}
+                >
+                  Join Now
+                </button>
               </div>
 
-              {/* 1-Tap Join Button */}
-              <button
-                onClick={() => onJoinMeeting(m.meetingId)}
-                style={{
-                  padding: '7px 14px',
-                  borderRadius: 8,
-                  backgroundColor: '#2563eb',
-                  color: '#ffffff',
-                  border: 'none',
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)',
-                }}
-              >
-                Join Now
-              </button>
+              {/* Calendar Sync Quick Links */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, borderTop: '1px dashed #e2e8f0', paddingTop: 6 }}>
+                <span style={{ fontSize: '0.64rem', color: '#94a3b8', fontWeight: 600 }}>Sync:</span>
+                <a
+                  href={generateGoogleCalendarUrl(m)}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    fontSize: '0.66rem',
+                    color: '#2563eb',
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                  }}
+                >
+                  📅 Google Calendar
+                </a>
+                <span style={{ color: '#cbd5e1' }}>|</span>
+                <a
+                  href={generateOutlookCalendarUrl(m)}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    fontSize: '0.66rem',
+                    color: '#0284c7',
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                  }}
+                >
+                  📧 Outlook
+                </a>
+              </div>
             </div>
-
-            {/* Calendar Sync Quick Links */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, borderTop: '1px dashed #e2e8f0', paddingTop: 6 }}>
-              <span style={{ fontSize: '0.64rem', color: '#94a3b8', fontWeight: 600 }}>Sync:</span>
-              <a
-                href={generateGoogleCalendarUrl(m)}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  fontSize: '0.66rem',
-                  color: '#2563eb',
-                  fontWeight: 700,
-                  textDecoration: 'none',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 3,
-                }}
-              >
-                📅 Google Calendar
-              </a>
-              <span style={{ color: '#cbd5e1' }}>|</span>
-              <a
-                href={generateOutlookCalendarUrl(m)}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  fontSize: '0.66rem',
-                  color: '#0284c7',
-                  fontWeight: 700,
-                  textDecoration: 'none',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 3,
-                }}
-              >
-                📧 Outlook
-              </a>
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );

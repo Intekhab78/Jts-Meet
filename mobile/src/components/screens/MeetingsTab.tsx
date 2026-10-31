@@ -9,6 +9,8 @@ export interface ScheduledMeetingItem {
 }
 
 interface MeetingsTabProps {
+  user?: any;
+  onOpenAuth?: () => void;
   onStartMeeting: (code: string) => void;
   pmi?: string;
   scheduledMeetings?: ScheduledMeetingItem[];
@@ -17,8 +19,10 @@ interface MeetingsTabProps {
 }
 
 export const MeetingsTab: React.FC<MeetingsTabProps> = ({
+  user,
+  onOpenAuth,
   onStartMeeting,
-  pmi = '789-456-123',
+  pmi,
   scheduledMeetings = [],
   onDeleteMeeting,
   onOpenScheduleModal,
@@ -26,7 +30,69 @@ export const MeetingsTab: React.FC<MeetingsTabProps> = ({
   const [copied, setCopied] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const meetingUrl = `https://meet.jtsmiddleeast.com/meet/${pmi}`;
+  const resolvedPmi = pmi || user?.personalMeetingId || (user?._id || user?.id ? String(user._id || user.id).replace(/\D/g, '').padEnd(9, '8').slice(0, 9).replace(/(\d{3})(\d{3})(\d{3})/, '$1-$2-$3') : '100-200-300');
+
+  if (!user) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px 20px',
+          textAlign: 'center',
+          backgroundColor: '#ffffff',
+          gap: 16,
+        }}
+      >
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 20,
+            backgroundColor: '#eff6ff',
+            color: '#2563eb',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </div>
+        <div>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', margin: '0 0 6px' }}>
+            Sign In to View Scheduled Meetings
+          </h3>
+          <p style={{ fontSize: '0.78rem', color: '#64748b', maxWidth: 300, margin: '0 auto', lineHeight: 1.4 }}>
+            Access your Personal Meeting ID (PMI), scheduled sessions, and calendar invites across devices.
+          </p>
+        </div>
+        <button
+          onClick={onOpenAuth}
+          style={{
+            padding: '12px 28px',
+            borderRadius: 12,
+            background: '#2563eb',
+            color: '#ffffff',
+            fontWeight: 700,
+            fontSize: '0.85rem',
+            border: 'none',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+          }}
+        >
+          Sign In / Register
+        </button>
+      </div>
+    );
+  }
+
+  const meetingUrl = `https://meet.jtsmiddleeast.com/meet/${resolvedPmi}`;
 
   const handleCopy = () => {
     if (navigator.clipboard) {
@@ -92,7 +158,7 @@ export const MeetingsTab: React.FC<MeetingsTabProps> = ({
               Personal Meeting ID (PMI)
             </div>
             <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', letterSpacing: '0.04em', marginTop: 2 }}>
-              {pmi}
+              {resolvedPmi}
             </div>
           </div>
           <button
@@ -113,7 +179,7 @@ export const MeetingsTab: React.FC<MeetingsTabProps> = ({
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button
-            onClick={() => onStartMeeting(pmi)}
+            onClick={() => onStartMeeting(resolvedPmi)}
             style={{
               flex: 1,
               padding: '9px',

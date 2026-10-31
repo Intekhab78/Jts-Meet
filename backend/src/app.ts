@@ -100,11 +100,12 @@ app.use(cors({
 
 app.use(cookieParser())
 app.use(json({
+    limit: '50mb',
     verify: (req: any, _res: any, buf: any) => {
         req.rawBody = buf
     }
 }))
-app.use(urlencoded({ extended: true }))
+app.use(urlencoded({ extended: true, limit: '50mb' }))
 app.use(passport.initialize())
 app.use(requestLogger)
 

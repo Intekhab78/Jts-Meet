@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MobileChatMessage } from './types';
-import { API_BASE } from '../../config';
+import { API_BASE, resolveAvatarUrl } from '../../config';
 
 interface MobileConversationViewProps {
   chatId: string;
@@ -429,7 +429,12 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
             }}
           >
             {isChannel ? '#' : chatAvatar ? (
-              <img src={chatAvatar} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+              <img
+                src={resolveAvatarUrl(chatAvatar)}
+                alt=""
+                style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
             ) : (
               chatName.charAt(0).toUpperCase()
             )}

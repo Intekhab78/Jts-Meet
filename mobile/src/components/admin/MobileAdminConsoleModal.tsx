@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
-import { API_BASE, getStoredToken } from '../../config';
+import { API_BASE, getStoredToken, resolveAvatarUrl } from '../../config';
 
 export interface AdminConsoleUser {
   userId: string;
@@ -75,22 +75,21 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
   currentOrgId,
   onClose,
 }) => {
-  if (!isOpen) return null;
-
   const resolvedToken = token || getStoredToken();
+  if (!isOpen || !resolvedToken) return null;
 
   // Active top tab: users | audit | recordings | integrations
   const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'recordings' | 'integrations'>('users');
   const [auditSubTab, setAuditSubTab] = useState<'logs' | 'attendance'>('logs');
 
-  // KPI Metrics
+  // KPI Metrics (Dynamically loaded from backend)
   const [metrics, setMetrics] = useState({
-    totalSeats: 25,
-    usedSeats: 1,
-    tier: 'Enterprise Growth Tier (25 Seats)',
-    storageUsedGb: 0.8,
-    storageQuotaGb: 10,
-    totalMeetings: 12,
+    totalSeats: 0,
+    usedSeats: 0,
+    tier: 'Enterprise License',
+    storageUsedGb: 0,
+    storageQuotaGb: 0,
+    totalMeetings: 0,
   });
 
   // Tab 1: Users
@@ -128,7 +127,7 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
   // Tab 4: Integrations & API
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
-  const [apiKey, setApiKey] = useState('jts_live_sec_89f0293da821104e76');
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('jts_admin_api_key') || '');
   const [savingWebhook, setSavingWebhook] = useState(false);
 
   // Upgrade Plan Modal
@@ -1006,7 +1005,12 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
                             }}
                           >
                             {u.profileImage ? (
-                              <img src={u.profileImage} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                              <img
+                                src={resolveAvatarUrl(u.profileImage)}
+                                alt=""
+                                style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
                             ) : (
                               u.fullName.charAt(0).toUpperCase()
                             )}
@@ -1486,28 +1490,52 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
                   padding: '8px 10px',
                 }}
               >
-                <code style={{ fontSize: '0.72rem', color: '#0f172a', flex: 1, wordBreak: 'break-all' }}>
-                  {apiKey}
+                <code style={{ fontSize: '0.72rem', color: apiKey ? '#0f172a' : '#94a3b8', flex: 1, wordBreak: 'break-all' }}>
+                  {apiKey || 'No API key generated yet'}
                 </code>
-                <button
-                  onClick={() => {
-                    navigator.clipboard?.writeText(apiKey);
-                    showToast('API Key copied to clipboard!');
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: 6,
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.68rem',
-                    fontWeight: 700,
-                    color: '#2563eb',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                  }}
-                >
-                  Copy
-                </button>
+                {apiKey ? (
+                  <button
+                    onClick={() => {
+                      navigator.clipboard?.writeText(apiKey);
+                      showToast('API Key copied to clipboard!');
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      color: '#2563eb',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    Copy
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const newKey = `jts_live_${Math.random().toString(36).substring(2, 10)}${Date.now().toString(36)}`;
+                      setApiKey(newKey);
+                      localStorage.setItem('jts_admin_api_key', newKey);
+                      showToast('API Key generated!');
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      backgroundColor: '#2563eb',
+                      border: 'none',
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    Generate
+                  </button>
+                )}
               </div>
               <p style={{ margin: 0, fontSize: '0.64rem', color: '#64748b' }}>
                 Use this key to authenticate REST API calls and automate meeting scheduling.

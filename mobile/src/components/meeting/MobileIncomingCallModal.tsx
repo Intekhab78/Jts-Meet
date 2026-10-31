@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { mobileNotificationService } from '../../services/mobileNotificationService';
+import { resolveAvatarUrl } from '../../config';
 
 export interface IncomingCallData {
   callerName: string;
@@ -181,10 +182,28 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
               fontSize: '2.5rem',
               fontWeight: 800,
               color: '#ffffff',
-              boxShadow: '0 12px 32px rgba(0, 0, 0, 0.4)',
+              overflow: 'hidden',
             }}
           >
             {initial}
+            {call.callerAvatar && (
+              <img
+                src={resolveAvatarUrl(call.callerAvatar)}
+                alt=""
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                }}
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            )}
           </div>
         </div>
 

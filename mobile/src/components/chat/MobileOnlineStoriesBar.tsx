@@ -1,5 +1,6 @@
 import React from 'react';
 import { MobileContact } from './types';
+import { resolveAvatarUrl } from '../../config';
 
 interface MobileOnlineStoriesBarProps {
   contacts: MobileContact[];
@@ -127,33 +128,45 @@ export const MobileOnlineStoriesBar: React.FC<MobileOnlineStoriesBarProps> = ({
                     overflow: 'hidden',
                   }}
                 >
-                  {contact.avatar ? (
-                    <img
-                      src={contact.avatar}
-                      alt={contact.name}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        background: isInMeeting
-                          ? 'linear-gradient(135deg, #fee2e2 0%, #fef2f2 100%)'
-                          : isOnline
-                          ? 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%)'
-                          : '#f1f5f9',
-                        color: isInMeeting ? '#dc2626' : isOnline ? '#2563eb' : '#64748b',
-                        fontWeight: 700,
-                        fontSize: '0.85rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      {contact.name.charAt(0).toUpperCase()}
-                    </div>
-                  )}
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      background: isInMeeting
+                        ? 'linear-gradient(135deg, #fee2e2 0%, #fef2f2 100%)'
+                        : isOnline
+                        ? 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%)'
+                        : '#f1f5f9',
+                      color: isInMeeting ? '#dc2626' : isOnline ? '#2563eb' : '#64748b',
+                      fontWeight: 700,
+                      fontSize: '0.85rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      borderRadius: '50%',
+                    }}
+                  >
+                    {contact.name.charAt(0).toUpperCase()}
+                    {contact.avatar && (
+                      <img
+                        src={resolveAvatarUrl(contact.avatar)}
+                        alt={contact.name}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                        }}
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
 
                 {/* Status Dot: Green if Online, Red if In Call, Neutral Gray if Offline */}

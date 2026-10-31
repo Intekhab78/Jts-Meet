@@ -8,6 +8,7 @@ interface MessagesTabProps {
   token?: string | null;
   currentUser?: any;
   socket?: any;
+  onOpenAuth?: () => void;
   onStartMeeting?: (code: string) => void;
   onStartCall?: (
     targetUserId: string,
@@ -26,6 +27,7 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({
   token,
   currentUser,
   socket,
+  onOpenAuth,
   onStartMeeting,
   onStartCall,
   onOpenTeamHub,
@@ -42,6 +44,65 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({
     isChannel: boolean;
     status?: string;
   } | null>(null);
+
+  if (!token || !currentUser) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px 20px',
+          textAlign: 'center',
+          backgroundColor: '#ffffff',
+          gap: 16,
+        }}
+      >
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 20,
+            backgroundColor: '#eff6ff',
+            color: '#2563eb',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </div>
+        <div>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', margin: '0 0 6px' }}>
+            Sign In to Access Team Chats
+          </h3>
+          <p style={{ fontSize: '0.78rem', color: '#64748b', maxWidth: 300, margin: '0 auto', lineHeight: 1.4 }}>
+            Connect with your organization teammates, direct message colleagues, and join team channels securely.
+          </p>
+        </div>
+        <button
+          onClick={onOpenAuth}
+          style={{
+            padding: '12px 28px',
+            borderRadius: 12,
+            background: '#2563eb',
+            color: '#ffffff',
+            fontWeight: 700,
+            fontSize: '0.85rem',
+            border: 'none',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+          }}
+        >
+          Sign In / Register
+        </button>
+      </div>
+    );
+  }
 
   // Auto-open target conversation if passed from outside (e.g. Teams Hub)
   React.useEffect(() => {

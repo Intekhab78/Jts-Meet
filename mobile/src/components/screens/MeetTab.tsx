@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { MobileCalendarScheduleCard } from '../calendar/MobileCalendarScheduleCard';
 
 interface MeetTabProps {
+  user?: any;
+  onOpenAuth?: () => void;
   onStartNewMeeting: () => void;
   onOpenJoinModal: () => void;
   onOpenScheduleModal: () => void;
@@ -14,6 +16,8 @@ interface MeetTabProps {
 }
 
 export const MeetTab: React.FC<MeetTabProps> = ({
+  user,
+  onOpenAuth,
   onStartNewMeeting,
   onOpenJoinModal,
   onOpenScheduleModal,
@@ -58,11 +62,11 @@ export const MeetTab: React.FC<MeetTabProps> = ({
         backgroundColor: '#ffffff',
       }}
     >
-      {/* 4 Iconic Action Tiles (Zoom / Google Meet Style) */}
+      {/* Iconic Action Tiles */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
+          gridTemplateColumns: user ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)',
           gap: 10,
         }}
       >
@@ -176,104 +180,108 @@ export const MeetTab: React.FC<MeetTabProps> = ({
           </span>
         </button>
 
-        {/* Organization (Next to Schedule) */}
-        <button
-          onClick={onOpenOrganizationModal}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 6,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: 0,
-          }}
-        >
-          <div
-            style={{
-              width: 50,
-              height: 50,
-              borderRadius: 16,
-              background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
-            }}
-          >
-            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.2}>
-              <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
-              <path d="M6 12H4a2 2 0 0 0-2 2v8h4" />
-              <path d="M18 9h2a2 2 0 0 1 2 2v11h-4" />
-              <line x1="10" y1="6" x2="14" y2="6" />
-              <line x1="10" y1="10" x2="14" y2="10" />
-              <line x1="10" y1="14" x2="14" y2="14" />
-            </svg>
-          </div>
-          <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#1e293b', textAlign: 'center' }}>
-            Organization
-          </span>
-        </button>
-      </div>
-
-      {/* Enterprise Shortcuts: Teams Hub & Admin Console */}
-      <div style={{ display: 'flex', gap: 8 }}>
-        {onOpenTeamHub && (
+        {/* Organization (Only shown when user is logged in) */}
+        {user && onOpenOrganizationModal && (
           <button
-            onClick={onOpenTeamHub}
+            onClick={onOpenOrganizationModal}
             style={{
-              flex: 1,
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
-              justifyContent: 'center',
               gap: 6,
-              padding: '8px 12px',
-              borderRadius: 10,
-              backgroundColor: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              color: '#1e293b',
-              fontSize: '0.74rem',
-              fontWeight: 700,
+              background: 'none',
+              border: 'none',
               cursor: 'pointer',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+              padding: 0,
             }}
           >
-            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth={2.2}>
-              <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-            </svg>
-            Teams Hub
-          </button>
-        )}
-
-        {onOpenAdminConsole && (
-          <button
-            onClick={onOpenAdminConsole}
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              padding: '8px 12px',
-              borderRadius: 10,
-              backgroundColor: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              color: '#1e293b',
-              fontSize: '0.74rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-            }}
-          >
-            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth={2.2}>
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-            Admin Console
+            <div
+              style={{
+                width: 50,
+                height: 50,
+                borderRadius: 16,
+                background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+              }}
+            >
+              <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.2}>
+                <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
+                <path d="M6 12H4a2 2 0 0 0-2 2v8h4" />
+                <path d="M18 9h2a2 2 0 0 1 2 2v11h-4" />
+                <line x1="10" y1="6" x2="14" y2="6" />
+                <line x1="10" y1="10" x2="14" y2="10" />
+                <line x1="10" y1="14" x2="14" y2="14" />
+              </svg>
+            </div>
+            <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#1e293b', textAlign: 'center' }}>
+              Organization
+            </span>
           </button>
         )}
       </div>
+
+      {/* Enterprise Shortcuts: Teams Hub & Admin Console (Only shown when user is logged in) */}
+      {user && (
+        <div style={{ display: 'flex', gap: 8 }}>
+          {onOpenTeamHub && (
+            <button
+              onClick={onOpenTeamHub}
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                padding: '8px 12px',
+                borderRadius: 10,
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                color: '#1e293b',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+              }}
+            >
+              <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth={2.2}>
+                <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+              </svg>
+              Teams Hub
+            </button>
+          )}
+
+          {onOpenAdminConsole && (
+            <button
+              onClick={onOpenAdminConsole}
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                padding: '8px 12px',
+                borderRadius: 10,
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                color: '#1e293b',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+              }}
+            >
+              <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth={2.2}>
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              Admin Console
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Quick Join Card */}
       <form
@@ -344,78 +352,141 @@ export const MeetTab: React.FC<MeetTabProps> = ({
         </div>
       </form>
 
-      {/* ── Enterprise 1-Tap Calendar & Agenda Sync Card ── */}
-      <MobileCalendarScheduleCard
-        onJoinMeeting={onQuickJoin}
-        onOpenScheduleModal={onOpenScheduleModal}
-      />
-
-      {/* Recent Meetings */}
-      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: 8 }}>
-        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>
-          Recent Meetings
-        </span>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {recentMeetings.map((code) => (
+      {/* ── Enterprise 1-Tap Calendar Sync or Guest Welcome Card ── */}
+      {user ? (
+        <MobileCalendarScheduleCard
+          onJoinMeeting={onQuickJoin}
+          onOpenScheduleModal={onOpenScheduleModal}
+        />
+      ) : (
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)',
+            border: '1px solid #bfdbfe',
+            borderRadius: 14,
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            boxShadow: '0 2px 8px rgba(37, 99, 235, 0.05)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div
-              key={code}
-              className="card-pressable"
-              onClick={() => onQuickJoin(code)}
               style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                background: '#2563eb',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '10px 12px',
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: 12,
-                cursor: 'pointer',
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
+                justifyContent: 'center',
+                color: '#ffffff',
+                flexShrink: 0,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 8,
-                    background: '#eff6ff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#2563eb',
-                  }}
-                >
-                  <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <polygon points="23 7 16 12 23 17 23 7" />
-                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                  </svg>
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>
-                    {code}
-                  </div>
-                  <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
-                    Tap to re-join
-                  </div>
-                </div>
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0f172a' }}>
+                Sign In to JTS Meet
               </div>
-              <button
+              <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: 2 }}>
+                Sign in to schedule meetings, access enterprise organization teams, and sync calendars.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onOpenAuth}
+            style={{
+              width: '100%',
+              padding: '10px 16px',
+              borderRadius: 10,
+              background: '#2563eb',
+              color: '#ffffff',
+              fontWeight: 700,
+              fontSize: '0.84rem',
+              border: 'none',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)',
+            }}
+          >
+            Sign In / Register
+          </button>
+        </div>
+      )}
+
+      {/* Recent Meetings (Only shown for authenticated user with past meetings) */}
+      {user && recentMeetings && recentMeetings.length > 0 && (
+        <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: 8 }}>
+          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>
+            Recent Meetings
+          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {recentMeetings.map((code) => (
+              <div
+                key={code}
+                className="card-pressable"
+                onClick={() => onQuickJoin(code)}
                 style={{
-                  padding: '5px 12px',
-                  borderRadius: 6,
-                  backgroundColor: '#eff6ff',
-                  color: '#2563eb',
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 12px',
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 12,
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
                 }}
               >
-                Join
-              </button>
-            </div>
-          ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 8,
+                      background: '#eff6ff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#2563eb',
+                    }}
+                  >
+                    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <polygon points="23 7 16 12 23 17 23 7" />
+                      <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>
+                      {code}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                      Tap to re-join
+                    </div>
+                  </div>
+                </div>
+                <button
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 6,
+                    backgroundColor: '#eff6ff',
+                    color: '#2563eb',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  Join
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChangePinModal } from '../modals/ChangePinModal';
+import { resolveAvatarUrl } from '../../config';
 
 interface SettingsTabProps {
   user: any;
@@ -95,7 +96,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             }}
           >
             {user.profileImage || user.avatar ? (
-              <img src={user.profileImage || user.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <img
+                src={resolveAvatarUrl(user.profileImage || user.avatar)}
+                alt=""
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
             ) : (
               user.name ? user.name.charAt(0).toUpperCase() : 'U'
             )}

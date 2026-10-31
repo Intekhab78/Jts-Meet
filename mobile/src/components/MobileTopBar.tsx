@@ -1,4 +1,5 @@
 import React from 'react';
+import { resolveAvatarUrl } from '../config';
 
 interface MobileTopBarProps {
   user: any;
@@ -136,9 +137,10 @@ export const MobileTopBar: React.FC<MobileTopBarProps> = ({
           >
             {user.profileImage || user.avatar ? (
               <img
-                src={user.profileImage || user.avatar}
+                src={resolveAvatarUrl(user.profileImage || user.avatar)}
                 alt="Avatar"
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
               />
             ) : (
               user.name ? user.name.charAt(0).toUpperCase() : 'U'

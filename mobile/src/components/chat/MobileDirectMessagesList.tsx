@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MobileContact } from './types';
 import { MobileOnlineStoriesBar } from './MobileOnlineStoriesBar';
-import { API_BASE, getStoredToken } from '../../config';
+import { API_BASE, getStoredToken, resolveAvatarUrl } from '../../config';
 
 interface MobileDirectMessagesListProps {
   token?: string | null;
@@ -26,7 +26,10 @@ export const MobileDirectMessagesList: React.FC<MobileDirectMessagesListProps> =
   // Fetch real contacts dynamically from backend
   useEffect(() => {
     const resolvedToken = token || getStoredToken();
-    if (!resolvedToken) return;
+    if (!resolvedToken) {
+      setContacts([]);
+      return;
+    }
     const loadContacts = async () => {
       setLoading(true);
       try {
@@ -198,16 +201,28 @@ export const MobileDirectMessagesList: React.FC<MobileDirectMessagesListProps> =
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        position: 'relative',
+                        overflow: 'hidden',
                       }}
                     >
-                      {contact.avatar ? (
+                      {contact.name.charAt(0).toUpperCase()}
+                      {contact.avatar && (
                         <img
-                          src={contact.avatar}
+                          src={resolveAvatarUrl(contact.avatar)}
                           alt=""
-                          style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            borderRadius: '50%',
+                            objectFit: 'cover',
+                          }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
                         />
-                      ) : (
-                        contact.name.charAt(0).toUpperCase()
                       )}
                     </div>
                     {/* Status Dot */}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
-import { API_BASE, getStoredToken } from '../../config';
+import { API_BASE, getStoredToken, resolveAvatarUrl } from '../../config';
 
 export interface MobileTeamMember {
   userId: any;
@@ -51,9 +51,8 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
   onStartTeamCall,
   onStartChannelCall,
 }) => {
-  if (!isOpen) return null;
-
   const resolvedToken = token || getStoredToken();
+  if (!isOpen || !resolvedToken) return null;
 
   // Active Sub-tab
   const [activeTab, setActiveTab] = useState<'channels' | 'members' | 'settings' | 'allTeams'>('channels');
@@ -128,7 +127,13 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
 
   // Load Organization & Teams
   const loadTeams = async () => {
-    if (!resolvedToken) return;
+    if (!resolvedToken) {
+      setTeams([]);
+      setChannels([]);
+      setActiveTeamId('');
+      setLoadingTeams(false);
+      return;
+    }
     setLoadingTeams(true);
     try {
       let orgId = currentOrgId || localStorage.getItem('jts_current_org_id');
@@ -1062,9 +1067,10 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
                       >
                         {userObj?.profileImage ? (
                           <img
-                            src={userObj.profileImage}
+                            src={resolveAvatarUrl(userObj.profileImage)}
                             alt=""
                             style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
                           />
                         ) : (
                           memberName.charAt(0).toUpperCase()

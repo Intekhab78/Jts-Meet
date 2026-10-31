@@ -26,7 +26,10 @@ export const MobileChannelsList: React.FC<MobileChannelsListProps> = ({
   // Load real channels dynamically from the backend
   const loadDynamicChannels = async () => {
     const resolvedToken = token || getStoredToken();
-    if (!resolvedToken) return;
+    if (!resolvedToken) {
+      setChannels([]);
+      return;
+    }
     setLoading(true);
     try {
       // 1. Get user's organizations

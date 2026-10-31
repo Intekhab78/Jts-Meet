@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
-import { API_BASE, getStoredToken, setStoredUser } from '../../config';
+import { API_BASE, getStoredToken, setStoredUser, resolveAvatarUrl } from '../../config';
 
 interface MobileUserProfileModalProps {
   isOpen: boolean;
@@ -67,15 +67,43 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
 
   if (!isOpen || !user) return null;
 
+  // Automatically resize & compress avatar image with HTML5 canvas
   const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const result = ev.target?.result as string;
-        if (result) {
-          setAvatarUrl(result);
-        }
+        const rawData = ev.target?.result as string;
+        if (!rawData) return;
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const maxDim = 400;
+          let width = img.width;
+          let height = img.height;
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.85);
+            setAvatarUrl(compressed);
+          } else {
+            setAvatarUrl(rawData);
+          }
+        };
+        img.src = rawData;
       };
       reader.readAsDataURL(file);
       e.target.value = '';
@@ -102,6 +130,14 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
           profileImage: avatarUrl || undefined,
         }),
       });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || `Failed to update profile (${res.status})`);
+      }
+
+      const resJson = await res.json().catch(() => ({}));
+      const savedUser = resJson.data || resJson.user || {};
 
       // 2. Update Status
       await fetch(`${API_BASE}/api/auth/status`, {
@@ -143,13 +179,15 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
         }
       }
 
-      // Update Local User Object
+      // Update Local User Object with backend response
+      const finalAvatar = savedUser.profileImage || avatarUrl;
       const updatedUser = {
         ...user,
+        ...savedUser,
         name: fullName.trim(),
         fullName: fullName.trim(),
-        profileImage: avatarUrl,
-        avatar: avatarUrl,
+        profileImage: finalAvatar,
+        avatar: finalAvatar,
         title: title.trim(),
         department: department.trim(),
         phone: phone.trim(),
@@ -302,7 +340,12 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
               }}
             >
               {avatarUrl ? (
-                <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <img
+                  src={resolveAvatarUrl(avatarUrl)}
+                  alt=""
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
               ) : (
                 fullName ? fullName.charAt(0).toUpperCase() : 'U'
               )}
