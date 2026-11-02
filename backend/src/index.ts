@@ -7,6 +7,22 @@ import { telephonyMediaService } from './services/telephonyMedia.service'
 
 const server = http.createServer(app)
 
+// Process-level safety: prevent transient unhandled Redis timeouts or network drops from crashing PM2 instances
+process.on('unhandledRejection', (reason: any) => {
+  if (reason?.name === 'TimeoutError' || reason?.message?.includes('Timeout') || reason?.message?.includes('Redis')) {
+    console.warn('[Process] Handled transient Redis/network TimeoutError (prevented crash):', reason?.message || reason)
+    return
+  }
+  console.error('[Process] Unhandled Promise Rejection:', reason)
+})
+
+process.on('uncaughtException', (error: Error) => {
+  console.error('[Process] Uncaught Exception:', error)
+  if (error?.message?.includes('Redis') || (error as any)?.code === 'ECONNRESET' || (error as any)?.code === 'EPIPE') {
+    return
+  }
+})
+
 // Handle raw WebSocket upgrade for Twilio PSTN Phone Call Media Streams
 server.on('upgrade', (req, socket, head) => {
   if (req.url && req.url.startsWith('/api/telephony/voice/media')) {

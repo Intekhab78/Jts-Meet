@@ -21,7 +21,7 @@ function getRedisClient() {
     try {
         const redis = RedisService.getInstance()
         const client = redis.getClient()
-        return client && client.isOpen ? client : null
+        return client && client.isOpen && client.isReady ? client : null
     } catch {
         return null
     }

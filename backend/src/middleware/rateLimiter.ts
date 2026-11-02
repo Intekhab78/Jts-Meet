@@ -35,7 +35,7 @@ export function rateLimiter(windowMs: number = 60 * 1000, maxRequests: number = 
         try {
             const redis = RedisService.getInstance()
             const client = redis.getClient()
-            if (client && client.isOpen) {
+            if (client && client.isOpen && client.isReady) {
                 const windowBucket = Math.floor(now / windowMs)
                 const redisKey = `${keyPrefix}:${clientIp}:${windowBucket}`
 

@@ -51,6 +51,33 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         const pubClient = redisService.getClient()
         const subClient = pubClient.duplicate()
 
+        // Safely wrap publish calls so adapter broadcasts never trigger unhandled promise rejection crashes on Redis timeouts
+        const wrapSafePublish = (client: any, name: string) => {
+            if (!client || typeof client.publish !== 'function') return
+            const originalPublish = client.publish.bind(client)
+            client.publish = function (...args: any[]) {
+                try {
+                    const result = originalPublish(...args)
+                    if (result && typeof result.catch === 'function') {
+                        return result.catch((err: any) => {
+                            if (err?.name === 'TimeoutError' || err?.message?.includes('Timeout')) {
+                                console.warn(`[Redis ${name}] Publish timed out:`, err.message)
+                            } else {
+                                console.warn(`[Redis ${name}] Publish error:`, err?.message || err)
+                            }
+                        })
+                    }
+                    return result
+                } catch (err: any) {
+                    console.warn(`[Redis ${name}] Publish synchronous error:`, err?.message || err)
+                    return Promise.resolve()
+                }
+            }
+        }
+
+        wrapSafePublish(pubClient, 'pubClient')
+        wrapSafePublish(subClient, 'subClient')
+
         subClient.on('error', (err) => {
             if (err?.code === 'ECONNREFUSED' || err?.message?.includes('ECONNREFUSED')) {
                 return

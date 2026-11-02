@@ -1,5 +1,5 @@
 import { createClient, RedisClientType } from 'redis'
-import { REDIS_URL } from '../config'
+import { REDIS_URL, NODE_ENV } from '../config'
 
 export class RedisService {
     private static instance: RedisService | null = null
@@ -20,16 +20,25 @@ export class RedisService {
     private initialize() {
         this.client = createClient({
             url: REDIS_URL,
+            commandOptions: {
+                // Generous command timeout (30 seconds) rather than rigid 5-second default
+                timeout: 30000
+            },
             socket: {
+                connectTimeout: 10000,
+                keepAlive: true,
+                keepAliveInitialDelay: 15000,
                 reconnectStrategy: (retries) => {
                     if (this.isClosing) {
-                        return false // Stop trying to reconnect when closing down
+                        return false // Stop trying to reconnect when closing down explicitly
                     }
-                    if (retries >= 5) {
-                        this.isClosing = true
-                        return false // Stop retrying
+                    if (NODE_ENV !== 'production' && retries >= 5) {
+                        return false // In dev without Redis, stop retrying after 5 attempts to prevent log spam
                     }
-                    return Math.min(retries * 100, 10000)
+                    // In production, keep retrying with exponential backoff up to 3s with jitter
+                    const jitter = Math.floor(Math.random() * 200)
+                    const delay = Math.min(retries * 200, 3000)
+                    return delay + jitter
                 }
             }
         }) as RedisClientType
@@ -91,7 +100,7 @@ export class RedisService {
 
     public async healthCheck(): Promise<boolean> {
         try {
-            if (!this.client || !this.client.isOpen) {
+            if (!this.client || !this.client.isOpen || !this.client.isReady) {
                 return false
             }
             const pingResponse = await this.client.ping()
