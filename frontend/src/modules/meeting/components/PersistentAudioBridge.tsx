@@ -90,16 +90,17 @@ export const PersistentAudioBridge: React.FC<PersistentAudioBridgeProps> = ({
             )}
 
             <div
+                aria-hidden="true"
                 style={{
                     position: 'fixed',
                     bottom: 0,
                     right: 0,
-                    width: 2,
-                    height: 2,
-                    opacity: 0.01,
+                    width: 16,
+                    height: 16,
+                    opacity: 0.05,
                     overflow: 'hidden',
                     pointerEvents: 'none',
-                    zIndex: -1
+                    zIndex: 0
                 }}
             >
                 {(() => {

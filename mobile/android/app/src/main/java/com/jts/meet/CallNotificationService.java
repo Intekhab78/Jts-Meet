@@ -83,19 +83,35 @@ public class CallNotificationService extends FirebaseMessagingService {
         String callerId = data.get("callerId");
         boolean isAudio = "audio".equalsIgnoreCase(callType);
 
-        // Discard stale/queued calls (older than 45 seconds)
-        if (meetingId != null && meetingId.startsWith("call_")) {
+        // Discard stale/queued calls:
+        // Use server NTP sentAt timestamp if present, otherwise extract timestamp from meetingId.
+        // Allow up to 120,000 ms (2 minutes) to tolerate carrier latency and device clock drift between phones.
+        long callTimestamp = 0;
+        String sentAtStr = data.get("sentAt");
+        if (sentAtStr != null && !sentAtStr.isEmpty()) {
+            try {
+                callTimestamp = Long.parseLong(sentAtStr);
+            } catch (Exception ignored) {}
+        }
+        if (callTimestamp == 0 && meetingId != null && meetingId.startsWith("call_")) {
             try {
                 String[] parts = meetingId.split("_");
                 if (parts.length >= 2) {
-                    long t = Long.parseLong(parts[1]);
-                    if (t > 0 && (System.currentTimeMillis() - t > 45000)) {
-                        // Expired call, do not ring or notify
-                        return;
-                    }
+                    callTimestamp = Long.parseLong(parts[1]);
                 }
             } catch (Exception ignored) {}
         }
+
+        if (callTimestamp > 0) {
+            long age = System.currentTimeMillis() - callTimestamp;
+            // Only discard if more than 120 seconds old (e.g. offline queue replay).
+            // Do NOT discard fresh calls if there is normal network delay or minor device clock difference!
+            if (age > 120000) {
+                android.util.Log.w("CallNotificationService", "Discarding stale incoming call: age=" + age + "ms, meetingId=" + meetingId);
+                return;
+            }
+        }
+
 
         if (callerName == null || callerName.isEmpty()) {
             callerName = "Colleague";

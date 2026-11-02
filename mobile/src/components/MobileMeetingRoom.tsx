@@ -902,6 +902,11 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
 
       // User Left -> Clean up properly, play chime, and auto-exit if direct call
       const handleUserLeft = (leftUserId: string) => {
+        if (!leftUserId) return;
+        const normLeft = leftUserId.toLowerCase();
+        if (normLeft === myUserIdRef.current.toLowerCase()) {
+          return;
+        }
         playToneChime('leave');
         cleanupPeer(leftUserId);
         if (isDirectCall) {
@@ -923,6 +928,22 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
       socket.on('meeting:user-left', (payload: { userId: string }) => {
         if (payload?.userId) {
           handleUserLeft(payload.userId);
+        }
+      });
+      socket.on('webrtc:user-reconnecting', (payload: { userId: string }) => {
+        if (payload?.userId && payload.userId.toLowerCase() !== myUserIdRef.current.toLowerCase()) {
+          console.log('[Mobile WebRTC] Remote peer reconnecting...');
+          try {
+            (window as any).MobileAppBridge?.showToast?.('Connecting...');
+          } catch (_) {}
+        }
+      });
+      socket.on('webrtc:user-reconnected', (payload: { userId: string }) => {
+        if (payload?.userId && payload.userId.toLowerCase() !== myUserIdRef.current.toLowerCase()) {
+          console.log('[Mobile WebRTC] Remote peer reconnected!');
+          try {
+            (window as any).MobileAppBridge?.showToast?.('Connected');
+          } catch (_) {}
         }
       });
       socket.on('call:ended', () => {
@@ -1211,13 +1232,18 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   };
 
   // Find presenter if active (screen share or user-focused tile)
+  const isSelfSharing = screenSharingUserId === 'me' || (myUserIdRef.current && screenSharingUserId?.toLowerCase() === myUserIdRef.current.toLowerCase());
   const activePresenterId = screenSharingUserId || focusedUserId;
-  const presenter = activePresenterId
-    ? participants.find((p) => p.userId.toLowerCase() === activePresenterId.toLowerCase())
-    : null;
-  const presenterStream = activePresenterId
-    ? remoteStreams[activePresenterId] || remoteStreams[activePresenterId.toLowerCase()]
-    : null;
+  const presenter = isSelfSharing
+    ? { userId: 'me', displayName: 'You', isMuted: false, isVideoOff: false }
+    : (activePresenterId
+        ? participants.find((p) => p.userId.toLowerCase() === activePresenterId.toLowerCase())
+        : null);
+  const presenterStream = isSelfSharing
+    ? (screenStreamRef.current || localStream)
+    : (activePresenterId
+        ? (remoteStreams[activePresenterId] || remoteStreams[activePresenterId.toLowerCase()] || Object.entries(remoteStreams).find(([k]) => k.toLowerCase() === activePresenterId.toLowerCase())?.[1] || null)
+        : null);
 
   // ── PICTURE IN PICTURE MINI-CARD & NATIVE PIP OVERLAY ──
   if (isMinimized || isNativePip) {

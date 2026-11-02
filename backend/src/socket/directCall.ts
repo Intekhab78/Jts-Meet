@@ -10,6 +10,255 @@ import { NotificationService } from '../modules/notification/notification.servic
 
 const activeRingTimeouts = new Map<string, NodeJS.Timeout>()
 const RING_TIMEOUT_MS = 60000 // 60 seconds ring timeout
+const recentlyInitiatedCalls = new Map<string, number>()
+
+export async function initiateDirectCall(
+    io: Server | null,
+    userId: string,
+    payload: {
+        targetUserId?: string
+        calleeId?: string
+        targetUserIds?: string[]
+        channelName?: string
+        channelId?: string
+        callType?: 'video' | 'audio' | 'screenshare'
+        callerName?: string
+        callerAvatar?: string
+        meetingId?: string
+    }
+): Promise<{ success: boolean; meetingId?: string; targetUserIds?: string[]; error?: string }> {
+    if (!userId) {
+        return { success: false, error: 'Unauthorized user' }
+    }
+
+    // Deduplication check: if call with meetingId was processed in the last 15 seconds, avoid duplicate pushes/timeouts
+    if (payload.meetingId && recentlyInitiatedCalls.has(payload.meetingId)) {
+        console.log(`[DirectCall] Call ${payload.meetingId} already initiated within deduplication window. Returning success.`)
+        return { success: true, meetingId: payload.meetingId }
+    }
+
+    let targetUserIds: string[] = []
+
+    // 1. Channel Call member resolution: If channelId or channelName is provided
+    if (payload?.channelId || payload?.channelName) {
+        try {
+            let channelDoc = null
+            if (payload.channelId && Types.ObjectId.isValid(payload.channelId)) {
+                channelDoc = await Channel.findById(payload.channelId).select('members').lean().exec()
+            }
+            if (!channelDoc && payload.channelName) {
+                channelDoc = await Channel.findOne({ name: payload.channelName }).select('members').lean().exec()
+            }
+            if (channelDoc && Array.isArray(channelDoc.members)) {
+                targetUserIds = channelDoc.members
+                    .map((m: any) => m.userId?.toString())
+                    .filter((id: string) => id && id !== String(userId))
+            }
+        } catch (err) {
+            console.warn('[DirectCall] Error resolving channel members for group call:', err)
+        }
+    }
+
+    // 2. Direct 1-to-1 or explicit targetUserIds call
+    if (targetUserIds.length === 0) {
+        const singleTarget = payload?.targetUserId || payload?.calleeId
+        if (Array.isArray(payload?.targetUserIds) && payload.targetUserIds.length > 0) {
+            targetUserIds = payload.targetUserIds.map(String).filter(id => id && id !== String(userId))
+        } else if (singleTarget && String(singleTarget) !== String(userId)) {
+            targetUserIds = [String(singleTarget)]
+        }
+    }
+
+    if (targetUserIds.length === 0) {
+        console.warn(`[DirectCall] Call rejected: No valid target user IDs found for caller ${userId}. Payload:`, payload)
+        return { success: false, error: 'Invalid call target' }
+    }
+
+    try {
+        // Fetch caller user information if not provided
+        let callerName = payload.callerName
+        let callerAvatar = payload.callerAvatar
+        if (!callerName) {
+            const caller = await User.findById(userId).select('fullName profileImage').lean().exec()
+            callerName = caller?.fullName || 'Colleague'
+            callerAvatar = caller?.profileImage || ''
+        }
+
+        const channelName = payload.channelName
+        const channelId = payload.channelId
+        const isGroupCall = targetUserIds.length > 1 || Boolean(channelName)
+
+        // Create an instant meeting room for the call
+        const meetingTitle = channelName
+            ? `Channel Call: #${channelName}`
+            : isGroupCall
+                ? `Group Call: ${callerName}`
+                : `Direct Call: ${callerName}`
+
+        const callMeeting = await createMeeting(userId, meetingTitle)
+        try {
+            for (const tId of targetUserIds) {
+                if (Types.ObjectId.isValid(tId)) {
+                    callMeeting.participants.push(new Types.ObjectId(tId) as any)
+                }
+            }
+            await callMeeting.save()
+        } catch (_) {}
+
+        const meetingId = payload.meetingId || callMeeting.meetingId
+
+        // Mark as recently initiated for deduplication
+        recentlyInitiatedCalls.set(meetingId, Date.now())
+        setTimeout(() => recentlyInitiatedCalls.delete(meetingId), 15000)
+
+        const incomingCallPayload = {
+            meetingId,
+            callerId: userId,
+            callerName,
+            callerAvatar,
+            callType: payload.callType || 'video',
+            channelName,
+            channelId,
+            isGroupCall,
+            createdAt: new Date()
+        }
+
+        console.log(`[DirectCall] Initiating call ${meetingId}: caller=${callerName} (${userId}) -> targets=[${targetUserIds.join(', ')}]`)
+
+        // 1. Emit to all target users' personal socket rooms (for open/connected browser tabs & active mobile sessions)
+        if (io) {
+            for (const tId of targetUserIds) {
+                io.to(`user:${tId}`).emit(SocketEvents.CALL_INCOMING, incomingCallPayload)
+            }
+        }
+
+        // 2. Dispatch High-Priority Web Push & Native Android FCM (rings device even if phone is locked/app closed)
+        const pushCallerTitle = channelName ? `${callerName} (#${channelName})` : callerName
+        for (const tId of targetUserIds) {
+            NotificationService.sendIncomingCallPush(tId, {
+                meetingId,
+                callerName: pushCallerTitle,
+                callerAvatar,
+                callType: payload.callType || 'video',
+                callerId: userId
+            }).catch(err => {
+                console.warn(`[DirectCall] Push dispatch error for user ${tId}:`, err?.message || err)
+            })
+        }
+
+        // 60-second automatic call ringing timeout
+        if (activeRingTimeouts.has(meetingId)) {
+            clearTimeout(activeRingTimeouts.get(meetingId))
+        }
+        const timeoutHandle = setTimeout(() => {
+            activeRingTimeouts.delete(meetingId)
+            console.log(`[DirectCall] Call ${meetingId} timed out after 60s (no answer)`)
+            const timeoutPayload = {
+                meetingId,
+                callerId: userId,
+                calleeId: targetUserIds[0],
+                reason: 'no_answer'
+            }
+            if (io) {
+                for (const tId of targetUserIds) {
+                    io.to(`user:${tId}`).emit(SocketEvents.CALL_CANCELLED, timeoutPayload)
+                    NotificationService.sendMissedCallPush(tId, {
+                        callerName,
+                        callerAvatar,
+                        callType: payload.callType || 'video',
+                    }).catch(() => {})
+                }
+                io.to(`user:${userId}`).emit(SocketEvents.CALL_REJECTED, timeoutPayload)
+                io.to(`meeting:${meetingId}`).emit(SocketEvents.CALL_CANCELLED, timeoutPayload)
+            }
+        }, RING_TIMEOUT_MS)
+        activeRingTimeouts.set(meetingId, timeoutHandle)
+
+        return {
+            success: true,
+            meetingId,
+            targetUserIds
+        }
+    } catch (error: any) {
+        console.error(`[DirectCall] Error in initiateDirectCall:`, error)
+        return { success: false, error: error?.message || 'Failed to initiate direct call' }
+    }
+}
+
+export async function cancelOrEndDirectCall(
+    io: Server | null,
+    userId: string,
+    payload: {
+        targetUserId?: string
+        calleeId?: string
+        targetUserIds?: string[]
+        meetingId?: string
+    }
+) {
+    if (!userId) return
+
+    const mId = payload?.meetingId
+    // Clear 60s ringing timeout
+    if (mId && activeRingTimeouts.has(mId)) {
+        clearTimeout(activeRingTimeouts.get(mId))
+        activeRingTimeouts.delete(mId)
+    }
+
+    const cancelData = {
+        callerId: userId,
+        userId,
+        meetingId: mId
+    }
+
+    const targets = new Set<string>()
+    if (payload?.targetUserId) targets.add(String(payload.targetUserId))
+    if (payload?.calleeId) targets.add(String(payload.calleeId))
+    if (Array.isArray(payload?.targetUserIds)) {
+        payload.targetUserIds.forEach(id => {
+            if (id) targets.add(String(id))
+        })
+    }
+
+    // If target not provided directly in payload, lookup meeting host and participants in database
+    if (mId && targets.size === 0) {
+        try {
+            const meetingDoc = await Meeting.findOne({ meetingId: mId }).select('participants host').lean().exec()
+            if (meetingDoc) {
+                if (meetingDoc.host && String(meetingDoc.host) !== String(userId)) {
+                    targets.add(String(meetingDoc.host))
+                }
+                if (Array.isArray(meetingDoc.participants)) {
+                    meetingDoc.participants.forEach((p: any) => {
+                        const pId = String(p?._id || p)
+                        if (pId && pId !== String(userId)) {
+                            targets.add(pId)
+                        }
+                    })
+                }
+            }
+        } catch (_) {}
+    }
+
+    if (io) {
+        targets.forEach(tId => {
+            io.to(`user:${tId}`).emit(SocketEvents.CALL_CANCELLED, cancelData)
+            io.to(`user:${tId}`).emit('call:ended', cancelData)
+        })
+
+        if (mId) {
+            io.to(`meeting:${mId}`).emit(SocketEvents.CALL_CANCELLED, cancelData)
+            io.to(`meeting:${mId}`).emit('call:ended', cancelData)
+            io.to(`meeting:${mId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
+                userId,
+                meetingId: mId
+            })
+            io.to(`meeting:${mId}`).emit(SocketEvents.MEETING_LEAVE, {
+                userId,
+                meetingId: mId
+            })
+        }
+    }
+}
 
 export function registerDirectCallHandlers(io: Server, socket: Socket) {
     const authSocket = socket as AuthenticatedSocket
@@ -26,137 +275,23 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
         callerAvatar?: string
         meetingId?: string
     }) => {
-        const singleTarget = payload?.targetUserId || payload?.calleeId
-        let targetUserIds: string[] = []
-        if (Array.isArray(payload?.targetUserIds) && payload.targetUserIds.length > 0) {
-            targetUserIds = payload.targetUserIds.map(String).filter(id => id && id !== String(userId))
-        } else if (singleTarget && String(singleTarget) !== String(userId)) {
-            targetUserIds = [String(singleTarget)]
-        }
-
-        // Dynamically resolve all channel members if initiating a call in a channel
-        if (targetUserIds.length === 0 && (payload?.channelId || payload?.channelName)) {
-            try {
-                let channelDoc = null
-                if (payload.channelId && Types.ObjectId.isValid(payload.channelId)) {
-                    channelDoc = await Channel.findById(payload.channelId).select('members').lean().exec()
-                }
-                if (!channelDoc && payload.channelName) {
-                    channelDoc = await Channel.findOne({ name: payload.channelName }).select('members').lean().exec()
-                }
-                if (channelDoc && Array.isArray(channelDoc.members)) {
-                    targetUserIds = channelDoc.members
-                        .map((m: any) => m.userId?.toString())
-                        .filter((id: string) => id && id !== String(userId))
-                }
-            } catch (err) {
-                console.warn('[DirectCall] Error resolving channel members for group call:', err)
-            }
-        }
-
-        if (!userId || targetUserIds.length === 0) {
-            socket.emit('error', { message: 'Invalid call target' })
+        if (!userId) {
+            socket.emit('error', { message: 'Unauthorized' })
             return
         }
 
-        try {
-            // Fetch caller user information if not provided
-            let callerName = payload.callerName
-            let callerAvatar = payload.callerAvatar
-            if (!callerName) {
-                const caller = await User.findById(userId).select('fullName profileImage').lean().exec()
-                callerName = caller?.fullName || 'Colleague'
-                callerAvatar = caller?.profileImage || ''
-            }
-
-            const channelName = payload.channelName
-            const channelId = payload.channelId
-            const isGroupCall = targetUserIds.length > 1 || Boolean(channelName)
-
-            // Create an instant meeting room for the call
-            const meetingTitle = channelName
-                ? `Channel Call: #${channelName}`
-                : isGroupCall
-                    ? `Group Call: ${callerName}`
-                    : `Direct Call: ${callerName}`
-
-            const callMeeting = await createMeeting(userId, meetingTitle)
-            try {
-                const { Types } = await import('mongoose')
-                for (const tId of targetUserIds) {
-                    if (Types.ObjectId.isValid(tId)) {
-                        callMeeting.participants.push(new Types.ObjectId(tId) as any)
-                    }
-                }
-                await callMeeting.save()
-            } catch (_) {}
-
-            const meetingId = payload.meetingId || callMeeting.meetingId
-
-            const incomingCallPayload = {
-                meetingId,
-                callerId: userId,
-                callerName,
-                callerAvatar,
-                callType: payload.callType || 'video',
-                channelName,
-                channelId,
-                isGroupCall,
-                createdAt: new Date()
-            }
-
-            // 1. Emit to all target users' personal rooms (for open/connected browser tabs)
-            for (const tId of targetUserIds) {
-                io.to(`user:${tId}`).emit(SocketEvents.CALL_INCOMING, incomingCallPayload)
-
-                // 2. Dispatch High-Priority Web Push (rings device even if browser tabs are closed)
-                const pushCallerTitle = channelName ? `${callerName} (#${channelName})` : callerName
-                NotificationService.sendIncomingCallPush(tId, {
-                    meetingId,
-                    callerName: pushCallerTitle,
-                    callerAvatar,
-                    callType: payload.callType || 'video',
-                    callerId: userId
-                }).catch(err => {
-                    console.warn('[DirectCall] Push dispatch error:', err?.message || err)
-                })
-            }
-
-            // 60-second automatic call ringing timeout
-            if (activeRingTimeouts.has(meetingId)) {
-                clearTimeout(activeRingTimeouts.get(meetingId))
-            }
-            const timeoutHandle = setTimeout(() => {
-                activeRingTimeouts.delete(meetingId)
-                console.log(`[DirectCall] Call ${meetingId} timed out after 60s (no answer)`)
-                const timeoutPayload = {
-                    meetingId,
-                    callerId: userId,
-                    calleeId: targetUserIds[0],
-                    reason: 'no_answer'
-                }
-                for (const tId of targetUserIds) {
-                    io.to(`user:${tId}`).emit(SocketEvents.CALL_CANCELLED, timeoutPayload)
-                    NotificationService.sendMissedCallPush(tId, {
-                        callerName,
-                        callerAvatar,
-                        callType: payload.callType || 'video',
-                    }).catch(() => {})
-                }
-                io.to(`user:${userId}`).emit(SocketEvents.CALL_REJECTED, timeoutPayload)
-                io.to(`meeting:${meetingId}`).emit(SocketEvents.CALL_CANCELLED, timeoutPayload)
-            }, RING_TIMEOUT_MS)
-            activeRingTimeouts.set(meetingId, timeoutHandle)
-
-            // Confirm initiation to caller with the meetingId
-            socket.emit('call:initiated', {
-                meetingId,
-                targetUserId: targetUserIds[0],
-                targetUserIds
-            })
-        } catch (error: any) {
-            socket.emit('error', { message: error?.message || 'Failed to initiate direct call' })
+        const result = await initiateDirectCall(io, userId, payload)
+        if (!result.success) {
+            socket.emit('error', { message: result.error || 'Failed to initiate direct call' })
+            return
         }
+
+        // Confirm initiation to caller with the meetingId
+        socket.emit('call:initiated', {
+            meetingId: result.meetingId,
+            targetUserId: result.targetUserIds?.[0] || payload.targetUserId,
+            targetUserIds: result.targetUserIds
+        })
     })
 
     socket.on(SocketEvents.CALL_ACCEPTED, async (payload: {

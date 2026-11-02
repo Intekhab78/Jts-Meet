@@ -2,6 +2,8 @@ import { Response } from 'express'
 import { NotificationService } from './notification.service'
 import { sendError, sendSuccess } from '../../utils/responseHelper'
 import { AuthRequest } from '../../middleware/authMiddleware'
+import { getIO } from '../../socket/index'
+import { initiateDirectCall, cancelOrEndDirectCall } from '../../socket/directCall'
 
 export const notificationController = {
     list: async (req: AuthRequest, res: Response) => {
@@ -145,7 +147,39 @@ export const notificationController = {
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to register FCM token')
         }
+    },
+
+    initiateCall: async (req: AuthRequest, res: Response) => {
+        const userId = req.userId
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        try {
+            const io = req.app.get('io') || (global as any).io || getIO()
+            const result = await initiateDirectCall(io, userId, req.body)
+            if (!result.success) {
+                return sendError(res, 400, result.error || 'Failed to initiate direct call')
+            }
+            return sendSuccess(res, result, 'Direct call initiated successfully')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to initiate direct call')
+        }
+    },
+
+    cancelCall: async (req: AuthRequest, res: Response) => {
+        const userId = req.userId
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        try {
+            const io = req.app.get('io') || (global as any).io || getIO()
+            await cancelOrEndDirectCall(io, userId, req.body)
+            return sendSuccess(res, { cancelled: true }, 'Call cancelled successfully')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to cancel call')
+        }
     }
 }
+
 
 

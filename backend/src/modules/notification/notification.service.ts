@@ -112,9 +112,12 @@ export class NotificationService {
 
         try {
             // ── 1. Native Android FCM High-Priority Push (Wakes up phone & Rings like WhatsApp) ──
-            const fcmDevices = await FcmDevice.find({
-                userId: new Types.ObjectId(targetUserId)
-            }).exec()
+            const userQuery = Types.ObjectId.isValid(targetUserId)
+                ? { $or: [{ userId: new Types.ObjectId(targetUserId) }, { userId: targetUserId }] }
+                : { userId: targetUserId }
+            const fcmDevices = await FcmDevice.find(userQuery).exec()
+
+            console.log(`[FCM] Looking up devices for user ${targetUserId}: found ${fcmDevices?.length || 0} registered devices`)
 
             if (fcmDevices && fcmDevices.length > 0) {
                 const messaging = getFirebaseMessaging()
@@ -138,6 +141,7 @@ export class NotificationService {
                                 callerAvatar: String(callData.callerAvatar || ''),
                                 callType: String(callData.callType || 'video'),
                                 callerId: String(callData.callerId || ''),
+                                sentAt: String(Date.now()), // Server NTP timestamp prevents client clock skew drops
                                 title: callTitle,
                                 body: callBody,
                             },
@@ -146,7 +150,7 @@ export class NotificationService {
                                 ttl: 60, // 60 seconds TTL (seconds in FCM Admin SDK)
                             }
                         })
-                        console.log(`[FCM] Dispatched incoming call push: ${fcmResponse.successCount}/${tokens.length} delivered`)
+                        console.log(`[FCM] Dispatched incoming call push to ${targetUserId}: ${fcmResponse.successCount}/${tokens.length} delivered`)
                         successCount += fcmResponse.successCount
 
                         // Purge invalid tokens

@@ -15,7 +15,7 @@ import java.net.URL;
  */
 public class CallActionReceiver extends BroadcastReceiver {
 
-    private static final String API_ENDPOINT = "https://meet.jtsmiddleeast.com/api/notifications/call-reject";
+    private static final String API_ENDPOINT = "https://meetapi.jtsmiddleeast.com/api/notifications/call-reject";
 
     @Override
     public void onReceive(Context context, Intent intent) {

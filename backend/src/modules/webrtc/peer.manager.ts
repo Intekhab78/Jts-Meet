@@ -156,47 +156,47 @@ export async function getMeetingPeersInfoCluster(meetingId: string): Promise<Arr
         try {
             const memberIds = await redis.sMembers(`webrtc:meeting:${meetingId}`)
             if (memberIds && memberIds.length > 0) {
-                const sessionPromises = memberIds.map(async (uId) => {
-                    const raw = await redis.get(`webrtc:session:${uId}`)
-                    if (raw) {
-                        try {
-                            const parsed = JSON.parse(raw) as PeerSession
-                            // Verify meetingId matches to avoid cross-room ghosts
-                            if (parsed.meetingId === meetingId) {
-                                return {
-                                    userId: uId,
-                                    displayName: parsed.displayName || '',
-                                    isVideoOff: parsed.isVideoOff,
-                                    isMuted: parsed.isMuted,
-                                    isScreenSharing: parsed.isScreenSharing || false
-                                }
-                            }
-                        } catch {
-                            // JSON error
-                        }
-                    }
-                    const local = peersByUserId.get(uId)
-                    if (local && local.meetingId === meetingId) {
-                        return {
-                            userId: uId,
-                            displayName: local.displayName || '',
-                            isVideoOff: local.isVideoOff,
-                            isMuted: local.isMuted,
-                            isScreenSharing: local.isScreenSharing || false
-                        }
-                    }
-                    // Ghost cleanup: user is no longer active in Redis session nor local memory!
-                    redis.sRem(`webrtc:meeting:${meetingId}`, uId).catch(() => {})
-                    return null
-                })
-
-                const clusterPeers = (await Promise.all(sessionPromises)).filter(Boolean) as Array<{
+                const keys = memberIds.map(uId => `webrtc:session:${uId}`)
+                const rawList = await redis.mGet(keys)
+                const clusterPeers: Array<{
                     userId: string
                     displayName: string
                     isVideoOff?: boolean
                     isMuted?: boolean
                     isScreenSharing?: boolean
-                }>
+                }> = []
+
+                memberIds.forEach((uId, idx) => {
+                    const raw = rawList[idx]
+                    if (raw) {
+                        try {
+                            const parsed = JSON.parse(raw) as PeerSession
+                            if (parsed.meetingId === meetingId) {
+                                clusterPeers.push({
+                                    userId: uId,
+                                    displayName: parsed.displayName || '',
+                                    isVideoOff: parsed.isVideoOff,
+                                    isMuted: parsed.isMuted,
+                                    isScreenSharing: parsed.isScreenSharing || false
+                                })
+                                return
+                            }
+                        } catch {}
+                    }
+                    const local = peersByUserId.get(uId)
+                    if (local && local.meetingId === meetingId) {
+                        clusterPeers.push({
+                            userId: uId,
+                            displayName: local.displayName || '',
+                            isVideoOff: local.isVideoOff,
+                            isMuted: local.isMuted,
+                            isScreenSharing: local.isScreenSharing || false
+                        })
+                        return
+                    }
+                    // Ghost cleanup: user is no longer active in Redis session nor local memory!
+                    redis.sRem(`webrtc:meeting:${meetingId}`, uId).catch(() => {})
+                })
 
                 return clusterPeers
             }

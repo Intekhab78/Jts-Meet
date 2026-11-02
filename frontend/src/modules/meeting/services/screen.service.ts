@@ -179,14 +179,33 @@ export async function getScreenShareStream(sourceId?: string, includeAudio = fal
     }
 
     // ── Standard browser path ────────────────────────────────────────────────
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-            width: { ideal: 1920, max: 2560 },
-            height: { ideal: 1080, max: 1440 },
-            frameRate: { ideal: 30, max: 60 }
-        },
-        audio: true
-    })
+    let stream: MediaStream
+    try {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+                width: { ideal: 1920, max: 2560 },
+                height: { ideal: 1080, max: 1440 },
+                frameRate: { ideal: 30, max: 60 }
+            },
+            audio: true
+        })
+    } catch (err: any) {
+        const msg = String(err?.message || '').toLowerCase()
+        const name = String(err?.name || '')
+        if (name === 'NotAllowedError' || name === 'AbortError' || msg.includes('permission') || msg.includes('cancel') || msg.includes('dismissed')) {
+            throw err
+        }
+        console.warn('[ScreenService] getDisplayMedia with audio failed (Safari / unsupported audio), falling back to video-only:', err)
+        stream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+                width: { ideal: 1920, max: 2560 },
+                height: { ideal: 1080, max: 1440 },
+                frameRate: { ideal: 30, max: 60 }
+            },
+            audio: false
+        })
+    }
+
     const vTrack = stream.getVideoTracks()[0]
     if (vTrack && 'contentHint' in vTrack) {
         vTrack.contentHint = 'detail'

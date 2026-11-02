@@ -32,23 +32,27 @@ class NoiseCancellationService {
 
         try {
             if (typeof rawTrack.applyConstraints === 'function') {
-                rawTrack.applyConstraints({
-                    echoCancellation: true,
-                    noiseSuppression: isSuppressionOn,
-                    autoGainControl: true,
-                    channelCount: 1,
-                    sampleRate: 48000,
-                    // Advanced Chromium/Firefox specific WebRTC flags
-                    googEchoCancellation: true,
-                    googEchoCancellation2: true,
-                    googDAEchoCancellation: true,
-                    googAutoGainControl: true,
-                    googNoiseSuppression: isSuppressionOn,
-                    googNoiseSuppression2: isSuppressionOn,
-                    googHighpassFilter: true,
-                    googTypingNoiseDetection: true,
-                    googAudioMirroring: false
-                } as any).catch((err) => {
+                const isSafariOrWebKit = typeof navigator !== 'undefined' && (
+                    /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+                    /Macintosh.*AppleWebKit/i.test(navigator.userAgent) ||
+                    /iPhone|iPad|iPod/i.test(navigator.userAgent)
+                )
+
+                const constraints: any = {
+                    echoCancellation: { ideal: true },
+                    noiseSuppression: { ideal: isSuppressionOn },
+                    autoGainControl: { ideal: true }
+                }
+
+                if (!isSafariOrWebKit) {
+                    constraints.googEchoCancellation = true
+                    constraints.googAutoGainControl = true
+                    constraints.googNoiseSuppression = isSuppressionOn
+                    constraints.googHighpassFilter = true
+                    constraints.googTypingNoiseDetection = true
+                }
+
+                rawTrack.applyConstraints(constraints).catch((err) => {
                     console.warn('[NoiseCancellationService] applyConstraints notice:', err)
                 })
             }

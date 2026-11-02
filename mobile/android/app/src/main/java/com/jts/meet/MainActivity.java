@@ -456,17 +456,17 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception ignored) {}
 
             long now = System.currentTimeMillis();
-            if (callTimestamp > 0 && (now - callTimestamp > 45000)) {
+            if (callTimestamp > 0 && (now - callTimestamp > 120000)) {
                 pendingCallDataJson = null;
                 resetIntent(intent);
                 return;
             }
-            if (meetingId.startsWith("call_")) {
+            if (callTimestamp == 0 && meetingId.startsWith("call_")) {
                 try {
                     String[] parts = meetingId.split("_");
                     if (parts.length >= 2) {
                         long t = Long.parseLong(parts[1]);
-                        if (t > 0 && (now - t > 45000)) {
+                        if (t > 0 && (now - t > 120000)) {
                             pendingCallDataJson = null;
                             resetIntent(intent);
                             return;
@@ -572,5 +572,14 @@ public class MainActivity extends BridgeActivity {
             intent.removeExtra("autoAccept");
             intent.removeExtra("callTimestamp");
         } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        activeInstance = this;
+        try {
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } catch (Throwable ignored) {}
     }
 }

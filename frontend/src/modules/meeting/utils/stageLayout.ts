@@ -48,7 +48,7 @@ export function calculateMeetingStageLayout({
             : Object.keys(remoteStreams).find(k => k.toLowerCase() === screenSharingUserId.toLowerCase()) || screenSharingUserId)
         : screenSharingUserId
 
-    const activePresenterId = effectiveRemoteSharerId
+    const activePresenterId = effectiveRemoteSharerId || (screenSharingUserIds.length > 0 ? screenSharingUserIds[screenSharingUserIds.length - 1] : null)
     const isScreenShareActive = !!activePresenterId
 
     // If screen sharer is backstage, only Host/Co-host or the sharer can see the shared screen

@@ -368,7 +368,7 @@ export const VideoTile = React.memo(function VideoTile({
                 </div>
             )}
 
-            {/* Video Feed with Smooth Fade Transitions and hardware acceleration */}
+            {/* Video Feed with Smooth Fade Transitions and hardware acceleration (never display:none to preserve Safari/WebKit decoder) */}
             <video
                 ref={videoRef}
                 autoPlay
@@ -379,7 +379,9 @@ export const VideoTile = React.memo(function VideoTile({
                     width: '100%',
                     height: '100%',
                     objectFit: isScreenShare ? 'contain' : (objectFitProp || 'cover'),
-                    display: isVideoOff ? 'none' : 'block',
+                    display: 'block',
+                    opacity: isVideoOff ? 0 : 1,
+                    visibility: isVideoOff ? 'hidden' : 'visible',
                     position: 'absolute',
                     inset: 0,
                     transform: isLocalUser && !isScreenShare ? 'scaleX(-1)' : 'none',
@@ -390,7 +392,8 @@ export const VideoTile = React.memo(function VideoTile({
                     pointerEvents: isVideoOff ? 'none' : 'auto',
                     zIndex: 1,
                     backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden'
+                    WebkitBackfaceVisibility: 'hidden',
+                    transition: 'opacity 0.2s ease, visibility 0.2s ease'
                 }}
             />
 
@@ -418,7 +421,9 @@ export const VideoTile = React.memo(function VideoTile({
                     background: 'var(--color-surface-2)',
                     width: '100%',
                     height: '100%',
-                    display: isVideoOff ? 'flex' : 'none',
+                    display: 'flex',
+                    opacity: isVideoOff ? 1 : 0,
+                    visibility: isVideoOff ? 'visible' : 'hidden',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -427,7 +432,8 @@ export const VideoTile = React.memo(function VideoTile({
                     pointerEvents: isVideoOff ? 'auto' : 'none',
                     zIndex: 2,
                     padding: isCompact ? '6px' : '12px',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
+                    transition: 'opacity 0.2s ease, visibility 0.2s ease'
                 }}
             >
                 <div

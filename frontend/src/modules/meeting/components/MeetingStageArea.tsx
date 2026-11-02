@@ -491,9 +491,16 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                     transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
                                 }}>
                                     {(() => {
-                                        const isPrimarySharingScreen = isScreenShareActive && (
+                                        const isPrimarySharingScreen = (isScreenShareActive && (
                                             primaryUser === activePresenterId ||
                                             (!!activePresenterId && primaryUser.toLowerCase() === activePresenterId.toLowerCase())
+                                        )) || (
+                                            !!screenSharingUserId && (
+                                                primaryUser === screenSharingUserId ||
+                                                primaryUser.toLowerCase() === screenSharingUserId.toLowerCase()
+                                            )
+                                        ) || (
+                                            screenSharingUserIds.some(id => id.toLowerCase() === primaryUser.toLowerCase())
                                         );
                                         const isSelfPresenter = isPrimarySharingScreen && (primaryUser === 'me' || primaryUser === 'local');
 
@@ -628,7 +635,7 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                                                     isHandRaised={primaryUser === 'me' ? handRaised : handsRaisedMap[primaryUser]}
                                                     isHost={primaryUser === 'me' ? isLocalHost : !!(meetingInfo && meetingInfo.host && (meetingInfo.host._id === primaryUser || meetingInfo.host === primaryUser))}
                                                     isGuest={primaryUser === 'me' ? isGuest : primaryUser.startsWith('guest_')}
-                                                    isVideoOffProp={primaryUser === 'me' ? (isPrimarySharingScreen ? false : isVideoOff) : (isPrimarySharingScreen ? false : remoteVideoStates[primaryUser])}
+                                                    isVideoOffProp={primaryUser === 'me' ? (isPrimarySharingScreen ? false : isVideoOff) : (isPrimarySharingScreen ? false : (remoteVideoStates[primaryUser] ?? remoteVideoStates[primaryUser.toLowerCase()] ?? false))}
                                                     isBlurred={primaryUser === 'me' && isBlurEnabled}
                                                     isStudioLighting={primaryUser === 'me' && isStudioLightingEnabled}
                                                     isHdBoost={isHdBoostEnabled}

@@ -20,10 +20,6 @@ export class RedisService {
     private initialize() {
         this.client = createClient({
             url: REDIS_URL,
-            commandOptions: {
-                // Generous command timeout (30 seconds) rather than rigid 5-second default
-                timeout: 30000
-            },
             socket: {
                 connectTimeout: 10000,
                 keepAlive: true,
@@ -44,8 +40,14 @@ export class RedisService {
         }) as RedisClientType
 
         this.client.on('error', (err) => {
-            // Silence connection refused errors in local environments
-            if (err?.code === 'ECONNREFUSED' || err?.message?.includes('ECONNREFUSED')) {
+            // Silence connection refused errors and transient timeout errors during restarts
+            if (
+                err?.code === 'ECONNREFUSED' ||
+                err?.message?.includes('ECONNREFUSED') ||
+                err?.name === 'TimeoutError' ||
+                err?.message?.includes('Timeout') ||
+                err?.name === 'AbortError'
+            ) {
                 return
             }
             // eslint-disable-next-line no-console

@@ -81,13 +81,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         >
           <MobileAvatar
             src={user.profileImage || user.avatar}
-            name={user.name}
+            name={user.fullName || user.name || 'User'}
             size={52}
             border="2px solid #ffffff"
           />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
             <span style={{ fontSize: '0.94rem', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {user.name || 'JTS User'}
+              {user.fullName || user.name || 'JTS User'}
             </span>
             <span style={{ fontSize: '0.72rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {user.email || 'user@example.com'}

@@ -326,13 +326,6 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             return
         }
 
-        // Direct 1-on-1 calls end immediately on disconnect to avoid holding peer's call screen
-        if (targetMeetingId.startsWith('call_')) {
-            console.log(`[WebRTC Socket] Direct call socket ${socket.id} disconnected. Ending call immediately.`)
-            handleLeaveOrDisconnect(targetMeetingId, sUserId)
-            return
-        }
-
         // Check if the user is already connected with a newer active socket (e.g. mobile reconnect)
         const activeSession = getPeerSessionByUserId(sUserId)
         if (activeSession && activeSession.socketId !== socket.id) {
@@ -354,13 +347,15 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
             meetingId: targetMeetingId
         })
 
-        console.log(`[WebRTC Socket] Socket ${socket.id} (user ${sUserId}) dropped unexpectedly. Starting 60s network recovery grace window...`)
+        const isDirect = targetMeetingId.startsWith('call_')
+        const graceMs = isDirect ? 30000 : 60000 // 30s grace for direct 1-on-1 calls, 60s for group meetings
+        console.log(`[WebRTC Socket] Socket ${socket.id} (user ${sUserId}) dropped unexpectedly in ${targetMeetingId}. Starting ${graceMs / 1000}s network recovery grace window...`)
 
         const timer = setTimeout(() => {
             pendingDisconnectTimeouts.delete(sessionKey)
             console.log(`[WebRTC Socket] Grace period expired for user ${sUserId} in ${targetMeetingId}. Cleaning up session.`)
             handleLeaveOrDisconnect(targetMeetingId, sUserId)
-        }, 60000)
+        }, graceMs)
 
         pendingDisconnectTimeouts.set(sessionKey, timer)
     })

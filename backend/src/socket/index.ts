@@ -79,7 +79,13 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         wrapSafePublish(subClient, 'subClient')
 
         subClient.on('error', (err) => {
-            if (err?.code === 'ECONNREFUSED' || err?.message?.includes('ECONNREFUSED')) {
+            if (
+                err?.code === 'ECONNREFUSED' ||
+                err?.message?.includes('ECONNREFUSED') ||
+                err?.name === 'TimeoutError' ||
+                err?.message?.includes('Timeout') ||
+                err?.name === 'AbortError'
+            ) {
                 return
             }
             // eslint-disable-next-line no-console

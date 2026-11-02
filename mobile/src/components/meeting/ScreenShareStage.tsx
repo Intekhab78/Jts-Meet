@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { RemoteParticipant } from './types';
 import { MobileAvatar } from '../common/MobileAvatar';
 
@@ -33,6 +33,46 @@ export const ScreenShareStage: React.FC<ScreenShareStageProps> = ({
   setFocusedUserId,
   participants,
 }) => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !presenterStream) return;
+
+    if (el.srcObject !== presenterStream) {
+      el.srcObject = presenterStream;
+    }
+    el.play().catch(() => {});
+
+    const handleUpdate = () => {
+      if (el && el.srcObject !== presenterStream) {
+        el.srcObject = presenterStream;
+      }
+      el?.play().catch(() => {});
+    };
+
+    presenterStream.addEventListener('addtrack', handleUpdate);
+    presenterStream.addEventListener('removetrack', handleUpdate);
+    presenterStream.getVideoTracks().forEach(t => {
+      t.addEventListener('unmute', handleUpdate);
+    });
+
+    const watchdog = setInterval(() => {
+      if (el && el.paused && presenterStream.getVideoTracks().length > 0) {
+        el.play().catch(() => {});
+      }
+    }, 800);
+
+    return () => {
+      clearInterval(watchdog);
+      presenterStream.removeEventListener('addtrack', handleUpdate);
+      presenterStream.removeEventListener('removetrack', handleUpdate);
+      presenterStream.getVideoTracks().forEach(t => {
+        t.removeEventListener('unmute', handleUpdate);
+      });
+    };
+  }, [presenterStream]);
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
       {/* Top-Left Presenter Badge (Safe from notch/status bar) */}
@@ -213,6 +253,7 @@ export const ScreenShareStage: React.FC<ScreenShareStageProps> = ({
             playsInline
             muted
             ref={(el) => {
+              videoRef.current = el;
               if (el && presenterStream && el.srcObject !== presenterStream) {
                 el.srcObject = presenterStream;
                 el.play().catch(() => {});

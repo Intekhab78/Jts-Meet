@@ -500,6 +500,7 @@ export function App() {
     const meetingId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const callerName = user?.fullName || user?.name || localStorage.getItem('jts_display_name') || 'Enterprise User';
     const callerAvatar = user?.profileImage || user?.avatar || '';
+    const isChannelCall = Boolean(channelName);
 
     setOutgoingCall({
       targetUserId,
@@ -512,21 +513,44 @@ export function App() {
 
     startRingtone();
 
+    const callPayload = {
+      targetUserId: isChannelCall ? undefined : targetUserId,
+      calleeId: isChannelCall ? undefined : targetUserId,
+      callerId: user?._id || user?.id,
+      callType,
+      callerName,
+      callerAvatar,
+      meetingId,
+      channelName: isChannelCall ? channelName : undefined,
+      channelId: isChannelCall ? targetUserId : undefined,
+    };
+
+    // 1. Emit via WebSocket if connected or connecting
     if (socketRef.current) {
       if (!socketRef.current.connected) {
         socketRef.current.connect();
       }
-      socketRef.current.emit('call:initiate', {
-        targetUserId,
-        calleeId: targetUserId,
-        callerId: user?._id || user?.id,
-        callType,
-        callerName,
-        callerAvatar,
-        meetingId,
-        channelName,
-        channelId: channelName ? targetUserId : undefined,
-      });
+      socketRef.current.emit('call:initiate', callPayload);
+    }
+
+    // 2. Dual-dispatch via HTTP API: Guarantees FCM Push dispatch even if mobile socket is disconnected or sleeping
+    const effectiveToken = token || getStoredToken();
+    if (effectiveToken) {
+      fetch(`${API_BASE}/api/notifications/call-initiate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${effectiveToken}`,
+        },
+        body: JSON.stringify(callPayload),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          console.log('[MobileApp] HTTP call-initiate response:', data);
+        })
+        .catch((err) => {
+          console.warn('[MobileApp] HTTP call-initiate fetch error:', err);
+        });
     }
 
     // Auto timeout after 60 seconds if unanswered (matches server ringing timeout)
@@ -540,6 +564,16 @@ export function App() {
               meetingId,
             });
           }
+          if (effectiveToken) {
+            fetch(`${API_BASE}/api/notifications/call-cancel`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${effectiveToken}`,
+              },
+              body: JSON.stringify({ targetUserId, meetingId }),
+            }).catch(() => {});
+          }
           return null;
         }
         return curr;
@@ -548,11 +582,27 @@ export function App() {
   };
 
   const handleCancelOutgoingCall = () => {
-    if (outgoingCall && socketRef.current) {
-      socketRef.current.emit('call:cancelled', {
+    if (outgoingCall) {
+      const cancelPayload = {
         targetUserId: outgoingCall.targetUserId,
         meetingId: outgoingCall.meetingId,
-      });
+      };
+
+      if (socketRef.current) {
+        socketRef.current.emit('call:cancelled', cancelPayload);
+      }
+
+      const effectiveToken = token || getStoredToken();
+      if (effectiveToken) {
+        fetch(`${API_BASE}/api/notifications/call-cancel`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${effectiveToken}`,
+          },
+          body: JSON.stringify(cancelPayload),
+        }).catch(() => {});
+      }
     }
     stopRingtone();
     setOutgoingCall(null);
@@ -614,11 +664,17 @@ export function App() {
   const isCallExpired = (data: any): boolean => {
     if (!data) return true;
     const now = Date.now();
-    if (data.timestamp && (now - Number(data.timestamp) > 45000)) return true;
-    if (data.meetingId && typeof data.meetingId === 'string' && data.meetingId.startsWith('call_')) {
+    // Check server NTP sentAt timestamp first if present
+    const sentAt = Number(data.sentAt);
+    if (sentAt && !isNaN(sentAt) && (now - sentAt > 120000)) return true;
+    // Check native intent timestamp if present
+    const ts = Number(data.timestamp);
+    if (ts && !isNaN(ts) && (now - ts > 120000)) return true;
+    // Fallback to meetingId timestamp with 120s tolerance (prevents dropping calls due to device clock skew)
+    if (!sentAt && !ts && data.meetingId && typeof data.meetingId === 'string' && data.meetingId.startsWith('call_')) {
       const parts = data.meetingId.split('_');
       const time = Number(parts[1]);
-      if (time && !isNaN(time) && (now - time > 45000)) {
+      if (time && !isNaN(time) && (now - time > 120000)) {
         return true;
       }
     }
@@ -801,16 +857,30 @@ export function App() {
     };
   }, [user, handleNotificationAction]);
 
+  // Dynamic Personal Meeting ID (PMI)
+  const userPmi = useMemo(() => {
+    if (!user) return '100-200-300';
+    if (user.personalMeetingId) return user.personalMeetingId;
+    const rawId = user._id || user.id;
+    if (rawId) {
+      const numPart = String(rawId).replace(/\D/g, '').padEnd(9, '7').slice(0, 9);
+      if (numPart.length === 9) {
+        return numPart.replace(/(\d{3})(\d{3})(\d{3})/, '$1-$2-$3');
+      }
+    }
+    return '100-200-300';
+  }, [user]);
+
   // Handle starting a new meeting (auto-opens invite sheet on enter)
   const handleStartNewMeeting = (videoOn: boolean, usePmi: boolean, customCode?: string) => {
-    const meetingCode = customCode || (usePmi ? '789-456-123' : `meet-${Math.random().toString(36).substring(2, 8)}`);
-    const hostName = user?.name || localStorage.getItem('jts_display_name') || 'Guest User';
+    const meetingCode = customCode || (usePmi ? userPmi : `meet-${Math.random().toString(36).substring(2, 8)}`);
+    const hostName = user?.fullName || user?.name || localStorage.getItem('jts_display_name') || 'Guest User';
     handleJoinMeeting(meetingCode, hostName, false, !videoOn, true);
   };
 
   // Handle quick join from code input
   const handleQuickJoin = (code: string) => {
-    const storedName = localStorage.getItem('jts_display_name') || user?.name || 'Guest User';
+    const storedName = user?.fullName || user?.name || localStorage.getItem('jts_display_name') || 'Guest User';
     handleJoinMeeting(code, storedName, false, false, false);
   };
 
@@ -857,30 +927,84 @@ export function App() {
     fetchMyMeetings();
   }, [token]);
 
-  const handleSchedule = (title: string, date: string, time: string) => {
+  const handleSchedule = async (title: string, date: string, time: string) => {
     setIsScheduleOpen(false);
-    const meetingCode = `sync-${Math.random().toString(36).substring(2, 8)}`;
-    const newMeeting = {
-      id: meetingCode,
-      title: title.trim() || 'Team Meeting',
+    const meetingTitle = title.trim() || 'Team Meeting';
+    const tempCode = `sync-${Math.random().toString(36).substring(2, 8)}`;
+    const optimisticMeeting = {
+      id: tempCode,
+      title: meetingTitle,
       date,
       time,
-      meetingCode,
+      meetingCode: tempCode,
     };
     setScheduledMeetings((prev) => {
-      const updated = [newMeeting, ...prev];
-      localStorage.setItem('jts_scheduled_meetings', JSON.stringify(updated));
+      const updated = [optimisticMeeting, ...prev];
+      try { localStorage.setItem('jts_scheduled_meetings', JSON.stringify(updated)); } catch (_) {}
       return updated;
     });
     setActiveTab('meetings');
+
+    if (token) {
+      try {
+        const res = await fetch(`${API_BASE}/api/meeting/create`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            title: meetingTitle,
+            scheduledDate: date,
+            scheduledTime: time,
+          }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const created = json?.data || json;
+          if (created?.meetingId) {
+            setScheduledMeetings((prev) => {
+              const updated = prev.map((m) =>
+                m.id === tempCode
+                  ? {
+                      id: created.meetingId,
+                      title: created.title || meetingTitle,
+                      date: created.scheduledDate || date,
+                      time: created.scheduledTime || time,
+                      meetingCode: created.meetingId,
+                    }
+                  : m
+              );
+              try { localStorage.setItem('jts_scheduled_meetings', JSON.stringify(updated)); } catch (_) {}
+              return updated;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[MobileApp] Failed to schedule meeting on backend:', err);
+      }
+    }
   };
 
-  const handleDeleteScheduled = (id: string) => {
+  const handleDeleteScheduled = async (id: string) => {
     setScheduledMeetings((prev) => {
       const updated = prev.filter((m) => m.id !== id);
-      localStorage.setItem('jts_scheduled_meetings', JSON.stringify(updated));
+      try { localStorage.setItem('jts_scheduled_meetings', JSON.stringify(updated)); } catch (_) {}
       return updated;
     });
+
+    if (token && id && !id.startsWith('sync-')) {
+      try {
+        await fetch(`${API_BASE}/api/meeting/${id}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      } catch (err) {
+        console.warn('[MobileApp] Failed to delete scheduled meeting on backend:', err);
+      }
+    }
   };
 
   // Handle Auth success
@@ -1130,7 +1254,7 @@ export function App() {
           <MeetingsTab
             user={user}
             onOpenAuth={() => setIsAuthOpen(true)}
-            pmi={user ? (user.personalMeetingId || (user._id || user.id ? String(user._id || user.id).replace(/\D/g, '').padEnd(9, '7').slice(0, 9).replace(/(\d{3})(\d{3})(\d{3})/, '$1-$2-$3') : '789-456-123')) : undefined}
+            pmi={user ? userPmi : undefined}
             onStartMeeting={(code) => handleQuickJoin(code)}
             scheduledMeetings={user ? scheduledMeetings : []}
             onDeleteMeeting={handleDeleteScheduled}
@@ -1193,13 +1317,14 @@ export function App() {
         isOpen={isJoinOpen}
         onClose={() => setIsJoinOpen(false)}
         onJoin={(id, name, audio, video) => handleJoinMeeting(id, name, audio, video, false)}
-        defaultName={user?.name || localStorage.getItem('jts_display_name') || ''}
+        defaultName={user?.fullName || user?.name || localStorage.getItem('jts_display_name') || ''}
       />
 
       <NewMeetingModal
         isOpen={isNewMeetingOpen}
         onClose={() => setIsNewMeetingOpen(false)}
         onStart={handleStartNewMeeting}
+        pmi={userPmi}
       />
 
       <ScheduleMeetingModal

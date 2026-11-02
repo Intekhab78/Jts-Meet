@@ -15,13 +15,19 @@ function enhanceSdpForHdVideo(sdp?: string, _peerCount: number = 1): string {
     if (!sdp) return ''
     let enhanced = sdp
 
-    // Google Meet Audio Architecture:
-    // 1. usedtx=1: Discontinuous Transmission (completely silences audio when not speaking — kills fan, wind, room noise)
-    // 2. stereo=0, sprop-stereo=0: Forces clean mono speech (eliminates stereo laptop microphone fan whistle and phase cancellation)
-    // 3. useinbandfec=1: In-band forward error correction for glitch-free voice
-    // 4. cbr=0: Variable speech bit allocation
-    // 5. maxaveragebitrate=32000: Google Meet voice optimization standard
+    // Safe Cross-Platform WebRTC Audio Architecture:
+    // macOS Safari & CoreAudio break when minptime=10, stereo=0, sprop-stereo=0, or dtx=1 are forced!
+    // We apply standard W3C & RFC 7587 Opus parameters:
+    // 1. useinbandfec=1: In-band forward error correction for glitch-free voice over UDP packet loss
+    // 2. cbr=0: Variable bit allocation for natural speech dynamics
+    // 3. maxaveragebitrate=64000: Crystal clear high-fidelity voice
     try {
+        const isMacOrSafari = typeof navigator !== 'undefined' && (
+            /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+            /Macintosh.*AppleWebKit/i.test(navigator.userAgent) ||
+            /iPhone|iPad|iPod/i.test(navigator.userAgent)
+        )
+
         const lines = enhanced.split('\r\n')
         let opusPt: string | null = null
 
@@ -46,17 +52,21 @@ function enhanceSdpForHdVideo(sdp?: string, _peerCount: number = 1): string {
                         const [k, v] = kv.split('=')
                         if (k) paramsMap[k.trim()] = v !== undefined ? v.trim() : ''
                     })
-                    paramsMap['minptime'] = '10'
-                    paramsMap['ptime'] = '20'
-                    paramsMap['maxplaybackrate'] = '48000'
-                    paramsMap['sprop-maxcapturerate'] = '48000'
+                    // Remove non-standard / breaking parameters
+                    delete paramsMap['dtx']
+                    delete paramsMap['minptime']
+
                     paramsMap['useinbandfec'] = '1'
-                    paramsMap['stereo'] = '0'
-                    paramsMap['sprop-stereo'] = '0'
-                    paramsMap['usedtx'] = '1'
-                    paramsMap['dtx'] = '1'
                     paramsMap['cbr'] = '0'
-                    paramsMap['maxaveragebitrate'] = '32000'
+                    paramsMap['maxaveragebitrate'] = '64000'
+
+                    if (!isMacOrSafari) {
+                        paramsMap['usedtx'] = '1'
+                    } else {
+                        delete paramsMap['usedtx']
+                        delete paramsMap['stereo']
+                        delete paramsMap['sprop-stereo']
+                    }
 
                     const newParams = Object.entries(paramsMap).map(([k, v]) => `${k}=${v}`).join(';')
                     return `a=fmtp:${opusPt} ${newParams}`
@@ -67,7 +77,10 @@ function enhanceSdpForHdVideo(sdp?: string, _peerCount: number = 1): string {
             if (!fmtpFound) {
                 const insertIndex = updatedLines.findIndex(l => l.startsWith(`a=rtpmap:${opusPt}`))
                 if (insertIndex !== -1) {
-                    updatedLines.splice(insertIndex + 1, 0, `a=fmtp:${opusPt} minptime=10;ptime=20;maxplaybackrate=48000;sprop-maxcapturerate=48000;useinbandfec=1;stereo=0;sprop-stereo=0;usedtx=1;dtx=1;cbr=0;maxaveragebitrate=32000`)
+                    const fallbackParams = isMacOrSafari
+                        ? `a=fmtp:${opusPt} useinbandfec=1;cbr=0;maxaveragebitrate=64000`
+                        : `a=fmtp:${opusPt} useinbandfec=1;usedtx=1;cbr=0;maxaveragebitrate=48000`
+                    updatedLines.splice(insertIndex + 1, 0, fallbackParams)
                 }
             }
             enhanced = updatedLines.join('\r\n')

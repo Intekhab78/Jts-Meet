@@ -74,25 +74,34 @@ export function useMediaDevices(): UseMediaDevicesResult {
         setMediaLoading(true)
         setMediaError(null)
 
-        // ── Stage 1: Try HD camera (1920x1080 ideal) ─────────────────────────────
-        // OverconstrainedError fix: Remove 'min' constraints — 'ideal' is enough.
-        // 'min' was causing OverconstrainedError even when camera was ON but < 1280px.
+        // ── Stage 1: Try HD camera (1920x1080 ideal) with resilient audio ────────
+        // W3C Standard Constraints:
+        // Use { ideal: ... } instead of exact values to prevent OverconstrainedError on macOS/Safari/AirPods
+        const isSafariOrWebKit = typeof navigator !== 'undefined' && (
+            /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+            /Macintosh.*AppleWebKit/i.test(navigator.userAgent) ||
+            /iPhone|iPad|iPod/i.test(navigator.userAgent)
+        )
+
         const audioConstraints: any = {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            voiceIsolation: true,
-            channelCount: 1,
-            sampleRate: 48000,
-            googEchoCancellation: true,
-            googEchoCancellation2: true,
-            googDAEchoCancellation: true,
-            googAutoGainControl: true,
-            googNoiseSuppression: true,
-            googNoiseSuppression2: true,
-            googHighpassFilter: true,
-            googTypingNoiseDetection: true,
-            googAudioMirroring: false
+            echoCancellation: { ideal: true },
+            noiseSuppression: { ideal: true },
+            autoGainControl: { ideal: true },
+            channelCount: { ideal: 1 },
+            sampleRate: { ideal: 48000 }
+        }
+
+        // Add Chromium-specific audio processing flags only on non-Safari browsers
+        if (!isSafariOrWebKit) {
+            audioConstraints.googEchoCancellation = true
+            audioConstraints.googEchoCancellation2 = true
+            audioConstraints.googDAEchoCancellation = true
+            audioConstraints.googAutoGainControl = true
+            audioConstraints.googNoiseSuppression = true
+            audioConstraints.googNoiseSuppression2 = true
+            audioConstraints.googHighpassFilter = true
+            audioConstraints.googTypingNoiseDetection = true
+            audioConstraints.googAudioMirroring = false
         }
 
         let stream: MediaStream | null = null
@@ -119,8 +128,8 @@ export function useMediaDevices(): UseMediaDevicesResult {
                             video: true
                         })
                     } catch (sdErr: any) {
-                        console.warn('[Media] SD camera request failed, trying audio-only fallback:', sdErr?.name, sdErr?.message)
-                        // Stage 3 — audio only (camera error, not permission error)
+                        console.warn('[Media] SD camera request failed, trying audio-only / raw fallback:', sdErr?.name, sdErr?.message)
+                        // Stage 3 — audio only
                         if (sdErr?.name !== 'NotAllowedError' && sdErr?.name !== 'PermissionDeniedError' && !sdErr?.message?.toLowerCase().includes('permission denied')) {
                             try {
                                 const audioOnlyStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false })
@@ -147,10 +156,21 @@ export function useMediaDevices(): UseMediaDevicesResult {
                                 setMediaError('Camera unavailable. Connected with microphone only.')
                                 setMediaLoading(false)
                                 return
-                            } catch { }
+                            } catch (audioErr) {
+                                // Stage 4 — Universal unconstrained fallback for strict hardware (e.g. Mac multi-mic arrays)
+                                try {
+                                    stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+                                } catch (unconstrainedErr) {
+                                    try {
+                                        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                                    } catch {
+                                        throw sdErr
+                                    }
+                                }
+                            }
+                        } else {
+                            throw sdErr
                         }
-                        // Propagate sd error to outer catch for proper error message
-                        throw sdErr
                     }
                 } else {
                     // Propagate hd permission error to outer catch
@@ -159,7 +179,12 @@ export function useMediaDevices(): UseMediaDevicesResult {
             }
         } else {
             // Audio-only requested explicitly
-            stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false })
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false })
+            } catch (aErr) {
+                // Raw unconstrained fallback
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+            }
         }
 
         try {

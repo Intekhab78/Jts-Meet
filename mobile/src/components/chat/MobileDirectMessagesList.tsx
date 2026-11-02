@@ -37,9 +37,9 @@ export const MobileDirectMessagesList: React.FC<MobileDirectMessagesListProps> =
         const res = await fetch(`${API_BASE}/api/chat/contacts`, {
           headers: { Authorization: `Bearer ${resolvedToken}` },
         });
-        const data = await res.json();
-        if (data?.success && Array.isArray(data.data) && data.data.length > 0) {
-          const mapped: MobileContact[] = data.data.map((u: any) => {
+        const rawList = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        if (data?.success !== false && Array.isArray(rawList)) {
+          const mapped: MobileContact[] = rawList.map((u: any) => {
             const isOnline = u.status === 'online' || u.isOnline === true;
             return {
               id: u._id || u.id,

@@ -239,10 +239,19 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
 
     // Reaction update listeners
     const handleReactionUpdate = (payload: any) => {
-      const targetMessageId = payload?.messageId;
+      const targetMessageId = payload?.messageId || payload?.id;
+      if (!targetMessageId) return;
+
+      if (Array.isArray(payload?.reactions)) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === targetMessageId ? { ...m, reactions: payload.reactions } : m))
+        );
+        return;
+      }
+
       const emoji = payload?.emoji;
       const uId = payload?.userId || payload?.senderId;
-      if (!targetMessageId || !emoji) return;
+      if (!emoji) return;
 
       setMessages((prev) =>
         prev.map((m) => {
@@ -312,12 +321,19 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     };
 
     const handleMessageUndo = (payload: any) => {
-      const targetId = payload?.messageId || payload?.id;
+      const targetId = payload?.messageId || payload?.id || payload?.message?._id || payload?.message?.id;
       if (!targetId) return;
       setMessages((prev) =>
         prev.map((m) => (m.id === targetId ? { ...m, isDeleted: false, deletedAt: undefined } : m))
       );
     };
+
+    // Real-time channel room lifecycle
+    if (isChannel && chatId) {
+      socket.emit('channel:join', { channelId: chatId });
+    } else if (!isChannel && chatId) {
+      socket.emit('chat:seen', { senderId: chatId });
+    }
 
     socket.on('chat:receive', handleNewMessage);
     socket.on('chat:message', handleNewMessage);
@@ -331,10 +347,15 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     socket.on('message:delete', handleMessageDelete);
     socket.on('chat:message:undo', handleMessageUndo);
     socket.on('channel:reaction', handleReactionUpdate);
+    socket.on('channel:message:reaction', handleReactionUpdate);
     socket.on('channel:message:delete', handleMessageDelete);
     socket.on('channel:message:undo', handleMessageUndo);
 
     return () => {
+      if (isChannel && chatId) {
+        socket.emit('channel:leave', { channelId: chatId });
+      }
+
       socket.off('chat:receive', handleNewMessage);
       socket.off('chat:message', handleNewMessage);
       socket.off('channel:message:receive', handleNewMessage);
@@ -347,10 +368,11 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
       socket.off('message:delete', handleMessageDelete);
       socket.off('chat:message:undo', handleMessageUndo);
       socket.off('channel:reaction', handleReactionUpdate);
+      socket.off('channel:message:reaction', handleReactionUpdate);
       socket.off('channel:message:delete', handleMessageDelete);
       socket.off('channel:message:undo', handleMessageUndo);
     };
-  }, [socket, chatId, chatName, resolvedUserId]);
+  }, [socket, chatId, chatName, resolvedUserId, isChannel]);
 
 
   const handleSendMessage = async () => {
@@ -481,7 +503,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     if (resolvedToken) {
       try {
         if (isChannel) {
-          await fetch(`${API_BASE}/api/channel/${chatId}/chat/${messageId}/react`, {
+          await fetch(`${API_BASE}/api/channel/${chatId}/chat/${messageId}/reaction`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -545,7 +567,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     if (resolvedToken) {
       try {
         if (isChannel) {
-          await fetch(`${API_BASE}/api/channel-chat/${msg.id}`, {
+          await fetch(`${API_BASE}/api/channel/${chatId}/chat/${msg.id}`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${resolvedToken}` },
           });
@@ -583,7 +605,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     if (resolvedToken) {
       try {
         if (isChannel) {
-          await fetch(`${API_BASE}/api/channel-chat/${messageId}/undo`, {
+          await fetch(`${API_BASE}/api/channel/${chatId}/chat/${messageId}/undo`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${resolvedToken}` },
           });

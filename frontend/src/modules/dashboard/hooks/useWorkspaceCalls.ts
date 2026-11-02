@@ -282,15 +282,16 @@ export function useWorkspaceCalls({
             const currentCall = activeAudioCallRef.current
             if (!currentCall) return
 
-            const isMatchingMeeting = !data?.meetingId || data.meetingId === currentCall.meetingId
-            const isMatchingPeer = !data?.userId || 
+            // CRITICAL FIX: Strictly require both matching meetingId and valid target userId.
+            // Do NOT use fallback || or !data?.meetingId which false-matched random socket leave events!
+            if (!data?.meetingId || data.meetingId !== currentCall.meetingId) return
+            if (!data?.userId) return
+
+            const isMatchingPeer = 
                 String(data.userId).toLowerCase() === String(currentCall.peerId).toLowerCase() ||
                 String(data.userId).toLowerCase() === String(currentCall.peerName).toLowerCase()
 
-            if (!currentCall.isGroupCall && (isMatchingMeeting || isMatchingPeer)) {
-                console.log('[AppWorkspace] Peer left active 1-on-1 direct call:', data)
-                handleCallCancelled(data)
-            } else if (isMatchingMeeting && isMatchingPeer) {
+            if (isMatchingPeer) {
                 console.log('[AppWorkspace] Target peer left call:', data)
                 handleCallCancelled(data)
             }
@@ -479,26 +480,26 @@ export function useWorkspaceCalls({
         if (activeRemoteCount > 0) return
 
         const elapsedSinceStart = Date.now() - callConnectedAtRef.current
-        if (elapsedSinceStart < 7000) {
+        if (elapsedSinceStart < 15000) {
             const initialGrace = setTimeout(() => {
                 if (activeAudioCallRef.current && !activeAudioCallRef.current.isGroupCall) {
                     if (Object.keys(remoteStreams || {}).length === 0) {
-                        console.log('[AppWorkspace] Direct call timeout: No remote peer joined. Auto-closing.')
+                        console.log('[AppWorkspace] Direct call timeout: No remote peer joined after 15s. Auto-closing.')
                         handleEndActiveAudioCall()
                     }
                 }
-            }, 7000 - elapsedSinceStart)
+            }, 15000 - elapsedSinceStart)
             return () => clearTimeout(initialGrace)
         }
 
         const watchdogTimer = setTimeout(() => {
             if (activeAudioCallRef.current && !activeAudioCallRef.current.isGroupCall) {
                 if (Object.keys(remoteStreams || {}).length === 0) {
-                    console.log('[AppWorkspace] Remote peer stream disconnected for >4s. Auto-closing direct call.')
+                    console.log('[AppWorkspace] Remote peer stream disconnected for >25s. Auto-closing direct call.')
                     handleEndActiveAudioCall()
                 }
             }
-        }, 4000)
+        }, 25000)
 
         return () => clearTimeout(watchdogTimer)
     }, [activeAudioCall, remoteStreams])

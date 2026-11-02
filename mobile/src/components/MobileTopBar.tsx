@@ -134,7 +134,7 @@ export const MobileTopBar: React.FC<MobileTopBarProps> = ({
           >
             <MobileAvatar
               src={user.profileImage || user.avatar}
-              name={user.name}
+              name={user.name || user.fullName || 'User'}
               size={34}
               border="2px solid #ffffff"
             />
