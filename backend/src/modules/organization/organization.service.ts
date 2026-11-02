@@ -369,8 +369,19 @@ export async function getOrganizationMembersPaginated(
         {
             $lookup: {
                 from: 'users',
-                localField: 'members.userId',
-                foreignField: '_id',
+                let: { memberUserId: '$members.userId' },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $or: [
+                                    { $eq: ['$_id', '$$memberUserId'] },
+                                    { $eq: [{ $toString: '$_id' }, { $toString: '$$memberUserId' }] }
+                                ]
+                            }
+                        }
+                    }
+                ],
                 as: 'userDetails'
             }
         },

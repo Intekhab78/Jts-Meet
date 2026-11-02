@@ -43,51 +43,49 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         activeInstance = this;
 
-        handleIncomingCallIntent(getIntent());
+        // Keep the phone screen awake during meetings
+        try {
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } catch (Throwable ignored) {}
 
-        // Keep the phone screen awake during meetings and wake screen for calls
-        getWindow().addFlags(
-            android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
-            android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-            android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
-            android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
-        );
+        // Handle incoming call if launched with call intent
+        try {
+            handleIncomingCallIntent(getIntent());
+        } catch (Throwable t) {
+            t.printStackTrace();
+        }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true);
-            setTurnScreenOn(true);
-            try {
-                android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
-                if (km != null) {
-                    km.requestDismissKeyguard(this, null);
+        // Request runtime permissions safely (only dangerous permissions, never normal permissions)
+        try {
+            java.util.List<String> neededPerms = new java.util.ArrayList<>();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    neededPerms.add(android.Manifest.permission.CAMERA);
                 }
-            } catch (Exception ignored) {}
+                if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    neededPerms.add(android.Manifest.permission.RECORD_AUDIO);
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    neededPerms.add(android.Manifest.permission.POST_NOTIFICATIONS);
+                }
+            }
+            if (!neededPerms.isEmpty()) {
+                requestPermissions(neededPerms.toArray(new String[0]), 101);
+            }
+        } catch (Throwable t) {
+            t.printStackTrace();
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            String[] perms = {
-                android.Manifest.permission.CAMERA,
-                android.Manifest.permission.RECORD_AUDIO,
-                android.Manifest.permission.MODIFY_AUDIO_SETTINGS,
-                android.Manifest.permission.POST_NOTIFICATIONS
-            };
-            requestPermissions(perms, 101);
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            String[] perms = {
-                android.Manifest.permission.CAMERA,
-                android.Manifest.permission.RECORD_AUDIO,
-                android.Manifest.permission.MODIFY_AUDIO_SETTINGS
-            };
-            requestPermissions(perms, 101);
-        }
-
-        if (bridge != null && bridge.getWebView() != null) {
-            WebView webView = bridge.getWebView();
-            WebSettings settings = webView.getSettings();
-            settings.setMediaPlaybackRequiresUserGesture(false);
-            settings.setDomStorageEnabled(true);
-            settings.setDatabaseEnabled(true);
-            settings.setAllowFileAccess(true);
+        try {
+            if (bridge != null && bridge.getWebView() != null) {
+                WebView webView = bridge.getWebView();
+                WebSettings settings = webView.getSettings();
+                settings.setMediaPlaybackRequiresUserGesture(false);
+                settings.setDomStorageEnabled(true);
+                settings.setDatabaseEnabled(true);
+                settings.setAllowFileAccess(true);
 
             webView.addJavascriptInterface(new Object() {
                 @android.webkit.JavascriptInterface
@@ -172,7 +170,10 @@ public class MainActivity extends BridgeActivity {
                 }
             }, "MobileAppBridge");
         }
+    } catch (Throwable t) {
+        t.printStackTrace();
     }
+}
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -366,6 +367,9 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
+        if (activeInstance == this) {
+            activeInstance = null;
+        }
         stopScreenCaptureInternal();
         super.onDestroy();
     }
@@ -439,7 +443,18 @@ public class MainActivity extends BridgeActivity {
         }
 
         if ("incoming_call".equals(type) && meetingId != null && !meetingId.isEmpty()) {
-            long callTimestamp = intent.getLongExtra("callTimestamp", 0);
+            long callTimestamp = 0;
+            try {
+                if (intent.hasExtra("callTimestamp")) {
+                    Object val = intent.getExtras() != null ? intent.getExtras().get("callTimestamp") : null;
+                    if (val instanceof Number) {
+                        callTimestamp = ((Number) val).longValue();
+                    } else if (val instanceof String) {
+                        callTimestamp = Long.parseLong((String) val);
+                    }
+                }
+            } catch (Exception ignored) {}
+
             long now = System.currentTimeMillis();
             if (callTimestamp > 0 && (now - callTimestamp > 45000)) {
                 pendingCallDataJson = null;
@@ -459,6 +474,24 @@ public class MainActivity extends BridgeActivity {
                     }
                 } catch (Exception ignored) {}
             }
+
+            // Wake up screen and show incoming call over lockscreen
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    setShowWhenLocked(true);
+                    setTurnScreenOn(true);
+                    android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+                    if (km != null) {
+                        km.requestDismissKeyguard(this, null);
+                    }
+                } else {
+                    getWindow().addFlags(
+                        android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                        android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
+                        android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+                    );
+                }
+            } catch (Throwable ignored) {}
 
             String callerName = intent.getStringExtra("callerName");
             String callerAvatar = intent.getStringExtra("callerAvatar");
@@ -538,7 +571,6 @@ public class MainActivity extends BridgeActivity {
             intent.removeExtra("callerId");
             intent.removeExtra("autoAccept");
             intent.removeExtra("callTimestamp");
-            setIntent(new Intent(this, MainActivity.class));
         } catch (Exception ignored) {}
     }
 }

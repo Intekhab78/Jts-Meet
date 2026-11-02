@@ -21,6 +21,12 @@ export interface MobileChannel {
   unreadCount?: number;
 }
 
+export interface MobileChatMessageReaction {
+  userId: string;
+  emoji: string;
+  createdAt?: string | Date;
+}
+
 export interface MobileChatMessage {
   id: string;
   senderId: string;
@@ -31,4 +37,8 @@ export interface MobileChatMessage {
   type?: 'text' | 'system' | 'call';
   fileUrl?: string;
   fileName?: string;
+  reactions?: MobileChatMessageReaction[];
+  isDeleted?: boolean;
+  deletedAt?: string | Date;
 }
+

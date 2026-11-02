@@ -9,6 +9,29 @@ interface MobileOrganizationModalProps {
   onStartMeeting?: (code: string) => void;
 }
 
+const AVATAR_PALETTES = [
+  { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe' },
+  { bg: '#f5f3ff', text: '#7c3aed', border: '#ddd6fe' },
+  { bg: '#ecfdf5', text: '#059669', border: '#a7f3d0' },
+  { bg: '#fff7ed', text: '#c2410c', border: '#fed7aa' },
+  { bg: '#fdf2f8', text: '#be185d', border: '#fbcfe8' },
+  { bg: '#f0fdfa', text: '#0f766e', border: '#99f6e4' },
+];
+
+const getAvatarTheme = (seed: string) => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_PALETTES[Math.abs(hash) % AVATAR_PALETTES.length];
+};
+
+const getInitials = (fullName: string) => {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return fullName.slice(0, 2).toUpperCase() || 'M';
+};
+
 export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = ({
   isOpen,
   token,
@@ -62,6 +85,9 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
   const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member');
   const [statusMsg, setStatusMsg] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [memberToRemove, setMemberToRemove] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
+  const [isRemovingMember, setIsRemovingMember] = useState(false);
 
   // 1. Fetch user's real organizations dynamically
   const fetchOrganizations = async () => {
@@ -302,9 +328,19 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
     }
   };
 
-  const handleRemoveMember = async (userId: string, memberName: string) => {
-    if (!window.confirm(`Are you sure you want to remove ${memberName} from this organization?`)) return;
-    if (!resolvedToken || !selectedOrgId) return;
+  const promptRemoveMember = (userId: string, memberName: string, memberEmail: string, role: string) => {
+    if (role === 'owner') {
+      setStatusMsg('Organization owner cannot be removed.');
+      setTimeout(() => setStatusMsg(''), 3000);
+      return;
+    }
+    setMemberToRemove({ id: userId, name: memberName, email: memberEmail, role });
+  };
+
+  const confirmRemoveMember = async () => {
+    if (!memberToRemove || !resolvedToken || !selectedOrgId) return;
+    setIsRemovingMember(true);
+    setStatusMsg('');
     try {
       const res = await fetch(`${API_BASE}/api/organization/remove`, {
         method: 'POST',
@@ -312,14 +348,32 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
           'Content-Type': 'application/json',
           Authorization: `Bearer ${resolvedToken}`,
         },
-        body: JSON.stringify({ organizationId: selectedOrgId, userId }),
+        body: JSON.stringify({ organizationId: selectedOrgId, userId: memberToRemove.id }),
       });
       if (res.ok) {
-        setStatusMsg(`${memberName} removed from organization.`);
-        fetchOrgDetails(selectedOrgId);
-        setTimeout(() => setStatusMsg(''), 3000);
+        setStatusMsg(`"${memberToRemove.name}" has been removed from organization.`);
+        setMembers((prev) =>
+          prev.filter((m) => {
+            const u = (m.user && typeof m.user === 'object') ? m.user : (m.userId && typeof m.userId === 'object') ? m.userId : {};
+            const uid = u._id || (typeof m.userId === 'string' ? m.userId : m.userId?._id) || m._id;
+            return uid !== memberToRemove.id;
+          })
+        );
+        await fetchOrgDetails(selectedOrgId);
+        setMemberToRemove(null);
+        setTimeout(() => setStatusMsg(''), 3500);
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        setStatusMsg(errJson.message || 'Failed to remove member. Only organization owner/admins can remove members.');
+        setTimeout(() => setStatusMsg(''), 4000);
       }
-    } catch (_) {}
+    } catch (e) {
+      console.error('[MobileOrg] Failed to remove member:', e);
+      setStatusMsg('Failed to remove member. Please check your network.');
+      setTimeout(() => setStatusMsg(''), 4000);
+    } finally {
+      setIsRemovingMember(false);
+    }
   };
 
   const handleUpdateMemberRole = async (targetUserId: string, newRole: string) => {
@@ -1113,133 +1167,311 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
               </form>
             ) : (
               /* Members List View */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {/* Action Bar with "+ Invite Member" */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {/* Action Bar with "+ Invite Member" and Member Count */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '0.70rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
-                    Team Members ({members.length || currentOrg?.members?.length || 0})
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Workspace Team
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.66rem',
+                        fontWeight: 700,
+                        backgroundColor: '#e2e8f0',
+                        color: '#475569',
+                        padding: '2px 7px',
+                        borderRadius: 10,
+                      }}
+                    >
+                      {members.length}
+                    </span>
+                  </div>
                   <button
+                    type="button"
                     onClick={() => setIsInvitingMember(true)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       gap: 5,
-                      padding: '5px 10px',
-                      borderRadius: 8,
-                      backgroundColor: '#ecfdf5',
-                      color: '#059669',
-                      border: '1px solid #a7f3d0',
+                      padding: '6px 12px',
+                      borderRadius: 9,
+                      backgroundColor: '#10b981',
+                      color: '#ffffff',
+                      border: 'none',
                       fontSize: '0.72rem',
                       fontWeight: 700,
                       cursor: 'pointer',
+                      boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)',
                     }}
                   >
-                    <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                    <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
                       <line x1="12" y1="5" x2="12" y2="19" />
                       <line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
-                    + Invite Member
+                    Invite Member
                   </button>
                 </div>
 
+                {/* Instant Search Bar */}
+                {members.length > 2 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      backgroundColor: '#f1f5f9',
+                      border: '1px solid #e2e8f0',
+                    }}
+                  >
+                    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth={2}>
+                      <circle cx="11" cy="11" r="8" />
+                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search member by name or email..."
+                      value={memberSearchQuery}
+                      onChange={(e) => setMemberSearchQuery(e.target.value)}
+                      style={{
+                        border: 'none',
+                        outline: 'none',
+                        backgroundColor: 'transparent',
+                        fontSize: '0.76rem',
+                        color: '#0f172a',
+                        width: '100%',
+                      }}
+                    />
+                    {memberSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setMemberSearchQuery('')}
+                        style={{ border: 'none', background: 'none', color: '#94a3b8', fontSize: '0.85rem', cursor: 'pointer', padding: 0 }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Members List */}
                 {members.length === 0 ? (
                   <div
                     style={{
-                      padding: 24,
+                      padding: 28,
                       textAlign: 'center',
                       backgroundColor: '#f8fafc',
-                      borderRadius: 12,
-                      border: '1px dashed #cbd5e1',
+                      borderRadius: 14,
+                      border: '1.5px dashed #cbd5e1',
                     }}
                   >
-                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                      {loading ? 'Loading members...' : 'No members found. Tap + Invite Member to invite someone.'}
+                    <div style={{ fontSize: '1.8rem', marginBottom: 6 }}>👥</div>
+                    <span style={{ fontSize: '0.80rem', fontWeight: 600, color: '#475569', display: 'block' }}>
+                      {loading ? 'Loading workspace members...' : 'No members yet'}
+                    </span>
+                    <span style={{ fontSize: '0.70rem', color: '#94a3b8', marginTop: 4, display: 'block' }}>
+                      Tap "+ Invite Member" above to add teammates with their email.
                     </span>
                   </div>
                 ) : (
-                  members.map((m: any, idx) => {
-                    const u = m.userId || m;
-                    const name = u.fullName || u.name || 'Member';
-                    const role = m.role || 'Member';
+                  members
+                    .filter((m: any) => {
+                      if (!memberSearchQuery.trim()) return true;
+                      const q = memberSearchQuery.toLowerCase().trim();
+                      const u = (m.user && typeof m.user === 'object') ? m.user : (m.userId && typeof m.userId === 'object') ? m.userId : {};
+                      const n = (u.fullName || u.name || m.fullName || m.name || '').toLowerCase();
+                      const e = (u.email || m.email || (typeof m.userId === 'string' && m.userId.includes('@') ? m.userId : '')).toLowerCase();
+                      return n.includes(q) || e.includes(q);
+                    })
+                    .map((m: any, idx: number) => {
+                      const userInfo = (m.user && typeof m.user === 'object')
+                        ? m.user
+                        : (m.userId && typeof m.userId === 'object')
+                          ? m.userId
+                          : {};
+                      const targetUserId = userInfo._id || (typeof m.userId === 'string' ? m.userId : m.userId?._id) || m._id || m.id;
+                      const email = userInfo.email || m.email || (typeof m.userId === 'string' && m.userId.includes('@') ? m.userId : '');
+                      const name = userInfo.fullName || userInfo.name || m.fullName || m.name || (email ? email.split('@')[0] : 'Team Member');
+                      const avatar = userInfo.profileImage || m.avatar || '';
+                      const role = (m.role || 'member').toLowerCase();
+                      const joinedDate = m.joinedAt ? new Date(m.joinedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                      const theme = getAvatarTheme(name || email || 'seed');
+                      const initials = getInitials(name);
 
-                    return (
-                      <div
-                        key={m._id || idx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '10px 12px',
-                          borderRadius: 12,
-                          border: '1px solid #f1f5f9',
-                          backgroundColor: '#ffffff',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div
-                            style={{
-                              width: 34,
-                              height: 34,
-                              borderRadius: '50%',
-                              backgroundColor: '#2563eb',
-                              color: '#ffffff',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '0.78rem',
-                              fontWeight: 700,
-                            }}
-                          >
-                            {name.charAt(0).toUpperCase()}
+                      return (
+                        <div
+                          key={targetUserId || idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '12px 14px',
+                            borderRadius: 14,
+                            border: '1px solid #f1f5f9',
+                            backgroundColor: '#ffffff',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0, flex: 1, marginRight: 8 }}>
+                            {avatar ? (
+                              <img
+                                src={avatar}
+                                alt={name}
+                                style={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: '50%',
+                                  objectFit: 'cover',
+                                  border: `2px solid ${theme.border}`,
+                                  flexShrink: 0,
+                                }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: '50%',
+                                  backgroundColor: theme.bg,
+                                  color: theme.text,
+                                  border: `1.5px solid ${theme.border}`,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '0.84rem',
+                                  fontWeight: 800,
+                                  flexShrink: 0,
+                                  letterSpacing: '0.02em',
+                                }}
+                              >
+                                {initials}
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.84rem',
+                                  fontWeight: 700,
+                                  color: '#0f172a',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {name}
+                              </span>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth={2}>
+                                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                                  <polyline points="22,6 12,13 2,6" />
+                                </svg>
+                                <span
+                                  style={{
+                                    fontSize: '0.70rem',
+                                    color: '#64748b',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                  }}
+                                >
+                                  {email || 'Verified Member'}
+                                </span>
+                              </div>
+
+                              {joinedDate && (
+                                <span style={{ fontSize: '0.62rem', color: '#94a3b8', marginTop: 1 }}>
+                                  Joined {joinedDate}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '0.80rem', fontWeight: 700, color: '#0f172a' }}>
-                              {name}
-                            </span>
-                            <span style={{ fontSize: '0.64rem', color: '#64748b' }}>
-                              {u.email || 'Verified Teammate'}
-                            </span>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+                            {role === 'owner' ? (
+                              <span
+                                style={{
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  color: '#7c3aed',
+                                  backgroundColor: '#f5f3ff',
+                                  border: '1px solid #ddd6fe',
+                                  padding: '3px 8px',
+                                  borderRadius: 7,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.03em',
+                                }}
+                              >
+                                👑 OWNER
+                              </span>
+                            ) : role === 'admin' ? (
+                              <span
+                                style={{
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  color: '#b45309',
+                                  backgroundColor: '#fffbeb',
+                                  border: '1px solid #fde68a',
+                                  padding: '3px 8px',
+                                  borderRadius: 7,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.03em',
+                                }}
+                              >
+                                🛡️ ADMIN
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: '0.62rem',
+                                  fontWeight: 700,
+                                  color: '#2563eb',
+                                  backgroundColor: '#eff6ff',
+                                  border: '1px solid #dbeafe',
+                                  padding: '3px 8px',
+                                  borderRadius: 7,
+                                  textTransform: 'uppercase',
+                                }}
+                              >
+                                MEMBER
+                              </span>
+                            )}
+
+                            {role !== 'owner' && (
+                              <button
+                                type="button"
+                                onClick={() => promptRemoveMember(targetUserId, name, email, role)}
+                                title={`Remove ${name}`}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 8,
+                                  border: '1px solid #fee2e2',
+                                  backgroundColor: '#fef2f2',
+                                  color: '#ef4444',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                  transition: 'background-color 0.15s ease',
+                                }}
+                              >
+                                <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="3 6 5 6 21 6" />
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                  <line x1="10" y1="11" x2="10" y2="17" />
+                                  <line x1="14" y1="11" x2="14" y2="17" />
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span
-                            style={{
-                              fontSize: '0.62rem',
-                              fontWeight: 700,
-                              color: role === 'owner' || role === 'admin' ? '#7c3aed' : '#64748b',
-                              backgroundColor: role === 'owner' || role === 'admin' ? '#f5f3ff' : '#f1f5f9',
-                              padding: '3px 8px',
-                              borderRadius: 6,
-                              textTransform: 'uppercase',
-                            }}
-                          >
-                            {role}
-                          </span>
-
-                          {role !== 'owner' && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveMember(u._id || m.userId, name)}
-                              title="Remove Member"
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: '#ef4444',
-                                fontSize: '0.85rem',
-                                cursor: 'pointer',
-                                padding: '2px 4px',
-                              }}
-                            >
-                              🗑️
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })
                 )}
               </div>
             )}
@@ -1468,6 +1700,120 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
               >
                 Leave Organization
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════
+            MEMBER REMOVAL CONFIRMATION MODAL
+        ══════════════════════════════════════════════════════════════ */}
+        {memberToRemove && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10000,
+              padding: 16,
+            }}
+            onClick={() => !isRemovingMember && setMemberToRemove(null)}
+          >
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: 20,
+                padding: 22,
+                width: '100%',
+                maxWidth: 340,
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                textAlign: 'center',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                style={{
+                  width: 50,
+                  height: 50,
+                  borderRadius: '50%',
+                  backgroundColor: '#fef2f2',
+                  border: '2px solid #fee2e2',
+                  color: '#ef4444',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 12,
+                }}
+              >
+                <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <line x1="10" y1="11" x2="10" y2="17" />
+                  <line x1="14" y1="11" x2="14" y2="17" />
+                </svg>
+              </div>
+
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>
+                Remove Member?
+              </h3>
+
+              <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 18px 0', lineHeight: 1.5 }}>
+                Are you sure you want to remove <strong style={{ color: '#0f172a' }}>{memberToRemove.name}</strong>
+                {memberToRemove.email ? ` (${memberToRemove.email})` : ''} from <strong style={{ color: '#0f172a' }}>{currentOrg?.name || 'this organization'}</strong>? They will lose access to all teams and channels immediately.
+              </p>
+
+              <div style={{ display: 'flex', gap: 10, width: '100%' }}>
+                <button
+                  type="button"
+                  disabled={isRemovingMember}
+                  onClick={() => setMemberToRemove(null)}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#475569',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isRemovingMember}
+                  onClick={confirmRemoveMember}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    border: 'none',
+                    backgroundColor: '#ef4444',
+                    color: '#ffffff',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                  }}
+                >
+                  {isRemovingMember ? 'Removing...' : 'Remove'}
+                </button>
+              </div>
             </div>
           </div>
         )}

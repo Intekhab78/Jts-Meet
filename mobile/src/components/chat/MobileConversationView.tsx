@@ -3,6 +3,9 @@ import { MobileChatMessage } from './types';
 import { API_BASE, resolveAvatarUrl } from '../../config';
 import { MobileAvatar } from '../common/MobileAvatar';
 
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const EXTENDED_REACTIONS = ['🔥', '👏', '🎉', '💯', '🚀', '😍', '🙌', '👀', '🥳', '⚡', '✨', '🤝', '💪', '🤩'];
+
 interface MobileConversationViewProps {
   chatId: string;
   chatName: string;
@@ -50,12 +53,27 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>(status || 'offline');
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedMessageForAction, setSelectedMessageForAction] = useState<MobileChatMessage | null>(null);
+  const [messageToDelete, setMessageToDelete] = useState<MobileChatMessage | null>(null);
+  const [showMoreEmojis, setShowMoreEmojis] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pressTimerRef = useRef<any>(null);
 
   useEffect(() => {
     if (status) setCurrentStatus(status);
   }, [status]);
+
+  // Sync cache with messages
+  useEffect(() => {
+    if (messages.length > 0) {
+      try {
+        localStorage.setItem(`jts_chat_cache_${chatId}`, JSON.stringify(messages));
+      } catch (_) {}
+    }
+  }, [messages, chatId]);
 
   // Real-time presence listener for this contact
   useEffect(() => {
@@ -96,7 +114,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages.length]);
 
   // Load conversation messages dynamically from backend API
   useEffect(() => {
@@ -134,6 +152,17 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               text: content,
               timestamp: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               isMe,
+              fileUrl: m.fileUrl,
+              fileName: m.fileName,
+              reactions: Array.isArray(m.reactions)
+                ? m.reactions.map((r: any) => ({
+                    userId: typeof r.userId === 'object' ? (r.userId?._id || r.userId?.id || String(r.userId)) : String(r.userId),
+                    emoji: r.emoji,
+                    createdAt: r.createdAt,
+                  }))
+                : [],
+              isDeleted: Boolean(m.isDeleted || m.deleted),
+              deletedAt: m.deletedAt,
             };
           });
           setMessages(mapped);
@@ -150,7 +179,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     fetchChatHistory();
   }, [chatId, isChannel, resolvedToken, resolvedUserId, chatName]);
 
-  // Listen to incoming messages via socket
+  // Listen to incoming messages, reactions and deletions via socket
   useEffect(() => {
     if (!socket) return;
     const handleNewMessage = (payload: any) => {
@@ -178,10 +207,11 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               updatedList[localIdx] = {
                 ...updatedList[localIdx],
                 id: payload._id || updatedList[localIdx].id,
+                fileUrl: payload.fileUrl || updatedList[localIdx].fileUrl,
+                fileName: payload.fileName || updatedList[localIdx].fileName,
+                reactions: payload.reactions || updatedList[localIdx].reactions || [],
+                isDeleted: Boolean(payload.isDeleted || payload.deleted),
               };
-              try {
-                localStorage.setItem(`jts_chat_cache_${chatId}`, JSON.stringify(updatedList));
-              } catch (_) {}
               return updatedList;
             }
           }
@@ -195,14 +225,98 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               text,
               timestamp: new Date(payload.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               isMe,
+              fileUrl: payload.fileUrl,
+              fileName: payload.fileName,
+              reactions: Array.isArray(payload.reactions) ? payload.reactions : [],
+              isDeleted: Boolean(payload.isDeleted || payload.deleted),
+              deletedAt: payload.deletedAt,
             },
           ];
-          try {
-            localStorage.setItem(`jts_chat_cache_${chatId}`, JSON.stringify(updated));
-          } catch (_) {}
           return updated;
         });
       }
+    };
+
+    // Reaction update listeners
+    const handleReactionUpdate = (payload: any) => {
+      const targetMessageId = payload?.messageId;
+      const emoji = payload?.emoji;
+      const uId = payload?.userId || payload?.senderId;
+      if (!targetMessageId || !emoji) return;
+
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id === targetMessageId) {
+            const current = m.reactions || [];
+            const exists = current.some((r) => String(r.userId) === String(uId) && r.emoji === emoji);
+            let updated;
+            if (exists) {
+              updated = current.filter((r) => !(String(r.userId) === String(uId) && r.emoji === emoji));
+            } else {
+              updated = [...current, { userId: String(uId), emoji, createdAt: new Date() }];
+            }
+            return { ...m, reactions: updated };
+          }
+          return m;
+        })
+      );
+    };
+
+    const handleReactionAdd = (payload: any) => {
+      const targetMessageId = payload?.messageId;
+      const emoji = payload?.emoji;
+      const uId = payload?.userId;
+      if (!targetMessageId || !emoji) return;
+
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id === targetMessageId) {
+            const current = m.reactions || [];
+            if (current.some((r) => String(r.userId) === String(uId) && r.emoji === emoji)) return m;
+            return { ...m, reactions: [...current, { userId: String(uId), emoji, createdAt: new Date() }] };
+          }
+          return m;
+        })
+      );
+    };
+
+    const handleReactionRemove = (payload: any) => {
+      const targetMessageId = payload?.messageId;
+      const emoji = payload?.emoji;
+      const uId = payload?.userId;
+      if (!targetMessageId || !emoji) return;
+
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id === targetMessageId) {
+            const current = m.reactions || [];
+            return {
+              ...m,
+              reactions: current.filter((r) => !(String(r.userId) === String(uId) && r.emoji === emoji)),
+            };
+          }
+          return m;
+        })
+      );
+    };
+
+    // Message deletion listeners
+    const handleMessageDelete = (payload: any) => {
+      const targetId = payload?.messageId || payload?.id;
+      if (!targetId) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === targetId ? { ...m, isDeleted: true, deletedAt: payload.deletedAt || new Date() } : m
+        )
+      );
+    };
+
+    const handleMessageUndo = (payload: any) => {
+      const targetId = payload?.messageId || payload?.id;
+      if (!targetId) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === targetId ? { ...m, isDeleted: false, deletedAt: undefined } : m))
+      );
     };
 
     socket.on('chat:receive', handleNewMessage);
@@ -210,13 +324,34 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     socket.on('channel:message:receive', handleNewMessage);
     socket.on('channel:message', handleNewMessage);
 
+    socket.on('chat:reaction', handleReactionUpdate);
+    socket.on('reaction:add', handleReactionAdd);
+    socket.on('reaction:remove', handleReactionRemove);
+    socket.on('chat:message:delete', handleMessageDelete);
+    socket.on('message:delete', handleMessageDelete);
+    socket.on('chat:message:undo', handleMessageUndo);
+    socket.on('channel:reaction', handleReactionUpdate);
+    socket.on('channel:message:delete', handleMessageDelete);
+    socket.on('channel:message:undo', handleMessageUndo);
+
     return () => {
       socket.off('chat:receive', handleNewMessage);
       socket.off('chat:message', handleNewMessage);
       socket.off('channel:message:receive', handleNewMessage);
       socket.off('channel:message', handleNewMessage);
+
+      socket.off('chat:reaction', handleReactionUpdate);
+      socket.off('reaction:add', handleReactionAdd);
+      socket.off('reaction:remove', handleReactionRemove);
+      socket.off('chat:message:delete', handleMessageDelete);
+      socket.off('message:delete', handleMessageDelete);
+      socket.off('chat:message:undo', handleMessageUndo);
+      socket.off('channel:reaction', handleReactionUpdate);
+      socket.off('channel:message:delete', handleMessageDelete);
+      socket.off('channel:message:undo', handleMessageUndo);
     };
   }, [socket, chatId, chatName, resolvedUserId]);
+
 
   const handleSendMessage = async () => {
     const text = inputText.trim();
@@ -276,6 +411,231 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
       } catch (err) {
         console.warn('[MobileChat] Failed to send message via REST:', err);
       }
+    }
+  };
+
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    const targetMsg = messages.find((m) => m.id === messageId);
+    const existingReactions = targetMsg?.reactions || [];
+    const alreadyReacted = existingReactions.some(
+      (r) => String(r.userId) === String(resolvedUserId) && r.emoji === emoji
+    );
+
+    // Optimistic UI update
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id === messageId) {
+          const current = m.reactions || [];
+          let updated;
+          if (alreadyReacted) {
+            updated = current.filter(
+              (r) => !(String(r.userId) === String(resolvedUserId) && r.emoji === emoji)
+            );
+          } else {
+            updated = [
+              ...current,
+              { userId: String(resolvedUserId || 'me'), emoji, createdAt: new Date() },
+            ];
+          }
+          return { ...m, reactions: updated };
+        }
+        return m;
+      })
+    );
+
+    setSelectedMessageForAction(null);
+    setShowMoreEmojis(false);
+
+    // Socket Emit
+    if (socket) {
+      if (isChannel) {
+        socket.emit('channel:reaction', {
+          channelId: chatId,
+          messageId,
+          userId: resolvedUserId,
+          emoji,
+        });
+      } else {
+        if (alreadyReacted) {
+          socket.emit('reaction:remove', {
+            messageId,
+            receiverId: chatId,
+            emoji,
+          });
+        } else {
+          socket.emit('chat:reaction', {
+            receiverId: chatId,
+            messageId,
+            emoji,
+          });
+          socket.emit('reaction:add', {
+            messageId,
+            receiverId: chatId,
+            emoji,
+          });
+        }
+      }
+    }
+
+    // REST API Persist
+    if (resolvedToken) {
+      try {
+        if (isChannel) {
+          await fetch(`${API_BASE}/api/channel/${chatId}/chat/${messageId}/react`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${resolvedToken}`,
+            },
+            body: JSON.stringify({ emoji }),
+          });
+        } else {
+          if (alreadyReacted) {
+            await fetch(`${API_BASE}/api/chat/message/${messageId}/react`, {
+              method: 'DELETE',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${resolvedToken}`,
+              },
+              body: JSON.stringify({ emoji }),
+            });
+          } else {
+            await fetch(`${API_BASE}/api/chat/message/${messageId}/react`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${resolvedToken}`,
+              },
+              body: JSON.stringify({ emoji }),
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[MobileChat] Failed to save reaction to API:', err);
+      }
+    }
+  };
+
+  const handleDeleteMessage = async (msg: MobileChatMessage) => {
+    setMessageToDelete(null);
+    setSelectedMessageForAction(null);
+    setShowMoreEmojis(false);
+
+    // Optimistic UI update
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msg.id ? { ...m, isDeleted: true, deletedAt: new Date() } : m))
+    );
+
+    setToastMessage('Message deleted for everyone');
+    setTimeout(() => {
+      setToastMessage((curr) => (curr === 'Message deleted for everyone' ? null : curr));
+    }, 3500);
+
+    // Socket Emit
+    if (socket) {
+      if (isChannel) {
+        socket.emit('channel:message:delete', { channelId: chatId, messageId: msg.id });
+      } else {
+        socket.emit('chat:message:delete', { messageId: msg.id, receiverId: chatId });
+        socket.emit('message:delete', { messageId: msg.id, receiverId: chatId });
+      }
+    }
+
+    // REST API
+    if (resolvedToken) {
+      try {
+        if (isChannel) {
+          await fetch(`${API_BASE}/api/channel-chat/${msg.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${resolvedToken}` },
+          });
+        } else {
+          await fetch(`${API_BASE}/api/chat/message/${msg.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${resolvedToken}` },
+          });
+        }
+      } catch (err) {
+        console.warn('[MobileChat] Failed to delete message:', err);
+      }
+    }
+  };
+
+  const handleUndoDeleteMessage = async (messageId: string) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, isDeleted: false, deletedAt: undefined } : m))
+    );
+    setToastMessage('Message restored');
+    setTimeout(() => {
+      setToastMessage((curr) => (curr === 'Message restored' ? null : curr));
+    }, 2500);
+
+    // Socket Emit
+    if (socket) {
+      if (isChannel) {
+        socket.emit('channel:message:undo', { channelId: chatId, messageId });
+      } else {
+        socket.emit('chat:message:undo', { messageId, receiverId: chatId });
+      }
+    }
+
+    // REST API
+    if (resolvedToken) {
+      try {
+        if (isChannel) {
+          await fetch(`${API_BASE}/api/channel-chat/${messageId}/undo`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${resolvedToken}` },
+          });
+        } else {
+          await fetch(`${API_BASE}/api/chat/message/${messageId}/undo`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${resolvedToken}` },
+          });
+        }
+      } catch (err) {
+        console.warn('[MobileChat] Failed to undo delete message:', err);
+      }
+    }
+  };
+
+  const handleCopyMessage = (text: string) => {
+    try {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setToastMessage('Copied to clipboard');
+      setTimeout(() => {
+        setToastMessage((curr) => (curr === 'Copied to clipboard' ? null : curr));
+      }, 2000);
+    } catch (_) {}
+    setSelectedMessageForAction(null);
+    setShowMoreEmojis(false);
+  };
+
+  const handleTouchStart = (msg: MobileChatMessage) => {
+    pressTimerRef.current = setTimeout(() => {
+      try {
+        if (window.navigator?.vibrate) {
+          window.navigator.vibrate(40);
+        }
+      } catch (_) {}
+      setSelectedMessageForAction(msg);
+      setShowMoreEmojis(false);
+    }, 380);
+  };
+
+  const handleTouchEnd = () => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
     }
   };
 
@@ -591,7 +951,8 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               display: 'flex',
               flexDirection: 'column',
               alignSelf: msg.isMe ? 'flex-end' : 'flex-start',
-              maxWidth: '80%',
+              maxWidth: '82%',
+              position: 'relative',
             }}
           >
             {!msg.isMe && isChannel && (
@@ -600,19 +961,66 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               </span>
             )}
             <div
+              onTouchStart={() => !msg.isDeleted && handleTouchStart(msg)}
+              onTouchEnd={handleTouchEnd}
+              onTouchMove={handleTouchEnd}
+              onMouseDown={() => !msg.isDeleted && handleTouchStart(msg)}
+              onMouseUp={handleTouchEnd}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                if (!msg.isDeleted) {
+                  setSelectedMessageForAction(msg);
+                  setShowMoreEmojis(false);
+                }
+              }}
               style={{
                 padding: '8px 12px',
                 borderRadius: msg.isMe ? '16px 16px 3px 16px' : '16px 16px 16px 3px',
-                backgroundColor: msg.isMe ? '#2563eb' : '#ffffff',
-                color: msg.isMe ? '#ffffff' : '#0f172a',
+                backgroundColor: msg.isDeleted ? '#f1f5f9' : msg.isMe ? '#2563eb' : '#ffffff',
+                color: msg.isDeleted ? '#64748b' : msg.isMe ? '#ffffff' : '#0f172a',
                 fontSize: '0.78rem',
                 lineHeight: 1.4,
-                boxShadow: msg.isMe ? '0 1px 3px rgba(37,99,235,0.25)' : '0 1px 2px rgba(0,0,0,0.06)',
-                border: msg.isMe ? 'none' : '1px solid #e2e8f0',
+                boxShadow: msg.isDeleted
+                  ? 'none'
+                  : msg.isMe
+                  ? '0 1px 3px rgba(37,99,235,0.25)'
+                  : '0 1px 2px rgba(0,0,0,0.06)',
+                border: msg.isDeleted ? '1px dashed #cbd5e1' : msg.isMe ? 'none' : '1px solid #e2e8f0',
                 wordBreak: 'break-word',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
               }}
             >
-              {isImageUrl(msg.fileUrl || msg.text) ? (
+              {msg.isDeleted ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontStyle: 'italic', padding: '2px 0' }}>
+                  <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                  </svg>
+                  <span>This message was deleted</span>
+                  {msg.isMe && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUndoDeleteMessage(msg.id);
+                      }}
+                      style={{
+                        marginLeft: 6,
+                        background: 'none',
+                        border: 'none',
+                        color: '#2563eb',
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      Undo
+                    </button>
+                  )}
+                </div>
+              ) : isImageUrl(msg.fileUrl || msg.text) ? (
                 <div style={{ marginBottom: 4 }}>
                   <img
                     src={resolveAvatarUrl(msg.fileUrl || msg.text)}
@@ -659,10 +1067,12 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               ) : (
                 msg.text
               )}
+
+              {/* Timestamp & action triggers */}
               <div
                 style={{
                   fontSize: '0.6rem',
-                  color: msg.isMe ? 'rgba(255,255,255,0.8)' : '#94a3b8',
+                  color: msg.isDeleted ? '#94a3b8' : msg.isMe ? 'rgba(255,255,255,0.8)' : '#94a3b8',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'flex-end',
@@ -671,14 +1081,99 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
                 }}
               >
                 <span>{msg.timestamp}</span>
-                {msg.isMe && (
+                {msg.isMe && !msg.isDeleted && (
                   <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#93c5fd" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
                     <path d="M18 6L7 17l-5-5" />
                     <path d="M22 10l-7.5 7.5-2-2" />
                   </svg>
                 )}
+                {!msg.isDeleted && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedMessageForAction(msg);
+                      setShowMoreEmojis(false);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: '1px 2px',
+                      marginLeft: 4,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      color: msg.isMe ? 'rgba(255,255,255,0.7)' : '#94a3b8',
+                    }}
+                    title="Reaction / Actions"
+                  >
+                    <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <circle cx="12" cy="12" r="1.5" />
+                      <circle cx="19" cy="12" r="1.5" />
+                      <circle cx="5" cy="12" r="1.5" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
+
+            {/* Reaction Badges (WhatsApp Style) */}
+            {msg.reactions && msg.reactions.length > 0 && !msg.isDeleted && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 4,
+                  marginTop: 3,
+                  alignSelf: msg.isMe ? 'flex-end' : 'flex-start',
+                }}
+              >
+                {Object.entries(
+                  msg.reactions.reduce((acc: Record<string, string[]>, r) => {
+                    if (!acc[r.emoji]) acc[r.emoji] = [];
+                    acc[r.emoji].push(String(r.userId));
+                    return acc;
+                  }, {})
+                ).map(([emoji, userIds]) => {
+                  const hasMyReaction = userIds.includes(String(resolvedUserId));
+                  return (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleReaction(msg.id, emoji);
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        padding: '2px 7px',
+                        borderRadius: 12,
+                        backgroundColor: hasMyReaction ? '#eff6ff' : '#ffffff',
+                        border: hasMyReaction ? '1.5px solid #3b82f6' : '1px solid #e2e8f0',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                        cursor: 'pointer',
+                        fontSize: '0.70rem',
+                        lineHeight: 1,
+                      }}
+                      title={hasMyReaction ? 'Tap to remove reaction' : 'Tap to react'}
+                    >
+                      <span style={{ fontSize: '0.85rem' }}>{emoji}</span>
+                      <span
+                        style={{
+                          fontSize: '0.66rem',
+                          fontWeight: 700,
+                          color: hasMyReaction ? '#2563eb' : '#64748b',
+                        }}
+                      >
+                        {userIds.length}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ))}
         <div ref={messagesEndRef} />
@@ -788,6 +1283,353 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
           </svg>
         </button>
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          WHATSAPP FLOATING EMOJI & ACTION MENU MODAL
+      ══════════════════════════════════════════════════════════════ */}
+      {selectedMessageForAction && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: 16,
+          }}
+          onClick={() => {
+            setSelectedMessageForAction(null);
+            setShowMoreEmojis(false);
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 12,
+              width: '100%',
+              maxWidth: 320,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Quick Emojis Capsule (WhatsApp Style) */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: 30,
+                padding: '6px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: '0 12px 30px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.08)',
+                border: '1px solid #e2e8f0',
+              }}
+            >
+              {QUICK_REACTIONS.map((emoji) => {
+                const userReacted = selectedMessageForAction.reactions?.some(
+                  (r) => String(r.userId) === String(resolvedUserId) && r.emoji === emoji
+                );
+                return (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => handleToggleReaction(selectedMessageForAction.id, emoji)}
+                    style={{
+                      background: userReacted ? '#eff6ff' : 'transparent',
+                      border: userReacted ? '2px solid #3b82f6' : 'none',
+                      borderRadius: '50%',
+                      width: 38,
+                      height: 38,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.4rem',
+                      cursor: 'pointer',
+                      transition: 'transform 0.1s ease',
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setShowMoreEmojis((v) => !v)}
+                style={{
+                  background: showMoreEmojis ? '#e2e8f0' : '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: 34,
+                  height: 34,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#475569',
+                }}
+                title="More Reactions"
+              >
+                <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Extended Emoji Grid (if + clicked) */}
+            {showMoreEmojis && (
+              <div
+                style={{
+                  backgroundColor: '#ffffff',
+                  borderRadius: 18,
+                  padding: 10,
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(6, 1fr)',
+                  gap: 6,
+                  boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
+                  border: '1px solid #e2e8f0',
+                }}
+              >
+                {EXTENDED_REACTIONS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => handleToggleReaction(selectedMessageForAction.id, emoji)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      borderRadius: 8,
+                      width: 36,
+                      height: 36,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.3rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Message Action Sheet (Copy / Delete) */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: 16,
+                padding: '4px 0',
+                width: 220,
+                boxShadow: '0 12px 25px rgba(0,0,0,0.18)',
+                border: '1px solid #e2e8f0',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Copy */}
+              <button
+                type="button"
+                onClick={() => handleCopyMessage(selectedMessageForAction.text)}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  background: 'none',
+                  border: 'none',
+                  color: '#0f172a',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                <span>Copy Text</span>
+              </button>
+
+              {/* Delete Message (if it's my message) */}
+              {selectedMessageForAction.isMe && !selectedMessageForAction.isDeleted && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessageToDelete(selectedMessageForAction);
+                    setSelectedMessageForAction(null);
+                    setShowMoreEmojis(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    background: 'none',
+                    border: 'none',
+                    borderTop: '1px solid #f1f5f9',
+                    color: '#ef4444',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    <line x1="10" y1="11" x2="10" y2="17" />
+                    <line x1="14" y1="11" x2="14" y2="17" />
+                  </svg>
+                  <span>Delete Message</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════
+          WHATSAPP DELETE CONFIRMATION MODAL
+      ══════════════════════════════════════════════════════════════ */}
+      {messageToDelete && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: 16,
+          }}
+          onClick={() => setMessageToDelete(null)}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: 20,
+              padding: 22,
+              width: '100%',
+              maxWidth: 320,
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                backgroundColor: '#fef2f2',
+                border: '2px solid #fee2e2',
+                color: '#ef4444',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 12,
+              }}
+            >
+              <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg>
+            </div>
+
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>
+              Delete message?
+            </h3>
+
+            <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 18px 0', lineHeight: 1.5 }}>
+              Are you sure you want to delete this message? This message will be deleted for everyone in this chat.
+            </p>
+
+            <div style={{ display: 'flex', gap: 10, width: '100%' }}>
+              <button
+                type="button"
+                onClick={() => setMessageToDelete(null)}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#ffffff',
+                  color: '#475569',
+                  fontSize: '0.80rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleDeleteMessage(messageToDelete)}
+                style={{
+                  flex: 1.2,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: 'none',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  fontSize: '0.80rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Delete for everyone
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Toast (e.g. Copied to clipboard, Message deleted) */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 70,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#0f172a',
+            color: '#ffffff',
+            padding: '8px 16px',
+            borderRadius: 20,
+            fontSize: '0.74rem',
+            fontWeight: 600,
+            boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)',
+            zIndex: 10001,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 };
