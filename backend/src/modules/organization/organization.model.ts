@@ -2,7 +2,7 @@ import { Schema, model, Document, Types } from 'mongoose'
 
 export type OrganizationRole = 'owner' | 'admin' | 'member' | 'guest'
 export type OrganizationStatus = 'active' | 'inactive' | 'deleted'
-export type OrganizationMemberStatus = 'pending' | 'active' | 'removed'
+export type OrganizationMemberStatus = 'pending' | 'active' | 'suspended' | 'removed'
 
 export interface IOrganizationMember {
     userId: Types.ObjectId
@@ -62,7 +62,7 @@ const OrganizationMemberSchema = new Schema<IOrganizationMember>(
         role: { type: String, enum: ['owner', 'admin', 'member', 'guest'], required: true },
         joinedAt: { type: Date, default: Date.now },
         invitedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-        status: { type: String, enum: ['pending', 'active', 'removed'], required: true, default: 'active' }
+        status: { type: String, enum: ['pending', 'active', 'suspended', 'removed'], required: true, default: 'active' }
     },
     { _id: false }
 )

@@ -143,39 +143,82 @@ export async function getAuditLogs(page = 1, limit = 20, action = '', search = '
 // TAB 1: USERS & ROLE MANAGEMENT (RBAC & LICENSE SEATS)
 // =========================================================================
 
+async function resolveTargetOrganization(orgId?: string, targetUserId?: string, adminUserId?: string) {
+    let org: any = null
+    if (orgId && Types.ObjectId.isValid(orgId)) {
+        org = await Organization.findById(orgId)
+    }
+
+    if (!org && targetUserId) {
+        const targetObjId = Types.ObjectId.isValid(targetUserId) ? new Types.ObjectId(targetUserId) : null
+        org = await Organization.findOne({
+            $or: [
+                ...(targetObjId ? [{ 'members.userId': targetObjId }] : []),
+                { 'members.userId': targetUserId.toString() },
+                ...(targetObjId ? [{ ownerId: targetObjId }] : []),
+                { ownerId: targetUserId.toString() }
+            ]
+        })
+    }
+
+    if (!org && adminUserId) {
+        const adminObjId = Types.ObjectId.isValid(adminUserId) ? new Types.ObjectId(adminUserId) : null
+        org = await Organization.findOne({
+            $or: [
+                ...(adminObjId ? [{ ownerId: adminObjId }] : []),
+                ...(adminObjId ? [{ 'members.userId': adminObjId }] : [])
+            ]
+        })
+    }
+
+    if (!org) {
+        org = await Organization.findOne({ status: { $ne: 'deleted' } })
+    }
+
+    return org
+}
+
 export async function getOrganizationUsers(orgId?: string, search = '', roleFilter = '', statusFilter = '') {
     // If organization provided, fetch organization members
-    let org = null
+    let org: any = null
     if (orgId && Types.ObjectId.isValid(orgId)) {
         org = await Organization.findById(orgId).populate('members.userId', 'fullName email profileImage status lastSeen createdAt')
     }
 
-    // If no org or empty members, fallback to all users in database
+    if (!org) {
+        // Fallback: look for the primary active organization
+        org = await Organization.findOne({ status: { $ne: 'deleted' } })
+            .populate('members.userId', 'fullName email profileImage status lastSeen createdAt')
+    }
+
     let userList: any[] = []
 
     if (org && org.members && org.members.length > 0) {
-        userList = org.members.map((m: any) => {
-            const u = m.userId || {}
-            return {
-                userId: u._id || m.userId,
-                fullName: u.fullName || 'User',
-                email: u.email || '',
-                profileImage: u.profileImage || '',
-                role: m.role || 'member',
-                status: m.status || 'active',
-                lastSeen: u.lastSeen || null,
-                joinedAt: m.joinedAt || org.createdAt
-            }
-        })
+        userList = org.members
+            .filter((m: any) => m && m.userId)
+            .map((m: any) => {
+                const u = m.userId || {}
+                const isUserObj = typeof u === 'object' && u._id
+                return {
+                    userId: isUserObj ? u._id.toString() : (u ? u.toString() : ''),
+                    fullName: isUserObj ? (u.fullName || 'User') : 'User',
+                    email: isUserObj ? (u.email || '') : '',
+                    profileImage: isUserObj ? (u.profileImage || '') : '',
+                    role: m.role || 'member',
+                    status: m.status || 'active',
+                    lastSeen: isUserObj ? (u.lastSeen || null) : null,
+                    joinedAt: m.joinedAt || org.createdAt
+                }
+            })
     } else {
         const allUsers = await User.find().sort({ createdAt: -1 }).limit(100).exec()
         userList = allUsers.map((u: any, idx) => ({
-            userId: u._id,
+            userId: u._id.toString(),
             fullName: u.fullName,
             email: u.email,
             profileImage: u.profileImage || '',
             role: idx === 0 ? 'owner' : (idx < 2 ? 'admin' : 'member'),
-            status: u.status === 'online' ? 'active' : 'active',
+            status: 'active',
             lastSeen: u.lastSeen,
             joinedAt: u.createdAt
         }))
@@ -184,17 +227,17 @@ export async function getOrganizationUsers(orgId?: string, search = '', roleFilt
     // Apply filtering
     if (search) {
         const s = search.toLowerCase()
-        userList = userList.filter(u => u.fullName.toLowerCase().includes(s) || u.email.toLowerCase().includes(s))
+        userList = userList.filter(u => (u.fullName && u.fullName.toLowerCase().includes(s)) || (u.email && u.email.toLowerCase().includes(s)))
     }
     if (roleFilter && roleFilter !== 'all') {
-        userList = userList.filter(u => u.role.toLowerCase() === roleFilter.toLowerCase())
+        userList = userList.filter(u => u.role && u.role.toLowerCase() === roleFilter.toLowerCase())
     }
     if (statusFilter && statusFilter !== 'all') {
-        userList = userList.filter(u => u.status.toLowerCase() === statusFilter.toLowerCase())
+        userList = userList.filter(u => u.status && u.status.toLowerCase() === statusFilter.toLowerCase())
     }
 
     const totalSeats = org?.maxSeats || 15
-    const usedSeats = userList.filter(u => u.status !== 'suspended').length
+    const usedSeats = userList.filter(u => u.status !== 'suspended' && u.status !== 'removed').length
     const planTierName = org?.planTier ? org.planTier.toUpperCase() : 'FREE'
     const tier = `${planTierName} Tier (${totalSeats} Seats)`
 
@@ -211,11 +254,40 @@ export async function getOrganizationUsers(orgId?: string, search = '', roleFilt
 }
 
 export async function updateUserRole(adminUserId: string, targetUserId: string, role: string, orgId?: string) {
-    if (orgId && Types.ObjectId.isValid(orgId)) {
-        await Organization.updateOne(
-            { _id: new Types.ObjectId(orgId), 'members.userId': new Types.ObjectId(targetUserId) },
-            { $set: { 'members.$.role': role } }
-        )
+    if (!targetUserId) throw new Error('Target user ID is required')
+
+    const org = await resolveTargetOrganization(orgId, targetUserId, adminUserId)
+    if (org) {
+        const targetUserIdStr = targetUserId.toString()
+        let memberFound = false
+
+        if (Array.isArray(org.members)) {
+            for (let i = 0; i < org.members.length; i++) {
+                const m = org.members[i]
+                const mId = m.userId?._id ? m.userId._id.toString() : m.userId?.toString()
+                if (mId === targetUserIdStr) {
+                    m.role = role as any
+                    memberFound = true
+                    break
+                }
+            }
+        }
+
+        if (!memberFound) {
+            if (!Array.isArray(org.members)) {
+                org.members = []
+            }
+            org.members.push({
+                userId: Types.ObjectId.isValid(targetUserId) ? new Types.ObjectId(targetUserId) : targetUserId,
+                role: role as any,
+                joinedAt: new Date(),
+                invitedBy: Types.ObjectId.isValid(adminUserId) ? new Types.ObjectId(adminUserId) : adminUserId,
+                status: 'active'
+            })
+        }
+
+        org.markModified('members')
+        await org.save()
     }
 
     const targetUser = await User.findById(targetUserId)
@@ -229,27 +301,61 @@ export async function updateUserRole(adminUserId: string, targetUserId: string, 
 }
 
 export async function updateUserStatus(adminUserId: string, targetUserId: string, status: string, orgId?: string) {
-    if (orgId && Types.ObjectId.isValid(orgId)) {
-        const updateFields: any = { 'members.$.status': status }
-        if (status === 'active') {
-            updateFields['members.$.joinedAt'] = new Date()
+    if (!targetUserId) throw new Error('Target user ID is required')
+
+    const org = await resolveTargetOrganization(orgId, targetUserId, adminUserId)
+    if (org) {
+        const targetUserIdStr = targetUserId.toString()
+        let memberFound = false
+
+        if (Array.isArray(org.members)) {
+            for (let i = 0; i < org.members.length; i++) {
+                const m = org.members[i]
+                const mId = m.userId?._id ? m.userId._id.toString() : m.userId?.toString()
+                if (mId === targetUserIdStr) {
+                    m.status = status as any
+                    if (status === 'active' && !m.joinedAt) {
+                        m.joinedAt = new Date()
+                    }
+                    memberFound = true
+                    break
+                }
+            }
         }
-        await Organization.updateOne(
-            { _id: new Types.ObjectId(orgId), 'members.userId': new Types.ObjectId(targetUserId) },
-            { $set: updateFields }
-        )
+
+        if (!memberFound) {
+            if (!Array.isArray(org.members)) {
+                org.members = []
+            }
+            org.members.push({
+                userId: Types.ObjectId.isValid(targetUserId) ? new Types.ObjectId(targetUserId) : targetUserId,
+                role: 'member',
+                joinedAt: new Date(),
+                invitedBy: Types.ObjectId.isValid(adminUserId) ? new Types.ObjectId(adminUserId) : adminUserId,
+                status: status as any
+            })
+        }
+
+        org.markModified('members')
+        await org.save()
     }
 
     const targetUser = await User.findById(targetUserId)
-    if (targetUser && status === 'active') {
-        targetUser.emailVerified = true
-        await targetUser.save()
+    if (targetUser) {
+        if (status === 'active') {
+            targetUser.emailVerified = true
+            await targetUser.save()
+        } else if (status === 'suspended') {
+            // Revoke active sessions immediately so suspended user is logged out
+            targetUser.tokenVersion = (targetUser.tokenVersion || 0) + 1
+            await targetUser.save()
+        }
     }
 
     await logActivity(
         adminUserId,
-        status === 'active' ? 'USER_APPROVED' : 'STATUS_CHANGE',
-        `${status === 'active' ? 'Approved and activated' : 'Changed account status for'} user ${targetUser?.fullName || targetUserId} (${targetUser?.email || ''}) to ${status.toUpperCase()}`
+        status === 'active' ? 'USER_APPROVED' : (status === 'suspended' ? 'USER_SUSPENDED' : 'STATUS_CHANGE'),
+        `${status === 'active' ? 'Approved and activated' : (status === 'suspended' ? 'Suspended account for' : 'Changed account status for')} user ${targetUser?.fullName || targetUserId} (${targetUser?.email || ''}) to ${status.toUpperCase()}`
     )
 
     return { success: true, message: `Account status set to ${status}` }
@@ -290,21 +396,32 @@ export async function inviteUserToOrg(adminUserId: string, email: string, fullNa
         })
     }
 
-    if (orgId && Types.ObjectId.isValid(orgId)) {
-        await Organization.updateOne(
-            { _id: new Types.ObjectId(orgId) },
-            {
-                $push: {
-                    members: {
-                        userId: targetUser._id,
-                        role: role || 'member',
-                        joinedAt: new Date(),
-                        invitedBy: new Types.ObjectId(adminUserId),
-                        status: 'active'
-                    }
-                }
+    const org = await resolveTargetOrganization(orgId, undefined, adminUserId)
+    if (org) {
+        const targetUserIdStr = targetUser._id.toString()
+        const existingMember = (org.members || []).find((m: any) => {
+            const mId = m.userId?._id ? m.userId._id.toString() : m.userId?.toString()
+            return mId === targetUserIdStr
+        })
+
+        if (existingMember) {
+            existingMember.role = (role || 'member') as any
+            existingMember.status = 'active'
+        } else {
+            if (!Array.isArray(org.members)) {
+                org.members = []
             }
-        )
+            org.members.push({
+                userId: targetUser._id,
+                role: (role || 'member') as any,
+                joinedAt: new Date(),
+                invitedBy: Types.ObjectId.isValid(adminUserId) ? new Types.ObjectId(adminUserId) : adminUserId,
+                status: 'active'
+            })
+        }
+
+        org.markModified('members')
+        await org.save()
     }
 
     await logActivity(

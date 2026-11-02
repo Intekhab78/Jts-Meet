@@ -142,7 +142,8 @@ export const adminController = {
 
         try {
             const userId = String(req.params.userId)
-            const { role, orgId } = req.body
+            const orgId = req.body.orgId || (req.query.orgId as string) || (req.headers['x-organization-id'] as string)
+            const { role } = req.body
             if (!role) return sendError(res, 400, 'Role is required')
 
             const result = await updateUserRole(req.userId, userId, role, orgId)
@@ -157,7 +158,8 @@ export const adminController = {
 
         try {
             const userId = String(req.params.userId)
-            const { status, orgId } = req.body
+            const orgId = req.body.orgId || (req.query.orgId as string) || (req.headers['x-organization-id'] as string)
+            const { status } = req.body
             if (!status) return sendError(res, 400, 'Status is required')
 
             const result = await updateUserStatus(req.userId, userId, status, orgId)
@@ -183,7 +185,8 @@ export const adminController = {
         if (!req.userId) return sendError(res, 401, 'Unauthorized access')
 
         try {
-            const { email, fullName, role, orgId } = req.body
+            const orgId = req.body.orgId || (req.query.orgId as string) || (req.headers['x-organization-id'] as string)
+            const { email, fullName, role } = req.body
             if (!email) return sendError(res, 400, 'Email address is required')
 
             const result = await inviteUserToOrg(req.userId, email, fullName, role || 'member', orgId)
