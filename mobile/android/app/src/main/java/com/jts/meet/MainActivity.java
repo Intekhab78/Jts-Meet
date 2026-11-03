@@ -37,6 +37,10 @@ public class MainActivity extends BridgeActivity {
     private boolean isCapturingScreen = false;
     private static String pendingCallDataJson = null;
     private static MainActivity activeInstance = null;
+    private android.widget.Toast currentToast = null;
+    private long lastToastTime = 0;
+    private String lastToastMessage = "";
+    private android.os.PowerManager.WakeLock proximityWakeLock = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -145,7 +149,21 @@ public class MainActivity extends BridgeActivity {
 
                 @android.webkit.JavascriptInterface
                 public void showToast(String message) {
-                    runOnUiThread(() -> android.widget.Toast.makeText(MainActivity.this, message, android.widget.Toast.LENGTH_SHORT).show());
+                    if (message == null || message.trim().isEmpty()) return;
+                    runOnUiThread(() -> {
+                        long now = System.currentTimeMillis();
+                        if (message.equals(lastToastMessage) && (now - lastToastTime) < 2000) {
+                            return;
+                        }
+                        lastToastMessage = message;
+                        lastToastTime = now;
+
+                        if (currentToast != null) {
+                            currentToast.cancel();
+                        }
+                        currentToast = android.widget.Toast.makeText(MainActivity.this, message, android.widget.Toast.LENGTH_SHORT);
+                        currentToast.show();
+                    });
                 }
 
                 @android.webkit.JavascriptInterface
@@ -167,6 +185,54 @@ public class MainActivity extends BridgeActivity {
                             nm.cancel(2026);
                         }
                     } catch (Exception ignored) {}
+                }
+
+                @android.webkit.JavascriptInterface
+                public void setProximitySensorEnabled(boolean enable) {
+                    MainActivity.this.setProximitySensorEnabled(enable);
+                }
+
+                @android.webkit.JavascriptInterface
+                public void startOngoingCallNotification(String meetingId, String title) {
+                    runOnUiThread(() -> {
+                        try {
+                            Intent serviceIntent = new Intent(MainActivity.this, OngoingCallService.class);
+                            serviceIntent.setAction(OngoingCallService.ACTION_START);
+                            serviceIntent.putExtra(OngoingCallService.EXTRA_MEETING_ID, meetingId != null ? meetingId : "");
+                            serviceIntent.putExtra(OngoingCallService.EXTRA_TITLE, title != null ? title : "JTS Meet - Active Meeting");
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(serviceIntent);
+                            } else {
+                                startService(serviceIntent);
+                            }
+                        } catch (Throwable ignored) {}
+                    });
+                }
+
+                @android.webkit.JavascriptInterface
+                public void stopOngoingCallNotification() {
+                    runOnUiThread(() -> {
+                        try {
+                            Intent serviceIntent = new Intent(MainActivity.this, OngoingCallService.class);
+                            serviceIntent.setAction(OngoingCallService.ACTION_STOP);
+                            startService(serviceIntent);
+                        } catch (Throwable ignored) {}
+                    });
+                }
+
+                @android.webkit.JavascriptInterface
+                public void enableAutoPip(boolean enable) {
+                    runOnUiThread(() -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            try {
+                                PictureInPictureParams params = new PictureInPictureParams.Builder()
+                                        .setAspectRatio(new Rational(9, 16))
+                                        .setAutoEnterEnabled(enable)
+                                        .build();
+                                setPictureInPictureParams(params);
+                            } catch (Throwable ignored) {}
+                        }
+                    });
                 }
             }, "MobileAppBridge");
         }
@@ -367,6 +433,12 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
+        try {
+            setProximitySensorEnabled(false);
+            Intent stopService = new Intent(this, OngoingCallService.class);
+            stopService.setAction(OngoingCallService.ACTION_STOP);
+            startService(stopService);
+        } catch (Throwable ignored) {}
         if (activeInstance == this) {
             activeInstance = null;
         }
@@ -547,13 +619,19 @@ public class MainActivity extends BridgeActivity {
     public static void notifyCallDeclined(String meetingId, String callerId) {
         pendingCallDataJson = null;
         if (activeInstance != null) {
+            if (activeInstance.getIntent() != null) {
+                activeInstance.resetIntent(activeInstance.getIntent());
+            }
             activeInstance.runOnUiThread(() -> {
                 if (activeInstance.bridge != null && activeInstance.bridge.getWebView() != null) {
                     try {
-                        activeInstance.bridge.getWebView().evaluateJavascript(
-                            "try { window.dispatchEvent(new CustomEvent('jts:call-declined-native', { detail: { meetingId: '" + (meetingId != null ? meetingId : "") + "' } })); } catch(e){}",
-                            null
-                        );
+                        String mId = meetingId != null ? meetingId : "";
+                        String js = "try { " +
+                                    "  localStorage.removeItem('jts_pending_notification'); " +
+                                    (mId.isEmpty() ? "" : "  localStorage.setItem('jts_declined_call_" + mId + "', 'true'); ") +
+                                    "  window.dispatchEvent(new CustomEvent('jts:call-declined-native', { detail: { meetingId: '" + mId + "' } })); " +
+                                    "} catch(e) {}";
+                        activeInstance.bridge.getWebView().evaluateJavascript(js, null);
                     } catch (Exception ignored) {}
                 }
             });
@@ -572,6 +650,45 @@ public class MainActivity extends BridgeActivity {
             intent.removeExtra("autoAccept");
             intent.removeExtra("callTimestamp");
         } catch (Exception ignored) {}
+    }
+
+    public void setProximitySensorEnabled(boolean enable) {
+        runOnUiThread(() -> {
+            try {
+                android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm == null) return;
+                if (enable) {
+                    if (proximityWakeLock == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        if (pm.isWakeLockLevelSupported(android.os.PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
+                            proximityWakeLock = pm.newWakeLock(android.os.PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "JTSMeet:ProximityLock");
+                            proximityWakeLock.acquire();
+                        }
+                    }
+                } else {
+                    if (proximityWakeLock != null && proximityWakeLock.isHeld()) {
+                        proximityWakeLock.release();
+                        proximityWakeLock = null;
+                    }
+                }
+            } catch (Throwable ignored) {}
+        });
+    }
+
+    public static MainActivity getActiveInstance() {
+        return activeInstance;
+    }
+
+    public static void notifyNativeHangup(String meetingId) {
+        if (activeInstance != null) {
+            activeInstance.runOnUiThread(() -> {
+                if (activeInstance.bridge != null && activeInstance.bridge.getWebView() != null) {
+                    try {
+                        String js = "try { window.dispatchEvent(new CustomEvent('jts:native-hangup', { detail: { meetingId: '" + (meetingId != null ? meetingId : "") + "' } })); } catch(e) {}";
+                        activeInstance.bridge.getWebView().evaluateJavascript(js, null);
+                    } catch (Exception ignored) {}
+                }
+            });
+        }
     }
 
     @Override

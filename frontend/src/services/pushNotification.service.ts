@@ -171,7 +171,7 @@ class PushNotificationService {
                     callerName: call.callerName,
                     callerAvatar: call.callerAvatar,
                     callType: call.callType || 'video',
-                    url: `/?callMeetingId=${encodeURIComponent(call.meetingId)}&callerId=${encodeURIComponent(call.callerId || '')}&callerName=${encodeURIComponent(call.callerName || '')}&callType=${encodeURIComponent(call.callType || 'video')}&autoAccept=true`
+                    url: `${window.location.origin}/?callMeetingId=${encodeURIComponent(call.meetingId)}&callerId=${encodeURIComponent(call.callerId || '')}&callerName=${encodeURIComponent(call.callerName || '')}&callType=${encodeURIComponent(call.callType || 'video')}&autoAccept=true`
                 },
                 actions: [
                     { action: 'accept', title: '📞 Accept' },

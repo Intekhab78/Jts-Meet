@@ -4,6 +4,8 @@ import { sendError, sendSuccess } from '../../utils/responseHelper'
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { getIO } from '../../socket/index'
 import { initiateDirectCall, cancelOrEndDirectCall } from '../../socket/directCall'
+import { Meeting } from '../meeting/meeting.model'
+import { SocketEvents } from '../../socket/events'
 
 export const notificationController = {
     list: async (req: AuthRequest, res: Response) => {
@@ -109,23 +111,47 @@ export const notificationController = {
 
     rejectCallFromPush: async (req: AuthRequest, res: Response) => {
         const { meetingId, callerId, reason } = req.body
-        const userId = req.userId
 
         try {
-            const globalIo = (global as any).io
-            if (globalIo) {
-                const rejectData = {
-                    calleeId: userId,
-                    meetingId,
-                    reason: reason || 'declined_from_push'
-                }
-                if (callerId) {
-                    globalIo.to(`user:${callerId}`).emit('call:rejected', rejectData)
+            const io = req.app.get('io') || getIO()
+            let resolvedCallerId = callerId
+
+            // If callerId not provided in body, lookup meeting host in DB
+            if (!resolvedCallerId && meetingId) {
+                try {
+                    const meetingDoc = await Meeting.findOne({ meetingId }).select('host participants').lean().exec()
+                    if (meetingDoc?.host) {
+                        resolvedCallerId = String(meetingDoc.host)
+                    }
+                } catch (_) {}
+            }
+
+            const rejectData = {
+                calleeId: req.userId || 'callee',
+                callerId: resolvedCallerId,
+                meetingId,
+                reason: reason || 'declined_from_notification'
+            }
+
+            if (io) {
+                if (resolvedCallerId) {
+                    io.to(`user:${resolvedCallerId}`).emit(SocketEvents.CALL_REJECTED, rejectData)
+                    io.to(`user:${resolvedCallerId}`).emit(SocketEvents.CALL_CANCELLED, rejectData)
+                    io.to(`user:${resolvedCallerId}`).emit('call:ended', rejectData)
                 }
                 if (meetingId) {
-                    globalIo.to(`meeting:${meetingId}`).emit('call:rejected', rejectData)
+                    io.to(`meeting:${meetingId}`).emit(SocketEvents.CALL_REJECTED, rejectData)
+                    io.to(`meeting:${meetingId}`).emit(SocketEvents.CALL_CANCELLED, rejectData)
+                    io.to(`meeting:${meetingId}`).emit('call:ended', rejectData)
                 }
+
+                // Stop active ringing timeouts and teardown direct call across backend
+                await cancelOrEndDirectCall(io, resolvedCallerId || 'system', {
+                    meetingId,
+                    targetUserId: resolvedCallerId
+                })
             }
+
             return sendSuccess(res, { rejected: true }, 'Call rejected successfully')
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to process rejection')

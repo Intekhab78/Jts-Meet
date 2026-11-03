@@ -70,9 +70,17 @@ self.addEventListener('notificationclick', (event) => {
     }
 
     // 2. Handle Accept action or notification body click
-    const targetUrl = data.url || (meetingId
+    let rawUrl = data.url || (meetingId
         ? `/?callMeetingId=${encodeURIComponent(meetingId)}&callerId=${encodeURIComponent(data.callerId || '')}&callerName=${encodeURIComponent(data.callerName || '')}&callType=${encodeURIComponent(data.callType || 'video')}&autoAccept=true`
         : '/')
+
+    // Guard: Always route to production web app and never to dead localhost:3000
+    let targetUrl = rawUrl
+    if (targetUrl.includes('localhost:3000') || targetUrl.startsWith('/')) {
+        const prodOrigin = 'https://meet.jtsmiddleeast.com'
+        const path = targetUrl.startsWith('/') ? targetUrl : targetUrl.replace(/^http:\/\/localhost:3000/, '')
+        targetUrl = `${prodOrigin}${path}`
+    }
 
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {

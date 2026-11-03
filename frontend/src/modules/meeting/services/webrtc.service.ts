@@ -5,6 +5,7 @@ export interface PeerHandlers {
     onICECandidate: (candidate: RTCIceCandidateInit) => void
     onIceStateChange?: (state: RTCIceConnectionState) => void
     onConnectionStateChange?: (state: RTCPeerConnectionState) => void
+    onSignalingStateChange?: (state: RTCSignalingState) => void
 }
 
 export const peerRemoteStreams = new Map<string, MediaStream>()
@@ -129,14 +130,10 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
     pc.oniceconnectionstatechange = () => {
         console.log(`[WebRTC] ICE connection state for user ${userId}:`, pc.iceConnectionState)
         handlers.onIceStateChange?.(pc.iceConnectionState)
-        if (pc.iceConnectionState === 'failed') {
-            try {
-                console.log(`[WebRTC] ICE failed for user ${userId}, attempting restartIce()...`)
-                pc.restartIce()
-            } catch (err) {
-                console.warn('[WebRTC] restartIce error:', err)
-            }
-        }
+    }
+    pc.onsignalingstatechange = () => {
+        console.log(`[WebRTC] Signaling state for user ${userId}:`, pc.signalingState)
+        handlers.onSignalingStateChange?.(pc.signalingState)
     }
     pc.onconnectionstatechange = () => {
         console.log(`[WebRTC] Connection state for user ${userId}:`, pc.connectionState)

@@ -54,13 +54,17 @@ export class NotificationService {
             throw new Error('Invalid push subscription payload')
         }
 
+        // Reassign endpoint to current user; purge any previous user associations on this physical browser
+        await PushSubscription.deleteMany({
+            endpoint: subscription.endpoint,
+            userId: { $ne: new Types.ObjectId(userId) }
+        }).exec()
+
         return PushSubscription.findOneAndUpdate(
-            {
-                userId: new Types.ObjectId(userId),
-                endpoint: subscription.endpoint
-            },
+            { endpoint: subscription.endpoint },
             {
                 $set: {
+                    userId: new Types.ObjectId(userId),
                     keys: subscription.keys,
                     userAgent: userAgent || ''
                 }
@@ -108,9 +112,32 @@ export class NotificationService {
     }): Promise<{ dispatched: number }> {
         if (!targetUserId || !callData?.meetingId) return { dispatched: 0 }
 
+        // Hard Guard: Never dispatch incoming call push to the caller themselves!
+        if (callData.callerId && String(targetUserId) === String(callData.callerId)) {
+            console.log(`[Push] Suppressed self-push: callerId (${callData.callerId}) matches targetUserId`)
+            return { dispatched: 0 }
+        }
+
         let successCount = 0
 
         try {
+            // Retrieve caller's registered device tokens/endpoints to avoid notifying any device where caller is logged in
+            const callerFcmTokens = new Set<string>()
+            const callerPushEndpoints = new Set<string>()
+            if (callData.callerId) {
+                try {
+                    const cUserQuery = Types.ObjectId.isValid(callData.callerId)
+                        ? { $or: [{ userId: new Types.ObjectId(callData.callerId) }, { userId: callData.callerId }] }
+                        : { userId: callData.callerId }
+                    const [cDevices, cSubs] = await Promise.all([
+                        FcmDevice.find(cUserQuery).select('fcmToken').lean().exec(),
+                        PushSubscription.find(cUserQuery).select('endpoint').lean().exec()
+                    ])
+                    cDevices?.forEach((d) => callerFcmTokens.add(d.fcmToken))
+                    cSubs?.forEach((s) => callerPushEndpoints.add(s.endpoint))
+                } catch (_) {}
+            }
+
             // ── 1. Native Android FCM High-Priority Push (Wakes up phone & Rings like WhatsApp) ──
             const userQuery = Types.ObjectId.isValid(targetUserId)
                 ? { $or: [{ userId: new Types.ObjectId(targetUserId) }, { userId: targetUserId }] }
@@ -119,10 +146,14 @@ export class NotificationService {
 
             console.log(`[FCM] Looking up devices for user ${targetUserId}: found ${fcmDevices?.length || 0} registered devices`)
 
-            if (fcmDevices && fcmDevices.length > 0) {
+            // Filter out any FCM token currently belonging to the caller
+            const targetTokens = fcmDevices
+                ? fcmDevices.map((d) => d.fcmToken).filter((t) => t && !callerFcmTokens.has(t))
+                : []
+
+            if (targetTokens.length > 0) {
                 const messaging = getFirebaseMessaging()
                 if (messaging) {
-                    const tokens = fcmDevices.map((d) => d.fcmToken)
                     const isAudio = callData.callType === 'audio'
 
                     try {
@@ -133,7 +164,7 @@ export class NotificationService {
                         // This guarantees Android OS always invokes CallNotificationService.onMessageReceived()
                         // even when the app is completely closed or phone is locked, allowing FullScreenIntent to wake up screen.
                         const fcmResponse = await messaging.sendEachForMulticast({
-                            tokens,
+                            tokens: targetTokens,
                             data: {
                                 type: 'incoming_call',
                                 meetingId: String(callData.meetingId),
@@ -150,7 +181,7 @@ export class NotificationService {
                                 ttl: 60, // 60 seconds TTL (seconds in FCM Admin SDK)
                             }
                         })
-                        console.log(`[FCM] Dispatched incoming call push to ${targetUserId}: ${fcmResponse.successCount}/${tokens.length} delivered`)
+                        console.log(`[FCM] Dispatched incoming call push to ${targetUserId}: ${fcmResponse.successCount}/${targetTokens.length} delivered`)
                         successCount += fcmResponse.successCount
 
                         // Purge invalid tokens
@@ -158,7 +189,7 @@ export class NotificationService {
                             const invalidTokens: string[] = []
                             fcmResponse.responses.forEach((resp: any, idx: number) => {
                                 if (!resp.success && resp.error?.code === 'messaging/registration-token-not-registered') {
-                                    invalidTokens.push(tokens[idx])
+                                    invalidTokens.push(targetTokens[idx])
                                 }
                             })
                             if (invalidTokens.length > 0) {
@@ -176,8 +207,19 @@ export class NotificationService {
                 userId: new Types.ObjectId(targetUserId)
             }).exec()
 
-            if (subscriptions && subscriptions.length > 0) {
+            // Filter out any browser endpoint currently belonging to the caller
+            const validSubscriptions = subscriptions
+                ? subscriptions.filter((sub) => sub.endpoint && !callerPushEndpoints.has(sub.endpoint))
+                : []
+
+            if (validSubscriptions.length > 0) {
                 const isAudio = callData.callType === 'audio'
+                const frontendBaseUrl = (process.env.FRONTEND_URL && !process.env.FRONTEND_URL.includes('localhost'))
+                    ? process.env.FRONTEND_URL
+                    : 'https://meet.jtsmiddleeast.com'
+
+                const callDirectUrl = `${frontendBaseUrl}/?callMeetingId=${encodeURIComponent(callData.meetingId)}&callerId=${encodeURIComponent(callData.callerId || '')}&callerName=${encodeURIComponent(callData.callerName || '')}&callType=${encodeURIComponent(callData.callType || 'video')}&autoAccept=true`
+
                 const payload = JSON.stringify({
                     type: 'call_incoming',
                     title: isAudio ? `📞 Incoming Audio Call` : `📹 Incoming Video Call`,
@@ -190,14 +232,14 @@ export class NotificationService {
                         callerAvatar: callData.callerAvatar,
                         callerId: callData.callerId,
                         callType: callData.callType || 'video',
-                        url: `/?callMeetingId=${encodeURIComponent(callData.meetingId)}&callerId=${encodeURIComponent(callData.callerId || '')}&callerName=${encodeURIComponent(callData.callerName || '')}&callType=${encodeURIComponent(callData.callType || 'video')}&autoAccept=true`
+                        url: callDirectUrl
                     }
                 })
 
                 const staleEndpoints: string[] = []
 
                 await Promise.all(
-                    subscriptions.map(async (sub) => {
+                    validSubscriptions.map(async (sub) => {
                         try {
                             await webpush.sendNotification(
                                 {

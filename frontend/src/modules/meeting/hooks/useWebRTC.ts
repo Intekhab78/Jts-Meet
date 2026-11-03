@@ -155,6 +155,8 @@ export function useWebRTC(
     const reconnectFailsafeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const makingOfferRef = useRef<Record<string, boolean>>({})
     const ignoreOfferRef = useRef<Record<string, boolean>>({})
+    const queuedRenegotiationRef = useRef<Record<string, boolean>>({})
+    const isRenegotiatingRef = useRef<Record<string, boolean>>({})
     const screenAudioMixerRef = useRef<{
         audioCtx: AudioContext
         mixedTrack: MediaStreamTrack
@@ -231,6 +233,8 @@ export function useWebRTC(
             delete pendingCandidatesRef.current[pId]
             delete makingOfferRef.current[pId]
             delete ignoreOfferRef.current[pId]
+            delete queuedRenegotiationRef.current[pId]
+            delete isRenegotiatingRef.current[pId]
             peerRemoteStreams.delete(pId)
         })
 
@@ -383,13 +387,21 @@ export function useWebRTC(
         const actualPeerId = Object.keys(peerConnectionsRef.current).find(id => id.toLowerCase() === targetUserId.toLowerCase()) || targetUserId
         const pc = peerConnectionsRef.current[actualPeerId]
         const activeMeetingId = meetingId || sessionStorage.getItem('jts_active_meeting_id') || ''
-        if (!pc || !socket || !activeMeetingId) return
-        if (pc.signalingState !== 'stable' || makingOfferRef.current[actualPeerId]) {
-            console.log(`[WebRTC] Peer ${actualPeerId} in state ${pc.signalingState}, deferring renegotiation offer`)
+        if (!pc || !socket || !activeMeetingId || pc.signalingState === 'closed') return
+
+        // Perfect Negotiation Queue:
+        // If the connection is currently busy (in-flight offer or renegotiating or non-stable),
+        // mark this peer as needing renegotiation. As soon as signaling reaches 'stable',
+        // checkQueuedRenegotiation will immediately execute the queued offer!
+        if (pc.signalingState !== 'stable' || makingOfferRef.current[actualPeerId] || isRenegotiatingRef.current[actualPeerId]) {
+            console.log(`[WebRTC] Peer ${actualPeerId} busy (state=${pc.signalingState}, makingOffer=${makingOfferRef.current[actualPeerId]}), queued deferred renegotiation`)
+            queuedRenegotiationRef.current[actualPeerId] = true
             return
         }
+
         try {
             console.log(`[WebRTC] Initiating renegotiation for user ${actualPeerId}`)
+            isRenegotiatingRef.current[actualPeerId] = true
             makingOfferRef.current[actualPeerId] = true
             const offer = await pc.createOffer({ voiceActivityDetection: true } as any)
             const activePeers = Object.keys(peerConnectionsRef.current).length + 1
@@ -408,8 +420,22 @@ export function useWebRTC(
             console.warn('[WebRTC] Renegotiation offer failed for user', actualPeerId, err)
         } finally {
             makingOfferRef.current[actualPeerId] = false
+            isRenegotiatingRef.current[actualPeerId] = false
         }
     }, [meetingId, socket])
+
+    const checkQueuedRenegotiation = useCallback((peerId: string) => {
+        const actualPeerId = Object.keys(peerConnectionsRef.current).find(id => id.toLowerCase() === peerId.toLowerCase()) || peerId
+        const pc = peerConnectionsRef.current[actualPeerId]
+        if (!pc || pc.signalingState !== 'stable') return
+        if (queuedRenegotiationRef.current[actualPeerId]) {
+            console.log(`[WebRTC] Draining queued renegotiation for peer ${actualPeerId}`)
+            queuedRenegotiationRef.current[actualPeerId] = false
+            setTimeout(() => {
+                triggerRenegotiation(actualPeerId)
+            }, 60)
+        }
+    }, [triggerRenegotiation])
 
     const handlePeerIceStateChange = useCallback((userId: string, state: RTCIceConnectionState) => {
         setPeerIceStates((prev) => ({
@@ -422,17 +448,25 @@ export function useWebRTC(
             if (!iceRestartTimersRef.current[userId]) {
                 const localId = getLocalUserId()
                 const isPolite = String(localId || socket?.id) < String(userId)
-                // Deterministic jittered backoff prevents simultaneous ICE restart offer collision glare:
-                // Polite peer initiates at 1500ms, impolite waits until 4500ms
-                const delay = isPolite ? 1500 : 4500
+                // RFC compliant jittered backoff: Polite peer waits 5000ms, impolite waits 7500ms
+                // This gives WebRTC ICE agent ample time to self-heal transient Wi-Fi/4G packet drops
+                // WITHOUT tearing down the active call or getting stuck in loop "Reconnecting..."
+                const delay = isPolite ? 5000 : 7500
                 iceRestartTimersRef.current[userId] = setTimeout(() => {
-                    triggerIceRestart(userId)
+                    delete iceRestartTimersRef.current[userId]
+                    const actualPeerId = Object.keys(peerConnectionsRef.current).find(id => id.toLowerCase() === userId.toLowerCase()) || userId
+                    const pc = peerConnectionsRef.current[actualPeerId]
+                    if (pc && (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
+                        console.log(`[WebRTC] Peer ${userId} still disconnected after ${delay}ms grace period. Triggering ICE restart...`)
+                        triggerIceRestart(userId)
+                    }
                 }, delay)
             }
             evaluateMeshHealth()
         } else if (state === 'failed') {
             if (!iceRestartTimersRef.current[userId]) {
                 iceRestartTimersRef.current[userId] = setTimeout(() => {
+                    delete iceRestartTimersRef.current[userId]
                     const actualPeerId = Object.keys(peerConnectionsRef.current).find(id => id.toLowerCase() === userId.toLowerCase()) || userId
                     const pc = peerConnectionsRef.current[actualPeerId]
                     if (pc && (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected')) {
@@ -814,6 +848,11 @@ export function useWebRTC(
                     },
                     onIceStateChange: (state) => {
                         handlePeerIceStateChange(payload.userId, state)
+                    },
+                    onSignalingStateChange: (state) => {
+                        if (state === 'stable') {
+                            checkQueuedRenegotiation(payload.userId)
+                        }
                     }
                 },
                 currentPeerCount
@@ -910,6 +949,11 @@ export function useWebRTC(
                         },
                         onIceStateChange: (state) => {
                             handlePeerIceStateChange(payload.fromUserId, state)
+                        },
+                        onSignalingStateChange: (state) => {
+                            if (state === 'stable') {
+                                checkQueuedRenegotiation(payload.fromUserId)
+                            }
                         }
                     },
                     currentPeerCount
@@ -934,6 +978,9 @@ export function useWebRTC(
                 console.log(`[WebRTC Perfect Negotiation] Glare collision detected with ${payload.fromUserId}: polite peer rolling back local offer`)
                 try {
                     await pc.setLocalDescription({ type: 'rollback' })
+                    // Local changes were rolled back to yield to the incoming offer.
+                    // Mark queued renegotiation so our tracks (camera/screen) are re-offered once answer completes!
+                    queuedRenegotiationRef.current[payload.fromUserId] = true
                 } catch (rollbackErr) {
                     console.warn(`[WebRTC] Rollback error for user ${payload.fromUserId}:`, rollbackErr)
                 }
@@ -975,6 +1022,9 @@ export function useWebRTC(
                     isVideoOff: isLocalVideoOff,
                     isMuted: isLocalAudioMuted
                 })
+
+                // If local peer had queued renegotiation or rolled back, execute now that exchange completed
+                checkQueuedRenegotiation(payload.fromUserId)
             } catch (err) {
                 console.warn('Error handling WebRTC offer:', err)
             }
@@ -1003,6 +1053,7 @@ export function useWebRTC(
                 if (pc.signalingState === 'have-local-offer') {
                     await pc.setRemoteDescription(new RTCSessionDescription(payload.answer))
                     await processPendingCandidates(actualPeerId, pc)
+                    checkQueuedRenegotiation(actualPeerId)
                 }
             } catch (err) {
                 console.warn('Error handling WebRTC answer:', err)
@@ -1295,7 +1346,7 @@ export function useWebRTC(
             socket.off(SocketEvents.SCREEN_STOP, handleScreenStop)
             socket.off(SocketEvents.SCREEN_CHANGED, handleScreenChanged)
         }
-    }, [socket, addParticipant, removeParticipant, cleanupPeer, triggerIceRestart, triggerRenegotiation, rebalanceMeshBitrate, handlePeerIceStateChange])
+    }, [socket, addParticipant, removeParticipant, cleanupPeer, triggerIceRestart, triggerRenegotiation, checkQueuedRenegotiation, rebalanceMeshBitrate, handlePeerIceStateChange])
 
     // Periodic WebRTC Transport & Stream Health Watchdog:
     // Only intervenes if ICE transport has actually failed or dropped without recovery.

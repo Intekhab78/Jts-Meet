@@ -111,9 +111,10 @@ export const PersistentAudioBridge: React.FC<PersistentAudioBridgeProps> = ({
                         seenStreamIds.add(rStream.id)
 
                         const isPeerBackstage = backstageUserIds.includes(peerId) || backstageUserIds.includes(peerId.toLowerCase())
-                        const shouldMuteAudio = remoteMuteStates[peerId] === true || 
-                                                remoteMuteStates[peerId.toLowerCase()] === true || 
-                                                (isPeerBackstage && !canManageParticipants && !isLocalHost)
+                        // Only mute if the user is in Backstage (Virtual Green Room) and local user cannot hear backstage.
+                        // NEVER physically mute the audio tag when a participant mutes their mic - WebRTC natively stops audio packets.
+                        // Physically muting the tag causes silent audio drops and browser autoplay blockages upon unmuting!
+                        const shouldMuteAudio = (isPeerBackstage && !canManageParticipants && !isLocalHost)
                         return (
                             <PersistentAudioTile
                                 key={`global-audio-${peerId}`}

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { RemoteParticipant } from './types';
 import { MobileAvatar } from '../common/MobileAvatar';
 
@@ -34,6 +34,89 @@ export const ScreenShareStage: React.FC<ScreenShareStageProps> = ({
   participants,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // ── Pinch to Zoom & Pan State for Mobile Screen Share ──
+  const [zoomScale, setZoomScale] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isZooming, setIsZooming] = useState(false);
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const touchStartDistRef = useRef<number | null>(null);
+  const touchStartScaleRef = useRef<number>(1);
+  const lastTouchPosRef = useRef<{ x: number; y: number } | null>(null);
+  const lastTapTimeRef = useRef<number>(0);
+
+  const resetZoom = useCallback(() => {
+    setZoomScale(1);
+    setPanOffset({ x: 0, y: 0 });
+    setIsZooming(false);
+  }, []);
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      touchStartDistRef.current = dist;
+      touchStartScaleRef.current = zoomScale;
+      setIsZooming(true);
+    } else if (e.touches.length === 1) {
+      lastTouchPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      const now = Date.now();
+      if (now - lastTapTimeRef.current < 300) {
+        if (zoomScale > 1.2) {
+          resetZoom();
+        } else {
+          setZoomScale(2.2);
+          setPanOffset({ x: 0, y: 0 });
+        }
+      }
+      lastTapTimeRef.current = now;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2 && touchStartDistRef.current) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const factor = dist / touchStartDistRef.current;
+      const newScale = Math.min(Math.max(touchStartScaleRef.current * factor, 1), 4);
+      setZoomScale(newScale);
+      if (newScale <= 1.02) {
+        setPanOffset({ x: 0, y: 0 });
+      }
+    } else if (e.touches.length === 1 && zoomScale > 1.1 && lastTouchPosRef.current) {
+      const dx = e.touches[0].clientX - lastTouchPosRef.current.x;
+      const dy = e.touches[0].clientY - lastTouchPosRef.current.y;
+      lastTouchPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+
+      const cWidth = containerRef.current?.clientWidth || 360;
+      const cHeight = containerRef.current?.clientHeight || 640;
+      const maxPanX = (cWidth * (zoomScale - 1)) / 2;
+      const maxPanY = (cHeight * (zoomScale - 1)) / 2;
+
+      setPanOffset((prev) => ({
+        x: Math.min(Math.max(prev.x + dx, -maxPanX), maxPanX),
+        y: Math.min(Math.max(prev.y + dy, -maxPanY), maxPanY),
+      }));
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length < 2) {
+      touchStartDistRef.current = null;
+      setIsZooming(false);
+    }
+    if (e.touches.length === 0) {
+      lastTouchPosRef.current = null;
+      if (zoomScale <= 1.05) {
+        resetZoom();
+      }
+    }
+  };
 
   useEffect(() => {
     const el = videoRef.current;
@@ -236,16 +319,65 @@ export const ScreenShareStage: React.FC<ScreenShareStageProps> = ({
         )}
       </div>
 
-      {/* Screen Video Element */}
+      {/* Floating Zoom Level & Tap to Reset Badge */}
+      {zoomScale > 1.08 && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            resetZoom();
+          }}
+          style={{
+            position: 'absolute',
+            top: (isLandscape || isFullscreenShare)
+              ? (showControls ? 'calc(var(--safe-top, 28px) + 54px)' : 'calc(var(--safe-top, 28px) + 12px)')
+              : 'calc(var(--safe-top, 28px) + 10px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 45,
+            padding: '6px 14px',
+            borderRadius: 20,
+            background: 'rgba(37, 99, 235, 0.92)',
+            backdropFilter: 'blur(12px)',
+            color: '#ffffff',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            cursor: 'pointer',
+          }}
+        >
+          <span>🔍 {zoomScale.toFixed(1)}x • Tap to Reset</span>
+        </div>
+      )}
+
+      {/* Screen Video Element with Pinch-to-Zoom & Pan Gesture */}
       <div
+        ref={containerRef}
         onClick={() => {
-          if (isLandscape || isFullscreenShare) {
+          if (zoomScale <= 1.08 && (isLandscape || isFullscreenShare)) {
             setShowControls((prev) => !prev);
             resetControlsTimer();
           }
         }}
-        style={{ flex: 1, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000000', cursor: 'pointer' }}
-        onDoubleClick={() => setVideoFit((prev) => (prev === 'contain' ? 'cover' : 'contain'))}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        style={{
+          flex: 1,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#000000',
+          cursor: zoomScale > 1.1 ? 'grab' : 'pointer',
+          overflow: 'hidden',
+          position: 'relative',
+          touchAction: zoomScale > 1.08 ? 'none' : 'auto',
+        }}
       >
         {presenterStream ? (
           <video
@@ -263,7 +395,10 @@ export const ScreenShareStage: React.FC<ScreenShareStageProps> = ({
               width: '100%',
               height: '100%',
               objectFit: videoFit,
-              transition: 'all 0.2s ease',
+              transform: `translate3d(${panOffset.x}px, ${panOffset.y}px, 0) scale(${zoomScale})`,
+              transformOrigin: 'center center',
+              transition: isZooming ? 'none' : 'transform 0.16s cubic-bezier(0.2, 0, 0, 1)',
+              willChange: 'transform',
             }}
           />
         ) : (

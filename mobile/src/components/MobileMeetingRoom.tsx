@@ -15,8 +15,17 @@ function parseJwtUserId(token: string): string {
 }
 
 // ── Web Audio Synthetic Chimes (Zero asset latency, offline support) ──
+const lastChimeTimeMap: Record<string, number> = { join: 0, leave: 0, chat: 0 };
+
 function playToneChime(type: 'join' | 'leave' | 'chat') {
   try {
+    const nowMs = Date.now();
+    // Guard: Prevent rapid or duplicate audio chimes of the same type within 2.5 seconds
+    if (nowMs - (lastChimeTimeMap[type] || 0) < 2500) {
+      return;
+    }
+    lastChimeTimeMap[type] = nowMs;
+
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
@@ -123,10 +132,16 @@ const MobileRemoteAudioStream: React.FC<{ peerId: string; stream: MediaStream }>
     const onTrackChange = () => playAudio();
     stream.addEventListener('addtrack', onTrackChange);
     stream.addEventListener('removetrack', onTrackChange);
+    const aTracks = stream.getAudioTracks();
+    aTracks.forEach((t) => t.addEventListener('unmute', onTrackChange));
+
+    const watchdog = setInterval(playAudio, 2500);
 
     return () => {
+      clearInterval(watchdog);
       stream.removeEventListener('addtrack', onTrackChange);
       stream.removeEventListener('removetrack', onTrackChange);
+      aTracks.forEach((t) => t.removeEventListener('unmute', onTrackChange));
     };
   }, [stream, peerId]);
 
@@ -208,14 +223,51 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [isNativePip, setIsNativePip] = useState(false);
 
+  // ── Floating In-Call Chat Preview Banner ──
+  const [chatPreview, setChatPreview] = useState<{ sender: string; text: string; id: number } | null>(null);
+  const chatPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Data Saver (Audio-Only) Mode ──
+  const [isDataSaverActive, setIsDataSaverActive] = useState(false);
+
+  const toggleDataSaver = () => {
+    setIsDataSaverActive((prev) => {
+      const next = !prev;
+      try {
+        Object.values(remoteStreams).forEach((stream) => {
+          stream.getVideoTracks().forEach((track) => {
+            track.enabled = !next;
+          });
+        });
+      } catch (_) {}
+      try {
+        (window as any).MobileAppBridge?.showToast?.(
+          next ? 'Data Saver ON: Remote video paused to save data' : 'Data Saver OFF: Video restored'
+        );
+      } catch (_) {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (isDataSaverActive) {
+      Object.values(remoteStreams).forEach((stream) => {
+        stream.getVideoTracks().forEach((track) => {
+          track.enabled = false;
+        });
+      });
+    }
+  }, [remoteStreams, isDataSaverActive]);
+
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const activeSheetRef = useRef(activeSheet);
   activeSheetRef.current = activeSheet;
 
-  // Auto-scroll chat to bottom & reset unread counter when chat sheet opens
+  // Auto-scroll chat to bottom, reset unread counter & clear preview when chat sheet opens
   useEffect(() => {
     if (activeSheet === 'chat') {
       setUnreadChatCount(0);
+      setChatPreview(null);
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages, activeSheet]);
@@ -414,6 +466,30 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   const myUserIdRef = useRef<string>('');
   const audioContextRef = useRef<AudioContext | null>(null);
   const analysersRef = useRef<Record<string, { analyser: AnalyserNode; dataArray: Uint8Array<ArrayBuffer> }>>({});
+  const hasEndedRef = useRef(false);
+  const handledLeftUsersRef = useRef<Set<string>>(new Set());
+
+  // Unified single-dispatch call termination (guarantees chime and toast execute strictly once)
+  const terminateDirectCall = (_reason: string = 'ended') => {
+    if (hasEndedRef.current) return;
+    hasEndedRef.current = true;
+
+    playToneChime('leave');
+    try {
+      (window as any).MobileAppBridge?.showToast?.('Call ended');
+    } catch (_) {}
+
+    onLeave();
+  };
+
+  const handleUserEndCall = () => {
+    if (isDirectCall) {
+      terminateDirectCall('user-clicked-end');
+    } else {
+      playToneChime('leave');
+      onLeave();
+    }
+  };
 
   const meetingUrl = `https://meet.jtsmiddleeast.com/meet/${meetingId}`;
 
@@ -449,6 +525,37 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
       delete (window as any).__onNativePiPModeChanged;
     };
   }, []);
+
+  // 1b. Native Android Ongoing Call Notification, Foreground Service & Auto-PiP Lifecycle
+  useEffect(() => {
+    const callTitle = isDirectCall ? (peerName || 'Direct Call') : `Meeting: ${meetingId}`;
+    try {
+      (window as any).MobileAppBridge?.startOngoingCallNotification?.(meetingId, callTitle);
+      (window as any).MobileAppBridge?.enableAutoPip?.(true);
+    } catch (_) {}
+
+    const handleNativeHangup = () => {
+      handleUserEndCall();
+    };
+    window.addEventListener('jts:native-hangup', handleNativeHangup);
+
+    return () => {
+      try {
+        (window as any).MobileAppBridge?.stopOngoingCallNotification?.();
+        (window as any).MobileAppBridge?.enableAutoPip?.(false);
+        (window as any).MobileAppBridge?.setProximitySensorEnabled?.(false);
+      } catch (_) {}
+      window.removeEventListener('jts:native-hangup', handleNativeHangup);
+    };
+  }, [meetingId, isDirectCall, peerName]);
+
+  // 1c. Proximity Sensor on Earpiece routing (Turns screen off when held to ear)
+  useEffect(() => {
+    try {
+      const isEarpiece = audioRoute === 'earpiece';
+      (window as any).MobileAppBridge?.setProximitySensorEnabled?.(isEarpiece);
+    } catch (_) {}
+  }, [audioRoute]);
 
   // 2. Call Timer
   useEffect(() => {
@@ -907,18 +1014,27 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         if (normLeft === myUserIdRef.current.toLowerCase()) {
           return;
         }
+
+        // 1-on-1 Direct Call: peer leaving immediately terminates call once
+        if (isDirectCall) {
+          terminateDirectCall('peer-left');
+          return;
+        }
+
+        // Group Conference: deduplicate so chime & peer cleanup only execute once per user
+        if (handledLeftUsersRef.current.has(normLeft)) {
+          return;
+        }
+        handledLeftUsersRef.current.add(normLeft);
+
         playToneChime('leave');
         cleanupPeer(leftUserId);
-        if (isDirectCall) {
-          try {
-            (window as any).MobileAppBridge?.showToast?.('Call ended');
-          } catch (_) {}
-          onLeave();
-        }
       };
 
       socket.on('webrtc:user-left', (payload: { userId: string }) => {
-        handleUserLeft(payload.userId);
+        if (payload?.userId) {
+          handleUserLeft(payload.userId);
+        }
       });
       socket.on('meeting:leave', (payload: { userId: string }) => {
         if (payload?.userId) {
@@ -948,10 +1064,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
       });
       socket.on('call:ended', () => {
         if (isDirectCall) {
-          try {
-            (window as any).MobileAppBridge?.showToast?.('Call ended');
-          } catch (_) {}
-          onLeave();
+          terminateDirectCall('call:ended');
         }
       });
 
@@ -1002,6 +1115,13 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         if (activeSheetRef.current !== 'chat' && msgSender !== resolvedDisplayName) {
           setUnreadChatCount((cnt) => cnt + 1);
           playToneChime('chat');
+          setChatPreview({ sender: msgSender, text: msgText, id: Date.now() });
+          if (chatPreviewTimerRef.current) {
+            clearTimeout(chatPreviewTimerRef.current);
+          }
+          chatPreviewTimerRef.current = setTimeout(() => {
+            setChatPreview(null);
+          }, 4500);
         }
 
         setChatMessages((prev) => {
@@ -1253,7 +1373,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         isMinimized={isMinimized}
         isNativePip={isNativePip}
         onMaximize={onMaximize}
-        onLeave={onLeave}
+        onLeave={handleUserEndCall}
         timer={timer}
         displayName={displayName}
         peerName={targetPeerName}
@@ -1295,6 +1415,119 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
           onLeaveClick={() => setShowLeaveConfirm(true)}
           resetControlsTimer={resetControlsTimer}
         />
+      )}
+
+      {/* ── Data Saver Active Indicator ── */}
+      {isDataSaverActive && (
+        <div
+          onClick={toggleDataSaver}
+          style={{
+            position: 'absolute',
+            top: (isLandscape || isFullscreenShare) ? 'calc(var(--safe-top, 24px) + 54px)' : 'calc(var(--safe-top, 24px) + 58px)',
+            right: 12,
+            zIndex: 38,
+            padding: '4px 10px',
+            borderRadius: 14,
+            background: 'rgba(217, 119, 6, 0.92)',
+            backdropFilter: 'blur(8px)',
+            color: '#ffffff',
+            fontSize: '0.68rem',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            cursor: 'pointer',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.4)',
+          }}
+        >
+          <span>⚡ Data Saver On</span>
+        </div>
+      )}
+
+      {/* ── Floating In-Call Chat Preview Overlay (Quick-read without opening drawer) ── */}
+      {chatPreview && activeSheet !== 'chat' && (
+        <div
+          onClick={() => {
+            setActiveSheet('chat');
+            setChatPreview(null);
+          }}
+          style={{
+            position: 'absolute',
+            top: (isLandscape || isFullscreenShare) ? 'calc(var(--safe-top, 24px) + 54px)' : 'calc(var(--safe-top, 24px) + 60px)',
+            left: 14,
+            right: 14,
+            zIndex: 180,
+            background: 'rgba(15, 23, 42, 0.94)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(59, 130, 246, 0.45)',
+            boxShadow: '0 8px 30px rgba(0, 0, 0, 0.65)',
+            borderRadius: 16,
+            padding: '10px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            cursor: 'pointer',
+            animation: 'fadeIn 0.2s ease-out',
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#ffffff',
+              fontWeight: 800,
+              fontSize: '0.85rem',
+              flexShrink: 0,
+              boxShadow: '0 2px 8px rgba(59, 130, 246, 0.4)',
+            }}
+          >
+            {chatPreview.sender.charAt(0).toUpperCase()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#93c5fd' }}>
+                {chatPreview.sender}
+              </span>
+              <span style={{ fontSize: '0.65rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 3 }}>
+                Tap to reply 💬
+              </span>
+            </div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: '0.8rem',
+                color: '#f8fafc',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                fontWeight: 500,
+              }}
+            >
+              {chatPreview.text}
+            </p>
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setChatPreview(null);
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#94a3b8',
+              padding: 4,
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+            }}
+          >
+            ✕
+          </button>
+        </div>
       )}
 
       {/* ── Network Reconnecting / Offline Banner ── */}
@@ -1434,7 +1667,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
               setCurrentCallType('video');
               if (isVideoOff) toggleVideo();
             }}
-            onEndCall={onLeave}
+            onEndCall={handleUserEndCall}
             onMinimize={onMinimize}
           />
         ) : isDirectCall && !isDirectAudioCall ? (
@@ -1453,7 +1686,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
             isVideoOff={isVideoOff}
             toggleVideo={toggleVideo}
             flipCamera={flipCamera}
-            onEndCall={onLeave}
+            onEndCall={handleUserEndCall}
             onMinimize={onMinimize}
           />
         ) : (
@@ -1579,6 +1812,8 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         onOpenVirtualBackground={() => setActiveSheet('virtual_background')}
         isNoiseShieldActive={isNoiseShieldActive}
         onToggleNoiseShield={() => setIsNoiseShieldActive((prev) => !prev)}
+        isDataSaverActive={isDataSaverActive}
+        onToggleDataSaver={toggleDataSaver}
         onOpenInvite={() => setActiveSheet('invite')}
         isHost={isHost}
         onHostMuteAll={handleHostMuteAll}

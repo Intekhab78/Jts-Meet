@@ -72,6 +72,15 @@ public class CallActionReceiver extends BroadcastReceiver {
                     }
                 }).start();
             }
+        } else if ("com.jts.meet.ACTION_END_CALL".equals(action)) {
+            final String meetingId = intent.getStringExtra("meetingId");
+            try {
+                Intent stopService = new Intent(context, OngoingCallService.class);
+                stopService.setAction(OngoingCallService.ACTION_STOP);
+                context.startService(stopService);
+            } catch (Exception ignored) {}
+
+            MainActivity.notifyNativeHangup(meetingId);
         }
     }
 }

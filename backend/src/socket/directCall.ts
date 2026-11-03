@@ -135,6 +135,7 @@ export async function initiateDirectCall(
         // 2. Dispatch High-Priority Web Push & Native Android FCM (rings device even if phone is locked/app closed)
         const pushCallerTitle = channelName ? `${callerName} (#${channelName})` : callerName
         for (const tId of targetUserIds) {
+            if (String(tId) === String(userId)) continue
             NotificationService.sendIncomingCallPush(tId, {
                 meetingId,
                 callerName: pushCallerTitle,

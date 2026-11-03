@@ -18,6 +18,8 @@ export interface MoreOptionsSheetProps {
   onOpenVirtualBackground: () => void;
   isNoiseShieldActive: boolean;
   onToggleNoiseShield: () => void;
+  isDataSaverActive?: boolean;
+  onToggleDataSaver?: () => void;
   onOpenInvite: () => void;
   isHost: boolean;
   onHostMuteAll: () => void;
@@ -42,6 +44,8 @@ export const MoreOptionsSheet: React.FC<MoreOptionsSheetProps> = ({
   onOpenVirtualBackground,
   isNoiseShieldActive,
   onToggleNoiseShield,
+  isDataSaverActive = false,
+  onToggleDataSaver,
   onOpenInvite,
   isHost,
   onHostMuteAll,
@@ -334,6 +338,37 @@ export const MoreOptionsSheet: React.FC<MoreOptionsSheetProps> = ({
               <div>Voice Shield</div>
               <div style={{ fontSize: '0.68rem', color: isNoiseShieldActive ? '#059669' : '#64748b', fontWeight: 600 }}>
                 {isNoiseShieldActive ? 'Active (Noise Isolated)' : 'Standard Mic'}
+              </div>
+            </div>
+          </button>
+
+          {/* Data Saver Mode (Audio-Only) */}
+          <button
+            onClick={() => onToggleDataSaver?.()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '12px 14px',
+              borderRadius: 14,
+              backgroundColor: isDataSaverActive ? '#fef3c7' : '#f8fafc',
+              border: `1px solid ${isDataSaverActive ? '#fcd34d' : '#e2e8f0'}`,
+              color: isDataSaverActive ? '#92400e' : '#0f172a',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: isDataSaverActive ? '#fde68a' : '#f1f5f9', color: isDataSaverActive ? '#d97706' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+              </svg>
+            </div>
+            <div>
+              <div>Data Saver</div>
+              <div style={{ fontSize: '0.68rem', color: isDataSaverActive ? '#b45309' : '#64748b', fontWeight: 600 }}>
+                {isDataSaverActive ? 'Audio Only (Saving Data)' : 'Off (Full Video)'}
               </div>
             </div>
           </button>

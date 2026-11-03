@@ -56,6 +56,12 @@
             android:foregroundServiceType="mediaProjection"
             android:exported="false" />
 
+        <!-- Ongoing Foreground Call Service to prevent connection drop / audio cut in background -->
+        <service
+            android:name=".OngoingCallService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
+
         <!-- Remove default Capacitor Push MessagingService to route through CallNotificationService -->
         <service
             android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
@@ -74,6 +80,7 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.jts.meet.ACTION_DECLINE_CALL" />
+                <action android:name="com.jts.meet.ACTION_END_CALL" />
             </intent-filter>
         </receiver>
     </application>
@@ -92,6 +99,7 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

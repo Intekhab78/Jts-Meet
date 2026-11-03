@@ -206,9 +206,9 @@ export const VideoTile = React.memo(function VideoTile({
                 t.addEventListener('unmute', handleTrackChange)
             })
 
-            // Watchdog for screen share decoding: ensures decoder starts immediately even on low-fps static screen shares
+            // Watchdog for video & screen share decoding: ensures decoder plays immediately without black screen
             const checkDecoding = setInterval(() => {
-                if (el && isScreenShare && stream.getVideoTracks().length > 0) {
+                if (el && stream && stream.getVideoTracks().length > 0) {
                     if (el.srcObject !== stream) {
                         el.srcObject = stream
                     }
@@ -218,8 +218,19 @@ export const VideoTile = React.memo(function VideoTile({
                 }
             }, 600)
 
+            // Global capture gesture unlock: on any click or touch, ensure paused video resumes
+            const unlockVideo = () => {
+                if (el && el.paused && stream && stream.getVideoTracks().length > 0) {
+                    el.play().catch(() => {})
+                }
+            }
+            window.addEventListener('click', unlockVideo, { capture: true })
+            window.addEventListener('touchstart', unlockVideo, { capture: true })
+
             return () => {
                 clearInterval(checkDecoding)
+                window.removeEventListener('click', unlockVideo, { capture: true } as any)
+                window.removeEventListener('touchstart', unlockVideo, { capture: true } as any)
                 stream.removeEventListener('addtrack', handleTrackChange)
                 stream.removeEventListener('removetrack', handleTrackChange)
                 vTracks.forEach(t => {

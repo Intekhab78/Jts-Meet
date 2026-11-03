@@ -434,6 +434,10 @@ export function App() {
     bgSocket.on('call:incoming', (payload: any) => {
       console.log('[MobileApp] Received incoming call:', payload);
       if (payload?.meetingId) {
+        if (localStorage.getItem('jts_declined_call_' + payload.meetingId) === 'true') {
+          console.log('[MobileApp] Ignoring already declined call:', payload.meetingId);
+          return;
+        }
         setIncomingCall({
           meetingId: payload.meetingId,
           callerId: payload.callerId,
@@ -765,7 +769,9 @@ export function App() {
       if (pendingRaw) {
         localStorage.removeItem('jts_pending_notification');
         const pending = JSON.parse(pendingRaw);
-        if (!isCallExpired(pending)) {
+        const mId = pending?.meetingId;
+        const isDeclined = mId && localStorage.getItem('jts_declined_call_' + mId) === 'true';
+        if (!isDeclined && !isCallExpired(pending)) {
           setTimeout(() => handleNotificationAction(pending), 400);
         }
       }
@@ -773,12 +779,21 @@ export function App() {
 
     // 2. Live event listeners while app is active or in memory
     const onAction = (e: any) => {
+      const mId = e.detail?.meetingId;
+      if (mId && localStorage.getItem('jts_declined_call_' + mId) === 'true') {
+        return;
+      }
       if (!isCallExpired(e.detail)) {
         handleNotificationAction(e.detail);
       }
     };
     const onCallPush = (e: any) => {
-      if (e.detail?.meetingId && !isCallExpired(e.detail)) {
+      const mId = e.detail?.meetingId;
+      if (mId && localStorage.getItem('jts_declined_call_' + mId) === 'true') {
+        console.log('[App] Ignoring already declined call push:', mId);
+        return;
+      }
+      if (mId && !isCallExpired(e.detail)) {
         setIncomingCall({
           meetingId: e.detail.meetingId,
           callerId: e.detail.callerId,
@@ -789,7 +804,11 @@ export function App() {
       }
     };
 
-    const onNativeDecline = () => {
+    const onNativeDecline = (e?: any) => {
+      const mId = e?.detail?.meetingId;
+      if (mId) {
+        try { localStorage.setItem('jts_declined_call_' + mId, 'true'); } catch (_) {}
+      }
       setIncomingCall(null);
       stopRingtone();
     };
@@ -1110,6 +1129,9 @@ export function App() {
         call={incomingCall}
         onDecline={() => {
           const currentCall = incomingCall;
+          if (currentCall?.meetingId) {
+            try { localStorage.setItem('jts_declined_call_' + currentCall.meetingId, 'true'); } catch (_) {}
+          }
           try { (window as any).MobileAppBridge?.cancelCallNotification?.(); } catch (_) {}
           stopRingtone();
           if (socketRef.current && currentCall?.callerId) {
