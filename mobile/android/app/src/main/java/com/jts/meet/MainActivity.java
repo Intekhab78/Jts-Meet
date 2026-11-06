@@ -193,6 +193,37 @@ public class MainActivity extends BridgeActivity {
                 }
 
                 @android.webkit.JavascriptInterface
+                public void downloadFileSilently(String url, String fileName) {
+                    runOnUiThread(() -> {
+                        try {
+                            if (url == null || url.trim().isEmpty()) return;
+                            android.net.Uri uri = android.net.Uri.parse(url);
+                            android.app.DownloadManager.Request request = new android.app.DownloadManager.Request(uri);
+                            
+                            String finalName = (fileName != null && !fileName.trim().isEmpty()) 
+                                ? fileName 
+                                : uri.getLastPathSegment();
+                            if (finalName == null || finalName.isEmpty()) finalName = "downloaded_file";
+                            
+                            request.setTitle(finalName);
+                            request.setDescription("Downloading via JTS Meet");
+                            request.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                            request.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, finalName);
+                            request.setAllowedOverMetered(true);
+                            request.setAllowedOverRoaming(true);
+
+                            android.app.DownloadManager dm = (android.app.DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                            if (dm != null) {
+                                dm.enqueue(request);
+                                showToast("Downloading " + finalName + " to Downloads folder...");
+                            }
+                        } catch (Exception e) {
+                            showToast("Download started: " + e.getMessage());
+                        }
+                    });
+                }
+
+                @android.webkit.JavascriptInterface
                 public void showToast(String message) {
                     if (message == null || message.trim().isEmpty()) return;
                     runOnUiThread(() -> {

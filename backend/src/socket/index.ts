@@ -407,6 +407,10 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
 
         socket.on(SocketEvents.MESSAGE_DELETE, async (payload: { messageId: string; receiverId: string }) => {
             if (!payload?.messageId || !payload?.receiverId) return
+            // Ignore non-database local optimistic IDs
+            if (payload.messageId.startsWith('local-') || payload.messageId.startsWith('temp_') || !Types.ObjectId.isValid(payload.messageId)) {
+                return
+            }
             try {
                 const result = await deleteDirectMessage(payload.messageId, userId)
                 if (result) {
@@ -423,6 +427,10 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
 
         socket.on(SocketEvents.MESSAGE_UNDO_DELETE, async (payload: { messageId: string; receiverId: string }) => {
             if (!payload?.messageId || !payload?.receiverId) return
+            // Ignore non-database local optimistic IDs
+            if (payload.messageId.startsWith('local-') || payload.messageId.startsWith('temp_') || !Types.ObjectId.isValid(payload.messageId)) {
+                return
+            }
             try {
                 const result = await undoDeleteDirectMessage(payload.messageId, userId)
                 if (result) {

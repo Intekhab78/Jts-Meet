@@ -18,10 +18,13 @@ export function normalizeFileUrl(url?: string | null): string {
   return cleaned;
 }
 
-// Parse [File: fileName | fileUrl | fileSize] format from text
+// Parse [File: fileName | fileUrl | fileSize] format from text OR direct image/file URLs/names
 export function parseFileAttachment(text?: string | null): { fileName: string; fileUrl: string; fileSize?: string } | null {
   if (!text || typeof text !== 'string') return null;
-  const match = text.match(/\[File:\s*([^\|]+?)\s*\|\s*([^\|]+?)\s*(?:\|\s*([^\]]+?))?\s*\]/i);
+  const trimmed = text.trim();
+  
+  // 1. Bracket format: [File: fileName | fileUrl | fileSize]
+  const match = trimmed.match(/\[File:\s*([^\|]+?)\s*\|\s*([^\|]+?)\s*(?:\|\s*([^\]]+?))?\s*\]/i);
   if (match) {
     const rawName = (match[1] || '').trim();
     const rawUrl = (match[2] || '').trim();
@@ -32,6 +35,30 @@ export function parseFileAttachment(text?: string | null): { fileName: string; f
       fileSize: rawSize || undefined,
     };
   }
+
+  // 2. Direct uploads path (e.g. https://meetapi.jtsmiddleeast.com/uploads/... or /uploads/...)
+  if (trimmed.includes('/uploads/')) {
+    const fileUrl = normalizeFileUrl(trimmed);
+    const fileName = fileUrl.split('/').pop()?.split('?')[0] || 'Attachment';
+    return {
+      fileName,
+      fileUrl,
+    };
+  }
+
+  // 3. Standalone image filename or path (e.g. Screenshot_2026-11-06-...jpg or IMG_...png)
+  if (/\.(jpeg|jpg|png|gif|webp|svg|bmp|pdf|zip|rar|7z|tar|gz|docx?|xlsx?|pptx?)$/i.test(trimmed)) {
+    // If it starts with http, it is a full URL; otherwise treat as filename uploaded to /uploads/
+    const fileUrl = trimmed.startsWith('http')
+      ? normalizeFileUrl(trimmed)
+      : `${API_BASE}/uploads/${trimmed}`;
+    const fileName = trimmed.split('/').pop()?.split('?')[0] || trimmed;
+    return {
+      fileName,
+      fileUrl,
+    };
+  }
+
   return null;
 }
 
@@ -50,7 +77,45 @@ export function isImageAttachment(url?: string | null, name?: string | null): bo
   return check(url) || check(name);
 }
 
-// Format call duration into mm:ss or hh:mm:ss
+// In-app silent file downloader (uses Android native DownloadManager via MobileAppBridge if available, otherwise invisible iframe)
+export function downloadFileInApp(url: string, fileName?: string): void {
+  if (!url) return;
+  const bridge = (window as any).MobileAppBridge;
+  if (bridge && typeof bridge.downloadFileSilently === 'function') {
+    bridge.downloadFileSilently(url, fileName || '');
+    return;
+  }
+
+  // Fallback for WebView/Web without bridge: use fetch + blob download link
+  fetch(url)
+    .then((res) => res.blob())
+    .then((blob) => {
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = blobUrl;
+      a.download = fileName || url.split('/').pop()?.split('?')[0] || 'downloaded_file';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+      }, 300);
+      try {
+        if (bridge?.showToast) bridge.showToast('Download complete');
+      } catch (_) {}
+    })
+    .catch(() => {
+      // Direct anchor click fallback without target="_blank"
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = fileName || url.split('/').pop()?.split('?')[0] || 'downloaded_file';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 300);
+    });
+}
 export function formatCallDuration(totalSeconds?: number | null): string {
   const secs = Math.max(0, Math.round(totalSeconds || 0));
   const h = Math.floor(secs / 3600);

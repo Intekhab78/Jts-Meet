@@ -8,7 +8,8 @@ import {
   getFileExtension,
   isImageAttachment,
   formatCallDuration,
-  renderClickableText
+  renderClickableText,
+  downloadFileInApp,
 } from './chatUtils';
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -65,6 +66,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
   const [messageToDelete, setMessageToDelete] = useState<MobileChatMessage | null>(null);
   const [showMoreEmojis, setShowMoreEmojis] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [inAppPreviewImage, setInAppPreviewImage] = useState<{ url: string; name: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -720,8 +722,23 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
           : `${Math.max(1, Math.round(file.size / 1024))} KB`;
         const msgText = `[File: ${fileName} | ${fullUrl} | ${fileSizeFormatted}]`;
 
+        const tempId = `local-${Date.now()}`;
+        const newMsg: MobileChatMessage = {
+          id: tempId,
+          senderId: resolvedUserId || 'me',
+          senderName: 'You',
+          text: msgText,
+          fileUrl: fullUrl,
+          fileName,
+          fileSize: fileSizeFormatted,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isMe: true,
+        };
+        setMessages((prev) => [...prev, newMsg]);
+
+        let sendRes: Response | null = null;
         if (isChannel) {
-          await fetch(`${API_BASE}/api/channel/${chatId}/chat`, {
+          sendRes = await fetch(`${API_BASE}/api/channel/${chatId}/chat`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -730,7 +747,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
             body: JSON.stringify({ content: msgText, fileUrl: fullUrl, fileName }),
           });
         } else {
-          await fetch(`${API_BASE}/api/chat/send`, {
+          sendRes = await fetch(`${API_BASE}/api/chat/send`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -745,17 +762,13 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
           });
         }
 
-        const newMsg: MobileChatMessage = {
-          id: `local-${Date.now()}`,
-          senderId: resolvedUserId || 'me',
-          senderName: 'You',
-          text: msgText,
-          fileUrl: fullUrl,
-          fileName,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isMe: true,
-        };
-        setMessages((prev) => [...prev, newMsg]);
+        if (sendRes && sendRes.ok) {
+          const sendJson = await sendRes.json();
+          const savedDoc = sendJson?.data || sendJson;
+          if (savedDoc?._id) {
+            setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: savedDoc._id } : m)));
+          }
+        }
       } else {
         alert('File upload failed. Please try a smaller file.');
       }
@@ -1219,25 +1232,36 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
                 const isFile = Boolean(activeUrl && !isImage);
 
                 if (isImage) {
+                  const resolvedImg = resolveAvatarUrl(activeUrl);
                   return (
                     <div style={{ marginBottom: 4 }}>
                       <img
-                        src={resolveAvatarUrl(activeUrl)}
+                        src={resolvedImg}
                         alt={activeName || 'Photo'}
                         loading="lazy"
                         onError={(e) => {
-                          (e.currentTarget as HTMLElement).style.display = 'none';
+                          // If remote image fails or format needs direct API url
+                          const target = e.currentTarget as HTMLImageElement;
+                          if (!target.dataset.triedFallback && activeUrl) {
+                            target.dataset.triedFallback = 'true';
+                            target.src = activeUrl.startsWith('http') ? activeUrl : `${API_BASE}/uploads/${activeUrl.split('/').pop()}`;
+                          } else {
+                            target.style.display = 'none';
+                          }
                         }}
                         style={{
                           maxWidth: '100%',
-                          maxHeight: 260,
+                          maxHeight: 280,
                           borderRadius: 12,
                           display: 'block',
                           objectFit: 'cover',
                           cursor: 'pointer',
                           backgroundColor: msg.isMe ? 'rgba(0,0,0,0.1)' : '#f1f5f9',
                         }}
-                        onClick={() => window.open(resolveAvatarUrl(activeUrl), '_blank')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setInAppPreviewImage({ url: resolvedImg, name: activeName || 'Photo' });
+                        }}
                       />
                       {activeName && !activeName.startsWith('IMG') && !activeName.startsWith('blob:') && (
                         <span
@@ -1260,10 +1284,14 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
                   const ext = getFileExtension(activeName);
                   const isZip = ext === 'ZIP' || ext === 'RAR' || ext === '7Z' || ext === 'TAR' || ext === 'GZ';
                   const isPdf = ext === 'PDF';
+                  const targetDownloadUrl = resolveAvatarUrl(activeUrl);
 
                   return (
                     <div
-                      onClick={() => window.open(resolveAvatarUrl(activeUrl), '_blank')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadFileInApp(targetDownloadUrl, activeName);
+                      }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -1340,27 +1368,25 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
                         </div>
                       </div>
 
-                      {/* Download Action Button */}
-                      <a
-                        href={resolveAvatarUrl(activeUrl)}
-                        download={activeName || true}
-                        target="_blank"
-                        rel="noreferrer"
+                      {/* Download Action Button (Downloads silently in-app, NO browser redirect) */}
+                      <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          window.open(resolveAvatarUrl(activeUrl), '_blank');
+                          downloadFileInApp(targetDownloadUrl, activeName);
                         }}
                         style={{
-                          width: 28,
-                          height: 28,
+                          width: 30,
+                          height: 30,
                           borderRadius: '50%',
                           backgroundColor: msg.isMe ? 'rgba(255, 255, 255, 0.22)' : '#e2e8f0',
+                          border: 'none',
                           color: msg.isMe ? '#ffffff' : '#2563eb',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           flexShrink: 0,
-                          textDecoration: 'none',
+                          cursor: 'pointer',
                         }}
                         title="Download file"
                       >
@@ -1369,7 +1395,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
                           <polyline points="7 10 12 15 17 10" />
                           <line x1="12" y1="15" x2="12" y2="3" />
                         </svg>
-                      </a>
+                      </button>
                     </div>
                   );
                 }
@@ -1942,6 +1968,115 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
           }}
         >
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* ── WhatsApp-style Fullscreen In-App Image Viewer (View, Pinch/Zoom, Save without Redirect) ── */}
+      {inAppPreviewImage && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: '#000000',
+            zIndex: 10002,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+          onClick={() => setInAppPreviewImage(null)}
+        >
+          {/* Top Control Bar */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '14px 16px',
+              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+              zIndex: 2,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => setInAppPreviewImage(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  padding: 4,
+                }}
+              >
+                <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}>
+                  <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <div style={{ color: '#ffffff', fontSize: '0.85rem', fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {inAppPreviewImage.name || 'Photo'}
+              </div>
+            </div>
+
+            {/* Save / Download Image to Phone Button */}
+            <button
+              type="button"
+              onClick={() => {
+                downloadFileInApp(inAppPreviewImage.url, inAppPreviewImage.name);
+                setToastMessage('Saving photo to device...');
+                setTimeout(() => setToastMessage(null), 3000);
+              }}
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.18)',
+                border: 'none',
+                borderRadius: 20,
+                padding: '6px 14px',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>Save</span>
+            </button>
+          </div>
+
+          {/* Fullscreen Centered Image Container */}
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'auto',
+              padding: 10,
+            }}
+          >
+            <img
+              src={inAppPreviewImage.url}
+              alt={inAppPreviewImage.name}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                borderRadius: 4,
+                boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
         </div>
       )}
     </div>

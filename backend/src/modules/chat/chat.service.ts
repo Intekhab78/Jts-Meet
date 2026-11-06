@@ -204,6 +204,7 @@ export async function searchContacts(currentUserId: string, search?: string, lim
 }
 
 export async function deleteDirectMessage(messageId: string, userId: string): Promise<IMessage | null> {
+    if (!messageId || !Types.ObjectId.isValid(messageId)) return null;
     const userObjectId = new Types.ObjectId(userId)
     const msg = await Message.findById(messageId).exec()
     if (!msg) return null
@@ -218,6 +219,7 @@ export async function deleteDirectMessage(messageId: string, userId: string): Pr
 }
 
 export async function undoDeleteDirectMessage(messageId: string, userId: string): Promise<IMessage | null> {
+    if (!messageId || !Types.ObjectId.isValid(messageId)) return null;
     const userObjectId = new Types.ObjectId(userId)
     const msg = await Message.findById(messageId).exec()
     if (!msg) return null
