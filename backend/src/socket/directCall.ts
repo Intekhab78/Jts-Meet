@@ -62,9 +62,9 @@ export async function initiateDirectCall(
 
     // 2. Direct 1-to-1 or explicit targetUserIds call
     if (targetUserIds.length === 0) {
-        const singleTarget = payload?.targetUserId || payload?.calleeId
+        const singleTarget = payload?.targetUserId ? String(payload.targetUserId).trim() : (payload?.calleeId ? String(payload.calleeId).trim() : '')
         if (Array.isArray(payload?.targetUserIds) && payload.targetUserIds.length > 0) {
-            targetUserIds = payload.targetUserIds.map(String).filter(id => id && id !== String(userId))
+            targetUserIds = payload.targetUserIds.map((id) => String(id).trim()).filter(id => id && id !== String(userId))
         } else if (singleTarget && String(singleTarget) !== String(userId)) {
             targetUserIds = [String(singleTarget)]
         }

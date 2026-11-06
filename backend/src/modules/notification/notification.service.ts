@@ -147,10 +147,10 @@ export class NotificationService {
 
             console.log(`[FCM] Looking up devices for user ${targetUserId}: found ${fcmDevices?.length || 0} registered devices`)
 
-            // Filter out any FCM token currently belonging to the caller
-            const targetTokens = fcmDevices
-                ? fcmDevices.map((d) => d.fcmToken).filter((t) => t && !callerFcmTokens.has(t))
-                : []
+            // Collect all unique FCM device tokens registered to the callee
+            const targetTokens = Array.from(new Set(
+                fcmDevices ? fcmDevices.map((d) => d.fcmToken).filter(Boolean) : []
+            ))
 
             if (targetTokens.length > 0) {
                 const messaging = getFirebaseMessaging()
@@ -208,12 +208,10 @@ export class NotificationService {
                 userId: new Types.ObjectId(targetUserId)
             }).exec()
 
-            // Filter out any browser endpoint currently belonging to the caller
-            // AND filter out stale developer localhost / test endpoints (:3000)
+            // Filter out stale developer localhost / test endpoints (:3000)
             const validSubscriptions = subscriptions
                 ? subscriptions.filter((sub) => {
                     if (!sub.endpoint) return false
-                    if (callerPushEndpoints.has(sub.endpoint)) return false
                     if (sub.origin && (sub.origin.includes('localhost') || sub.origin.includes('127.0.0.1') || sub.origin.includes(':3000'))) {
                         return false
                     }

@@ -573,7 +573,7 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception ignored) {}
 
             long now = System.currentTimeMillis();
-            if (callTimestamp > 0 && (now - callTimestamp > 120000)) {
+            if (callTimestamp > 0 && (now - callTimestamp > 600000)) {
                 pendingCallDataJson = null;
                 resetIntent(intent);
                 return;
@@ -583,7 +583,7 @@ public class MainActivity extends BridgeActivity {
                     String[] parts = meetingId.split("_");
                     if (parts.length >= 2) {
                         long t = Long.parseLong(parts[1]);
-                        if (t > 0 && (now - t > 120000)) {
+                        if (t > 0 && (now - t > 600000)) {
                             pendingCallDataJson = null;
                             resetIntent(intent);
                             return;

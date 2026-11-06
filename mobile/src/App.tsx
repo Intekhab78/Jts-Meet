@@ -677,15 +677,15 @@ export function App() {
     const now = Date.now();
     // Check server NTP sentAt timestamp first if present
     const sentAt = Number(data.sentAt);
-    if (sentAt && !isNaN(sentAt) && (now - sentAt > 120000)) return true;
+    if (sentAt && !isNaN(sentAt) && (now - sentAt > 600000)) return true;
     // Check native intent timestamp if present
     const ts = Number(data.timestamp);
-    if (ts && !isNaN(ts) && (now - ts > 120000)) return true;
+    if (ts && !isNaN(ts) && (now - ts > 600000)) return true;
     // Fallback to meetingId timestamp with 120s tolerance (prevents dropping calls due to device clock skew)
     if (!sentAt && !ts && data.meetingId && typeof data.meetingId === 'string' && data.meetingId.startsWith('call_')) {
       const parts = data.meetingId.split('_');
       const time = Number(parts[1]);
-      if (time && !isNaN(time) && (now - time > 120000)) {
+      if (time && !isNaN(time) && (now - time > 600000)) {
         return true;
       }
     }

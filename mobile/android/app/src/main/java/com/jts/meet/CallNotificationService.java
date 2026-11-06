@@ -104,9 +104,8 @@ public class CallNotificationService extends FirebaseMessagingService {
 
         if (callTimestamp > 0) {
             long age = System.currentTimeMillis() - callTimestamp;
-            // Only discard if more than 120 seconds old (e.g. offline queue replay).
-            // Do NOT discard fresh calls if there is normal network delay or minor device clock difference!
-            if (age > 120000) {
+            // Only discard if more than 10 minutes old (prevents discarding calls due to clock skew between phones)
+            if (age > 600000) {
                 android.util.Log.w("CallNotificationService", "Discarding stale incoming call: age=" + age + "ms, meetingId=" + meetingId);
                 return;
             }
