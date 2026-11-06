@@ -36,6 +36,7 @@ public class MainActivity extends BridgeActivity {
     private HandlerThread backgroundThread;
     private boolean isCapturingScreen = false;
     private static String pendingCallDataJson = null;
+    private static String lastDispatchedMeetingId = null;
     private static MainActivity activeInstance = null;
     private android.widget.Toast currentToast = null;
     private long lastToastTime = 0;
@@ -583,9 +584,18 @@ public class MainActivity extends BridgeActivity {
                 pendingCallDataJson = obj.toString();
             } catch (Exception ignored) {}
 
+            // Deduplicate: If this meetingId was already dispatched to WebView in this session, do not repeat
+            if (meetingId != null && meetingId.equals(lastDispatchedMeetingId)) {
+                resetIntent(intent);
+                return;
+            }
+            lastDispatchedMeetingId = meetingId;
+
             final String script = String.format(
                 "try { " +
-                "  var payload = { meetingId: '%s', callerName: '%s', callerAvatar: '%s', callType: '%s', callerId: '%s', autoAccept: '%s', timestamp: %d }; " +
+                "  var mId = '%s'; " +
+                "  if (localStorage.getItem('jts_accepted_call_' + mId) === 'true' || localStorage.getItem('jts_declined_call_' + mId) === 'true') { return; } " +
+                "  var payload = { meetingId: mId, callerName: '%s', callerAvatar: '%s', callType: '%s', callerId: '%s', autoAccept: '%s', timestamp: %d }; " +
                 "  localStorage.setItem('jts_pending_notification', JSON.stringify(payload)); " +
                 "  window.dispatchEvent(new CustomEvent('jts:incoming-call-push', { detail: payload })); " +
                 "} catch (e) { console.error(e); }",
@@ -602,22 +612,21 @@ public class MainActivity extends BridgeActivity {
             resetIntent(intent);
 
             runOnUiThread(() -> {
-                int[] delays = { 300, 1000, 2500, 4000 };
-                for (int delay : delays) {
-                    new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                        if (bridge != null && bridge.getWebView() != null) {
-                            try {
-                                bridge.getWebView().evaluateJavascript(script, null);
-                            } catch (Exception ignored) {}
-                        }
-                    }, delay);
-                }
+                // Dispatch once after 350ms to ensure WebView bridge is ready
+                new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    if (bridge != null && bridge.getWebView() != null) {
+                        try {
+                            bridge.getWebView().evaluateJavascript(script, null);
+                        } catch (Exception ignored) {}
+                    }
+                }, 350);
             });
         }
     }
 
     public static void notifyCallDeclined(String meetingId, String callerId) {
         pendingCallDataJson = null;
+        lastDispatchedMeetingId = null;
         if (activeInstance != null) {
             if (activeInstance.getIntent() != null) {
                 activeInstance.resetIntent(activeInstance.getIntent());

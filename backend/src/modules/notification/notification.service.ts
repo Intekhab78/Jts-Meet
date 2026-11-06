@@ -208,8 +208,16 @@ export class NotificationService {
             }).exec()
 
             // Filter out any browser endpoint currently belonging to the caller
+            // AND filter out stale developer localhost / test endpoints (:3000)
             const validSubscriptions = subscriptions
-                ? subscriptions.filter((sub) => sub.endpoint && !callerPushEndpoints.has(sub.endpoint))
+                ? subscriptions.filter((sub) => {
+                    if (!sub.endpoint) return false
+                    if (callerPushEndpoints.has(sub.endpoint)) return false
+                    if (sub.userAgent && (sub.userAgent.includes('localhost') || sub.userAgent.includes('127.0.0.1') || sub.userAgent.includes(':3000'))) {
+                        return false
+                    }
+                    return true
+                })
                 : []
 
             if (validSubscriptions.length > 0) {

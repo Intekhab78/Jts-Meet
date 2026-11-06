@@ -138,6 +138,36 @@ class PushNotificationService {
         }
     }
 
+    public async unsubscribeUser(authToken?: string | null): Promise<boolean> {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            return false
+        }
+        try {
+            const reg = await navigator.serviceWorker.ready
+            const subscription = await reg?.pushManager?.getSubscription()
+            if (subscription) {
+                const endpoint = subscription.endpoint
+                try {
+                    await fetch(`${API_BASE}/api/notifications/push-unsubscribe`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': authToken ? `Bearer ${authToken}` : '',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ endpoint })
+                    })
+                } catch {}
+                await subscription.unsubscribe()
+            }
+            this.isSubscribed = false
+            localStorage.removeItem('jts_push_subscribed')
+            return true
+        } catch (e) {
+            console.warn('[PushService] Error unsubscribing push:', e)
+            return false
+        }
+    }
+
     /**
      * Show interactive system notification with [Accept] and [Decline] buttons.
      * Uses identical tag: 'incoming-call' so Chrome / Windows deduplicates it to exactly ONE notification!
@@ -152,6 +182,19 @@ class PushNotificationService {
         if (!('Notification' in window) || Notification.permission !== 'granted') {
             return
         }
+
+        // Hard Guard: If the caller is the current active user, NEVER show incoming notification!
+        try {
+            const rawUser = localStorage.getItem('jts_user') || localStorage.getItem('jts_user_profile')
+            if (rawUser) {
+                const u = JSON.parse(rawUser)
+                const myId = u?._id || u?.id
+                if (myId && call.callerId && String(myId) === String(call.callerId)) {
+                    console.log('[PushService] Suppressed incoming call notification for self:', call.callerId)
+                    return
+                }
+            }
+        } catch (_) {}
 
         try {
             const isAudio = call.callType === 'audio'

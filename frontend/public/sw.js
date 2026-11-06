@@ -19,6 +19,12 @@ self.addEventListener('push', (event) => {
         const payload = event.data.json()
         const isCall = payload.type === 'call_incoming' || payload.tag === 'incoming-call'
 
+        // Suppress incoming call notifications on local development origin (prevents duplicate alerts on developer laptop)
+        if (isCall && (self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1')) {
+            console.log('[SW] Suppressed call push on localhost developer origin')
+            return
+        }
+
         const title = payload.title || (isCall ? 'Incoming JTS Call' : 'JTS Meet Notification')
         const options = {
             body: payload.body || 'You have an incoming notification',

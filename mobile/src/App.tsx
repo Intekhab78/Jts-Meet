@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { io } from 'socket.io-client';
 import { MobileTopBar } from './components/MobileTopBar';
@@ -59,6 +59,8 @@ export function App() {
     return null;
   });
   const [isMeetingMinimized, setIsMeetingMinimized] = useState(false);
+  const activeMeetingRef = useRef(activeMeeting);
+  activeMeetingRef.current = activeMeeting;
 
   useEffect(() => {
     if (activeMeeting) {

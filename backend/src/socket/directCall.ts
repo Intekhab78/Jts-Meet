@@ -11,6 +11,7 @@ import { NotificationService } from '../modules/notification/notification.servic
 const activeRingTimeouts = new Map<string, NodeJS.Timeout>()
 const RING_TIMEOUT_MS = 60000 // 60 seconds ring timeout
 const recentlyInitiatedCalls = new Map<string, number>()
+const recentlyAcceptedCalls = new Map<string, number>()
 
 export async function initiateDirectCall(
     io: Server | null,
@@ -300,6 +301,15 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
         callerId?: string
     }) => {
         if (!userId || !payload?.meetingId) return
+
+        // Deduplication: prevent rapid repeat accept signals from breaking active WebRTC peer connection
+        const lastAccepted = recentlyAcceptedCalls.get(payload.meetingId)
+        if (lastAccepted && Date.now() - lastAccepted < 15000) {
+            console.log(`[directCall] Call ${payload.meetingId} already accepted within deduplication window. Suppressing duplicate accept.`)
+            return
+        }
+        recentlyAcceptedCalls.set(payload.meetingId, Date.now())
+        setTimeout(() => recentlyAcceptedCalls.delete(payload.meetingId), 20000)
 
         // Clear 60s ringing timeout
         if (payload?.meetingId && activeRingTimeouts.has(payload.meetingId)) {
