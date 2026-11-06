@@ -376,6 +376,10 @@ export function App() {
 
     // Ensure FCM token is linked to the authenticated user on backend
     mobileNotificationService.syncStoredFcmToken(effectiveToken);
+    const handleFcmTokenRefresh = () => {
+      mobileNotificationService.syncStoredFcmToken(effectiveToken);
+    };
+    window.addEventListener('jts:fcm-token-refreshed', handleFcmTokenRefresh);
 
     const bgSocket = io(SOCKET_URL, {
       auth: { token: effectiveToken },
@@ -490,6 +494,7 @@ export function App() {
     });
 
     return () => {
+      window.removeEventListener('jts:fcm-token-refreshed', handleFcmTokenRefresh);
       bgSocket.disconnect();
       socketRef.current = null;
       setSocket(null);

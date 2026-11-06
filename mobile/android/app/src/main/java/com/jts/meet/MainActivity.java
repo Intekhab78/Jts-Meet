@@ -136,14 +136,58 @@ public class MainActivity extends BridgeActivity {
                     runOnUiThread(() -> {
                         try {
                             android.media.AudioManager audioManager = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
-                            if (audioManager != null) {
-                                audioManager.setMode(android.media.AudioManager.MODE_IN_COMMUNICATION);
+                            if (audioManager == null) return;
+
+                            audioManager.setMode(android.media.AudioManager.MODE_IN_COMMUNICATION);
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                java.util.List<android.media.AudioDeviceInfo> devices = audioManager.getAvailableCommunicationDevices();
                                 if ("speaker".equalsIgnoreCase(mode)) {
-                                    audioManager.setSpeakerphoneOn(true);
+                                    for (android.media.AudioDeviceInfo device : devices) {
+                                        if (device.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                                            audioManager.setCommunicationDevice(device);
+                                            break;
+                                        }
+                                    }
                                 } else if ("earpiece".equalsIgnoreCase(mode)) {
-                                    audioManager.setSpeakerphoneOn(false);
+                                    for (android.media.AudioDeviceInfo device : devices) {
+                                        if (device.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
+                                            audioManager.setCommunicationDevice(device);
+                                            break;
+                                        }
+                                    }
+                                } else if ("bluetooth".equalsIgnoreCase(mode)) {
+                                    for (android.media.AudioDeviceInfo device : devices) {
+                                        if (device.getType() == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                                            device.getType() == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET) {
+                                            audioManager.setCommunicationDevice(device);
+                                            break;
+                                        }
+                                    }
                                 }
                             }
+
+                            if ("speaker".equalsIgnoreCase(mode)) {
+                                audioManager.setSpeakerphoneOn(true);
+                            } else {
+                                audioManager.setSpeakerphoneOn(false);
+                            }
+                        } catch (Throwable ignored) {}
+                    });
+                }
+
+                @android.webkit.JavascriptInterface
+                public void resetAudioMode() {
+                    runOnUiThread(() -> {
+                        try {
+                            android.media.AudioManager audioManager = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                            if (audioManager == null) return;
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                audioManager.clearCommunicationDevice();
+                            }
+                            audioManager.setSpeakerphoneOn(false);
+                            audioManager.setMode(android.media.AudioManager.MODE_NORMAL);
                         } catch (Throwable ignored) {}
                     });
                 }

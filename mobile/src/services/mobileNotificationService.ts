@@ -99,6 +99,7 @@ class MobileNotificationService {
       PushNotifications.addListener('registration', async (token) => {
         console.log('[FCM] Native Device Registered. Token:', token.value);
         localStorage.setItem('jts_fcm_token', token.value);
+        window.dispatchEvent(new CustomEvent('jts:fcm-token-refreshed', { detail: token.value }));
 
         // Sync FCM token to backend
         try {

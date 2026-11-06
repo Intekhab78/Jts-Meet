@@ -106,15 +106,23 @@ const MobileRemoteAudioStream: React.FC<{ peerId: string; stream: MediaStream }>
     const el = audioRef.current;
     if (!el || !stream) return;
 
+    try {
+      (window as any).MobileAppBridge?.setAudioMode?.('speaker');
+    } catch (_) {}
+
     const playAudio = () => {
       if (el.srcObject !== stream) {
         el.srcObject = stream;
       }
+      el.volume = 1.0;
+      el.muted = false;
       const p = el.play();
       if (p !== undefined) {
         p.catch((err) => {
           console.warn(`[Mobile Audio] Autoplay deferred for ${peerId}:`, err);
           const unlock = () => {
+            el.volume = 1.0;
+            el.muted = false;
             el.play().catch(() => {});
             window.removeEventListener('click', unlock);
             window.removeEventListener('touchstart', unlock);
@@ -133,9 +141,12 @@ const MobileRemoteAudioStream: React.FC<{ peerId: string; stream: MediaStream }>
     stream.addEventListener('addtrack', onTrackChange);
     stream.addEventListener('removetrack', onTrackChange);
     const aTracks = stream.getAudioTracks();
-    aTracks.forEach((t) => t.addEventListener('unmute', onTrackChange));
+    aTracks.forEach((t) => {
+      t.enabled = true;
+      t.addEventListener('unmute', onTrackChange);
+    });
 
-    const watchdog = setInterval(playAudio, 2500);
+    const watchdog = setInterval(playAudio, 2000);
 
     return () => {
       clearInterval(watchdog);
@@ -152,13 +163,7 @@ const MobileRemoteAudioStream: React.FC<{ peerId: string; stream: MediaStream }>
       playsInline
       data-peer-id={peerId}
       style={{
-        position: 'fixed',
-        top: -9999,
-        left: -9999,
-        width: 1,
-        height: 1,
-        opacity: 0.001,
-        pointerEvents: 'none',
+        display: 'none',
       }}
     />
   );
@@ -203,8 +208,22 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     setIsSpeaker,
     audioRoute,
     bluetoothDeviceName,
+    applyAudioSink,
     cycleAudioRoute,
   } = useAudioRouting();
+
+  // Set Android Native Audio Mode to Communication Mode on Meeting Entry
+  useEffect(() => {
+    try {
+      (window as any).MobileAppBridge?.setAudioMode?.('speaker');
+      applyAudioSink('speaker');
+    } catch (_) {}
+    return () => {
+      try {
+        (window as any).MobileAppBridge?.resetAudioMode?.();
+      } catch (_) {}
+    };
+  }, [applyAudioSink]);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [activeSheet, setActiveSheet] = useState<'none' | 'chat' | 'participants' | 'invite' | 'more' | 'virtual_background'>(
     (showInitialInvite && !isDirectCall) ? 'invite' : 'none'
@@ -476,6 +495,9 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
 
     playToneChime('leave');
     try {
+      (window as any).MobileAppBridge?.resetAudioMode?.();
+    } catch (_) {}
+    try {
       (window as any).MobileAppBridge?.showToast?.('Call ended');
     } catch (_) {}
 
@@ -483,6 +505,9 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   };
 
   const handleUserEndCall = () => {
+    try {
+      (window as any).MobileAppBridge?.resetAudioMode?.();
+    } catch (_) {}
     if (isDirectCall) {
       terminateDirectCall('user-clicked-end');
     } else {
@@ -650,13 +675,21 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     let cancelled = false;
     async function startMedia() {
       try {
+        const shouldRequestVideo = !isVideoOff && currentCallType !== 'audio';
         try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-          });
+          if (shouldRequestVideo) {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            });
+          } else {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: false,
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            });
+          }
         } catch (videoErr) {
-          console.warn('[Mobile] Camera unavailable, falling back to audio only:', videoErr);
+          console.warn('[Mobile] Camera or high-spec audio unavailable, falling back:', videoErr);
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         }
         if (cancelled) {
@@ -870,6 +903,9 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
             setTimeout(async () => {
               if (pc.signalingState === 'stable' && !peerStreamsRef.current[normId] && socket?.connected) {
                 try {
+                  if (localStreamRef.current) {
+                    attachLocalTracks(pc, localStreamRef.current);
+                  }
                   const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
                   await pc.setLocalDescription(offer);
                   socket?.emit('webrtc:offer', {
@@ -1279,10 +1315,33 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     socketRef.current?.emit('meeting:mic-toggle', { meetingId, isMuted: next });
   };
 
-  const toggleVideo = () => {
+  const toggleVideo = async () => {
     const next = !isVideoOff;
     setIsVideoOff(next);
-    localStreamRef.current?.getVideoTracks().forEach((t) => (t.enabled = !next));
+    const existingVideoTracks = localStreamRef.current?.getVideoTracks() || [];
+    if (!next && existingVideoTracks.length === 0) {
+      try {
+        const vStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+        });
+        const vTrack = vStream.getVideoTracks()[0];
+        if (vTrack && localStreamRef.current) {
+          localStreamRef.current.addTrack(vTrack);
+          Object.values(peerConnectionsRef.current).forEach((pc) => {
+            pc.addTrack(vTrack, localStreamRef.current!);
+          });
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+            localVideoRef.current.play().catch(() => {});
+          }
+          triggerRenegotiation();
+        }
+      } catch (err) {
+        console.warn('[Mobile] Failed to turn on camera dynamically:', err);
+      }
+    } else {
+      existingVideoTracks.forEach((t) => (t.enabled = !next));
+    }
     socketRef.current?.emit('meeting:video-toggle', { meetingId, isVideoOff: next });
     socketRef.current?.emit('meeting:camera-toggle', { meetingId, isVideoOff: next });
   };
@@ -1629,8 +1688,10 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
             overflow: 'hidden',
           }}
         >
-          {Object.entries(remoteStreams).map(([peerId, stream]) => (
-            <MobileRemoteAudioStream key={`global_audio_${peerId}`} peerId={peerId} stream={stream} />
+          {Object.entries(remoteStreams)
+            .filter(([peerId]) => peerId === peerId.toLowerCase())
+            .map(([peerId, stream]) => (
+              <MobileRemoteAudioStream key={`global_audio_${peerId}`} peerId={peerId} stream={stream} />
           ))}
         </div>
 

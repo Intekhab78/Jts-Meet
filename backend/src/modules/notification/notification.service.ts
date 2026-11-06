@@ -49,7 +49,7 @@ export class NotificationService {
         return vapidPublicKey
     }
 
-    static async savePushSubscription(userId: string, subscription: { endpoint: string; keys: { p256dh: string; auth: string } }, userAgent?: string) {
+    static async savePushSubscription(userId: string, subscription: { endpoint: string; keys: { p256dh: string; auth: string } }, userAgent?: string, origin?: string) {
         if (!userId || !subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
             throw new Error('Invalid push subscription payload')
         }
@@ -66,7 +66,8 @@ export class NotificationService {
                 $set: {
                     userId: new Types.ObjectId(userId),
                     keys: subscription.keys,
-                    userAgent: userAgent || ''
+                    userAgent: userAgent || '',
+                    origin: origin || ''
                 }
             },
             { upsert: true, new: true }
@@ -178,7 +179,7 @@ export class NotificationService {
                             },
                             android: {
                                 priority: 'high',
-                                ttl: 60, // 60 seconds TTL (seconds in FCM Admin SDK)
+                                ttl: 60 * 1000, // 60 seconds TTL (in milliseconds for Firebase Admin SDK)
                             }
                         })
                         console.log(`[FCM] Dispatched incoming call push to ${targetUserId}: ${fcmResponse.successCount}/${targetTokens.length} delivered`)
@@ -213,6 +214,9 @@ export class NotificationService {
                 ? subscriptions.filter((sub) => {
                     if (!sub.endpoint) return false
                     if (callerPushEndpoints.has(sub.endpoint)) return false
+                    if (sub.origin && (sub.origin.includes('localhost') || sub.origin.includes('127.0.0.1') || sub.origin.includes(':3000'))) {
+                        return false
+                    }
                     if (sub.userAgent && (sub.userAgent.includes('localhost') || sub.userAgent.includes('127.0.0.1') || sub.userAgent.includes(':3000'))) {
                         return false
                     }

@@ -106,7 +106,10 @@ class PushNotificationService {
                             'Authorization': authToken ? `Bearer ${authToken}` : '',
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ subscription: subscription.toJSON() })
+                        body: JSON.stringify({
+                            subscription: subscription.toJSON(),
+                            origin: window.location.origin
+                        })
                     })
                 } catch {}
             } else {
@@ -120,7 +123,10 @@ class PushNotificationService {
                         'Authorization': authToken ? `Bearer ${authToken}` : '',
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ subscription: subscription.toJSON() })
+                    body: JSON.stringify({
+                        subscription: subscription.toJSON(),
+                        origin: window.location.origin
+                    })
                 })
             }
 

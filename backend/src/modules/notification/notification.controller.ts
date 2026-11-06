@@ -83,7 +83,8 @@ export const notificationController = {
 
         try {
             const userAgent = req.headers['user-agent'] || ''
-            await NotificationService.savePushSubscription(userId, subscription, userAgent)
+            const origin = (req.body?.origin || req.headers['origin'] || '').toString()
+            await NotificationService.savePushSubscription(userId, subscription, userAgent, origin)
             return sendSuccess(res, { subscribed: true }, 'Push subscription registered successfully')
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to save push subscription')
