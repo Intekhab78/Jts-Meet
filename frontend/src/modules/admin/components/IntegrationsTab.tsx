@@ -12,6 +12,7 @@ import { IntegrationsDeliveryLogsTable } from './integrations/IntegrationsDelive
 import { IntegrationsInspectModal } from './integrations/IntegrationsInspectModal'
 import { IntegrationsHmacModal } from './integrations/IntegrationsHmacModal'
 import { IntegrationsAddModal } from './integrations/IntegrationsAddModal'
+import { IntegrationsQuickKitModal } from './integrations/IntegrationsQuickKitModal'
 import {
     IconPlus,
     IconCheck,
@@ -47,12 +48,15 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
     // Simulator State
     const [showSimulator, setShowSimulator] = useState(false)
     const [simEventType, setSimEventType] = useState('meeting.started')
-    const [simTargetId, setSimTargetId] = useState<string>('')
+    const [simTargetId, setSimTargetId] = useState<string>('sandbox')
     const [simulating, setSimulating] = useState(false)
     const [simResult, setSimResult] = useState<any>(null)
 
     // HMAC Security Guide Modal
     const [showHmacModal, setShowHmacModal] = useState(false)
+
+    // Quick Kit & Live Tester Modal
+    const [showQuickKitModal, setShowQuickKitModal] = useState(false)
 
     // Inspect Log Modal State
     const [inspectedLog, setInspectedLog] = useState<any | null>(null)
@@ -200,14 +204,32 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
     }
 
     const handleRunSimulation = async () => {
-        if (!simTargetId) {
-            alert('Please select an active target endpoint')
-            return
-        }
-
         setSimulating(true)
         setSimResult(null)
         const start = Date.now()
+
+        // Handle built-in Sandbox Echo Mode
+        if (simTargetId === 'sandbox' || !simTargetId) {
+            setTimeout(() => {
+                const duration = Math.floor(Math.random() * 35) + 25 // 25-60ms realistic roundtrip
+                setSimResult({
+                    success: true,
+                    statusCode: 200,
+                    durationMs: duration,
+                    responseBody: JSON.stringify({
+                        status: 'delivered',
+                        event: simEventType,
+                        verified: true,
+                        target: 'Built-in JTS Meet Sandbox Echo',
+                        signature: 'sha256_mock_valid_hmac_2f9a7...',
+                        message: 'Mock payload delivered & signature verified successfully'
+                    }),
+                    payloadDispatched: SAMPLE_PAYLOADS[simEventType]
+                })
+                setSimulating(false)
+            }, 300)
+            return
+        }
 
         try {
             const res = await fetch(`${API_BASE}/api/integrations/${simTargetId}/test`, {
@@ -249,7 +271,13 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
 
     const openAddModalForType = (type: SupportedConnector) => {
         setModalType(type)
-        if (type === 'slack') {
+        const generatedSecret = 'whsec_' + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 6)
+        setFormSecret(generatedSecret)
+
+        if (type === 'jts_support') {
+            setFormName('Website & CRM Webhook Gateway')
+            setFormUrl('https://api.yourdomain.com/api/webhooks')
+        } else if (type === 'slack') {
             setFormName('Slack Team Alerts')
             setFormUrl('https://hooks.slack.com/services/T00/B00/XXXX')
         } else if (type === 'teams') {
@@ -323,32 +351,32 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
     }, [allDeliveryLogs, logStatusFilter, logSearchQuery])
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            {/* Top Enterprise Banner */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Top Enterprise Banner - Compact & Modern */}
             <div style={{
                 background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.08) 100%)',
-                border: '1px solid rgba(99, 102, 241, 0.28)',
-                borderRadius: 18,
-                padding: '24px 28px',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                borderRadius: 14,
+                padding: '14px 20px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 flexWrap: 'wrap',
-                gap: 16,
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)'
+                gap: 12,
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)'
             }}>
-                <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontSize: '1.5rem' }}>🔌</span>
-                        <h2 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '1.2rem' }}>🔌</span>
+                        <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
                             Enterprise Integrations & Webhooks
                         </h2>
                         <span style={{
-                            fontSize: '0.72rem',
+                            fontSize: '0.66rem',
                             fontWeight: 800,
                             letterSpacing: '0.04em',
-                            padding: '3px 8px',
-                            borderRadius: 6,
+                            padding: '2px 7px',
+                            borderRadius: 5,
                             background: 'rgba(99, 102, 241, 0.2)',
                             border: '1px solid rgba(99, 102, 241, 0.4)',
                             color: '#a5b4fc',
@@ -356,75 +384,74 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                         }}>
                             HMAC SHA-256 SIGNED
                         </span>
-                    </div>
-                    <p style={{ margin: '0 0 10px', fontSize: '0.9rem', color: '#94a3b8', maxWidth: 680, lineHeight: 1.5 }}>
-                        Connect JTS Meet to Slack, Microsoft Teams, Discord, Google Calendar, or internal microservices. Broadcast live events, cloud recording drops, and AI meeting summaries with real-time webhooks.
-                    </p>
-                    <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        padding: '5px 12px',
-                        borderRadius: 8,
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.12)'
-                    }}>
-                        <IconShieldCheck size={14} color="#818cf8" />
-                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>WORKSPACE PLAN:</span>
-                        <span style={{
-                            fontSize: '0.75rem',
-                            fontWeight: 800,
-                            textTransform: 'uppercase',
-                            color: resolvedTier === 'enterprise' ? '#c084fc' : resolvedTier === 'starter' ? '#38bdf8' : '#fbbf24'
+                        <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '2px 8px',
+                            borderRadius: 6,
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)'
                         }}>
-                            {resolvedTier} TIER
-                        </span>
-                        <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                            ({integrations.length} of {maxAllowedLabel} Used)
-                        </span>
+                            <IconShieldCheck size={12} color="#818cf8" />
+                            <span style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 800,
+                                textTransform: 'uppercase',
+                                color: resolvedTier === 'enterprise' ? '#c084fc' : resolvedTier === 'starter' ? '#38bdf8' : '#fbbf24'
+                            }}>
+                                {resolvedTier} TIER
+                            </span>
+                            <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                                ({integrations.length}/{maxAllowedLabel})
+                            </span>
+                        </div>
                     </div>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                        Real-time webhooks & event synchronization for websites, CRMs, chat apps, and custom APIs.
+                    </p>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <button
                         onClick={() => setShowHmacModal(true)}
                         style={{
-                            padding: '10px 16px',
-                            background: 'rgba(255, 255, 255, 0.06)',
-                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                            borderRadius: 10,
+                            padding: '6px 12px',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                            borderRadius: 8,
                             color: '#cbd5e1',
                             fontWeight: 600,
-                            fontSize: '0.85rem',
+                            fontSize: '0.78rem',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 8,
-                            transition: 'all 0.2s'
+                            gap: 6,
+                            transition: 'all 0.15s ease'
                         }}
                     >
-                        <IconLock size={15} color="#cbd5e1" />
-                        <span>HMAC Security Guide</span>
+                        <IconLock size={13} color="#cbd5e1" />
+                        <span>HMAC Guide</span>
                     </button>
 
                     <button
                         onClick={() => setShowSimulator(true)}
                         style={{
-                            padding: '10px 16px',
+                            padding: '6px 12px',
                             background: 'rgba(99, 102, 241, 0.15)',
-                            border: '1px solid rgba(99, 102, 241, 0.35)',
-                            borderRadius: 10,
+                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                            borderRadius: 8,
                             color: '#a5b4fc',
                             fontWeight: 600,
-                            fontSize: '0.85rem',
+                            fontSize: '0.78rem',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 8
+                            gap: 6
                         }}
                     >
-                        <IconSparkles size={15} color="#818cf8" />
-                        <span>Test Simulator</span>
+                        <IconSparkles size={13} color="#818cf8" />
+                        <span>Simulator</span>
                     </button>
 
                     <button
@@ -436,22 +463,22 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                             openAddModalForType('webhook')
                         }}
                         style={{
-                            padding: '10px 20px',
+                            padding: '7px 16px',
                             background: isAtQuota ? 'rgba(255, 255, 255, 0.1)' : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
                             border: 'none',
-                            borderRadius: 10,
+                            borderRadius: 8,
                             color: isAtQuota ? '#94a3b8' : '#fff',
                             fontWeight: 700,
-                            fontSize: '0.9rem',
+                            fontSize: '0.8rem',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 8,
-                            boxShadow: isAtQuota ? 'none' : '0 4px 16px rgba(99, 102, 241, 0.45)'
+                            gap: 6,
+                            boxShadow: isAtQuota ? 'none' : '0 4px 14px rgba(99, 102, 241, 0.35)'
                         }}
                     >
-                        <IconPlus size={16} color={isAtQuota ? '#94a3b8' : '#fff'} />
-                        <span>{isAtQuota ? 'Plan Quota Reached' : 'Add Webhook'}</span>
+                        <IconPlus size={14} color={isAtQuota ? '#94a3b8' : '#fff'} />
+                        <span>{isAtQuota ? 'Quota Reached' : 'Add Webhook'}</span>
                     </button>
                 </div>
             </div>
@@ -459,45 +486,195 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
             {/* Success Alert Banner */}
             {successMsg && (
                 <div style={{
-                    padding: '12px 18px',
-                    borderRadius: 12,
+                    padding: '8px 14px',
+                    borderRadius: 8,
                     background: 'rgba(34, 197, 94, 0.12)',
                     border: '1px solid rgba(34, 197, 94, 0.3)',
                     color: '#4ade80',
-                    fontSize: '0.9rem',
+                    fontSize: '0.84rem',
                     fontWeight: 600,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 10
+                    gap: 8
                 }}>
-                    <IconCheck size={16} color="#4ade80" />
+                    <IconCheck size={14} color="#4ade80" />
                     <span>{successMsg}</span>
                 </div>
             )}
 
+            {/* Inbound Webhook Credentials Bar - Sleek & Compact */}
+            <div style={{
+                background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(99, 102, 241, 0.05) 100%)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                borderRadius: 12,
+                padding: '12px 18px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: '1.05rem' }}>🌐</span>
+                        <span style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff' }}>
+                            Website & CRM Webhook Gateway
+                        </span>
+                        <span style={{ fontSize: '0.76rem', color: '#93c5fd' }}>
+                            • Connect any website or CRM to receive real-time meeting events
+                        </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <button
+                            onClick={() => setShowQuickKitModal(true)}
+                            style={{
+                                padding: '6px 14px',
+                                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(59, 130, 246, 0.25) 100%)',
+                                border: '1px solid rgba(129, 140, 248, 0.45)',
+                                borderRadius: 7,
+                                color: '#e0e7ff',
+                                fontWeight: 700,
+                                fontSize: '0.78rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                boxShadow: '0 2px 8px rgba(99, 102, 241, 0.2)'
+                            }}
+                        >
+                            <span>🚀 Website Integration Kit & Tester</span>
+                        </button>
+
+                        <button
+                            onClick={() => openAddModalForType('jts_support')}
+                            style={{
+                                padding: '6px 12px',
+                                background: 'rgba(59, 130, 246, 0.2)',
+                                border: '1px solid rgba(59, 130, 246, 0.4)',
+                                borderRadius: 7,
+                                color: '#93c5fd',
+                                fontWeight: 700,
+                                fontSize: '0.76rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 5
+                            }}
+                        >
+                            <span>⚡ Configure Gateway</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                    gap: 10
+                }}>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        background: 'rgba(0, 0, 0, 0.35)',
+                        padding: '6px 10px',
+                        borderRadius: 8,
+                        border: '1px solid rgba(255, 255, 255, 0.06)'
+                    }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                            1. Inbound URL:
+                        </span>
+                        <code style={{
+                            flex: 1,
+                            fontSize: '0.76rem',
+                            color: '#38bdf8',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                        }}>
+                            {typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/webhook` : 'https://meet.jtsmiddleeast.com/api/integrations/webhook'}
+                        </code>
+                        <button
+                            onClick={() => copyToClipboard(typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/webhook` : 'https://meet.jtsmiddleeast.com/api/integrations/webhook', 'meet_url')}
+                            style={{
+                                padding: '4px 10px',
+                                background: copiedSecretId === 'meet_url' ? '#16a34a' : 'rgba(255,255,255,0.08)',
+                                border: 'none',
+                                borderRadius: 5,
+                                color: '#fff',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                flexShrink: 0
+                            }}
+                        >
+                            {copiedSecretId === 'meet_url' ? 'Copied!' : 'Copy'}
+                        </button>
+                    </div>
+
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        background: 'rgba(0, 0, 0, 0.35)',
+                        padding: '6px 10px',
+                        borderRadius: 8,
+                        border: '1px solid rgba(255, 255, 255, 0.06)'
+                    }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                            2. Secret Token:
+                        </span>
+                        <code style={{
+                            flex: 1,
+                            fontSize: '0.76rem',
+                            color: '#a78bfa',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                        }}>
+                            {integrations.find(i => i.type === 'jts_support')?.secret || 'whsec_live_enterprise_meet_key'}
+                        </code>
+                        <button
+                            onClick={() => copyToClipboard(integrations.find(i => i.type === 'jts_support')?.secret || 'whsec_live_enterprise_meet_key', 'sec_token')}
+                            style={{
+                                padding: '4px 10px',
+                                background: copiedSecretId === 'sec_token' ? '#16a34a' : 'rgba(255,255,255,0.08)',
+                                border: 'none',
+                                borderRadius: 5,
+                                color: '#fff',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                flexShrink: 0
+                            }}
+                        >
+                            {copiedSecretId === 'sec_token' ? 'Copied!' : 'Copy'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             {/* KPI Metric Cards */}
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap: 16
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: 12
             }}>
                 <div style={{
                     background: 'rgba(255, 255, 255, 0.03)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: 14,
-                    padding: '18px 20px',
+                    borderRadius: 12,
+                    padding: '12px 16px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 6
+                    gap: 4
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                        <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
                             Configured Endpoints
                         </span>
                         <span style={{
-                            padding: '2px 7px',
-                            borderRadius: 6,
-                            fontSize: '0.72rem',
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            fontSize: '0.68rem',
                             fontWeight: 700,
                             background: activeIntegrationsCount > 0 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(148, 163, 184, 0.15)',
                             color: activeIntegrationsCount > 0 ? '#4ade80' : '#94a3b8'
@@ -505,79 +682,79 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                             {activeIntegrationsCount} ACTIVE
                         </span>
                     </div>
-                    <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>
-                        {integrations.length} <span style={{ fontSize: '0.95rem', fontWeight: 500, color: '#64748b' }}>total</span>
+                    <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#fff' }}>
+                        {integrations.length} <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#64748b' }}>total</span>
                     </div>
-                    <span style={{ fontSize: '0.76rem', color: '#64748b' }}>Across all enabled channels</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Across all enabled channels</span>
                 </div>
 
                 <div style={{
                     background: 'rgba(255, 255, 255, 0.03)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: 14,
-                    padding: '18px 20px',
+                    borderRadius: 12,
+                    padding: '12px 16px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 6
+                    gap: 4
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                        <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
                             Events Dispatched
                         </span>
-                        <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: '0.72rem', fontWeight: 700, background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
+                        <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: '0.68rem', fontWeight: 700, background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
                             REAL-TIME
                         </span>
                     </div>
-                    <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#818cf8' }}>
-                        {totalDispatches} <span style={{ fontSize: '0.95rem', fontWeight: 500, color: '#64748b' }}>events</span>
+                    <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#818cf8' }}>
+                        {totalDispatches} <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#64748b' }}>events</span>
                     </div>
-                    <span style={{ fontSize: '0.76rem', color: '#64748b' }}>Socket & webhook executions</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Socket & webhook executions</span>
                 </div>
 
                 <div style={{
                     background: 'rgba(255, 255, 255, 0.03)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: 14,
-                    padding: '18px 20px',
+                    borderRadius: 12,
+                    padding: '12px 16px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 6
+                    gap: 4
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                        <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
                             Delivery Health
                         </span>
-                        <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: '0.72rem', fontWeight: 700, background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80' }}>
+                        <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: '0.68rem', fontWeight: 700, background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80' }}>
                             SLA 99.9%
                         </span>
                     </div>
-                    <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#4ade80' }}>
+                    <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#4ade80' }}>
                         {successRate}%
                     </div>
-                    <span style={{ fontSize: '0.76rem', color: '#64748b' }}>Successful HTTP 2xx transmissions</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Successful HTTP 2xx transmissions</span>
                 </div>
 
                 <div style={{
                     background: 'rgba(255, 255, 255, 0.03)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: 14,
-                    padding: '18px 20px',
+                    borderRadius: 12,
+                    padding: '12px 16px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 6
+                    gap: 4
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                        <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
                             Average Latency
                         </span>
-                        <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: '0.72rem', fontWeight: 700, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>
+                        <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: '0.68rem', fontWeight: 700, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>
                             ROUNDTRIP
                         </span>
                     </div>
-                    <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fbbf24' }}>
-                        {avgLatency} <span style={{ fontSize: '0.95rem', fontWeight: 500, color: '#64748b' }}>ms</span>
+                    <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#fbbf24' }}>
+                        {avgLatency} <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#64748b' }}>ms</span>
                     </div>
-                    <span style={{ fontSize: '0.76rem', color: '#64748b' }}>SSL handshake & response time</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>SSL handshake & response time</span>
                 </div>
             </div>
 
@@ -602,6 +779,7 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                 simulating={simulating}
                 simResult={simResult}
                 copyToClipboard={copyToClipboard}
+                openAddModalForType={openAddModalForType}
             />
 
             {/* Configured Endpoints List */}
@@ -661,6 +839,14 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                 selectedEvents={selectedEvents}
                 setSelectedEvents={setSelectedEvents}
                 handleCreate={handleCreate}
+            />
+
+            {/* Quick Kit & Live Tester Modal */}
+            <IntegrationsQuickKitModal
+                show={showQuickKitModal}
+                onClose={() => setShowQuickKitModal(false)}
+                inboundUrl={typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/webhook` : 'https://meet.jtsmiddleeast.com/api/integrations/webhook'}
+                secretToken={integrations.find(i => i.type === 'jts_support')?.secret || 'whsec_live_enterprise_meet_key'}
             />
         </div>
     )

@@ -53,7 +53,7 @@ const defaultAllowedOrigins = [
     ...ALLOWED_ORIGINS
 ].filter(Boolean)
 
-app.use(cors({
+const corsMiddleware = cors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
         // Allow mobile apps, electron, curl, postman (no origin)
         if (!origin) {
@@ -96,7 +96,22 @@ app.use(cors({
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
-}))
+})
+
+// Public Inbound Webhook / Integration Gateway - Open CORS for any external website or client
+app.use((req: Request, res: Response, next: any) => {
+    if (req.path.startsWith('/api/integrations/webhook')) {
+        res.header('Access-Control-Allow-Origin', req.headers.origin || '*')
+        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, x-jts-signature, x-jts-timestamp, x-jts-event')
+        res.header('Access-Control-Allow-Credentials', 'true')
+        if (req.method === 'OPTIONS') {
+            return res.sendStatus(204)
+        }
+        return next()
+    }
+    return corsMiddleware(req, res, next)
+})
 
 app.use(cookieParser())
 app.use(json({
@@ -130,6 +145,16 @@ connectDB()
 app.get('/api/health', (req: Request, res: Response) => {
     res.status(200).send('OK')
 })
+
+// Direct meeting link redirect from backend Express to frontend Web App (handles external webhooks / direct port access)
+const handleMeetingRedirect = (req: Request, res: Response) => {
+    const meetingId = req.params.id
+    const frontendBase = (FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')
+    return res.redirect(`${frontendBase}/meet/${meetingId}`)
+}
+app.get('/meet/:id', handleMeetingRedirect)
+app.get('/meeting/:id', handleMeetingRedirect)
+app.get('/join/:id', handleMeetingRedirect)
 
 // Unrestricted access for all meeting, chat, auth, and workspace routes (No limits / Unlimited 24/7)
 app.use('/api/auth', authRoutes)

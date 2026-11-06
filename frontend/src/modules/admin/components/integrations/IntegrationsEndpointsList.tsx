@@ -92,39 +92,126 @@ export const IntegrationsEndpointsList: React.FC<IntegrationsEndpointsListProps>
             {loading && integrations.length === 0 ? (
                 <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: '20px 0' }}>Loading integrations...</p>
             ) : integrations.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '42px 20px', color: '#94a3b8' }}>
+                <div style={{
+                    padding: '36px 24px',
+                    textAlign: 'center',
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    borderRadius: 14,
+                    border: '1px dashed rgba(255, 255, 255, 0.12)'
+                }}>
                     <div style={{
-                        width: 52,
-                        height: 52,
-                        borderRadius: 14,
-                        background: 'rgba(99, 102, 241, 0.1)',
-                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                        width: 56,
+                        height: 56,
+                        borderRadius: 16,
+                        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(37, 99, 235, 0.2) 100%)',
+                        border: '1px solid rgba(99, 102, 241, 0.35)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        margin: '0 auto 14px'
+                        margin: '0 auto 16px',
+                        fontSize: '1.5rem'
                     }}>
-                        <IconZap size={26} color="#818cf8" />
+                        ⚡
                     </div>
-                    <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#e2e8f0' }}>No webhook endpoints configured yet.</p>
-                    <p style={{ margin: '6px 0 16px', fontSize: '0.82rem', color: '#64748b' }}>
-                        Connect Slack, Teams, Discord, Google Calendar, or a custom webhook endpoint above.
+                    <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#f1f5f9' }}>
+                        No Webhook Endpoints Configured Yet
+                    </h4>
+                    <p style={{ margin: '8px auto 20px', fontSize: '0.86rem', color: '#94a3b8', maxWidth: 540, lineHeight: 1.5 }}>
+                        Webhook endpoints allow your website, CRM, or backend services to receive real-time notifications whenever a meeting starts, ends, participants join, or recordings are generated.
                     </p>
-                    <button
-                        onClick={() => openAddModalForType('slack')}
-                        style={{
-                            padding: '8px 18px',
-                            background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                            border: 'none',
-                            borderRadius: 8,
-                            color: '#fff',
-                            fontWeight: 600,
-                            fontSize: '0.82rem',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        + Connect First Service
-                    </button>
+
+                    {/* 3 Step Visual Guide */}
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                        gap: 12,
+                        maxWidth: 720,
+                        margin: '0 auto 24px',
+                        textAlign: 'left'
+                    }}>
+                        <div style={{
+                            padding: '14px 16px',
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid rgba(255, 255, 255, 0.06)',
+                            borderRadius: 10
+                        }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#818cf8', textTransform: 'uppercase', marginBottom: 4 }}>
+                                Step 1 • Destination
+                            </div>
+                            <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.4 }}>
+                                Choose a connector above or enter your website / CRM webhook URL.
+                            </div>
+                        </div>
+
+                        <div style={{
+                            padding: '14px 16px',
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid rgba(255, 255, 255, 0.06)',
+                            borderRadius: 10
+                        }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', marginBottom: 4 }}>
+                                Step 2 • Events & HMAC
+                            </div>
+                            <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.4 }}>
+                                Select trigger events & verify incoming requests using HMAC SHA-256.
+                            </div>
+                        </div>
+
+                        <div style={{
+                            padding: '14px 16px',
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid rgba(255, 255, 255, 0.06)',
+                            borderRadius: 10
+                        }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#4ade80', textTransform: 'uppercase', marginBottom: 4 }}>
+                                Step 3 • Automation
+                            </div>
+                            <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.4 }}>
+                                Real-time dispatches, delivery health, and latency appear right here.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <button
+                            onClick={() => openAddModalForType('jts_support')}
+                            style={{
+                                padding: '9px 20px',
+                                background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
+                                border: 'none',
+                                borderRadius: 8,
+                                color: '#fff',
+                                fontWeight: 700,
+                                fontSize: '0.84rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)'
+                            }}
+                        >
+                            <span>🌐 Connect Website / CRM</span>
+                        </button>
+
+                        <button
+                            onClick={() => openAddModalForType('webhook')}
+                            style={{
+                                padding: '9px 18px',
+                                background: 'rgba(255, 255, 255, 0.06)',
+                                border: '1px solid rgba(255, 255, 255, 0.15)',
+                                borderRadius: 8,
+                                color: '#e2e8f0',
+                                fontWeight: 600,
+                                fontSize: '0.84rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
+                            }}
+                        >
+                            <span>⚡ Custom REST Webhook</span>
+                        </button>
+                    </div>
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -161,6 +248,7 @@ export const IntegrationsEndpointsList: React.FC<IntegrationsEndpointsListProps>
                                                 : item.type === 'googledrive' ? '#10b981'
                                                 : item.type === 'email' ? '#d97706'
                                                 : item.type === 'zapier' ? '#EA580C'
+                                                : item.type === 'jts_support' ? 'linear-gradient(135deg, #4338ca 0%, #2563eb 100%)'
                                                 : '#6366f1',
                                             display: 'flex',
                                             alignItems: 'center',
@@ -171,6 +259,7 @@ export const IntegrationsEndpointsList: React.FC<IntegrationsEndpointsListProps>
                                             flexShrink: 0
                                         }}>
                                             {item.type === 'teams' ? 'T' 
+                                                : item.type === 'jts_support' ? <span style={{ fontSize: '1.1rem' }}>🌐</span>
                                                 : item.type === 'calendar' ? <IconCalendar size={18} color="#fff" />
                                                 : item.type === 'email' ? <IconMail size={18} color="#fff" />
                                                 : item.type === 'googledrive' ? <IconFolder size={18} color="#fff" />
@@ -201,7 +290,7 @@ export const IntegrationsEndpointsList: React.FC<IntegrationsEndpointsListProps>
                                                     color: '#94a3b8',
                                                     textTransform: 'uppercase'
                                                 }}>
-                                                    {item.type}
+                                                    {item.type === 'jts_support' ? 'WEBSITE / CRM' : item.type}
                                                 </span>
                                             </div>
                                             <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 4, wordBreak: 'break-all' }}>
@@ -366,19 +455,31 @@ export const IntegrationsEndpointsList: React.FC<IntegrationsEndpointsListProps>
                                         border: `1px solid ${thisTestResult.success ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
                                         fontSize: '0.8rem',
                                         display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center'
+                                        flexDirection: 'column',
+                                        gap: 6
                                     }}>
-                                        <span style={{ color: thisTestResult.success ? '#4ade80' : '#f87171', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            {thisTestResult.success ? <IconCheck size={14} color="#4ade80" /> : <IconX size={14} color="#f87171" />}
-                                            <span>{thisTestResult.success ? 'Payload delivered successfully' : 'Delivery test failed'} (HTTP {thisTestResult.statusCode} • {thisTestResult.durationMs}ms)</span>
-                                        </span>
-                                        <button
-                                            onClick={() => setTestResult(null)}
-                                            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                                        >
-                                            <IconX size={13} color="#94a3b8" />
-                                        </button>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ color: thisTestResult.success ? '#4ade80' : '#f87171', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+                                                {thisTestResult.success ? <IconCheck size={14} color="#4ade80" /> : <IconX size={14} color="#f87171" />}
+                                                <span>{thisTestResult.success ? 'Payload delivered successfully' : `Destination Server Returned HTTP ${thisTestResult.statusCode}`} ({thisTestResult.durationMs}ms roundtrip)</span>
+                                            </span>
+                                            <button
+                                                onClick={() => setTestResult(null)}
+                                                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                            >
+                                                <IconX size={13} color="#94a3b8" />
+                                            </button>
+                                        </div>
+                                        {thisTestResult.statusCode === 404 && (
+                                            <div style={{ fontSize: '0.74rem', color: '#fca5a5', lineHeight: 1.4 }}>
+                                                ℹ️ <strong>Why 404?</strong> JTS Meet connected to the remote server, but that server replied that this URL route is not yet configured or does not exist on their end.
+                                            </div>
+                                        )}
+                                        {thisTestResult.success && (
+                                            <div style={{ fontSize: '0.74rem', color: '#86efac', lineHeight: 1.4 }}>
+                                                ✓ <strong>Success:</strong> Remote server received and accepted the HMAC SHA-256 signed event payload.
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>

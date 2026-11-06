@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { SAMPLE_PAYLOADS } from '../../integrations.types'
+import { SAMPLE_PAYLOADS, SupportedConnector } from '../../integrations.types'
 import {
     IconSparkles,
     IconCheck,
@@ -20,6 +20,7 @@ interface IntegrationsSimulatorProps {
     simulating: boolean
     simResult: any
     copyToClipboard: (text: string) => void
+    openAddModalForType?: (type: SupportedConnector) => void
 }
 
 export const IntegrationsSimulator: React.FC<IntegrationsSimulatorProps> = ({
@@ -33,7 +34,8 @@ export const IntegrationsSimulator: React.FC<IntegrationsSimulatorProps> = ({
     handleRunSimulation,
     simulating,
     simResult,
-    copyToClipboard
+    copyToClipboard,
+    openAddModalForType
 }) => {
     const [simCopied, setSimCopied] = useState(false)
 
@@ -110,7 +112,7 @@ export const IntegrationsSimulator: React.FC<IntegrationsSimulatorProps> = ({
                                 Target Endpoint Destination
                             </label>
                             <select
-                                value={simTargetId}
+                                value={simTargetId || 'sandbox'}
                                 onChange={(e) => setSimTargetId(e.target.value)}
                                 style={{
                                     width: '100%',
@@ -122,16 +124,45 @@ export const IntegrationsSimulator: React.FC<IntegrationsSimulatorProps> = ({
                                     fontSize: '0.85rem'
                                 }}
                             >
-                                {integrations.length === 0 ? (
-                                    <option value="">No configured endpoints (Please add one)</option>
-                                ) : (
-                                    integrations.map(i => (
-                                        <option key={i._id || i.id} value={i._id || i.id}>
-                                            {i.name} ({i.type.toUpperCase()}) — {i.url.slice(0, 42)}...
-                                        </option>
-                                    ))
+                                <optgroup label="🧪 Built-in Testing Sandbox">
+                                    <option value="sandbox">
+                                        🧪 Built-in Sandbox Echo Receiver (Instant Mock Test)
+                                    </option>
+                                </optgroup>
+                                {integrations.length > 0 && (
+                                    <optgroup label="🌐 Your Configured Live Endpoints">
+                                        {integrations.map(i => (
+                                            <option key={i._id || i.id} value={i._id || i.id}>
+                                                {i.name} ({i.type === 'jts_support' ? 'WEBSITE/CRM' : i.type.toUpperCase()}) — {i.url.slice(0, 38)}...
+                                            </option>
+                                        ))}
+                                    </optgroup>
                                 )}
                             </select>
+                            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, fontSize: '0.78rem' }}>
+                                <span style={{ color: '#94a3b8' }}>
+                                    {simTargetId === 'sandbox' || !simTargetId
+                                        ? '⚡ In-Memory Sandbox Mode active (Safe testing without configuring live servers).'
+                                        : '⚡ Live outbound dispatch active for selected endpoint.'}
+                                </span>
+                                {openAddModalForType && (
+                                    <button
+                                        type="button"
+                                        onClick={() => openAddModalForType('jts_support')}
+                                        style={{
+                                            background: 'transparent',
+                                            border: 'none',
+                                            color: '#38bdf8',
+                                            fontWeight: 700,
+                                            textDecoration: 'underline',
+                                            cursor: 'pointer',
+                                            padding: 0
+                                        }}
+                                    >
+                                        + Add Live Website/CRM Endpoint
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -185,7 +216,7 @@ export const IntegrationsSimulator: React.FC<IntegrationsSimulatorProps> = ({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
                         <button
                             onClick={handleRunSimulation}
-                            disabled={simulating || integrations.length === 0}
+                            disabled={simulating}
                             style={{
                                 padding: '10px 20px',
                                 background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
@@ -194,7 +225,7 @@ export const IntegrationsSimulator: React.FC<IntegrationsSimulatorProps> = ({
                                 color: '#fff',
                                 fontWeight: 700,
                                 fontSize: '0.88rem',
-                                cursor: simulating || integrations.length === 0 ? 'not-allowed' : 'pointer',
+                                cursor: simulating ? 'not-allowed' : 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 8,

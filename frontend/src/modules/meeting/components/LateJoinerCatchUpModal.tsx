@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { API_BASE } from '../../../config'
 import {
     IconSparkles,
     IconX,
     IconCheck,
     IconCopy,
-    IconClock
+    IconClock,
+    IconRefresh
 } from '../../../components/common/Icons'
 
 export interface LateJoinerCatchUpModalProps {
@@ -31,7 +32,7 @@ export function LateJoinerCatchUpModal({
     const [bullets, setBullets] = useState<string[]>([])
     const [keyTakeaway, setKeyTakeaway] = useState<string>('')
     const [copied, setCopied] = useState(false)
-    const fetchedRef = useRef(false)
+    const [lastAnalyzedCount, setLastAnalyzedCount] = useState<number>(0)
 
     const propsRef = useRef({
         meetingTitle,
@@ -41,79 +42,86 @@ export function LateJoinerCatchUpModal({
         chatMessages
     })
 
-    useEffect(() => {
-        propsRef.current = {
-            meetingTitle,
-            meetingId,
-            token,
-            transcripts,
-            chatMessages
-        }
-    })
+    // Keep propsRef updated on every render
+    propsRef.current = {
+        meetingTitle,
+        meetingId,
+        token,
+        transcripts,
+        chatMessages
+    }
 
-    useEffect(() => {
-        if (fetchedRef.current) return
-        fetchedRef.current = true
+    const fetchCatchUp = useCallback(async () => {
+        setLoading(true)
+        const { meetingTitle: title, transcripts: curTranscripts, chatMessages: curChat, token: propToken } = propsRef.current
+        const activeToken = propToken || localStorage.getItem('token') || localStorage.getItem('jts_token') || sessionStorage.getItem('token') || sessionStorage.getItem('jts_token') || ''
 
-        const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 6000)
+        const curCount = (curChat?.length || 0) + (curTranscripts?.length || 0)
+        setLastAnalyzedCount(curCount)
 
-        const fetchCatchUp = async () => {
-            setLoading(true)
-            const { meetingTitle: title, transcripts: curTranscripts, chatMessages: curChat, token: propToken } = propsRef.current
-            const activeToken = propToken || localStorage.getItem('token') || localStorage.getItem('jts_token') || sessionStorage.getItem('token') || sessionStorage.getItem('jts_token') || ''
-
-            const fallbackBullets = [
-                `Meeting initiated with agenda discussion for "${title || 'Meeting'}".`,
-                'Participants reviewed project status, milestones, and deliverables.',
-                'Active discussion and media sharing are in progress.'
+        // Dynamic fallback directly from real room data if network fails
+        const lastChat = (curChat || []).slice(-1)[0]
+        const lastTranscript = (curTranscripts || []).slice(-1)[0]
+        const fallbackBullets = curChat && curChat.length > 0
+            ? [
+                `Recent message from ${lastChat?.sender || 'Participant'}: "${lastChat?.text || ''}"`,
+                `Total ${curChat.length} message(s) shared in this meeting so far.`,
+                `Session "${title || 'Meeting'}" discussion is actively progressing.`
             ]
-            const fallbackTakeaway = 'Meeting is actively underway. Check recent chat messages or shared screen to jump right in!'
+            : [
+                `Session "${title || 'Meeting'}" is live and ready for participation.`,
+                'Audio, video, and collaboration channels are active.',
+                'No previous conversation has been missed — you are in sync from the start.'
+            ]
+        const fallbackTakeaway = curChat && curChat.length > 0
+            ? `Catch up with the ongoing discussion from ${lastChat?.sender || 'participants'}.`
+            : `You are up to date! Unmute or type in chat to collaborate in "${title || 'Meeting'}".`
 
-            try {
-                const res = await fetch(`${API_BASE}/api/ai/catch-up`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
-                    },
-                    body: JSON.stringify({
-                        title: title || 'Meeting Session',
-                        transcripts: curTranscripts || [],
-                        chatMessages: curChat || []
-                    }),
-                    signal: controller.signal
-                })
+        try {
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), 12000)
 
-                clearTimeout(timer)
+            const targetUrl = `${API_BASE || ''}/api/ai/catch-up`
+            const res = await fetch(targetUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
+                },
+                body: JSON.stringify({
+                    title: title || 'Meeting Session',
+                    transcripts: curTranscripts || [],
+                    chatMessages: curChat || []
+                }),
+                signal: controller.signal
+            })
 
-                if (res.ok) {
-                    const data = await res.json()
-                    if (data.data) {
-                        setBullets(data.data.bullets && data.data.bullets.length > 0 ? data.data.bullets : fallbackBullets)
-                        setKeyTakeaway(data.data.keyTakeaway || fallbackTakeaway)
-                        return
-                    }
+            clearTimeout(timer)
+
+            if (res.ok) {
+                const data = await res.json()
+                if (data.data) {
+                    setBullets(data.data.bullets && data.data.bullets.length > 0 ? data.data.bullets : fallbackBullets)
+                    setKeyTakeaway(data.data.keyTakeaway || fallbackTakeaway)
+                    return
                 }
-
-                setBullets(fallbackBullets)
-                setKeyTakeaway(fallbackTakeaway)
-            } catch (err: any) {
-                clearTimeout(timer)
-                console.warn('[Catch Me Up] Fallback used:', err)
-                setBullets(fallbackBullets)
-                setKeyTakeaway(fallbackTakeaway)
-            } finally {
-                setLoading(false)
             }
-        }
 
-        fetchCatchUp()
-
-        return () => {
-            controller.abort()
+            setBullets(fallbackBullets)
+            setKeyTakeaway(fallbackTakeaway)
+        } catch (err: any) {
+            console.warn('[Catch Me Up] Fallback used:', err)
+            setBullets(fallbackBullets)
+            setKeyTakeaway(fallbackTakeaway)
+        } finally {
+            setLoading(false)
         }
     }, [])
+
+    // Initial fetch on mount
+    useEffect(() => {
+        fetchCatchUp()
+    }, [fetchCatchUp])
 
     const handleCopy = () => {
         const textToCopy = `Catch Me Up Recap — ${meetingTitle}\n\nKey Highlights:\n${bullets.map(b => `• ${b}`).join('\n')}\n\nTakeaway: ${keyTakeaway}`
@@ -122,6 +130,9 @@ export function LateJoinerCatchUpModal({
             setTimeout(() => setCopied(false), 2000)
         }).catch(() => {})
     }
+
+    const totalCurrentCount = (chatMessages?.length || 0) + (transcripts?.length || 0)
+    const hasNewContent = totalCurrentCount > lastAnalyzedCount
 
     return (
         <div
@@ -145,7 +156,7 @@ export function LateJoinerCatchUpModal({
             <div
                 style={{
                     width: '100%',
-                    maxWidth: 560,
+                    maxWidth: 580,
                     margin: 'auto',
                     marginBottom: 24,
                     background: 'var(--color-surface-1, #12131a)',
@@ -190,29 +201,87 @@ export function LateJoinerCatchUpModal({
                                 </span>
                             </h3>
                             <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '2px 0 0 0', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                <IconClock size={12} /> Joined ~{joinedMinutesLate}m in • Summary of what was discussed so far
+                                <IconClock size={12} /> Joined ~{joinedMinutesLate}m in • Real-time AI briefing of what was discussed so far
                             </p>
                         </div>
                     </div>
 
-                    <button
-                        onClick={onClose}
-                        style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 8,
-                            background: 'rgba(255, 255, 255, 0.06)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            color: 'var(--color-text-muted)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        <IconX size={15} />
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                            onClick={fetchCatchUp}
+                            disabled={loading}
+                            title="Refresh AI recap with latest dialogue & chat"
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '6px 12px',
+                                borderRadius: 8,
+                                background: 'rgba(168, 85, 247, 0.15)',
+                                border: '1px solid rgba(168, 85, 247, 0.3)',
+                                color: '#d8b4fe',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                cursor: loading ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <span style={{ display: 'inline-block', animation: loading ? 'spin 1s linear infinite' : 'none' }}>
+                                <IconRefresh size={13} />
+                            </span>
+                            <span>{loading ? 'Analyzing...' : 'Refresh'}</span>
+                        </button>
+
+                        <button
+                            onClick={onClose}
+                            style={{
+                                width: 32,
+                                height: 32,
+                                borderRadius: 8,
+                                background: 'rgba(255, 255, 255, 0.06)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                color: 'var(--color-text-muted)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <IconX size={15} />
+                        </button>
+                    </div>
                 </div>
+
+                {/* New Messages Alert Pill */}
+                {hasNewContent && !loading && (
+                    <div style={{
+                        padding: '8px 16px',
+                        background: 'rgba(99, 102, 241, 0.15)',
+                        borderBottom: '1px solid rgba(99, 102, 241, 0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '0.78rem',
+                        color: '#c7d2fe'
+                    }}>
+                        <span>✨ New chat messages or speech detected in room!</span>
+                        <button
+                            onClick={fetchCatchUp}
+                            style={{
+                                background: '#6366f1',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 6,
+                                padding: '3px 10px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Update Recap
+                        </button>
+                    </div>
+                )}
 
                 {/* Content Area */}
                 <div style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -224,7 +293,7 @@ export function LateJoinerCatchUpModal({
                             <div className="skeleton" style={{ height: 16, width: '80%', borderRadius: 6 }} />
                             <div style={{ textAlign: 'center', marginTop: 8, fontSize: '0.8125rem', color: '#c084fc', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                                 <IconSparkles size={14} />
-                                <span>Gemini Flash analyzing meeting dialogue & chat history...</span>
+                                <span>Gemini AI is analyzing live dialogue & chat history...</span>
                             </div>
                         </div>
                     ) : (
@@ -303,22 +372,42 @@ export function LateJoinerCatchUpModal({
                     justifyContent: 'space-between',
                     gap: 12
                 }}>
-                    <button
-                        onClick={handleCopy}
-                        disabled={loading || bullets.length === 0}
-                        className="btn btn-secondary"
-                        style={{
-                            height: 36,
-                            padding: '0 14px',
-                            fontSize: '0.78rem',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6
-                        }}
-                    >
-                        {copied ? <IconCheck size={14} color="#4ade80" /> : <IconCopy size={14} />}
-                        <span>{copied ? 'Copied!' : 'Copy Summary'}</span>
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                            onClick={handleCopy}
+                            disabled={loading || bullets.length === 0}
+                            className="btn btn-secondary"
+                            style={{
+                                height: 36,
+                                padding: '0 14px',
+                                fontSize: '0.78rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6
+                            }}
+                        >
+                            {copied ? <IconCheck size={14} color="#4ade80" /> : <IconCopy size={14} />}
+                            <span>{copied ? 'Copied!' : 'Copy Summary'}</span>
+                        </button>
+
+                        <button
+                            onClick={fetchCatchUp}
+                            disabled={loading}
+                            className="btn btn-secondary"
+                            style={{
+                                height: 36,
+                                padding: '0 14px',
+                                fontSize: '0.78rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                background: 'rgba(255, 255, 255, 0.04)'
+                            }}
+                        >
+                            <IconRefresh size={14} />
+                            <span>Refresh</span>
+                        </button>
+                    </div>
 
                     <button
                         onClick={onClose}

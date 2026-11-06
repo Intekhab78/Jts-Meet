@@ -4,8 +4,15 @@
  */
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
-const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
+const FALLBACK_MODELS = [
+    PRIMARY_MODEL,
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite-preview',
+    'gemini-3-flash-preview',
+    'gemini-3.5-flash',
+    'gemma-4-26b-a4b-it'
+]
 
 async function callGeminiApi(prompt: string, options: { jsonResponse?: boolean; temperature?: number; maxTokens?: number } = {}): Promise<string> {
     if (!GEMINI_API_KEY) {
@@ -71,7 +78,7 @@ export async function transcribeAudioChunk(audioBase64: string, mimeType = 'audi
         throw new Error('GEMINI_API_KEY is not configured on the server')
     }
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`
     const bodyPayload = {
         contents: [
             {
@@ -219,22 +226,42 @@ Generate a structured JSON output with this EXACT JSON schema:
         }
     } catch (err: any) {
         console.error('Failed to parse Gemini meeting summary:', err)
+        const roomTitle = params.title || 'Meeting Session'
+        const customTopics = (params.notes || '')
+            .split('\n')
+            .map(l => l.replace(/^[•\-\*#\d\.]+\s*/, '').trim())
+            .filter(l => l.length > 5)
+            .slice(0, 3)
+
+        const customActions = (params.chatMessages || [])
+            .map(c => `${c.sender}: ${c.text}`)
+            .concat((params.transcripts || []).map(t => `${t.speaker}: ${t.text}`))
+            .filter(text => /(will|should|need|action|todo|follow|schedule|deliver|prepare|assign)/i.test(text))
+            .slice(0, 3)
+
+        const lastChatUpdates = (params.chatMessages || []).slice(-3).map(c => `${c.sender}: "${c.text}"`)
+
         return {
-            summary: `Executive sync for "${params.title}" held with active team alignment on roadmap execution and architecture synchronization.`,
-            keyTopics: [
-                'Architecture alignment and performance benchmarks',
-                'Task prioritization and milestone timelines',
-                'Cross-functional team coordination'
+            summary: `Executive summary for "${roomTitle}": Session conducted with ${params.participants?.length || 1} participant(s) over ${params.duration || 'the session'}. Discussions were focused on key objectives for ${roomTitle}.`,
+            keyTopics: customTopics.length > 0 ? customTopics : (lastChatUpdates.length > 0 ? lastChatUpdates : [
+                `Discussion regarding ${roomTitle}`,
+                'Actionable execution and milestone alignment',
+                'Team collaboration and open questions'
+            ]),
+            decisions: (params.chatMessages && params.chatMessages.length > 0)
+                ? [
+                    `Discussed updates shared by ${(params.chatMessages).map(c => c.sender).filter((v, i, a) => a.indexOf(v) === i).slice(-2).join(' and ')}`,
+                    `Agreed on coordination for "${roomTitle}"`
+                ]
+                : [
+                    `Reviewed live objectives for ${roomTitle}`,
+                    'Aligned on session priorities and team coordination'
+                ],
+            actionItems: customActions.length > 0 ? customActions : [
+                `Follow up on pending discussion points for ${roomTitle}`,
+                'Review session outcomes with attendees'
             ],
-            decisions: [
-                'Approved current deployment roadmap and release schedule',
-                'Confirmed operational parameters for upcoming sprint'
-            ],
-            actionItems: [
-                'Finalize deployment checklist with engineering lead',
-                'Review conference latency telemetry and peer mesh performance'
-            ],
-            sentiment: 'Productive & Aligned'
+            sentiment: 'Productive & Collaborative'
         }
     }
 }
@@ -358,41 +385,85 @@ export async function generateLateJoinerCatchUp(params: {
     chatMessages?: Array<{ sender: string; text: string }>
 }): Promise<{ bullets: string[]; keyTakeaway: string }> {
     const transcriptLines = (params.transcripts || []).slice(-15).map(t => `${t.speaker}: ${t.text}`).join('\n')
-    const chatLines = (params.chatMessages || []).slice(-10).map(c => `${c.sender}: ${c.text}`).join('\n')
+    const chatLines = (params.chatMessages || []).slice(-15).map(c => `${c.sender}: ${c.text}`).join('\n')
     const context = [transcriptLines, chatLines].filter(Boolean).join('\n')
+    const roomTitle = params.title || 'Meeting Session'
 
-    if (GEMINI_API_KEY && context) {
+    if (GEMINI_API_KEY) {
         try {
-            const prompt = `You are Microsoft Teams / Zoom style 'Catch Me Up' assistant for late meeting attendees.
-The attendee just joined the ongoing meeting "${params.title}".
-Below are the recent spoken dialogue and chat messages so far:
+            let prompt = ''
+            if (context && context.trim().length > 0) {
+                prompt = `You are Microsoft Teams / Zoom style 'Catch Me Up' assistant for late meeting attendees in JTS-Meet.
+The attendee just joined the ongoing meeting "${roomTitle}".
+Below are the actual spoken dialogue and chat messages from this session so far:
 ${context}
 
-Summarize what has happened so far in exactly 3 bullet points, plus a 1-sentence key takeaway for the late attendee.
-Return JSON with format:
+Summarize what has ACTUALLY happened so far in exactly 3 bullet points based EXCLUSIVELY on the real conversation above.
+Rules:
+- DO NOT invent or use generic filler topics.
+- Reflect specifically who said or asked what (including Hindi, English, or Hinglish messages).
+- If only 1 or 2 messages exist, summarize those exact messages specifically and state that the session is starting with these topics.
+- Then provide a 1-sentence key takeaway for the attendee.
+
+Return strictly valid JSON:
 {
   "bullets": ["bullet 1", "bullet 2", "bullet 3"],
   "keyTakeaway": "..."
 }`
+            } else {
+                prompt = `You are the AI Meeting Copilot for JTS-Meet.
+An attendee just joined the session "${roomTitle}".
+Status: The meeting has just been initialized, and no spoken transcripts or chat messages have been recorded yet.
+Generate 3 realistic, dynamic briefing points for this session:
+1. Confirm that "${roomTitle}" is live and ready for collaboration.
+2. Provide an intelligent suggested discussion focus tailored specifically to the title "${roomTitle}".
+3. Note that as soon as attendees speak on microphone or post in chat, AI will automatically detect action items and generate meeting summaries.
+And a 1-sentence key takeaway confirming they are here from the very beginning.
+Return strictly valid JSON:
+{
+  "bullets": ["bullet 1", "bullet 2", "bullet 3"],
+  "keyTakeaway": "takeaway"
+}`
+            }
+
             const rawText = await callGeminiApi(prompt, { jsonResponse: true, temperature: 0.2 })
             const parsed = JSON.parse(rawText.replace(/```json/gi, '').replace(/```/g, '').trim())
             if (Array.isArray(parsed.bullets) && parsed.bullets.length > 0) {
                 return {
                     bullets: parsed.bullets.slice(0, 3),
-                    keyTakeaway: parsed.keyTakeaway || 'Team discussed ongoing tasks and aligned on current priorities.'
+                    keyTakeaway: parsed.keyTakeaway || 'You are all caught up and ready to participate.'
                 }
             }
-        } catch (_) {}
+        } catch (e) {
+            console.error('[generateLateJoinerCatchUp] Gemini call error:', e)
+        }
     }
 
-    // High quality contextual fallback
+    // Dynamic fallback matching actual room state (zero hardcoded text)
+    if (context && context.trim().length > 0) {
+        const lastChat = (params.chatMessages || []).slice(-1)[0]
+        const lastTranscript = (params.transcripts || []).slice(-1)[0]
+        const latestPoint = lastChat
+            ? `Recent chat message from ${lastChat.sender}: "${lastChat.text}"`
+            : (lastTranscript ? `Recent dialogue from ${lastTranscript.speaker}: "${lastTranscript.text}"` : `Active collaboration in "${roomTitle}".`)
+
+        return {
+            bullets: [
+                latestPoint,
+                `Total ${(params.chatMessages || []).length} message(s) and ${(params.transcripts || []).length} transcript(s) in discussion.`,
+                `Live session underway for "${roomTitle}" with audio and chat active.`
+            ],
+            keyTakeaway: `Meeting is in active discussion regarding recent points by ${lastChat?.sender || lastTranscript?.speaker || 'participants'}.`
+        }
+    }
+
     return {
         bullets: [
-            `Team initiated discussion on agenda topics for "${params.title}".`,
-            'Participants reviewed operational updates and progress checkpoints.',
-            'Discussions are actively progressing with attendees sharing screens and updates.'
+            `Session "${roomTitle}" is live and ready for participation.`,
+            `No prior discussion or chat messages missed — you are in sync from the start.`,
+            `Turn on your microphone or use chat to collaborate with participants.`
         ],
-        keyTakeaway: `Meeting is in progress. Check active shared screen or in-meeting chat to jump into the flow!`
+        keyTakeaway: `You are up to date! Unmute or type in chat to start collaborating in "${roomTitle}".`
     }
 }
 

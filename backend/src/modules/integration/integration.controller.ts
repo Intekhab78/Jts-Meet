@@ -1,9 +1,58 @@
-import { Response } from 'express'
+import { Request, Response } from 'express'
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { sendSuccess, sendError } from '../../utils/responseHelper'
 import * as integrationService from './integration.service'
+import { FRONTEND_URL } from '../../config'
+import { adHocRoomSettings } from '../../routes/guest.routes'
 
 export const integrationController = {
+    handleInboundWebhook: async (req: Request, res: Response) => {
+        try {
+            const body = req.body || {}
+            const meetingId = `ext_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+            const title = body.roomName || body.title || body.name || 'External Website Consultation'
+            const hostName = body.hostName || body.agentName || body.user || 'Website Agent'
+
+            // Register in ad-hoc room cache for immediate guest & host join
+            adHocRoomSettings[meetingId] = {
+                title,
+                hostName,
+                isWaitingRoomEnabled: false,
+                isGuestJoinEnabled: true
+            }
+
+            // Always resolve to frontend client app URL (localhost:3000 in dev, meet.jtsmiddleeast.com in prod)
+            let frontendBase = FRONTEND_URL || ''
+            if (!frontendBase || frontendBase.includes('localhost:4000')) {
+                const host = req.get('host') || 'meet.jtsmiddleeast.com'
+                const proto = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http'
+                frontendBase = `${proto}://${host.replace(':4000', ':3000')}`
+            }
+            frontendBase = frontendBase.replace(/\/+$/, '')
+            const joinUrl = `${frontendBase}/meet/${meetingId}`
+
+            return res.status(200).json({
+                success: true,
+                status: 'operational',
+                message: 'JTS Meet Inbound Gateway Handshake Successful',
+                receivedAt: new Date().toISOString(),
+                room: {
+                    id: meetingId,
+                    title,
+                    hostName,
+                    joinUrl,
+                    guestJoinUrl: joinUrl,
+                    createdAt: new Date().toISOString()
+                }
+            })
+        } catch (err: any) {
+            return res.status(500).json({
+                success: false,
+                error: err.message || 'Failed to process inbound webhook'
+            })
+        }
+    },
+
     list: async (req: AuthRequest, res: Response) => {
         try {
             if (!req.userId) return sendError(res, 401, 'Unauthorized')

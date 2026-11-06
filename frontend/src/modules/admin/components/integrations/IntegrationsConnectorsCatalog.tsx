@@ -31,6 +31,14 @@ export const IntegrationsConnectorsCatalog: React.FC<IntegrationsConnectorsCatal
         iconNode: React.ReactNode
     }> = [
         {
+            type: 'jts_support',
+            title: 'Website & CRM Webhook Gateway',
+            desc: 'Real-time 2-way event synchronization with any website, CRM, customer portal, or backend API. Automatically dispatch room creation, attendee joins, and cloud recording events.',
+            bg: 'linear-gradient(135deg, #4338ca 0%, #2563eb 100%)',
+            badgeColor: '#93c5fd',
+            iconNode: <span style={{ color: '#fff', fontWeight: 800, fontSize: '1.25rem' }}>🌐</span>
+        },
+        {
             type: 'slack',
             title: 'Slack Incoming Webhook',
             desc: 'Post meeting start alerts, cloud recording links, and room invites directly to any Slack channel.',
@@ -104,7 +112,7 @@ export const IntegrationsConnectorsCatalog: React.FC<IntegrationsConnectorsCatal
                         Available Connectors & Services
                     </h3>
                     <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#64748b' }}>
-                        Pre-built zero-config connectors with automatic JSON formatting for enterprise chat & collaboration tools.
+                        Pre-built zero-config connectors and webhook integrations for websites, CRMs, chat apps, and enterprise tools.
                     </p>
                 </div>
             </div>
@@ -112,17 +120,23 @@ export const IntegrationsConnectorsCatalog: React.FC<IntegrationsConnectorsCatal
             <style>{`
                 .integrations-connectors-grid {
                     display: grid;
-                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
                     gap: 14px;
                 }
-                @media (max-width: 1200px) {
+                @media (max-width: 1024px) {
                     .integrations-connectors-grid {
                         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                    }
+                    .integrations-connectors-grid > div:last-child:nth-child(odd) {
+                        grid-column: span 2;
                     }
                 }
                 @media (max-width: 640px) {
                     .integrations-connectors-grid {
                         grid-template-columns: 1fr !important;
+                    }
+                    .integrations-connectors-grid > div:last-child:nth-child(odd) {
+                        grid-column: auto;
                     }
                 }
             `}</style>

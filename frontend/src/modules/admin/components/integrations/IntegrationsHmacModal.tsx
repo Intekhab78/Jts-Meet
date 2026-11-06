@@ -22,28 +22,51 @@ export const IntegrationsHmacModal: React.FC<IntegrationsHmacModalProps> = ({
     if (!showHmacModal) return null
 
     return (
-        <div style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 99999,
-            background: 'rgba(0, 0, 0, 0.78)',
-            backdropFilter: 'blur(10px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16
-        }}>
-            <div style={{
-                background: 'linear-gradient(135deg, #111827 0%, #0f172a 100%)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: 20,
-                width: '100%',
-                maxWidth: 680,
-                color: '#fff',
-                padding: 26,
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
-            }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div
+            onClick={onClose}
+            style={{
+                position: 'fixed',
+                top: '57px',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                zIndex: 99999,
+                background: 'rgba(0, 0, 0, 0.78)',
+                backdropFilter: 'blur(10px)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                padding: '1px 16px 20px 16px',
+                overflowY: 'auto'
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    background: 'linear-gradient(135deg, #111827 0%, #0f172a 100%)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: 20,
+                    width: '100%',
+                    maxWidth: 680,
+                    maxHeight: 'calc(100vh - 57px - 24px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    color: '#fff',
+                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+                    margin: '1px auto 20px auto',
+                    overflow: 'hidden',
+                    position: 'relative'
+                }}
+            >
+                {/* Fixed Header */}
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '20px 24px',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                    flexShrink: 0
+                }}>
                     <div>
                         <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>
                             🛡️ Webhook HMAC SHA-256 Verification Guide
@@ -53,12 +76,33 @@ export const IntegrationsHmacModal: React.FC<IntegrationsHmacModalProps> = ({
                         </p>
                     </div>
                     <button
+                        type="button"
                         onClick={onClose}
-                        style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        title="Close"
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.06)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: 8,
+                            width: 32,
+                            height: 32,
+                            color: '#94a3b8',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                        }}
                     >
-                        <IconX size={18} color="#94a3b8" />
+                        <IconX size={16} color="#94a3b8" />
                     </button>
                 </div>
+
+                {/* Scrollable Body */}
+                <div style={{
+                    padding: '20px 24px',
+                    overflowY: 'auto',
+                    flex: 1
+                }}>
 
                 {/* Code Language Tabs */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 8 }}>
@@ -200,6 +244,7 @@ curl -X POST https://yourcompany.com/api/webhooks \\
                     >
                         Close Guide
                     </button>
+                </div>
                 </div>
             </div>
         </div>

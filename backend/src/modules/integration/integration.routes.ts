@@ -5,6 +5,10 @@ import { integrationController } from './integration.controller'
 
 const router = Router()
 
+// Inbound webhook & room creation endpoint for external websites and CRM integrations
+router.post('/webhook', asyncWrapper(integrationController.handleInboundWebhook))
+router.get('/webhook', asyncWrapper(integrationController.handleInboundWebhook))
+
 router.get('/', authenticate, asyncWrapper(integrationController.list))
 router.post('/', authenticate, asyncWrapper(integrationController.create))
 router.post('/:id/test', authenticate, asyncWrapper(integrationController.test))

@@ -18,28 +18,38 @@ export function AdminVideoPlayerModal({ video, onClose }: AdminVideoPlayerModalP
     const resolvedUrl = resolveRecordingUrl(video.recordingUrl)
 
     return (
-        <div style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 99999,
-            background: 'rgba(0, 0, 0, 0.88)',
-            backdropFilter: 'blur(16px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 20
-        }}>
-            <div style={{
-                width: '100%',
-                maxWidth: 860,
-                background: '#121420',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: 20,
-                overflow: 'hidden',
-                boxShadow: '0 25px 60px rgba(0,0,0,0.9)',
+        <div
+            onClick={onClose}
+            style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 99999,
+                background: 'rgba(0, 0, 0, 0.88)',
+                backdropFilter: 'blur(16px)',
                 display: 'flex',
-                flexDirection: 'column'
-            }}>
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 20,
+                overflowY: 'auto'
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    width: '100%',
+                    maxWidth: 860,
+                    maxHeight: 'min(90vh, 760px)',
+                    margin: 'auto',
+                    background: '#121420',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: 20,
+                    overflow: 'hidden',
+                    boxShadow: '0 25px 60px rgba(0,0,0,0.9)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    position: 'relative'
+                }}
+            >
                 <div style={{
                     padding: '16px 22px',
                     borderBottom: '1px solid rgba(255, 255, 255, 0.1)',

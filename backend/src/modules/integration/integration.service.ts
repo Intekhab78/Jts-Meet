@@ -58,26 +58,30 @@ export async function validateWebhookUrl(urlStr: string): Promise<{ valid: boole
         }
 
         const hostname = parsed.hostname.toLowerCase().trim()
-        if (
-            hostname === 'localhost' ||
-            hostname.endsWith('.localhost') ||
-            hostname.endsWith('.internal') ||
-            hostname.endsWith('.local')
-        ) {
-            return { valid: false, reason: 'Localhost and internal hostnames are prohibited' }
-        }
+        const isDev = process.env.NODE_ENV !== 'production'
 
-        if (isPrivateOrReservedIp(hostname)) {
-            return { valid: false, reason: 'Private or reserved IP addresses are prohibited' }
-        }
-
-        try {
-            const resolved = await dns.promises.lookup(hostname)
-            if (isPrivateOrReservedIp(resolved.address)) {
-                return { valid: false, reason: `Target host resolves to restricted IP: ${resolved.address}` }
+        if (!isDev) {
+            if (
+                hostname === 'localhost' ||
+                hostname.endsWith('.localhost') ||
+                hostname.endsWith('.internal') ||
+                hostname.endsWith('.local')
+            ) {
+                return { valid: false, reason: 'Localhost and internal hostnames are prohibited in production' }
             }
-        } catch (dnsErr: any) {
-            return { valid: false, reason: `Unable to resolve webhook hostname: ${dnsErr.message}` }
+
+            if (isPrivateOrReservedIp(hostname)) {
+                return { valid: false, reason: 'Private or reserved IP addresses are prohibited' }
+            }
+
+            try {
+                const resolved = await dns.promises.lookup(hostname)
+                if (isPrivateOrReservedIp(resolved.address)) {
+                    return { valid: false, reason: `Target host resolves to restricted IP: ${resolved.address}` }
+                }
+            } catch (dnsErr: any) {
+                return { valid: false, reason: `Unable to resolve webhook hostname: ${dnsErr.message}` }
+            }
         }
 
         return { valid: true }

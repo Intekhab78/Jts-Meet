@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { SupportedConnector } from '../../integrations.types'
 import {
     IconX,
@@ -37,33 +37,63 @@ export const IntegrationsAddModal: React.FC<IntegrationsAddModalProps> = ({
     setSelectedEvents,
     handleCreate
 }) => {
+    useEffect(() => {
+        if (showAddModal && !formSecret) {
+            setFormSecret('whsec_' + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 6))
+        }
+    }, [showAddModal, formSecret, setFormSecret])
+
     if (!showAddModal) return null
 
     return (
-        <div style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 99999,
-            background: 'rgba(0, 0, 0, 0.78)',
-            backdropFilter: 'blur(10px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16
-        }}>
-            <div style={{
-                background: 'linear-gradient(135deg, #111827 0%, #0f172a 100%)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: 20,
-                width: '100%',
-                maxWidth: 540,
-                color: '#fff',
-                padding: 26,
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
-            }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-                    <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>
+        <div
+            onClick={onClose}
+            style={{
+                position: 'fixed',
+                top: '57px',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                zIndex: 99999,
+                background: 'rgba(0, 0, 0, 0.78)',
+                backdropFilter: 'blur(10px)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                padding: '1px 16px 20px 16px',
+                overflowY: 'auto'
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    background: 'linear-gradient(135deg, #111827 0%, #0f172a 100%)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: 20,
+                    width: '100%',
+                    maxWidth: 540,
+                    maxHeight: 'calc(100vh - 57px - 24px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    color: '#fff',
+                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+                    margin: '1px auto 20px auto',
+                    overflow: 'hidden',
+                    position: 'relative'
+                }}
+            >
+                {/* Fixed Modal Header */}
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '20px 24px',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                    flexShrink: 0
+                }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>
                         Configure {
+                            modalType === 'jts_support' ? 'Website & CRM Webhook Gateway' :
                             modalType === 'slack' ? 'Slack Incoming Webhook' :
                             modalType === 'teams' ? 'Microsoft Teams Webhook' :
                             modalType === 'discord' ? 'Discord Webhook' :
@@ -75,14 +105,49 @@ export const IntegrationsAddModal: React.FC<IntegrationsAddModalProps> = ({
                         }
                     </h3>
                     <button
+                        type="button"
                         onClick={onClose}
-                        style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        title="Close"
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.06)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: 8,
+                            width: 32,
+                            height: 32,
+                            color: '#94a3b8',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                        }}
                     >
-                        <IconX size={18} color="#94a3b8" />
+                        <IconX size={16} color="#94a3b8" />
                     </button>
                 </div>
 
-                <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Scrollable Form Body */}
+                <div style={{
+                    padding: '20px 24px 24px 24px',
+                    overflowY: 'auto',
+                    flex: 1
+                }}>
+                    {modalType === 'jts_support' && (
+                        <div style={{
+                            padding: '12px 14px',
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            borderRadius: 10,
+                            marginBottom: 16,
+                            fontSize: '0.82rem',
+                            color: '#93c5fd',
+                            lineHeight: 1.45
+                        }}>
+                            <strong>Universal Website & CRM Integration:</strong> Connect any website, client portal, CRM, or backend API. JTS Meet dispatches real-time secure webhooks whenever meetings start, end, participants join, or recordings are generated. Verify payloads securely on your server using the HMAC-SHA256 signature key below.
+                        </div>
+                    )}
+
+                    <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div>
                         <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>
                             Endpoint Name:
@@ -91,7 +156,12 @@ export const IntegrationsAddModal: React.FC<IntegrationsAddModalProps> = ({
                             type="text"
                             value={formName}
                             onChange={(e) => setFormName(e.target.value)}
-                            placeholder="e.g. #engineering-alerts"
+                            placeholder={
+                                modalType === 'jts_support' ? 'e.g. Production Website CRM Gateway' :
+                                modalType === 'slack' ? 'e.g. #general-alerts' :
+                                modalType === 'teams' ? 'e.g. MS Teams Engineering Bot' :
+                                'e.g. Webhook Service Endpoint'
+                            }
                             required
                             style={{
                                 width: '100%',
@@ -114,7 +184,10 @@ export const IntegrationsAddModal: React.FC<IntegrationsAddModalProps> = ({
                             type="url"
                             value={formUrl}
                             onChange={(e) => setFormUrl(e.target.value)}
-                            placeholder="https://..."
+                            placeholder={
+                                modalType === 'jts_support' ? 'https://api.yourwebsite.com/api/webhooks' :
+                                'https://...'
+                            }
                             required
                             style={{
                                 width: '100%',
@@ -130,14 +203,32 @@ export const IntegrationsAddModal: React.FC<IntegrationsAddModalProps> = ({
                     </div>
 
                     <div>
-                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>
-                            HMAC Secret Key (Optional for SHA256 Signature Verification):
-                        </label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8' }}>
+                                HMAC Secret Key (Used for SHA256 Signature Verification):
+                            </label>
+                            <button
+                                type="button"
+                                onClick={() => setFormSecret('whsec_' + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 6))}
+                                style={{
+                                    background: 'rgba(99, 102, 241, 0.15)',
+                                    border: '1px solid rgba(99, 102, 241, 0.35)',
+                                    color: '#a5b4fc',
+                                    fontSize: '0.74rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    padding: '2px 8px',
+                                    borderRadius: 6
+                                }}
+                            >
+                                ⚡ Regenerate Key
+                            </button>
+                        </div>
                         <input
                             type="text"
                             value={formSecret}
                             onChange={(e) => setFormSecret(e.target.value)}
-                            placeholder="Leave empty to auto-generate a secure 32-character key"
+                            placeholder="e.g. whsec_..."
                             style={{
                                 width: '100%',
                                 boxSizing: 'border-box',
@@ -235,6 +326,7 @@ export const IntegrationsAddModal: React.FC<IntegrationsAddModalProps> = ({
                         </button>
                     </div>
                 </form>
+                </div>
             </div>
         </div>
     )

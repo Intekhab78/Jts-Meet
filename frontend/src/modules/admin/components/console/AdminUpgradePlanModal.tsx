@@ -31,29 +31,38 @@ export function AdminUpgradePlanModal({
     if (!isOpen) return null
 
     return (
-        <div style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            backdropFilter: 'blur(8px)',
-            zIndex: 99999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 20
-        }}>
-            <div style={{
-                maxWidth: 960,
-                width: '100%',
-                background: '#0d111d',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: 18,
-                boxShadow: '0 25px 60px rgba(0,0,0,0.8)',
-                overflow: 'hidden',
+        <div
+            onClick={onClose}
+            style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0, 0, 0, 0.8)',
+                backdropFilter: 'blur(8px)',
+                zIndex: 99999,
                 display: 'flex',
-                flexDirection: 'column',
-                maxHeight: '90vh'
-            }}>
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 20,
+                overflowY: 'auto'
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    maxWidth: 960,
+                    width: '100%',
+                    background: '#0d111d',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    borderRadius: 18,
+                    boxShadow: '0 25px 60px rgba(0,0,0,0.8)',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    maxHeight: 'min(90vh, 760px)',
+                    margin: 'auto',
+                    position: 'relative'
+                }}
+            >
                 {/* Modal Header */}
                 <div style={{
                     padding: '20px 24px',

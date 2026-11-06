@@ -12,6 +12,7 @@ interface ChatMessageEntry {
     senderId?: string
     senderName?: string
     message: string
+    text?: string
 }
 
 interface MeetingSummaryModalProps {
@@ -108,8 +109,8 @@ export function MeetingSummaryModal({
                     timestamp: t.timestamp ? new Date(t.timestamp).toISOString() : undefined
                 })),
                 chatMessages: (curChat || []).map(c => ({
-                    sender: c.senderName || c.senderId || 'Participant',
-                    text: c.message
+                    sender: c.senderName || (c.senderId === 'me' ? 'You' : 'Participant'),
+                    text: c.message || c.text || ''
                 }))
             }
 
@@ -144,29 +145,34 @@ export function MeetingSummaryModal({
             console.error('[Gemini AI Summary Error]', err)
             setErrorMsg(err.name === 'AbortError' ? 'AI response timed out. Showing smart heuristic summary.' : (err.message || 'Showing smart heuristic summary.'))
 
-            // Heuristic fallback so the user always has a high quality summary immediately
+            // Dynamic heuristic fallback from actual session data
             const curT = propsRef.current.transcripts || []
+            const curC = propsRef.current.chatMessages || []
             const transcriptText = curT.map(t => `${t.speaker}: ${t.text}`).join('\n')
-            const actionSentences = curT
-                .map(t => t.text)
+            const chatText = curC.map(c => `${c.senderName || 'Participant'}: ${c.message || c.text || ''}`).join('\n')
+            const allText = [transcriptText, chatText].filter(Boolean).join('\n')
+
+            const actionSentences = (curT.map(t => t.text).concat(curC.map(c => c.message || c.text || '')))
                 .filter(text => /(will|should|need to|action|todo|follow up|schedule|deliver|prepare|assign|review|fix|test|update)/i.test(text))
 
+            const recentUpdates = curC.slice(-2).map(c => `Discussion point from ${c.senderName || 'Participant'}: "${c.message || c.text || ''}"`)
+
             setSummaryData({
-                summary: transcriptText.length > 30
-                    ? `Discussion during "${title}" covered key deliverables and operational parameters. Team members coordinated on active milestones and task distribution.`
-                    : `Executive session for "${title}" with ${pCount} attendee(s). Agenda focused on roadmap execution and cross-team synchronization.`,
-                keyTopics: [
-                    'Project roadmap alignment & milestone execution',
-                    'Real-time media quality and performance benchmarks',
-                    'Coordination of deployment deliverables'
+                summary: allText.length > 20
+                    ? `Discussion during "${title}" with ${pCount} attendee(s) covered active coordination. Recorded messages and speech were synchronized during the call.`
+                    : `Executive session for "${title}" with ${pCount} attendee(s). Agenda focused on room collaboration and forward execution.`,
+                keyTopics: recentUpdates.length > 0 ? recentUpdates : [
+                    `Key points from "${title}"`,
+                    'Active collaboration and session synchronization',
+                    'Operational coordination and team communication'
                 ],
                 decisions: [
-                    'Approved active release timeline and deliverables',
-                    'Agreed to verify pending action items before next standup'
+                    `Synchronized discussion topics for "${title}"`,
+                    'Agreed to coordinate on shared chat updates'
                 ],
                 actionItems: (actionSentences.length > 0 ? actionSentences : [
-                    'Follow up on open questions and architecture checkpoints',
-                    'Review meeting logs and sync deliverables with team leads'
+                    `Follow up on topics discussed in "${title}"`,
+                    'Review session notes and action items'
                 ]).map((item, idx) => ({
                     id: `fallback-${idx}`,
                     text: item,

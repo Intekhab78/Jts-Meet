@@ -53,7 +53,10 @@ export const LateJoinerCatchUpSection: React.FC<LateJoinerCatchUpSectionProps> =
                     token={token || initialToken}
                     joinedMinutesLate={joinedMinutesLate}
                     transcripts={transcripts}
-                    chatMessages={messages.map(m => ({ sender: m.senderName || 'Participant', text: m.message }))}
+                    chatMessages={(messages || []).map(m => ({
+                        sender: m.senderName || (m.senderId === 'me' ? 'You' : 'Participant'),
+                        text: m.message || (m as any).text || (m as any).content || ''
+                    }))}
                     onClose={() => setShowCatchUpModal(false)}
                 />
             )}

@@ -117,8 +117,25 @@ export const IntegrationsDeliveryLogsTable: React.FC<IntegrationsDeliveryLogsTab
             </div>
 
             {filteredLogs.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '36px 20px', color: '#64748b' }}>
-                    <p style={{ margin: 0, fontSize: '0.88rem' }}>No webhook dispatches found matching filters.</p>
+                <div style={{
+                    textAlign: 'center',
+                    padding: '36px 20px',
+                    color: '#64748b',
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    borderRadius: 12,
+                    border: '1px dashed rgba(255, 255, 255, 0.08)'
+                }}>
+                    <div style={{ fontSize: '1.4rem', marginBottom: 8 }}>📡</div>
+                    <p style={{ margin: 0, fontSize: '0.92rem', fontWeight: 600, color: '#94a3b8' }}>
+                        {logSearchQuery || logStatusFilter !== 'all' 
+                            ? 'No webhook dispatches found matching filters.' 
+                            : 'No Webhook Dispatches Recorded Yet'}
+                    </p>
+                    <p style={{ margin: '6px auto 0', fontSize: '0.8rem', color: '#64748b', maxWidth: 480, lineHeight: 1.45 }}>
+                        {logSearchQuery || logStatusFilter !== 'all' 
+                            ? 'Try clearing the search query or changing the filter status.' 
+                            : 'Outbound HTTP requests, HTTP response status codes (200 OK / 4xx / 5xx), and roundtrip delivery latencies will be streamed here in real time as conference events occur.'}
+                    </p>
                 </div>
             ) : (
                 <div style={{ overflowX: 'auto' }}>

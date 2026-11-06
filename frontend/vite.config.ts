@@ -6,6 +6,7 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    cors: true,
     proxy: {
       '/uploads': {
         target: 'http://localhost:4000',

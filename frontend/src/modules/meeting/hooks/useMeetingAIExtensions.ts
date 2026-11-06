@@ -63,16 +63,17 @@ export const useMeetingAIExtensions = ({
     useEffect(() => {
         if (!joined || hasTriggeredCatchUpRef.current) return
 
-        const isLate = (participants && participants.length > 0) || (messages && messages.length > 1)
-        if (isLate) {
+        // Only trigger late-joiner prompt if there is actual prior conversation/history
+        const hasSubstantialHistory = (messages && messages.length >= 3) || (transcripts && transcripts.length >= 2)
+        if (hasSubstantialHistory) {
             hasTriggeredCatchUpRef.current = true
-            const approxLate = Math.min(60, Math.max(3, (messages?.length || 2) * 2))
+            const approxLate = Math.min(60, Math.max(2, Math.round((messages?.length || 2) * 1.5)))
             setJoinedMinutesLate(approxLate)
             setShowCatchUpPrompt(true)
             const promptTimer = setTimeout(() => setShowCatchUpPrompt(false), 20000)
             return () => clearTimeout(promptTimer)
         }
-    }, [joined, participants, messages])
+    }, [joined, messages, transcripts])
 
     // Accumulate speaking time per attendee
     useEffect(() => {
@@ -129,7 +130,7 @@ export const useMeetingAIExtensions = ({
                 const utter = new SpeechSynthesisUtterance(lastTranscript.text)
                 utter.rate = 1.05
                 window.speechSynthesis.speak(utter)
-            } catch (_) {}
+            } catch (_) { }
         }
     }, [transcripts, isVoiceDubbingEnabled, myDisplayName])
 

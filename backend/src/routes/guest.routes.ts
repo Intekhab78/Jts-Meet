@@ -7,7 +7,7 @@ import { rateLimiter } from '../middleware/rateLimiter'
 const router = Router()
 
 // In-memory cache for ad-hoc / instant meeting room configurations
-export const adHocRoomSettings: Record<string, { isWaitingRoomEnabled?: boolean; isGuestJoinEnabled?: boolean }> = {}
+export const adHocRoomSettings: Record<string, { isWaitingRoomEnabled?: boolean; isGuestJoinEnabled?: boolean; title?: string; hostName?: string }> = {}
 
 // GET /api/guest/meeting/:meetingId
 router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
@@ -16,16 +16,17 @@ router.get('/meeting/:meetingId', async (req: Request, res: Response) => {
         const meeting = await getMeetingByMeetingId(meetingId)
         
         if (!meeting) {
-            // Support instant / ad-hoc meeting rooms (e.g. room-xxxx)
-            if (meetingId.startsWith('room-') || meetingId.length >= 4) {
-                const isWaitingRoom = adHocRoomSettings[meetingId]?.isWaitingRoomEnabled === true
+            // Support instant / ad-hoc meeting rooms (e.g. room-xxxx, ext_xxxx)
+            if (meetingId.startsWith('room-') || meetingId.startsWith('ext_') || meetingId.length >= 4) {
+                const adHoc = adHocRoomSettings[meetingId]
+                const isWaitingRoom = adHoc?.isWaitingRoomEnabled === true
                 res.json({
                     success: true,
                     data: {
-                        title: `Room ${meetingId}`,
-                        hostName: 'Host',
+                        title: adHoc?.title || `Room ${meetingId}`,
+                        hostName: adHoc?.hostName || 'Host',
                         isWaitingRoomEnabled: isWaitingRoom,
-                        isGuestJoinEnabled: adHocRoomSettings[meetingId]?.isGuestJoinEnabled !== false
+                        isGuestJoinEnabled: adHoc?.isGuestJoinEnabled !== false
                     }
                 })
                 return
@@ -72,8 +73,9 @@ router.post('/request', rateLimiter(60 * 1000, 60), async (req: Request, res: Re
         const meeting = await getMeetingByMeetingId(meetingId)
         if (!meeting) {
             // Allow ad-hoc / instant rooms without database records
-            if (meetingId.startsWith('room-') || meetingId.length >= 4) {
-                const isWaitingRoom = adHocRoomSettings[meetingId]?.isWaitingRoomEnabled === true
+            if (meetingId.startsWith('room-') || meetingId.startsWith('ext_') || meetingId.length >= 4) {
+                const adHoc = adHocRoomSettings[meetingId]
+                const isWaitingRoom = adHoc?.isWaitingRoomEnabled === true
                 const tempGuestId = `guest_${Math.random().toString(36).substring(2, 11)}`
                 const token = jwt.sign(
                     {
@@ -94,8 +96,8 @@ router.post('/request', rateLimiter(60 * 1000, 60), async (req: Request, res: Re
                         token,
                         userId: tempGuestId,
                         isPending: isWaitingRoom,
-                        meetingTitle: `Room ${meetingId}`,
-                        hostName: 'Host'
+                        meetingTitle: adHoc?.title || `Room ${meetingId}`,
+                        hostName: adHoc?.hostName || 'Host'
                     }
                 })
                 return

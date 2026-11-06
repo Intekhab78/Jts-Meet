@@ -1,4 +1,4 @@
-export type SupportedConnector = 'slack' | 'teams' | 'discord' | 'calendar' | 'googledrive' | 'email' | 'zapier' | 'webhook'
+export type SupportedConnector = 'jts_support' | 'slack' | 'teams' | 'discord' | 'calendar' | 'googledrive' | 'email' | 'zapier' | 'webhook'
 
 export interface IntegrationsTabProps {
     token: string
