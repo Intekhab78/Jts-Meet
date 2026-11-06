@@ -67,6 +67,18 @@ public class CallNotificationService extends FirebaseMessagingService {
             return;
         }
 
+        // Silent Call Cancel / Timeout Push: Dismiss notification and stop ringing
+        if ("call_cancelled".equals(type) || "call_ended".equals(type)) {
+            stopRinging();
+            try {
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    nm.cancel(CALL_NOTIFICATION_ID);
+                }
+            } catch (Exception ignored) {}
+            return;
+        }
+
         // Delegate chat messages and standard notifications to Capacitor plugin
         try {
             PushNotificationsPlugin.sendRemoteMessage(remoteMessage);

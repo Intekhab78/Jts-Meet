@@ -44,6 +44,14 @@ if (vapidPublicKey && vapidPrivateKey) {
     }
 }
 
+const sanitizePushAvatar = (avatar?: string): string => {
+    if (!avatar || typeof avatar !== 'string') return ''
+    const trimmed = avatar.trim()
+    // Never embed base64 data URIs or oversized strings in FCM / Web Push payloads (strict 4KB max limit)
+    if (!trimmed || trimmed.startsWith('data:') || trimmed.length > 500) return ''
+    return trimmed
+}
+
 export class NotificationService {
     static getVapidPublicKey(): string {
         return vapidPublicKey
@@ -160,6 +168,7 @@ export class NotificationService {
                     try {
                         const callTitle = isAudio ? `📞 Incoming Audio Call` : `📹 Incoming Video Call`
                         const callBody = `${callData.callerName || 'A colleague'} is calling you on JTS Meet...`
+                        const safeCallerAvatar = sanitizePushAvatar(callData.callerAvatar)
 
                         // For incoming calls, send as High-Priority DATA-ONLY FCM message.
                         // This guarantees Android OS always invokes CallNotificationService.onMessageReceived()
@@ -169,13 +178,13 @@ export class NotificationService {
                             data: {
                                 type: 'incoming_call',
                                 meetingId: String(callData.meetingId),
-                                callerName: String(callData.callerName || 'Colleague'),
-                                callerAvatar: String(callData.callerAvatar || ''),
+                                callerName: String(callData.callerName || 'Colleague').slice(0, 120),
+                                callerAvatar: safeCallerAvatar,
                                 callType: String(callData.callType || 'video'),
                                 callerId: String(callData.callerId || ''),
                                 sentAt: String(Date.now()), // Server NTP timestamp prevents client clock skew drops
                                 title: callTitle,
-                                body: callBody,
+                                body: callBody.slice(0, 200),
                             },
                             android: {
                                 priority: 'high',
@@ -185,12 +194,18 @@ export class NotificationService {
                         console.log(`[FCM] Dispatched incoming call push to ${targetUserId}: ${fcmResponse.successCount}/${targetTokens.length} delivered`)
                         successCount += fcmResponse.successCount
 
-                        // Purge invalid tokens
+                        // Log failures and purge invalid tokens
                         if (fcmResponse.failureCount > 0) {
                             const invalidTokens: string[] = []
                             fcmResponse.responses.forEach((resp: any, idx: number) => {
-                                if (!resp.success && resp.error?.code === 'messaging/registration-token-not-registered') {
-                                    invalidTokens.push(targetTokens[idx])
+                                if (!resp.success) {
+                                    console.warn(`[FCM] Call push token[${idx}] failed for user ${targetUserId}:`, resp.error?.code, resp.error?.message)
+                                    if (
+                                        resp.error?.code === 'messaging/registration-token-not-registered' ||
+                                        resp.error?.code === 'messaging/invalid-registration-token'
+                                    ) {
+                                        invalidTokens.push(targetTokens[idx])
+                                    }
                                 }
                             })
                             if (invalidTokens.length > 0) {
@@ -224,6 +239,7 @@ export class NotificationService {
 
             if (validSubscriptions.length > 0) {
                 const isAudio = callData.callType === 'audio'
+                const safePushAvatar = sanitizePushAvatar(callData.callerAvatar)
                 const frontendBaseUrl = (process.env.FRONTEND_URL && !process.env.FRONTEND_URL.includes('localhost'))
                     ? process.env.FRONTEND_URL
                     : 'https://meet.jtsmiddleeast.com'
@@ -234,12 +250,12 @@ export class NotificationService {
                     type: 'call_incoming',
                     title: isAudio ? `📞 Incoming Audio Call` : `📹 Incoming Video Call`,
                     body: `${callData.callerName || 'A colleague'} is calling you on JTS Meet...`,
-                    icon: callData.callerAvatar || '/favicon.ico',
+                    icon: safePushAvatar || '/favicon.ico',
                     tag: `call-${callData.meetingId}`,
                     data: {
                         meetingId: callData.meetingId,
                         callerName: callData.callerName,
-                        callerAvatar: callData.callerAvatar,
+                        callerAvatar: safePushAvatar,
                         callerId: callData.callerId,
                         callType: callData.callType || 'video',
                         url: callDirectUrl
@@ -289,6 +305,35 @@ export class NotificationService {
     }
 
     /**
+     * Dispatches a silent/high-priority FCM data signal to stop ringing & dismiss call notification
+     * on Android devices when the caller cancels/hangs up before the closed app answers.
+     */
+    static async sendCancelCallPush(targetUserId: string, meetingId?: string): Promise<void> {
+        if (!targetUserId) return
+        try {
+            const userQuery = Types.ObjectId.isValid(targetUserId)
+                ? { $or: [{ userId: new Types.ObjectId(targetUserId) }, { userId: targetUserId }] }
+                : { userId: targetUserId }
+            const fcmDevices = await FcmDevice.find(userQuery).exec()
+            const messaging = getFirebaseMessaging()
+            if (messaging && fcmDevices && fcmDevices.length > 0) {
+                const tokens = Array.from(new Set(fcmDevices.map((d) => d.fcmToken).filter(Boolean)))
+                await messaging.sendEachForMulticast({
+                    tokens,
+                    data: {
+                        type: 'call_cancelled',
+                        meetingId: String(meetingId || ''),
+                    },
+                    android: {
+                        priority: 'high',
+                        ttl: 30 * 1000,
+                    }
+                }).catch(() => {})
+            }
+        } catch (_) {}
+    }
+
+    /**
      * Dispatches Missed Call notification via FCM & Web Push when a call rings out without answer
      */
     static async sendMissedCallPush(targetUserId: string, data: {
@@ -299,13 +344,14 @@ export class NotificationService {
         if (!targetUserId) return
 
         try {
-            const fcmDevices = await FcmDevice.find({
-                userId: new Types.ObjectId(targetUserId)
-            }).exec()
+            const userQuery = Types.ObjectId.isValid(targetUserId)
+                ? { $or: [{ userId: new Types.ObjectId(targetUserId) }, { userId: targetUserId }] }
+                : { userId: targetUserId }
+            const fcmDevices = await FcmDevice.find(userQuery).exec()
 
             const messaging = getFirebaseMessaging()
             if (messaging && fcmDevices && fcmDevices.length > 0) {
-                const tokens = fcmDevices.map((d) => d.fcmToken)
+                const tokens = Array.from(new Set(fcmDevices.map((d) => d.fcmToken).filter(Boolean)))
                 await messaging.sendEachForMulticast({
                     tokens,
                     data: {
@@ -350,9 +396,11 @@ export class NotificationService {
         let successCount = 0
 
         try {
-            const fcmDevices = await FcmDevice.find({
-                userId: new Types.ObjectId(targetUserId)
-            }).exec()
+            const userQuery = Types.ObjectId.isValid(targetUserId)
+                ? { $or: [{ userId: new Types.ObjectId(targetUserId) }, { userId: targetUserId }] }
+                : { userId: targetUserId }
+            const fcmDevices = await FcmDevice.find(userQuery).exec()
+            const safeSenderAvatar = sanitizePushAvatar(messageData.senderAvatar)
 
             const title = messageData.isChannel && messageData.channelName
                 ? `#${messageData.channelName} • ${messageData.senderName}`
@@ -365,7 +413,7 @@ export class NotificationService {
             // 1. Native Android FCM Push
             const messaging = getFirebaseMessaging()
             if (messaging && fcmDevices && fcmDevices.length > 0) {
-                const tokens = fcmDevices.map((d) => d.fcmToken)
+                const tokens = Array.from(new Set(fcmDevices.map((d) => d.fcmToken).filter(Boolean)))
                 try {
                     const fcmResponse = await messaging.sendEachForMulticast({
                         tokens,
@@ -376,8 +424,8 @@ export class NotificationService {
                         data: {
                             type: 'chat_message',
                             senderId: String(messageData.senderId),
-                            senderName: String(messageData.senderName),
-                            senderAvatar: String(messageData.senderAvatar || ''),
+                            senderName: String(messageData.senderName).slice(0, 120),
+                            senderAvatar: safeSenderAvatar,
                             message: String(bodyPreview),
                             isChannel: messageData.isChannel ? 'true' : 'false',
                             channelName: String(messageData.channelName || ''),
@@ -426,7 +474,7 @@ export class NotificationService {
                     type: 'chat_message',
                     title,
                     body: bodyPreview,
-                    icon: messageData.senderAvatar || '/favicon.ico',
+                    icon: safeSenderAvatar || '/favicon.ico',
                     tag: `chat-${messageData.senderId}`,
                     data: {
                         senderId: messageData.senderId,

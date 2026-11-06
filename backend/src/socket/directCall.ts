@@ -32,10 +32,15 @@ export async function initiateDirectCall(
         return { success: false, error: 'Unauthorized user' }
     }
 
-    // Deduplication check: if call with meetingId was processed in the last 15 seconds, avoid duplicate pushes/timeouts
-    if (payload.meetingId && recentlyInitiatedCalls.has(payload.meetingId)) {
-        console.log(`[DirectCall] Call ${payload.meetingId} already initiated within deduplication window. Returning success.`)
-        return { success: true, meetingId: payload.meetingId }
+    // Deduplication check: lock synchronously BEFORE any async DB calls so dual Socket + HTTP dispatch never double-fires!
+    const requestedMeetingId = payload.meetingId ? String(payload.meetingId).trim() : ''
+    if (requestedMeetingId && recentlyInitiatedCalls.has(requestedMeetingId)) {
+        console.log(`[DirectCall] Call ${requestedMeetingId} already initiated within deduplication window. Returning success.`)
+        return { success: true, meetingId: requestedMeetingId }
+    }
+    if (requestedMeetingId) {
+        recentlyInitiatedCalls.set(requestedMeetingId, Date.now())
+        setTimeout(() => recentlyInitiatedCalls.delete(requestedMeetingId), 15000)
     }
 
     let targetUserIds: string[] = []
@@ -71,6 +76,7 @@ export async function initiateDirectCall(
     }
 
     if (targetUserIds.length === 0) {
+        if (requestedMeetingId) recentlyInitiatedCalls.delete(requestedMeetingId)
         console.warn(`[DirectCall] Call rejected: No valid target user IDs found for caller ${userId}. Payload:`, payload)
         return { success: false, error: 'Invalid call target' }
     }
@@ -106,11 +112,13 @@ export async function initiateDirectCall(
             await callMeeting.save()
         } catch (_) {}
 
-        const meetingId = payload.meetingId || callMeeting.meetingId
+        const meetingId = requestedMeetingId || callMeeting.meetingId
 
-        // Mark as recently initiated for deduplication
-        recentlyInitiatedCalls.set(meetingId, Date.now())
-        setTimeout(() => recentlyInitiatedCalls.delete(meetingId), 15000)
+        // Mark generated meetingId as recently initiated for deduplication
+        if (!recentlyInitiatedCalls.has(meetingId)) {
+            recentlyInitiatedCalls.set(meetingId, Date.now())
+            setTimeout(() => recentlyInitiatedCalls.delete(meetingId), 15000)
+        }
 
         const incomingCallPayload = {
             meetingId,
@@ -164,6 +172,7 @@ export async function initiateDirectCall(
             if (io) {
                 for (const tId of targetUserIds) {
                     io.to(`user:${tId}`).emit(SocketEvents.CALL_CANCELLED, timeoutPayload)
+                    NotificationService.sendCancelCallPush(tId, meetingId).catch(() => {})
                     NotificationService.sendMissedCallPush(tId, {
                         callerName,
                         callerAvatar,
@@ -245,6 +254,7 @@ export async function cancelOrEndDirectCall(
         targets.forEach(tId => {
             io.to(`user:${tId}`).emit(SocketEvents.CALL_CANCELLED, cancelData)
             io.to(`user:${tId}`).emit('call:ended', cancelData)
+            NotificationService.sendCancelCallPush(tId, mId).catch(() => {})
         })
 
         if (mId) {
@@ -421,6 +431,7 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
         targets.forEach(tId => {
             io.to(`user:${tId}`).emit(SocketEvents.CALL_CANCELLED, cancelData)
             io.to(`user:${tId}`).emit('call:ended', cancelData)
+            NotificationService.sendCancelCallPush(tId, mId).catch(() => {})
         })
 
         if (mId) {

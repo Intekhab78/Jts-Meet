@@ -510,7 +510,9 @@ export function App() {
   ) => {
     const meetingId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const callerName = user?.fullName || user?.name || localStorage.getItem('jts_display_name') || 'Enterprise User';
-    const callerAvatar = user?.profileImage || user?.avatar || '';
+    const callerAvatar = (user?.profileImage && !user.profileImage.startsWith('data:') && user.profileImage.length < 500)
+      ? user.profileImage
+      : (user?.avatar && !user.avatar.startsWith('data:') && user.avatar.length < 500 ? user.avatar : '');
     const isChannelCall = Boolean(channelName);
 
     setOutgoingCall({
