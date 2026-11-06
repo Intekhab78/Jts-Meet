@@ -2,6 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MobileChatMessage } from './types';
 import { API_BASE, resolveAvatarUrl } from '../../config';
 import { MobileAvatar } from '../common/MobileAvatar';
+import {
+  normalizeFileUrl,
+  parseFileAttachment,
+  getFileExtension,
+  isImageAttachment,
+  formatCallDuration,
+  renderClickableText
+} from './chatUtils';
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const EXTENDED_REACTIONS = ['🔥', '👏', '🎉', '💯', '🚀', '😍', '🙌', '👀', '🥳', '⚡', '✨', '🤝', '💪', '🤩'];
@@ -145,6 +153,10 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
             const isMe = String(sId) === String(resolvedUserId);
             const sName = isMe ? 'You' : (rawSender?.fullName || rawSender?.name || chatName);
             const content = m.message || m.content || m.text || '';
+            const parsedAttach = parseFileAttachment(content);
+            const resolvedFileUrl = m.fileUrl || parsedAttach?.fileUrl;
+            const resolvedFileName = m.fileName || parsedAttach?.fileName;
+            const resolvedFileSize = parsedAttach?.fileSize;
             return {
               id: m._id || String(Math.random()),
               senderId: sId,
@@ -152,8 +164,12 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               text: content,
               timestamp: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               isMe,
-              fileUrl: m.fileUrl,
-              fileName: m.fileName,
+              type: m.messageType === 'call' || m.type === 'call' ? 'call' : 'text',
+              messageType: m.messageType || (m.callInfo ? 'call' : 'text'),
+              callInfo: m.callInfo || null,
+              fileUrl: resolvedFileUrl,
+              fileName: resolvedFileName,
+              fileSize: resolvedFileSize,
               reactions: Array.isArray(m.reactions)
                 ? m.reactions.map((r: any) => ({
                     userId: typeof r.userId === 'object' ? (r.userId?._id || r.userId?.id || String(r.userId)) : String(r.userId),
@@ -216,6 +232,11 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
             }
           }
 
+          const parsedAttach = parseFileAttachment(text);
+          const resolvedFileUrl = payload.fileUrl || parsedAttach?.fileUrl;
+          const resolvedFileName = payload.fileName || parsedAttach?.fileName;
+          const resolvedFileSize = parsedAttach?.fileSize;
+
           const updated = [
             ...prev,
             {
@@ -225,8 +246,12 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               text,
               timestamp: new Date(payload.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               isMe,
-              fileUrl: payload.fileUrl,
-              fileName: payload.fileName,
+              type: payload.messageType === 'call' || payload.type === 'call' ? 'call' : 'text',
+              messageType: payload.messageType || (payload.callInfo ? 'call' : 'text'),
+              callInfo: payload.callInfo || null,
+              fileUrl: resolvedFileUrl,
+              fileName: resolvedFileName,
+              fileSize: resolvedFileSize,
               reactions: Array.isArray(payload.reactions) ? payload.reactions : [],
               isDeleted: Boolean(payload.isDeleted || payload.deleted),
               deletedAt: payload.deletedAt,
@@ -661,11 +686,8 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     }
   };
 
-  const isImageUrl = (url: string) => {
-    return (
-      typeof url === 'string' &&
-      (/\.(jpeg|jpg|gif|png|webp|svg)($|\?)/i.test(url) || url.startsWith('data:image/'))
-    );
+  const isImageUrl = (url?: string, name?: string) => {
+    return isImageAttachment(url, name);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -690,9 +712,13 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
       if (res.ok) {
         const json = await res.json();
         const fileUrl = json?.data?.fileUrl || json?.fileUrl || (json?.data?.filename ? `${API_BASE}/uploads/${json.data.filename}` : '');
-        const fullUrl = fileUrl.startsWith('http') ? fileUrl : `${API_BASE}${fileUrl.startsWith('/') ? '' : '/'}${fileUrl}`;
+        const fullUrl = normalizeFileUrl(fileUrl.startsWith('http') ? fileUrl : `${API_BASE}${fileUrl.startsWith('/') ? '' : '/'}${fileUrl}`);
         const fileName = file.name;
-        const msgText = fullUrl || `[Attachment: ${fileName}]`;
+        // Format as [File: name | url | size] so web and mobile clients share the exact same rich card
+        const fileSizeFormatted = file.size > 1048576
+          ? `${(file.size / 1048576).toFixed(1)} MB`
+          : `${Math.max(1, Math.round(file.size / 1024))} KB`;
+        const msgText = `[File: ${fileName} | ${fullUrl} | ${fileSizeFormatted}]`;
 
         if (isChannel) {
           await fetch(`${API_BASE}/api/channel/${chatId}/chat`, {
@@ -1042,53 +1068,319 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
                     </button>
                   )}
                 </div>
-              ) : isImageUrl(msg.fileUrl || msg.text) ? (
-                <div style={{ marginBottom: 4 }}>
-                  <img
-                    src={resolveAvatarUrl(msg.fileUrl || msg.text)}
-                    alt="attachment"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLElement).style.display = 'none';
-                    }}
-                    style={{
-                      maxWidth: '100%',
-                      maxHeight: 220,
-                      borderRadius: 10,
-                      display: 'block',
-                      objectFit: 'cover',
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => window.open(resolveAvatarUrl(msg.fileUrl || msg.text), '_blank')}
-                  />
-                  {msg.fileName && (
-                    <span style={{ fontSize: '0.64rem', opacity: 0.85, marginTop: 2, display: 'block' }}>
-                      {msg.fileName}
-                    </span>
-                  )}
-                </div>
-              ) : msg.fileUrl ? (
-                <a
-                  href={resolveAvatarUrl(msg.fileUrl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    color: msg.isMe ? '#ffffff' : '#2563eb',
-                    textDecoration: 'underline',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    marginBottom: 4,
-                  }}
-                >
-                  <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                  </svg>
-                  {msg.fileName || 'Download File'}
-                </a>
-              ) : (
-                msg.text
-              )}
+              ) : (msg.type === 'call' || msg.messageType === 'call' || msg.callInfo) ? (
+                // ── WhatsApp-style Call History Banner (Incoming / Outgoing / Missed / Completed) ──
+                (() => {
+                  const callInfo = msg.callInfo;
+                  const isAudioCall = callInfo?.callType === 'audio' || msg.text?.toLowerCase().includes('voice');
+                  const status = callInfo?.status || (msg.text?.toLowerCase().includes('missed') ? 'missed' : msg.text?.toLowerCase().includes('declined') ? 'declined' : 'completed');
+                  const durationSecs = callInfo?.duration || 0;
+                  const isMissed = status === 'missed' || status === 'declined' || status === 'cancelled';
+                  const isOutgoing = msg.isMe;
+
+                  return (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '4px 2px',
+                        minWidth: 190,
+                      }}
+                    >
+                      {/* Call Type Icon with Directional Arrow badge */}
+                      <div
+                        style={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: '50%',
+                          backgroundColor: isMissed
+                            ? (msg.isMe ? 'rgba(239, 68, 68, 0.18)' : '#fee2e2')
+                            : (msg.isMe ? 'rgba(255, 255, 255, 0.2)' : '#ecfdf5'),
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: isMissed
+                            ? (msg.isMe ? '#fca5a5' : '#ef4444')
+                            : (msg.isMe ? '#ffffff' : '#10b981'),
+                          flexShrink: 0,
+                        }}
+                      >
+                        {isAudioCall ? (
+                          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                          </svg>
+                        ) : (
+                          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                            <polygon points="23 7 16 12 23 17 23 7" />
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                          </svg>
+                        )}
+                      </div>
+
+                      {/* Call details: Title + Status + Duration */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: '0.82rem',
+                            color: msg.isMe ? '#ffffff' : '#0f172a',
+                            lineHeight: 1.2,
+                          }}
+                        >
+                          {isAudioCall ? 'Voice Call' : 'Video Call'}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: '0.7rem',
+                            color: isMissed
+                              ? (msg.isMe ? '#fca5a5' : '#ef4444')
+                              : (msg.isMe ? 'rgba(255,255,255,0.85)' : '#64748b'),
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            marginTop: 2,
+                            fontWeight: isMissed ? 600 : 400,
+                          }}
+                        >
+                          {/* Direction arrow (WhatsApp style: ↙ incoming, ↗ outgoing) */}
+                          <svg
+                            width={11}
+                            height={11}
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2.5}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            style={{
+                              transform: isOutgoing ? 'rotate(45deg)' : 'rotate(225deg)',
+                            }}
+                          >
+                            <line x1="7" y1="17" x2="17" y2="7" />
+                            <polyline points="7 7 17 7 17 17" />
+                          </svg>
+                          <span>
+                            {status === 'completed'
+                              ? `${isOutgoing ? 'Outgoing' : 'Incoming'} (${formatCallDuration(durationSecs)})`
+                              : status === 'declined'
+                              ? 'Declined'
+                              : status === 'cancelled'
+                              ? 'Cancelled'
+                              : isOutgoing
+                              ? 'Unanswered'
+                              : 'Missed Call'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Callback Quick Action Button */}
+                      {!isChannel && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isAudioCall) {
+                              onStartAudioCall();
+                            } else {
+                              onStartVideoCall();
+                            }
+                          }}
+                          style={{
+                            backgroundColor: msg.isMe ? 'rgba(255,255,255,0.2)' : '#eff6ff',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: 32,
+                            height: 32,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: msg.isMe ? '#ffffff' : '#2563eb',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                          title="Call back"
+                        >
+                          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}>
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()
+              ) : (() => {
+                // Check if message is a file attachment (via properties OR [File: name | url | size] syntax)
+                const parsed = parseFileAttachment(msg.text);
+                const activeUrl = normalizeFileUrl(msg.fileUrl || parsed?.fileUrl || (isImageUrl(msg.text) ? msg.text : ''));
+                const activeName = msg.fileName || parsed?.fileName || (activeUrl ? activeUrl.split('/').pop()?.split('?')[0] : '');
+                const activeSize = msg.fileSize || parsed?.fileSize;
+                const isImage = Boolean(activeUrl && isImageUrl(activeUrl, activeName));
+                const isFile = Boolean(activeUrl && !isImage);
+
+                if (isImage) {
+                  return (
+                    <div style={{ marginBottom: 4 }}>
+                      <img
+                        src={resolveAvatarUrl(activeUrl)}
+                        alt={activeName || 'Photo'}
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: 260,
+                          borderRadius: 12,
+                          display: 'block',
+                          objectFit: 'cover',
+                          cursor: 'pointer',
+                          backgroundColor: msg.isMe ? 'rgba(0,0,0,0.1)' : '#f1f5f9',
+                        }}
+                        onClick={() => window.open(resolveAvatarUrl(activeUrl), '_blank')}
+                      />
+                      {activeName && !activeName.startsWith('IMG') && !activeName.startsWith('blob:') && (
+                        <span
+                          style={{
+                            fontSize: '0.64rem',
+                            opacity: 0.85,
+                            marginTop: 4,
+                            display: 'block',
+                            color: msg.isMe ? '#ffffff' : '#475569',
+                          }}
+                        >
+                          {activeName}
+                        </span>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (isFile) {
+                  const ext = getFileExtension(activeName);
+                  const isZip = ext === 'ZIP' || ext === 'RAR' || ext === '7Z' || ext === 'TAR' || ext === 'GZ';
+                  const isPdf = ext === 'PDF';
+
+                  return (
+                    <div
+                      onClick={() => window.open(resolveAvatarUrl(activeUrl), '_blank')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        backgroundColor: msg.isMe ? 'rgba(0, 0, 0, 0.18)' : '#f8fafc',
+                        border: msg.isMe ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid #e2e8f0',
+                        borderRadius: 10,
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        minWidth: 200,
+                        maxWidth: '100%',
+                        marginBottom: 4,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {/* File Icon Badge */}
+                      <div
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 8,
+                          backgroundColor: isZip ? '#f59e0b' : isPdf ? '#ef4444' : '#2563eb',
+                          color: '#ffffff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          fontWeight: 800,
+                          fontSize: '0.65rem',
+                          letterSpacing: '0.04em',
+                        }}
+                      >
+                        {isZip ? (
+                          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path d="M10 20v-6h4v6" />
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                          </svg>
+                        ) : isPdf ? (
+                          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                          </svg>
+                        ) : (
+                          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                            <polyline points="13 2 13 9 20 9" />
+                          </svg>
+                        )}
+                      </div>
+
+                      {/* File Details: Name & Size */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: '0.78rem',
+                            color: msg.isMe ? '#ffffff' : '#0f172a',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={activeName}
+                        >
+                          {activeName || 'Attached File'}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: '0.64rem',
+                            color: msg.isMe ? 'rgba(255,255,255,0.75)' : '#64748b',
+                            marginTop: 1,
+                          }}
+                        >
+                          {ext} {activeSize ? `• ${activeSize}` : ''}
+                        </div>
+                      </div>
+
+                      {/* Download Action Button */}
+                      <a
+                        href={resolveAvatarUrl(activeUrl)}
+                        download={activeName || true}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(resolveAvatarUrl(activeUrl), '_blank');
+                        }}
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: '50%',
+                          backgroundColor: msg.isMe ? 'rgba(255, 255, 255, 0.22)' : '#e2e8f0',
+                          color: msg.isMe ? '#ffffff' : '#2563eb',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          textDecoration: 'none',
+                        }}
+                        title="Download file"
+                      >
+                        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}>
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                      </a>
+                    </div>
+                  );
+                }
+
+                // Standard Text Message: Clickable hyperlinks
+                return (
+                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {renderClickableText(msg.text, msg.isMe)}
+                  </div>
+                );
+              })()}
 
               {/* Timestamp & action triggers */}
               <div

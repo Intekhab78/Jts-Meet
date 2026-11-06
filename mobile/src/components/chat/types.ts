@@ -27,6 +27,16 @@ export interface MobileChatMessageReaction {
   createdAt?: string | Date;
 }
 
+export interface MobileChatMessageCallInfo {
+  meetingId: string;
+  callType: 'audio' | 'video' | 'screenshare';
+  status: 'completed' | 'missed' | 'declined' | 'cancelled';
+  duration: number;
+  callerId?: string;
+  startedAt?: string | Date;
+  endedAt?: string | Date;
+}
+
 export interface MobileChatMessage {
   id: string;
   senderId: string;
@@ -35,8 +45,11 @@ export interface MobileChatMessage {
   timestamp: string;
   isMe: boolean;
   type?: 'text' | 'system' | 'call';
+  messageType?: 'text' | 'call';
+  callInfo?: MobileChatMessageCallInfo | null;
   fileUrl?: string;
   fileName?: string;
+  fileSize?: string;
   reactions?: MobileChatMessageReaction[];
   isDeleted?: boolean;
   deletedAt?: string | Date;

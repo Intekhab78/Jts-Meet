@@ -7,6 +7,12 @@ import { Meeting } from '../modules/meeting/meeting.model'
 import { Channel } from '../modules/channel/channel.model'
 import { createMeeting } from '../modules/meeting/meeting.service'
 import { NotificationService } from '../modules/notification/notification.service'
+import {
+    registerCallSession,
+    markCallAccepted,
+    endCallSession,
+    finalizeCallSession
+} from '../modules/chat/callHistory.service'
 
 const activeRingTimeouts = new Map<string, NodeJS.Timeout>()
 const RING_TIMEOUT_MS = 60000 // 60 seconds ring timeout
@@ -120,6 +126,16 @@ export async function initiateDirectCall(
             setTimeout(() => recentlyInitiatedCalls.delete(meetingId), 15000)
         }
 
+        // Register call session for 1-on-1 direct calls for WhatsApp-style call history
+        if (!isGroupCall && targetUserIds[0]) {
+            registerCallSession({
+                meetingId,
+                callerId: userId,
+                calleeId: targetUserIds[0],
+                callType: payload.callType || 'video'
+            })
+        }
+
         const incomingCallPayload = {
             meetingId,
             callerId: userId,
@@ -163,6 +179,7 @@ export async function initiateDirectCall(
         const timeoutHandle = setTimeout(() => {
             activeRingTimeouts.delete(meetingId)
             console.log(`[DirectCall] Call ${meetingId} timed out after 60s (no answer)`)
+            finalizeCallSession(io, meetingId, 'missed').catch(() => {})
             const timeoutPayload = {
                 meetingId,
                 callerId: userId,
@@ -213,6 +230,10 @@ export async function cancelOrEndDirectCall(
     if (mId && activeRingTimeouts.has(mId)) {
         clearTimeout(activeRingTimeouts.get(mId))
         activeRingTimeouts.delete(mId)
+    }
+
+    if (mId) {
+        endCallSession(io, mId, userId).catch(() => {})
     }
 
     const cancelData = {
@@ -327,6 +348,10 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
             activeRingTimeouts.delete(payload.meetingId)
         }
 
+        if (payload?.meetingId) {
+            markCallAccepted(payload.meetingId)
+        }
+
         const acceptData = {
             meetingId: payload.meetingId,
             calleeId: userId
@@ -366,10 +391,18 @@ export function registerDirectCallHandlers(io: Server, socket: Socket) {
             activeRingTimeouts.delete(payload.meetingId)
         }
 
+        if (payload?.meetingId) {
+            markCallAccepted(payload.meetingId)
+        }
+
         const rejectData = {
             calleeId: userId,
             meetingId: payload.meetingId,
             reason: payload.reason || 'declined'
+        }
+
+        if (payload?.meetingId) {
+            finalizeCallSession(io, payload.meetingId, 'declined').catch(() => {})
         }
 
         io.to(`user:${payload.callerId}`).emit(SocketEvents.CALL_REJECTED, rejectData)
