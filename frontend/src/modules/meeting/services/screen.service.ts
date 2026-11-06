@@ -193,7 +193,11 @@ export async function getScreenShareStream(sourceId?: string, includeAudio = fal
         const msg = String(err?.message || '').toLowerCase()
         const name = String(err?.name || '')
         if (name === 'NotAllowedError' || name === 'AbortError' || msg.includes('permission') || msg.includes('cancel') || msg.includes('dismissed')) {
-            throw err
+            const isMac = typeof navigator !== 'undefined' && (/Macintosh|Mac OS X/i.test(navigator.userAgent) || (navigator as any).userAgentData?.platform === 'macOS');
+            if (name === 'NotAllowedError' && isMac && !msg.includes('cancel') && !msg.includes('dismissed')) {
+                throw new Error('Screen sharing blocked by macOS. Please enable your browser in System Settings ➔ Privacy & Security ➔ Screen Recording.');
+            }
+            throw err;
         }
         console.warn('[ScreenService] getDisplayMedia with audio failed (Safari / unsupported audio), falling back to video-only:', err)
         stream = await navigator.mediaDevices.getDisplayMedia({

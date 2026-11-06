@@ -65,6 +65,29 @@ export function getIceServers(): RTCIceServer[] {
     ]
 }
 
+export function applyMacCodecPreferences(transceiver: RTCRtpTransceiver) {
+    const isApple = typeof navigator !== 'undefined' && (
+        /Macintosh|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        (navigator as any).userAgentData?.platform === 'macOS'
+    )
+    if (isApple && typeof RTCRtpSender !== 'undefined' && 'getCapabilities' in RTCRtpSender && typeof transceiver.setCodecPreferences === 'function') {
+        try {
+            const caps = RTCRtpSender.getCapabilities('video')
+            if (caps && Array.isArray(caps.codecs)) {
+                // Prioritize hardware-accelerated H.264 on Apple Silicon (M1/M2/M3/M4) and Intel Macs
+                // to eliminate high CPU usage, frame drop, and overheating
+                const h264 = caps.codecs.filter(c => c.mimeType.toLowerCase() === 'video/h264')
+                const others = caps.codecs.filter(c => c.mimeType.toLowerCase() !== 'video/h264')
+                if (h264.length > 0) {
+                    transceiver.setCodecPreferences([...h264, ...others])
+                }
+            }
+        } catch (e) {
+            console.warn('[WebRTC] Error setting codec preferences for Mac:', e)
+        }
+    }
+}
+
 export function optimizePeerConnectionForHd(pc: RTCPeerConnection, peerCount: number = 2, isScreenShare: boolean = false) {
     try {
         const senders = pc.getSenders()
@@ -80,7 +103,7 @@ export function optimizePeerConnectionForHd(pc: RTCPeerConnection, peerCount: nu
                 params.encodings[0].maxBitrate = 4_000_000
                 params.encodings[0].maxFramerate = 30
                 params.encodings[0].scaleResolutionDownBy = 1.0
-                ;(params as any).degradationPreference = 'maintain-resolution'
+                    ; (params as any).degradationPreference = 'maintain-resolution'
             } else {
                 // Adaptive Mesh Bitrate scaling for camera video:
                 // 1-2 participants: 3.5 Mbps (Crisp 1080p60)
@@ -154,7 +177,7 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
         if (event.receiver) {
             e2eeService.setupReceiverTransform(event.receiver)
         }
-        
+
         let pStream = peerRemoteStreams.get(userId)
         if (!pStream) {
             pStream = new MediaStream()
@@ -168,7 +191,7 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
                 console.log(`[WebRTC] Removing superseded ${oldTrack.kind} track ${oldTrack.id} in favor of ${event.track.id}`)
                 try {
                     pStream!.removeTrack(oldTrack)
-                } catch (e) {}
+                } catch (e) { }
             }
         })
 
@@ -196,7 +219,7 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
             console.log(`[WebRTC] track ended: kind=${event.track.kind} from user ${userId}`)
             try {
                 pStream?.removeTrack(event.track)
-            } catch (e) {}
+            } catch (e) { }
             notify()
         }
     }
@@ -225,7 +248,8 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
         // seamlessly and instantly without SDP collisions or renegotiation failures!
         if (!hasVideo) {
             try {
-                pc.addTransceiver('video', { direction: 'sendrecv' })
+                const vt = pc.addTransceiver('video', { direction: 'sendrecv' })
+                applyMacCodecPreferences(vt)
             } catch (e) {
                 console.warn('Failed to pre-allocate video transceiver:', e)
             }
@@ -241,11 +265,21 @@ export function createPeerConnection(userId: string, localStream: MediaStream | 
     } else {
         try {
             pc.addTransceiver('audio', { direction: 'sendrecv' })
-            pc.addTransceiver('video', { direction: 'sendrecv' })
+            const vt = pc.addTransceiver('video', { direction: 'sendrecv' })
+            applyMacCodecPreferences(vt)
         } catch (e) {
             console.warn('Failed to add transceivers:', e)
         }
     }
+
+    // Apply hardware codec preferences to all active video transceivers on Mac
+    try {
+        pc.getTransceivers().forEach(tc => {
+            if (tc.receiver?.track?.kind === 'video' || tc.sender?.track?.kind === 'video') {
+                applyMacCodecPreferences(tc)
+            }
+        })
+    } catch (_) { }
 
     return pc
 }

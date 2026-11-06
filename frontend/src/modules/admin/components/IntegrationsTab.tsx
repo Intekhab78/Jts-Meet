@@ -77,7 +77,7 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
         setLoading(true)
         setError('')
         try {
-            const url = currentOrgId 
+            const url = currentOrgId
                 ? `${API_BASE}/api/integrations?orgId=${currentOrgId}`
                 : `${API_BASE}/api/integrations`
             const res = await fetch(url, {
@@ -160,7 +160,7 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                 setSuccessMsg('Integration removed')
                 setTimeout(() => setSuccessMsg(''), 2500)
             }
-        } catch (_) {}
+        } catch (_) { }
     }
 
     const handleToggle = async (id: string, currentStatus: string) => {
@@ -178,7 +178,7 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
             if (json.success) {
                 fetchIntegrations()
             }
-        } catch (_) {}
+        } catch (_) { }
     }
 
     const handleTest = async (id: string) => {
@@ -315,9 +315,9 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
 
     // STATS & METRICS COMPUTATION
     const activeIntegrationsCount = integrations.filter(i => i.status === 'active').length
-    
+
     const allDeliveryLogs = useMemo(() => {
-        return integrations.flatMap(i => 
+        return integrations.flatMap(i =>
             (i.deliveryLogs || []).map((log: any) => ({
                 ...log,
                 integrationId: i._id || i.id,
@@ -331,19 +331,19 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
     const totalDispatches = allDeliveryLogs.length
     const successfulDispatches = allDeliveryLogs.filter(l => l.success).length
     const successRate = totalDispatches > 0 ? ((successfulDispatches / totalDispatches) * 100).toFixed(1) : '100.0'
-    const avgLatency = totalDispatches > 0 
-        ? Math.round(allDeliveryLogs.reduce((acc, l) => acc + (l.durationMs || 0), 0) / totalDispatches) 
+    const avgLatency = totalDispatches > 0
+        ? Math.round(allDeliveryLogs.reduce((acc, l) => acc + (l.durationMs || 0), 0) / totalDispatches)
         : 64
 
     // Filtered logs
     const filteredLogs = useMemo(() => {
         return allDeliveryLogs.filter(log => {
-            const matchesStatus = logStatusFilter === 'all' 
-                ? true 
-                : logStatusFilter === 'success' 
-                ? log.success 
-                : !log.success
-            const matchesQuery = !logSearchQuery 
+            const matchesStatus = logStatusFilter === 'all'
+                ? true
+                : logStatusFilter === 'success'
+                    ? log.success
+                    : !log.success
+            const matchesQuery = !logSearchQuery
                 || (log.eventType || '').toLowerCase().includes(logSearchQuery.toLowerCase())
                 || (log.integrationName || '').toLowerCase().includes(logSearchQuery.toLowerCase())
             return matchesStatus && matchesQuery
@@ -590,10 +590,10 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
                         }}>
-                            {typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/webhook` : 'https://meet.jtsmiddleeast.com/api/integrations/webhook'}
+                            {`${API_BASE || 'https://meetapi.jtsmiddleeast.com'}/api/integrations/webhook`}
                         </code>
                         <button
-                            onClick={() => copyToClipboard(typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/webhook` : 'https://meet.jtsmiddleeast.com/api/integrations/webhook', 'meet_url')}
+                            onClick={() => copyToClipboard(`${API_BASE || 'https://meetapi.jtsmiddleeast.com'}/api/integrations/webhook`, 'meet_url')}
                             style={{
                                 padding: '4px 10px',
                                 background: copiedSecretId === 'meet_url' ? '#16a34a' : 'rgba(255,255,255,0.08)',
@@ -845,7 +845,7 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
             <IntegrationsQuickKitModal
                 show={showQuickKitModal}
                 onClose={() => setShowQuickKitModal(false)}
-                inboundUrl={typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/webhook` : 'https://meet.jtsmiddleeast.com/api/integrations/webhook'}
+                inboundUrl={`${API_BASE || 'https://meetapi.jtsmiddleeast.com'}/api/integrations/webhook`}
                 secretToken={integrations.find(i => i.type === 'jts_support')?.secret || 'whsec_live_enterprise_meet_key'}
             />
         </div>

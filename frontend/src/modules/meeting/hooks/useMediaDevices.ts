@@ -88,7 +88,8 @@ export function useMediaDevices(): UseMediaDevicesResult {
             noiseSuppression: { ideal: true },
             autoGainControl: { ideal: true },
             channelCount: { ideal: 1 },
-            sampleRate: { ideal: 48000 }
+            // Do not enforce 48000 on Safari / macOS / AirPods
+            ...(isSafariOrWebKit ? {} : { sampleRate: { ideal: 48000 } })
         }
 
         // Add Chromium-specific audio processing flags only on non-Safari browsers
@@ -234,7 +235,12 @@ export function useMediaDevices(): UseMediaDevicesResult {
             console.warn('Media stream setup error:', error)
 
             if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError' || error?.message?.toLowerCase().includes('permission denied')) {
-                setMediaError('Camera & Mic permission denied. Please allow permissions in your browser address bar.')
+                const isMac = typeof navigator !== 'undefined' && (/Macintosh|Mac OS X/i.test(navigator.userAgent) || (navigator as any).userAgentData?.platform === 'macOS');
+                if (isMac) {
+                    setMediaError('Camera & Mic permission blocked. On macOS: check System Settings ➔ Privacy & Security ➔ Camera & Microphone, and browser address bar.');
+                } else {
+                    setMediaError('Camera & Mic permission denied. Please allow permissions in your browser address bar.');
+                }
             } else if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
                 setMediaError('No camera or microphone device found on your device.')
             } else if (error?.name === 'NotReadableError' || error?.name === 'TrackStartError') {
