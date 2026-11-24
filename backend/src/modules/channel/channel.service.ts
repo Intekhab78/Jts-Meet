@@ -5,11 +5,12 @@ import { getOrganizationById } from '../organization/organization.service'
 import { ChannelTypes, ChannelRoles, ChannelStatuses, GeneralChannelName } from './channel.constants'
 import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
+import { isSuperAdminUser } from '../../middleware/adminMiddleware'
 
 export async function isChannelOwnerOrModerator(channel: IChannel, userId: string): Promise<boolean> {
     try {
-        const user = await User.findById(userId).select('email').exec()
-        if (user?.email?.toLowerCase().trim() === 'admin@jtsmeet.com') return true
+        const user = await User.findById(userId).select('email role isSuperAdmin').exec()
+        if (user && isSuperAdminUser(user)) return true
     } catch (_) {}
 
     const targetIdStr = userId.toString()
@@ -208,7 +209,7 @@ export async function updateChannel(channelId: string, userId: string, payload: 
         return null
     }
 
-    if (!isChannelOwnerOrModerator(channel, userId)) {
+    if (!(await isChannelOwnerOrModerator(channel, userId))) {
         throw new Error('Forbidden')
     }
 
@@ -237,7 +238,7 @@ export async function archiveChannel(channelId: string, userId: string): Promise
         return null
     }
 
-    if (!isChannelOwnerOrModerator(channel, userId)) {
+    if (!(await isChannelOwnerOrModerator(channel, userId))) {
         throw new Error('Forbidden')
     }
 
@@ -269,7 +270,7 @@ export async function deleteChannel(channelId: string, userId: string): Promise<
         throw { status: 403, message: 'General channel cannot be deleted' }
     }
 
-    if (!isChannelOwnerOrModerator(channel, userId)) {
+    if (!(await isChannelOwnerOrModerator(channel, userId))) {
         throw new Error('Forbidden')
     }
 
@@ -287,7 +288,31 @@ export async function joinChannel(channelId: string, userId: string): Promise<IC
         throw new Error('Channel is private')
     }
 
-    const already = channel.members.some((member) => member.userId.equals(new Types.ObjectId(userId)))
+    // Verify user belongs to the parent team or organization before joining a public channel
+    const team = await Team.findById(channel.teamId).exec()
+    if (!team) {
+        throw { status: 404, message: 'Parent team not found' }
+    }
+    const targetIdStr = String(userId)
+    const isTeamMember = team.members.some((m) => {
+        const mId = (m.userId as any)?._id ? String((m.userId as any)._id) : String(m.userId)
+        return mId === targetIdStr
+    })
+    if (!isTeamMember) {
+        const org = await getOrganizationById(team.organizationId.toString())
+        const isOrgMember = Boolean(org && (
+            String((org.ownerId as any)?._id || org.ownerId) === targetIdStr ||
+            org.members.some((m: any) => String((m.userId as any)?._id || m.userId) === targetIdStr && m.status === 'active')
+        ))
+        if (!isOrgMember) {
+            throw { status: 403, message: 'Forbidden: You must belong to the organization or team to join this channel' }
+        }
+    }
+
+    const already = channel.members.some((member) => {
+        const mId = (member.userId as any)?._id ? String((member.userId as any)._id) : String(member.userId)
+        return mId === targetIdStr
+    })
     if (!already) {
         channel.members.push({
             userId: new Types.ObjectId(userId),

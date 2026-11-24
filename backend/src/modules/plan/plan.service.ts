@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { Plan, IPlan, DEFAULT_TIERS } from './plan.model'
+import { Organization } from '../organization/organization.model'
 
 const PLANS_FILE = path.join(process.cwd(), 'src', 'config', 'plans.json')
 
@@ -79,7 +80,8 @@ export async function createPlan(data: Partial<IPlan>): Promise<IPlan> {
 
     const filePlans = loadFilePlans()
     const existing = filePlans.find(p => p.planId === planId)
-    if (existing) {
+    const existingDb = await Plan.findOne({ planId }).lean().catch(() => null)
+    if (existing || existingDb) {
         throw new Error(`Plan with ID "${planId}" already exists. Please pick a unique identifier.`)
     }
 
@@ -119,7 +121,7 @@ export async function createPlan(data: Partial<IPlan>): Promise<IPlan> {
     try {
         const mongoPlan = new Plan(newPlan)
         await mongoPlan.save()
-    } catch (_) {}
+    } catch (_) { }
 
     return newPlan as IPlan
 }
@@ -128,9 +130,12 @@ export async function updatePlan(planId: string, data: Partial<IPlan>): Promise<
     const slug = planId.toLowerCase().trim()
     const filePlans = loadFilePlans()
     const idx = filePlans.findIndex(p => p.planId === slug)
-    if (idx === -1) return null
+    const dbPlan = await Plan.findOne({ planId: slug }).lean().catch(() => null)
+    const basePlan = dbPlan ? { ...(dbPlan as any) } : idx !== -1 ? { ...filePlans[idx] } : null
+    if (!basePlan) return null
 
-    const plan = filePlans[idx]
+    delete basePlan._id
+    const plan = basePlan
 
     if (data.name !== undefined) plan.name = data.name.trim()
     if (data.badge !== undefined) plan.badge = data.badge.trim()
@@ -141,21 +146,21 @@ export async function updatePlan(planId: string, data: Partial<IPlan>): Promise<
 
     if (data.limits) {
         plan.limits = {
-            maxSeats: Number(data.limits.maxSeats ?? plan.limits.maxSeats),
-            maxStorageGb: Number(data.limits.maxStorageGb ?? plan.limits.maxStorageGb),
-            maxMeetingDurationMins: Number(data.limits.maxMeetingDurationMins ?? plan.limits.maxMeetingDurationMins),
-            maxParticipantsPerCall: Number(data.limits.maxParticipantsPerCall ?? plan.limits.maxParticipantsPerCall)
+            maxSeats: Number(data.limits.maxSeats ?? plan.limits?.maxSeats ?? 15),
+            maxStorageGb: Number(data.limits.maxStorageGb ?? plan.limits?.maxStorageGb ?? 5),
+            maxMeetingDurationMins: Number(data.limits.maxMeetingDurationMins ?? plan.limits?.maxMeetingDurationMins ?? 0),
+            maxParticipantsPerCall: Number(data.limits.maxParticipantsPerCall ?? plan.limits?.maxParticipantsPerCall ?? 50)
         }
     }
 
     if (data.features) {
         plan.features = {
-            aiSummary: Boolean(data.features.aiSummary ?? plan.features.aiSummary),
-            cloudRecording: Boolean(data.features.cloudRecording ?? plan.features.cloudRecording),
-            whiteboard: Boolean(data.features.whiteboard ?? plan.features.whiteboard),
-            customBranding: Boolean(data.features.customBranding ?? plan.features.customBranding),
-            ssoLogin: Boolean(data.features.ssoLogin ?? plan.features.ssoLogin),
-            prioritySupport: Boolean(data.features.prioritySupport ?? plan.features.prioritySupport)
+            aiSummary: Boolean(data.features.aiSummary ?? plan.features?.aiSummary),
+            cloudRecording: Boolean(data.features.cloudRecording ?? plan.features?.cloudRecording),
+            whiteboard: Boolean(data.features.whiteboard ?? plan.features?.whiteboard),
+            customBranding: Boolean(data.features.customBranding ?? plan.features?.customBranding),
+            ssoLogin: Boolean(data.features.ssoLogin ?? plan.features?.ssoLogin),
+            prioritySupport: Boolean(data.features.prioritySupport ?? plan.features?.prioritySupport)
         }
     }
 
@@ -168,12 +173,20 @@ export async function updatePlan(planId: string, data: Partial<IPlan>): Promise<
     if (data.sortOrder !== undefined) plan.sortOrder = Number(data.sortOrder)
     plan.updatedAt = new Date().toISOString()
 
-    filePlans[idx] = plan
+    if (idx !== -1) {
+        filePlans[idx] = plan
+    } else {
+        filePlans.push(plan)
+    }
     saveFilePlans(filePlans)
 
     try {
-        await Plan.updateOne({ planId: slug }, { $set: plan })
-    } catch (_) {}
+        await Plan.updateOne({ planId: slug }, { $set: plan }, { upsert: true })
+        await Organization.updateMany(
+            { planTier: slug },
+            { $set: { maxSeats: plan.limits.maxSeats, maxStorageGb: plan.limits.maxStorageGb } }
+        )
+    } catch (_) { }
 
     return plan as IPlan
 }
@@ -182,13 +195,16 @@ export async function deletePlan(planId: string): Promise<boolean> {
     const slug = planId.toLowerCase().trim()
     const filePlans = loadFilePlans()
     const nextPlans = filePlans.filter(p => p.planId !== slug)
-    if (nextPlans.length === filePlans.length) return false
+    const deletedFromFile = nextPlans.length !== filePlans.length
+    if (deletedFromFile) {
+        saveFilePlans(nextPlans)
+    }
 
-    saveFilePlans(nextPlans)
-
+    let deletedFromDb = false
     try {
-        await Plan.deleteOne({ planId: slug })
-    } catch (_) {}
+        const res = await Plan.deleteOne({ planId: slug })
+        deletedFromDb = (res.deletedCount || 0) > 0
+    } catch (_) { }
 
-    return true
+    return deletedFromFile || deletedFromDb
 }

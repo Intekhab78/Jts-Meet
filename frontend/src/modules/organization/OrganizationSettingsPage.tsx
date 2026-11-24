@@ -608,6 +608,14 @@ export function OrganizationSettingsPage({
                                 organizationId={organization._id}
                                 token={token}
                                 initialMembers={organization.members}
+                                canManageRoles={(() => {
+                                    try {
+                                        const decoded = token ? JSON.parse(atob(token.split('.')[1])) : null
+                                        const uid = decoded?.userId || decoded?.id || decoded?.sub || ''
+                                        return String((organization as any).ownerId?._id || organization.ownerId) === uid ||
+                                            organization.members.some((m: any) => String(m.userId?._id || m.userId) === uid && ['owner', 'admin'].includes(m.role))
+                                    } catch { return false }
+                                })()}
                                 onRemove={handleRemoveMember}
                                 onRoleUpdated={() => loadOrganization(organization._id)}
                                 onInviteClick={() => setShowInviteModal(true)}
@@ -655,7 +663,7 @@ export function OrganizationSettingsPage({
                         <IntegrationsTab 
                             token={token} 
                             currentOrgId={organization._id} 
-                            planTier={organization.planTier || 'enterprise'}
+                            planTier={organization.planTier || 'free'}
                         />
                     )}
 

@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { Request, Response } from 'express'
 import { sendError, sendSuccess } from '../utils/responseHelper'
 import {
@@ -17,9 +18,11 @@ import {
     revokeSession,
     loginOrCreateSsoUser,
     loginOrCreateGoogleUser,
-    loginOrCreateMicrosoftUser
+    loginOrCreateMicrosoftUser,
+    verifyGoogleIdToken
 } from '../services/auth.service'
 import { Organization } from '../modules/organization/organization.model'
+import { getEffectivePlanForOrg } from '../modules/plan/planEntitlements'
 import { validateRegister, validateLogin } from '../validators/auth.validator'
 import { AuthRequest } from '../middleware/authMiddleware'
 import { updateUserStatus } from '../socket/presence'
@@ -192,10 +195,14 @@ export const authController = {
             return sendError(res, 401, 'Unauthorized access')
         }
 
-        const { fullName, profileImage } = req.body as { fullName?: string; profileImage?: string }
+        const { fullName, profileImage, twoFactorEnabled } = req.body as {
+            fullName?: string
+            profileImage?: string
+            twoFactorEnabled?: boolean
+        }
 
         try {
-            const user = await updateUserProfile(req.userId, fullName, profileImage)
+            const user = await updateUserProfile(req.userId, fullName, profileImage, twoFactorEnabled)
             return sendSuccess(res, user, 'Profile updated successfully')
         } catch (err: any) {
             return sendError(res, err.status || 500, err.message || 'Failed to update profile')
@@ -282,6 +289,10 @@ export const authController = {
             if (!org) {
                 return sendError(res, 404, 'Organization workspace not found')
             }
+            const effectivePlan = await getEffectivePlanForOrg(String(org._id))
+            if (!effectivePlan.features.ssoLogin) {
+                return sendError(res, 403, 'SAML / SSO login is not enabled on this organization\'s current plan. Please upgrade to Enterprise.')
+            }
             return sendSuccess(res, { slug: org.slug, name: org.name }, 'Organization found')
         } catch (err: any) {
             return sendError(res, 500, err.message || 'SSO initiation failed')
@@ -289,15 +300,55 @@ export const authController = {
     },
 
     ssoCallback: async (req: Request, res: Response) => {
-        const { email, orgSlug } = req.body
+        const { email, orgSlug, ssoToken, idToken } = req.body
         if (!email || !orgSlug) {
             return sendError(res, 400, 'Email and Organization slug are required')
+        }
+
+        // Security Guard: Never issue sessions from unverified { email, orgSlug } payloads.
+        // Require either a timing-safe SSO assertion secret or a cryptographically verified IdP idToken matching email.
+        const configuredSsoSecret = process.env.SSO_SHARED_SECRET
+        let isAuthorized = false
+
+        if (configuredSsoSecret && typeof ssoToken === 'string') {
+            const a = Buffer.from(ssoToken)
+            const b = Buffer.from(configuredSsoSecret)
+            if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+                isAuthorized = true
+            }
+        }
+
+        if (!isAuthorized && typeof idToken === 'string' && idToken.trim().length > 0) {
+            try {
+                const verified = await verifyGoogleIdToken(idToken.trim())
+                if (
+                    verified?.email &&
+                    verified.emailVerified !== false &&
+                    verified.email.toLowerCase().trim() === String(email).toLowerCase().trim()
+                ) {
+                    isAuthorized = true
+                }
+            } catch (_) {
+                isAuthorized = false
+            }
+        }
+
+        if (!isAuthorized) {
+            return sendError(res, 403, 'SSO verification failed: Valid IdP assertion token is required')
         }
 
         const deviceInfo = req.headers['user-agent'] || ''
         const ipAddress = req.ip || ''
 
         try {
+            const org = await Organization.findOne({ slug: String(orgSlug).toLowerCase().trim() })
+            if (!org) {
+                return sendError(res, 404, 'Organization workspace not found')
+            }
+            const effectivePlan = await getEffectivePlanForOrg(String(org._id))
+            if (!effectivePlan.features.ssoLogin) {
+                return sendError(res, 403, 'SAML / SSO login is not enabled on this organization\'s current plan. Please upgrade to Enterprise.')
+            }
             const authResult = await loginOrCreateSsoUser(email, orgSlug, deviceInfo, ipAddress)
             return sendSuccess(res, authResult, 'SSO Authentication successful')
         } catch (err: any) {

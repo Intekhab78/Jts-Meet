@@ -178,13 +178,15 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
     setIsSubmitting(true);
     setStatusMsg('');
     try {
+      const orgName = newOrgName.trim();
+      const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `org-${Date.now()}`;
       const res = await fetch(`${API_BASE}/api/organization`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${resolvedToken}`,
         },
-        body: JSON.stringify({ name: newOrgName.trim() }),
+        body: JSON.stringify({ name: orgName, slug }),
       });
       if (res.ok) {
         const json = await res.json();
@@ -225,7 +227,7 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
           organizationId: selectedOrgId,
           name: newTeamName.trim(),
           description: newTeamDesc.trim() || 'Team workspace',
-          isPrivate: newTeamIsPrivate,
+          visibility: newTeamIsPrivate ? 'private' : 'public',
         }),
       });
       if (res.ok) {
@@ -284,7 +286,7 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
   };
 
   const copyInviteLink = () => {
-    const url = `${window.location.origin}/join?org=${selectedOrgId}`;
+    const url = `https://meet.jtsmiddleeast.com/join?org=${selectedOrgId}`;
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(url);
     }
@@ -399,7 +401,7 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
     if (!window.confirm(`Are you sure you want to leave ${currentOrg?.name}? You will lose access to its teams and channels.`)) return;
     if (!resolvedToken || !selectedOrgId) return;
     try {
-      const currentUser = JSON.parse(localStorage.getItem('jts_user') || '{}');
+      const currentUser = JSON.parse(localStorage.getItem('jts_user_profile') || '{}');
       const userId = currentUser._id || currentUser.id;
       const res = await fetch(`${API_BASE}/api/organization/leave`, {
         method: 'POST',
@@ -994,7 +996,7 @@ export const MobileOrganizationModal: React.FC<MobileOrganizationModalProps> = (
                           {t.name}
                         </span>
                         <span style={{ fontSize: '0.66rem', color: '#64748b' }}>
-                          {t.members?.length || 1} members • {t.isPrivate ? 'Private' : 'Public'}
+                          {t.members?.length || 1} members • {(t.visibility === 'private' || t.isPrivate) ? 'Private' : 'Public'}
                         </span>
                       </div>
 

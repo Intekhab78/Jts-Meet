@@ -381,13 +381,31 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
                                 </label>
                                 <select
                                     value={editTier}
-                                    onChange={(e) => setEditTier(e.target.value as any)}
+                                    onChange={(e) => {
+                                        const nextTier = e.target.value
+                                        setEditTier(nextTier)
+                                        const matchedPlan = plans.find(p => p.planId === nextTier)
+                                        if (matchedPlan?.limits) {
+                                            setEditSeats(matchedPlan.limits.maxSeats)
+                                            setEditStorageGb(matchedPlan.limits.maxStorageGb)
+                                        }
+                                    }}
                                     className="input"
                                     style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.85rem' }}
                                 >
-                                    <option value="free">Free Tier</option>
-                                    <option value="starter">Growth Tier</option>
-                                    <option value="enterprise">Enterprise Tier</option>
+                                    {plans.length > 0 ? (
+                                        plans.map(p => (
+                                            <option key={p.planId} value={p.planId}>
+                                                {p.name} ({p.planId})
+                                            </option>
+                                        ))
+                                    ) : (
+                                        <>
+                                            <option value="free">Free Tier (free)</option>
+                                            <option value="starter">Growth Tier (starter)</option>
+                                            <option value="enterprise">Enterprise Tier (enterprise)</option>
+                                        </>
+                                    )}
                                 </select>
                             </div>
 
@@ -442,12 +460,12 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
                     style={{
                         position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999,
                         background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)',
-                        display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 16px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 16px',
                         overflowY: 'auto', boxSizing: 'border-box'
                     }}
                 >
                     <div className="glass-card anim-scale-in" style={{
-                        maxWidth: 620, width: '100%', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 24
+                        maxWidth: 880, width: '100%', maxHeight: 'calc(100vh - 24px)', overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12
                     }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -473,11 +491,11 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
                             </button>
                         </div>
 
-                        <form onSubmit={handleSavePlan} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                            {/* General Tier Details */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <form onSubmit={handleSavePlan} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {/* General Tier Details & Pricing in one compact row */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
                                 <div>
-                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>
+                                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 3 }}>
                                         Plan Name *
                                     </label>
                                     <input
@@ -487,11 +505,11 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
                                         onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })}
                                         placeholder="e.g. Scale Pro"
                                         className="input"
-                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.85rem' }}
+                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.8rem', padding: '6px 10px' }}
                                     />
                                 </div>
                                 <div>
-                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>
+                                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 3 }}>
                                         Badge Label
                                     </label>
                                     <input
@@ -500,33 +518,12 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
                                         onChange={(e) => setPlanForm({ ...planForm, badge: e.target.value })}
                                         placeholder="e.g. Most Popular"
                                         className="input"
-                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.85rem' }}
+                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.8rem', padding: '6px 10px' }}
                                     />
                                 </div>
-                            </div>
-
-                            {/* Plan ID */}
-                            {isCreatingNewPlan && (
                                 <div>
-                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>
-                                        Plan Identifier / Slug (Optional, auto-generated)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={planForm.planId || ''}
-                                        onChange={(e) => setPlanForm({ ...planForm, planId: e.target.value })}
-                                        placeholder="e.g. scale-pro"
-                                        className="input"
-                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.85rem', fontFamily: 'monospace' }}
-                                    />
-                                </div>
-                            )}
-
-                            {/* Pricing */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                                <div>
-                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>
-                                        Monthly Price ($) *
+                                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 3 }}>
+                                        Monthly ($) *
                                     </label>
                                     <input
                                         type="number"
@@ -535,12 +532,12 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
                                         value={planForm.priceMonthly ?? 0}
                                         onChange={(e) => setPlanForm({ ...planForm, priceMonthly: Number(e.target.value) })}
                                         className="input"
-                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.85rem' }}
+                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.8rem', padding: '6px 10px' }}
                                     />
                                 </div>
                                 <div>
-                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>
-                                        Yearly Price ($)
+                                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 3 }}>
+                                        Yearly ($)
                                     </label>
                                     <input
                                         type="number"
@@ -548,11 +545,11 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
                                         value={planForm.priceYearly ?? 0}
                                         onChange={(e) => setPlanForm({ ...planForm, priceYearly: Number(e.target.value) })}
                                         className="input"
-                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.85rem' }}
+                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.8rem', padding: '6px 10px' }}
                                     />
                                 </div>
                                 <div>
-                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>
+                                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 3 }}>
                                         Currency
                                     </label>
                                     <input
@@ -560,18 +557,35 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
                                         value={planForm.currency || 'USD'}
                                         onChange={(e) => setPlanForm({ ...planForm, currency: e.target.value.toUpperCase() })}
                                         className="input"
-                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.85rem' }}
+                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.8rem', padding: '6px 10px' }}
                                     />
                                 </div>
                             </div>
 
+                            {/* Plan ID */}
+                            {isCreatingNewPlan && (
+                                <div>
+                                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 3 }}>
+                                        Plan Identifier / Slug (Optional, auto-generated)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={planForm.planId || ''}
+                                        onChange={(e) => setPlanForm({ ...planForm, planId: e.target.value })}
+                                        placeholder="e.g. scale-pro"
+                                        className="input"
+                                        style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.8rem', fontFamily: 'monospace', padding: '6px 10px' }}
+                                    />
+                                </div>
+                            )}
+
                             {/* Quota Limits Matrix */}
-                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 14 }}>
-                                <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#c4b5fd', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <IconSettings size={14} color="#c4b5fd" />
+                            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px' }}>
+                                <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#c4b5fd', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <IconSettings size={13} color="#c4b5fd" />
                                     <span>Dynamic Quota Limits</span>
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
                                     <div>
                                         <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>
                                             Max Member Seats:
@@ -644,10 +658,10 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
 
                             {/* Feature Flags */}
                             <div>
-                                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 8 }}>
+                                <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 6 }}>
                                     Active Feature Permissions:
                                 </label>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 6 }}>
                                     {[
                                         { key: 'aiSummary', label: 'AI Summary & Notes', Icon: IconSparkles, color: '#c084fc' },
                                         { key: 'cloudRecording', label: 'Cloud Recording', Icon: IconVideo, color: '#f87171' },
@@ -656,7 +670,7 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
                                         { key: 'ssoLogin', label: 'SAML / SSO Login', Icon: IconLock, color: '#a78bfa' },
                                         { key: 'prioritySupport', label: '24/7 Priority Support', Icon: IconZap, color: '#fbbf24' }
                                     ].map((feat) => (
-                                        <label key={feat.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem', color: '#e4e4e7', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: 6 }}>
+                                        <label key={feat.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#e4e4e7', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', padding: '5px 8px', borderRadius: 6 }}>
                                             <input
                                                 type="checkbox"
                                                 checked={Boolean(planForm.features?.[feat.key])}
@@ -665,7 +679,7 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
                                                     features: { ...planForm.features, [feat.key]: e.target.checked }
                                                 })}
                                             />
-                                            <feat.Icon size={14} color={feat.color} />
+                                            <feat.Icon size={13} color={feat.color} />
                                             <span>{feat.label}</span>
                                         </label>
                                     ))}
@@ -674,58 +688,59 @@ export function SuperAdminMasterHub({ token, currentUserId }: SuperAdminMasterHu
 
                             {/* Feature Bullets */}
                             <div>
-                                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>
+                                <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 3 }}>
                                     Marketing Feature Bullets (1 per line):
                                 </label>
                                 <textarea
-                                    rows={4}
+                                    rows={2}
                                     value={bulletsInput}
                                     onChange={(e) => setBulletsInput(e.target.value)}
                                     placeholder="Up to 50 Member Seats&#10;50 GB Cloud Storage&#10;Unlimited Duration"
                                     className="input"
-                                    style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.82rem', width: '100%' }}
+                                    style={{ background: 'var(--color-surface-2)', color: '#fff', fontSize: '0.78rem', width: '100%', padding: '6px 10px' }}
                                 />
                             </div>
 
-                            {/* Visibility & Status */}
-                            <div style={{ display: 'flex', gap: 20, alignItems: 'center', paddingTop: 4 }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={planForm.isPublic !== false}
-                                        onChange={(e) => setPlanForm({ ...planForm, isPublic: e.target.checked })}
-                                    />
-                                    Publicly Visible to Tenants
-                                </label>
+                            {/* Visibility & Buttons in one row */}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, paddingTop: 4 }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#fff', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={planForm.isPublic !== false}
+                                            onChange={(e) => setPlanForm({ ...planForm, isPublic: e.target.checked })}
+                                        />
+                                        Publicly Visible
+                                    </label>
 
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', color: '#fff', cursor: 'pointer' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={planForm.status !== 'archived'}
-                                        onChange={(e) => setPlanForm({ ...planForm, status: e.target.checked ? 'active' : 'archived' })}
-                                    />
-                                    Active (Accept New Subscriptions)
-                                </label>
-                            </div>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#fff', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={planForm.status !== 'archived'}
+                                            onChange={(e) => setPlanForm({ ...planForm, status: e.target.checked ? 'active' : 'archived' })}
+                                        />
+                                        Active
+                                    </label>
+                                </div>
 
-                            {/* Buttons */}
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 }}>
-                                <button
-                                    type="button"
-                                    onClick={() => { setEditingPlan(null); setIsCreatingNewPlan(false) }}
-                                    className="btn btn-secondary"
-                                    style={{ fontSize: '0.85rem' }}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={savingPlan}
-                                    className="btn btn-primary"
-                                    style={{ fontSize: '0.85rem', fontWeight: 700, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
-                                >
-                                    {savingPlan ? 'Saving...' : (isCreatingNewPlan ? 'Create Plan Tier' : 'Save Changes')}
-                                </button>
+                                <div style={{ display: 'flex', gap: 10 }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setEditingPlan(null); setIsCreatingNewPlan(false) }}
+                                        className="btn btn-secondary"
+                                        style={{ fontSize: '0.8rem', padding: '7px 14px' }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={savingPlan}
+                                        className="btn btn-primary"
+                                        style={{ fontSize: '0.8rem', fontWeight: 700, padding: '7px 16px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+                                    >
+                                        {savingPlan ? 'Saving...' : (isCreatingNewPlan ? 'Create Plan Tier' : 'Save Changes')}
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>

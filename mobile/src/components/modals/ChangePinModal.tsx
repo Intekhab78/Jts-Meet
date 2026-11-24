@@ -76,6 +76,10 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
   };
 
   const handleResetToDefault = () => {
+    if (currentPinInput.trim() !== currentStoredPin) {
+      setErrorMsg('Enter your current PIN above before resetting to default.');
+      return;
+    }
     if (window.confirm('Reset PIN to default (1234)?')) {
       localStorage.setItem('jts_security_pin', '1234');
       setSuccessMsg('PIN reset to default: 1234');

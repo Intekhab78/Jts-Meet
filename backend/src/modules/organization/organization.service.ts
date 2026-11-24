@@ -8,6 +8,7 @@ import { User } from '../../models/user.model'
 import { NotificationService } from '../notification/notification.service'
 import { FRONTEND_URL, ADMIN_EMAIL } from '../../config'
 import { getPlanByPlanId } from '../plan/plan.service'
+import { getEffectivePlanForOrg } from '../plan/planEntitlements'
 import { PaymentTransaction } from '../plan/payment.model'
 import { withTransactionOrDirect } from '../../utils/transactionHelper'
 import { UpdateOrganizationPayload } from './organization.validator'
@@ -88,6 +89,15 @@ export async function updateOrganization(
 
     if (!isUserOrgAdminOrOwner(org, userId)) {
         throw new Error('Forbidden: Only organization owners and admins can update organization settings')
+    }
+
+    const isBrandingChange = (payload.logo !== undefined && payload.logo !== '' && payload.logo !== org.logo) ||
+        (payload.watermarkingEnabled === true && !org.watermarkingEnabled)
+    if (isBrandingChange) {
+        const effectivePlan = await getEffectivePlanForOrg(String(org._id))
+        if (!effectivePlan.features.customBranding) {
+            throw new Error('Custom branding and watermarking require a plan with Custom Branding enabled. Please upgrade your plan.')
+        }
     }
 
     if (payload.name !== undefined) org.name = payload.name.trim()
@@ -283,6 +293,10 @@ export async function removeMember(orgId: string, userId: string, targetUserId: 
     const requestingMember = org.members.find((member) => getMemberUserId(member) === userId.toString())
     if (requestingMember?.role === 'admin' && targetUserId === userId) {
         throw new Error('Admins cannot remove themselves')
+    }
+    const orgOwnerStr = (org.ownerId as any)?._id ? String((org.ownerId as any)._id) : String(org.ownerId)
+    if (orgOwnerStr === targetUserId.toString()) {
+        throw new Error('Forbidden: Organization owner cannot be removed')
     }
 
     const targetIndex = org.members.findIndex((member) => getMemberUserId(member) === targetUserId.toString())
@@ -515,14 +529,22 @@ export async function upgradeOrganizationPlan(
     }
 
     const isFreeTier = plan.planId === 'free' || (plan.priceMonthly === 0 && plan.priceYearly === 0)
-    const hasConfiguredGateway = !!(process.env.STRIPE_SECRET_KEY || process.env.RAZORPAY_KEY_ID)
     const isProd = process.env.NODE_ENV === 'production'
 
     if (!isFreeTier && !isSuperAdmin) {
-        // Enforce payment token verification in production when a gateway is active
-        if (isProd && hasConfiguredGateway) {
+        // Enforce verified payment transaction in production (regardless of whether gateway keys live in env or PlatformSettings)
+        if (isProd) {
             if (!paymentToken || typeof paymentToken !== 'string' || paymentToken.trim().length === 0) {
                 throw new Error('Payment verification required: Paid subscription tiers require a valid payment confirmation')
+            }
+            const verifiedTx = await PaymentTransaction.findOne({
+                organizationId: org._id,
+                planId: plan.planId,
+                status: 'completed',
+                $or: [{ paymentId: paymentToken }, { orderId: paymentToken }, { transactionId: paymentToken }]
+            }).lean().exec()
+            if (!verifiedTx) {
+                throw new Error('Payment verification failed: No completed payment transaction found for this token')
             }
         }
     }

@@ -8,7 +8,6 @@ const ALLOWED_MIME_TYPES = [
     'image/png',
     'image/gif',
     'image/webp',
-    'image/svg+xml',
     'image/bmp',
     'image/tiff',
     // Documents
@@ -24,12 +23,8 @@ const ALLOWED_MIME_TYPES = [
     'application/x-rar-compressed',
     'application/x-7z-compressed',
     'text/plain',
-    'text/html',
-    'text/css',
-    'text/javascript',
     'text/csv',
     'application/json',
-    'application/octet-stream',
     // Audio / Voice Notes
     'audio/webm',
     'audio/ogg',
@@ -49,25 +44,27 @@ const ALLOWED_MIME_TYPES = [
     'video/ogg',
     'video/quicktime',
     'video/x-msvideo',
-    'video/mpeg',
-    ''
+    'video/mpeg'
 ]
+
+const BLOCKED_MIME_TYPES = new Set([
+    'image/svg+xml',
+    'text/html',
+    'application/xhtml+xml',
+    'text/css',
+    'text/javascript',
+    'application/javascript',
+    'application/x-javascript',
+    'application/octet-stream'
+])
 
 export const fileUpload = multer({
     storage: multer.memoryStorage(),
     limits: {
-        fileSize: 50 * 1024 * 1024 // 50MB
+        fileSize: 25 * 1024 * 1024 // 25MB
     },
     fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
-        const rawMime = file.mimetype || ''
-        const baseMime = rawMime.split(';')[0].trim().toLowerCase()
-        if (
-            ALLOWED_MIME_TYPES.includes(baseMime) ||
-            ALLOWED_MIME_TYPES.includes(rawMime.toLowerCase()) ||
-            baseMime.startsWith('audio/') ||
-            baseMime.startsWith('video/') ||
-            baseMime.startsWith('image/')
-        ) {
+        if (isAllowedMimeType(file.mimetype)) {
             cb(null, true)
         } else {
             cb(new Error('Unsupported file type'))
@@ -76,12 +73,15 @@ export const fileUpload = multer({
 }).single('file')
 
 export function isAllowedMimeType(mimeType: string) {
-    if (!mimeType) return true
-    const rawMime = mimeType || ''
-    const baseMime = rawMime.split(';')[0].trim().toLowerCase()
+    if (!mimeType || typeof mimeType !== 'string') return false
+    const rawMime = mimeType.trim().toLowerCase()
+    const baseMime = rawMime.split(';')[0].trim()
+    if (!baseMime || BLOCKED_MIME_TYPES.has(baseMime) || baseMime.includes('svg') || baseMime.includes('html') || baseMime.includes('javascript')) {
+        return false
+    }
     return (
         ALLOWED_MIME_TYPES.includes(baseMime) ||
-        ALLOWED_MIME_TYPES.includes(rawMime.toLowerCase()) ||
+        ALLOWED_MIME_TYPES.includes(rawMime) ||
         baseMime.startsWith('audio/') ||
         baseMime.startsWith('video/') ||
         baseMime.startsWith('image/')

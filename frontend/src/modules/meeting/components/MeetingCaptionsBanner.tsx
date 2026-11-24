@@ -427,10 +427,18 @@ export function MeetingCaptionsBanner({
                             reader.onloadend = async () => {
                                 const base64data = (reader.result as string)?.split(',')[1]
                                 if (!base64data) return
+                                const authToken = localStorage.getItem('jts_token') || localStorage.getItem('jts_guest_token') || ''
                                 const res = await fetch(`${API_BASE}/api/ai/transcribe`, {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ audio: base64data, mimeType: fallbackRecorder?.mimeType || 'audio/webm' })
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+                                    },
+                                    body: JSON.stringify({
+                                        audio: base64data,
+                                        mimeType: fallbackRecorder?.mimeType || 'audio/webm',
+                                        meetingId: meetingIdRef.current
+                                    })
                                 })
                                 const resData = await res.json()
                                 if (resData?.success && resData?.data?.text) {

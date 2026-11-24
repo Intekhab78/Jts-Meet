@@ -144,14 +144,14 @@ export function OrganizationBillingTab({
                             <IconDownload size={14} color="#38bdf8" /> Cloud Storage Vault
                         </span>
                         <span style={{ fontSize: '0.78rem', color: '#a1a1aa', fontWeight: 600 }}>
-                            0.4 GB / {maxStorageGb} GB Used (8%)
+                            {((organization as any)?.storageUsedGb ?? 0).toFixed(1)} GB / {maxStorageGb} GB Used ({maxStorageGb > 0 ? Math.min(100, Math.round((((organization as any)?.storageUsedGb ?? 0) / maxStorageGb) * 100)) : 0}%)
                         </span>
                     </div>
 
                     <div style={{ height: 10, width: '100%', background: 'rgba(255, 255, 255, 0.08)', borderRadius: 5, overflow: 'hidden' }}>
                         <div style={{
                             height: '100%',
-                            width: '8%',
+                            width: `${maxStorageGb > 0 ? Math.min(100, Math.round((((organization as any)?.storageUsedGb ?? 0) / maxStorageGb) * 100)) : 0}%`,
                             background: 'linear-gradient(90deg, #3b82f6, #06b6d4)',
                             borderRadius: 5
                         }} />

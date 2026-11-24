@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { copyToClipboard } from '../../../utils/clipboard'
+import { PreJoinDiagnosticsStrip } from './PreJoinDiagnosticsStrip'
 import {
     IconVideo,
     IconUsers,
@@ -636,6 +637,8 @@ export function SetupScreen({
                                 </button>
                             </div>
                         </div>
+
+                        <PreJoinDiagnosticsStrip stream={localStream} isMicMuted={isMuted} />
 
                         {mediaError && (
                             <div style={{

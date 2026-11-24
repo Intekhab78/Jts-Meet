@@ -5,12 +5,15 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Keep JS bridge methods and JTS Meet native Android services/receivers under R8/ProGuard
+-keepattributes JavascriptInterface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keepclassmembers class com.jts.meet.MainActivity$* {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keep class com.jts.meet.** { *; }
 
 # Uncomment this to preserve the line number information for
 # debugging stack traces.

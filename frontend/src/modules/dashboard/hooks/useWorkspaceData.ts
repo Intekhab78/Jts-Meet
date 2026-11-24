@@ -58,7 +58,12 @@ export function useWorkspaceData({ token, activeTab }: UseWorkspaceDataProps) {
         (m.userId?._id || m.userId || '').toString() === userId.toString()
     ), [currentOrg, userId])
 
-    const isSuperAdmin = useMemo(() => profileEmail?.toLowerCase().trim() === 'admin@jtsmeet.com', [profileEmail])
+    const [isSuperAdminFlag, setIsSuperAdminFlag] = useState(false)
+
+    const isSuperAdmin = useMemo(() => {
+        if (isSuperAdminFlag) return true
+        return profileEmail?.toLowerCase().trim() === 'admin@jtsmeet.com'
+    }, [isSuperAdminFlag, profileEmail])
     const isOrgAdminOrOwner = useMemo(() => {
         if (isSuperAdmin) return true
         if (!currentOrg || !userId) return false
@@ -121,6 +126,7 @@ export function useWorkspaceData({ token, activeTab }: UseWorkspaceDataProps) {
                     setProfileName(data.data.fullName)
                     setProfileEmail(data.data.email)
                     setUserId(data.data._id || data.data.id || '')
+                    setIsSuperAdminFlag(Boolean(data.data.isSuperAdmin === true || data.data.role === 'superadmin'))
                     if (data.data.profileImage) {
                         setProfileImage(data.data.profileImage)
                     }
@@ -141,6 +147,7 @@ export function useWorkspaceData({ token, activeTab }: UseWorkspaceDataProps) {
                     } else {
                         localStorage.removeItem('jts_token')
                         window.location.hash = '#login'
+                        window.dispatchEvent(new Event('jts:force-logout'))
                     }
                 }
             }
@@ -314,7 +321,7 @@ export function useWorkspaceData({ token, activeTab }: UseWorkspaceDataProps) {
         fetchProfile()
         fetchMeetings()
         fetchOrganizations()
-    }, [fetchProfile, fetchMeetings, fetchOrganizations, activeTab])
+    }, [fetchProfile, fetchMeetings, fetchOrganizations])
 
     useEffect(() => {
         if (currentOrgId) {
@@ -330,7 +337,7 @@ export function useWorkspaceData({ token, activeTab }: UseWorkspaceDataProps) {
     const handleExitSupportMode = () => {
         const orig = sessionStorage.getItem('jts_original_admin_token')
         if (orig) {
-            localStorage.setItem('token', orig)
+            localStorage.setItem('jts_token', orig)
         }
         sessionStorage.removeItem('jts_original_admin_token')
         sessionStorage.removeItem('jts_impersonated_org_name')

@@ -43,6 +43,7 @@ export function useChannelSocket({
     const [typingUsers, setTypingUsers] = useState<Array<{ userId: string; username: string; timestamp: number }>>([])
     const [unreadChannelCounts, setUnreadChannelCounts] = useState<Record<string, number>>({})
     const [incomingNotificationToast, setIncomingNotificationToast] = useState<ChannelNotificationPayload | null>(null)
+    const [huddleParticipants, setHuddleParticipants] = useState<Array<{ userId: string; username: string; muted: boolean }>>([])
 
     // Request desktop push notification permission on mount
     useEffect(() => {
@@ -71,6 +72,11 @@ export function useChannelSocket({
         }, 1500)
         return () => clearInterval(timer)
     }, [])
+
+    const activeThreadParentRef = useRef(activeThreadParent)
+    useEffect(() => {
+        activeThreadParentRef.current = activeThreadParent
+    }, [activeThreadParent])
 
     // Channel socket connection and realtime stream listeners
     useEffect(() => {
@@ -111,7 +117,12 @@ export function useChannelSocket({
             })() || (() => {
                 try {
                     if (!token) return ''
-                    const payload = JSON.parse(atob(token.split('.')[1]))
+                    const parts = token.split('.')
+                    if (parts.length < 2) return ''
+                    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+                    const pad = b64.length % 4
+                    if (pad) b64 += '='.repeat(4 - pad)
+                    const payload = JSON.parse(atob(b64))
                     return (payload._id || payload.id || payload.userId || payload.sub || '').toString()
                 } catch (_) {
                     return ''
@@ -200,8 +211,14 @@ export function useChannelSocket({
                 }
             }
 
+            // Guard against cross-channel message bleed: only append to active view if channel matches
+            if (targetCId && selectedChannel?._id && targetCId !== String(selectedChannel._id)) {
+                return
+            }
+
             if (msg.replyTo) {
-                if (activeThreadParent && activeThreadParent._id === msg.replyTo) {
+                const currentThreadParent = activeThreadParentRef.current
+                if (currentThreadParent && currentThreadParent._id === msg.replyTo) {
                     setThreadMessages(prev => {
                         if (prev.some(m => m._id === msg._id)) return prev.map(m => m._id === msg._id ? msg : m)
                         return [...prev, msg]
@@ -233,10 +250,13 @@ export function useChannelSocket({
             setThreadMessages(prev => prev.map(m => m._id === message._id ? { ...m, ...message, deleted: false } : m))
         })
 
-        socket.on('channel:message:reaction', ({ messageId, reactions }: any) => {
+        const handleChannelReaction = ({ messageId, reactions }: any) => {
+            if (!messageId || !reactions) return
             setMessages(prev => prev.map(m => m._id === messageId ? { ...m, reactions } : m))
             setThreadMessages(prev => prev.map(m => m._id === messageId ? { ...m, reactions } : m))
-        })
+        }
+        socket.on('channel:message:reaction', handleChannelReaction)
+        socket.on('channel:reaction', handleChannelReaction)
 
         socket.on('channel:message:pin', ({ messageId, pinned, pinnedBy, pinnedAt, message }: any) => {
             setMessages(prev => prev.map(m => m._id === messageId ? { ...m, pinned, pinnedBy, pinnedAt } : m))
@@ -265,13 +285,19 @@ export function useChannelSocket({
             }
         })
 
+        socket.on('channel:huddle:participants', (payload: { channelId: string; participants: Array<{ userId: string; username: string; muted: boolean }> }) => {
+            if (!payload || (payload.channelId && String(payload.channelId) !== String(selectedChannel?._id))) return
+            setHuddleParticipants(Array.isArray(payload.participants) ? payload.participants : [])
+        })
+
         setSocketInstance(socket)
 
         return () => {
+            setHuddleParticipants([])
             socket.emit('channel:leave', { channelId: selectedChannel._id })
             socket.disconnect()
         }
-    }, [selectedChannel?._id, token, activeThreadParent?._id])
+    }, [selectedChannel?._id, token])
 
     return {
         socketInstance,
@@ -279,6 +305,7 @@ export function useChannelSocket({
         unreadChannelCounts,
         setUnreadChannelCounts,
         incomingNotificationToast,
-        setIncomingNotificationToast
+        setIncomingNotificationToast,
+        huddleParticipants
     }
 }

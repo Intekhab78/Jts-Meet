@@ -620,7 +620,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
                 /* ── 2. Logos Section ── */
                 .logos-banner {
-                    padding: 38px 20px;
+                    padding: 18px 20px;
                     border-top: 1px solid rgba(255, 255, 255, 0.06);
                     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
                     background: rgba(8, 10, 16, 0.6);
@@ -652,7 +652,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
                 /* ── 3. AI Intelligence Section ── */
                 .ai-feature-section {
-                    padding: clamp(64px, 9vw, 96px) clamp(16px, 4vw, 24px);
+                    padding: clamp(24px, 3.5vw, 36px) clamp(14px, 3vw, 20px);
                     position: relative;
                     overflow: hidden;
                     background: radial-gradient(circle at 50% 30%, rgba(99, 102, 241, 0.07) 0%, transparent 65%);
@@ -661,9 +661,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 .ai-grid {
                     display: grid;
                     grid-template-columns: 1fr 1.15fr;
-                    gap: clamp(28px, 5vw, 56px);
-                    max-width: 1100px;
-                    margin: 40px auto 0;
+                    gap: clamp(18px, 3vw, 28px);
+                    max-width: 1360px;
+                    margin: 22px auto 0;
                     align-items: center;
                 }
                 .ai-tab-card {
@@ -695,25 +695,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
                 /* ── 4. How It Works ── */
                 .how-it-works-section {
-                    padding: clamp(64px, 8vw, 96px) clamp(16px, 4vw, 24px);
+                    padding: clamp(24px, 3.5vw, 36px) clamp(14px, 3vw, 20px);
                     background: var(--color-bg-elevated);
                     border-top: 1px solid var(--color-border);
                 }
                 .how-steps-grid {
                     display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-                    gap: clamp(20px, 3.5vw, 32px);
-                    max-width: 1080px;
-                    margin: 44px auto 0;
+                    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                    gap: 14px;
+                    max-width: 1360px;
+                    margin: 22px auto 0;
                 }
                 .how-step-card {
                     background: rgba(255, 255, 255, 0.02);
                     border: 1px solid rgba(255, 255, 255, 0.08);
-                    border-radius: 16px;
-                    padding: clamp(24px, 4vw, 32px);
+                    border-radius: 14px;
+                    padding: 18px 20px;
                     display: flex;
                     flex-direction: column;
-                    gap: 16px;
+                    gap: 10px;
                     transition: all 0.3s ease;
                     position: relative;
                 }
@@ -741,8 +741,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             {/* ── Enterprise Full-Width Top Navbar ── */}
             <nav className="landing-navbar">
                 {/* 1. Left Side: Brand Logo & Name */}
-                <div 
-                    className="landing-left-brand" 
+                <div
+                    className="landing-left-brand"
                     style={{ cursor: 'pointer' }}
                     onClick={() => {
                         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -920,8 +920,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
             {/* ── Hero Section ── */}
             <header className="anim-fade-in" style={{
-                paddingTop: 'clamp(90px, 12vw, 130px)',
-                paddingBottom: 'clamp(40px, 6vw, 70px)',
+                paddingTop: 'clamp(64px, 7vw, 84px)',
+                paddingBottom: 'clamp(24px, 3vw, 36px)',
                 position: 'relative',
                 display: 'flex',
                 flexDirection: 'column',
@@ -932,40 +932,40 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             }}>
                 {/* Background glow orbs */}
                 <div aria-hidden="true" style={{
-                    position: 'absolute', width: 'clamp(300px, 60vw, 600px)', height: 'clamp(300px, 60vw, 600px)', borderRadius: '50%',
+                    position: 'absolute', width: 'clamp(280px, 50vw, 520px)', height: 'clamp(280px, 50vw, 520px)', borderRadius: '50%',
                     background: 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%)',
                     top: '5%', left: '50%', transform: 'translate(-50%, -50%)', pointerEvents: 'none', zIndex: 0
                 }} />
 
-                <div className="badge badge-accent anim-slide-up" style={{ marginBottom: 16, zIndex: 1, fontSize: '0.75rem', padding: '4px 10px' }}>
+                <div className="badge badge-accent anim-slide-up" style={{ marginBottom: 10, zIndex: 1, fontSize: '0.7rem', padding: '3px 10px' }}>
                     <span className="badge-dot accent pulse" />
-                    Now with E2E Encrypted File Sharing
+                    Now with E2E Encrypted Meetings, Chat &amp; Mobile App
                 </div>
 
                 <h1 className="anim-slide-up anim-delay-100" style={{
-                    fontSize: 'clamp(2rem, 5.5vw, 4rem)', fontWeight: 800, letterSpacing: '-0.04em',
-                    lineHeight: 1.15, maxWidth: 850, margin: '0 auto 18px', zIndex: 1
+                    fontSize: 'clamp(1.65rem, 3.6vw, 2.65rem)', fontWeight: 800, letterSpacing: '-0.03em',
+                    lineHeight: 1.15, maxWidth: 760, margin: '0 auto 10px', zIndex: 1
                 }}>
                     Crystal-Clear Video.<br />
                     <span className="gradient-text">Seamless Collaboration.</span>
                 </h1>
 
                 <p className="anim-slide-up anim-delay-150" style={{
-                    fontSize: 'clamp(0.9375rem, 2vw, 1.15rem)', color: 'var(--color-text-secondary)',
-                    maxWidth: 620, margin: '0 auto 28px', lineHeight: 1.6, zIndex: 1
+                    fontSize: 'clamp(0.85rem, 1.3vw, 0.95rem)', color: 'var(--color-text-secondary)',
+                    maxWidth: 580, margin: '0 auto 18px', lineHeight: 1.5, zIndex: 1
                 }}>
-                    JTS Meet gives your enterprise secure video meetings, real-time team chats, and cloud file sharing — all inside a single glassmorphic interface.
+                    Secure WebRTC video meetings, instant huddles, channels &amp; direct chats, AI summaries, whiteboard, webhooks, and native Android app — in one unified platform.
                 </p>
 
                 <div className="anim-slide-up anim-delay-200" style={{
-                    display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 12,
-                    justifyContent: 'center', zIndex: 1, width: '100%', maxWidth: 440
+                    display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 10,
+                    justifyContent: 'center', zIndex: 1, width: '100%', maxWidth: 400
                 }}>
-                    <button onClick={() => onNavigate('register')} className="btn btn-primary" style={{ flex: '1 1 180px', padding: '12px 22px', fontSize: '0.9375rem', gap: 8, justifyContent: 'center' }}>
+                    <button onClick={() => onNavigate('register')} className="btn btn-primary" style={{ flex: '1 1 165px', padding: '9px 18px', fontSize: '0.84rem', gap: 7, justifyContent: 'center' }}>
                         Get Started Free
                         <IconZap />
                     </button>
-                    <button onClick={() => onNavigate('app')} className="btn btn-secondary" style={{ flex: '1 1 180px', padding: '12px 22px', fontSize: '0.9375rem', gap: 8, justifyContent: 'center' }}>
+                    <button onClick={() => onNavigate('app')} className="btn btn-secondary" style={{ flex: '1 1 165px', padding: '9px 18px', fontSize: '0.84rem', gap: 7, justifyContent: 'center' }}>
                         Join Demo Room
                         <IconArrowRight />
                     </button>
@@ -1019,12 +1019,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
                 {/* Glassmorphic App Mockup/Preview Screenshot */}
                 <div className="anim-scale-in anim-delay-300" style={{
-                    marginTop: 'clamp(28px, 4.5vw, 56px)', width: '100%', maxWidth: 1040, background: 'rgba(255,255,255,0.01)',
+                    marginTop: 'clamp(18px, 3vw, 24px)', width: '100%', maxWidth: 1040, background: 'rgba(255,255,255,0.01)',
                     borderRadius: 'var(--radius-2xl)', border: '1px solid rgba(255,255,255,0.06)',
                     padding: 'clamp(4px, 1.5vw, 8px)', boxShadow: 'var(--shadow-xl), 0 0 80px rgba(99,102,241,0.15)', zIndex: 1, position: 'relative'
                 }}>
                     <div style={{
-                        width: '100%', aspectRatio: '16/10', borderRadius: 'var(--radius-xl)',
+                        width: '100%', height: 'clamp(260px, 44vh, 400px)', borderRadius: 'var(--radius-xl)',
                         background: 'linear-gradient(135deg, #0f111a 0%, #151824 100%)', overflow: 'hidden',
                         position: 'relative', border: '1px solid rgba(255,255,255,0.04)', display: 'flex', flexDirection: 'column'
                     }}>
@@ -1080,129 +1080,167 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 </span>
                 <div className="logos-grid">
                     <div className="logo-item">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697.5 12.541.5 6.845.5 3.013 3.614 3.013 8.35c0 4.975 3.968 6.782 7.848 8.169 2.502.894 3.398 1.611 3.398 2.593 0 .918-.844 1.487-2.227 1.487-2.584 0-5.32-1.127-7.25-2.282l-.95 5.567c1.78.966 4.795 1.616 8.28 1.616 5.86 0 9.873-2.906 9.873-7.97 0-4.996-3.882-6.862-8.006-8.38z"/></svg>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697.5 12.541.5 6.845.5 3.013 3.614 3.013 8.35c0 4.975 3.968 6.782 7.848 8.169 2.502.894 3.398 1.611 3.398 2.593 0 .918-.844 1.487-2.227 1.487-2.584 0-5.32-1.127-7.25-2.282l-.95 5.567c1.78.966 4.795 1.616 8.28 1.616 5.86 0 9.873-2.906 9.873-7.97 0-4.996-3.882-6.862-8.006-8.38z" /></svg>
                         <span>Stripe</span>
                     </div>
                     <div className="logo-item">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M24 22.525H0l12-21.05 12 21.05z"/></svg>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M24 22.525H0l12-21.05 12 21.05z" /></svg>
                         <span>Vercel</span>
                     </div>
                     <div className="logo-item">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" /></svg>
                         <span>GitHub</span>
                     </div>
                     <div className="logo-item">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.04c-5.5 0-9.96 4.46-9.96 9.96 0 4.4 2.86 8.13 6.84 9.46l.2-.21c.21-.21.32-.5.32-.8 0-.31-.12-.6-.32-.81-.97-.97-1.5-2.25-1.5-3.64 0-2.85 2.31-5.16 5.16-5.16 1.39 0 2.67.53 3.64 1.5.21.21.5.32.81.32.3 0 .59-.11.8-.32l.21-.2c-1.33-3.98-5.06-6.84-9.46-6.84z"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.04c-5.5 0-9.96 4.46-9.96 9.96 0 4.4 2.86 8.13 6.84 9.46l.2-.21c.21-.21.32-.5.32-.8 0-.31-.12-.6-.32-.81-.97-.97-1.5-2.25-1.5-3.64 0-2.85 2.31-5.16 5.16-5.16 1.39 0 2.67.53 3.64 1.5.21.21.5.32.81.32.3 0 .59-.11.8-.32l.21-.2c-1.33-3.98-5.06-6.84-9.46-6.84z" /></svg>
                         <span>Linear</span>
                     </div>
                     <div className="logo-item">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M21.362 9.354H12V.5L2.638 14.646H12v8.854l9.362-14.146z"/></svg>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M21.362 9.354H12V.5L2.638 14.646H12v8.854l9.362-14.146z" /></svg>
                         <span>Supabase</span>
                     </div>
                     <div className="logo-item">
-                        <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M15.332 8.668a3.333 3.333 0 0 0-3.332-3.334H8.668A3.333 3.333 0 0 0 5.334 8.67a3.333 3.333 0 0 0 3.334 3.333h3.332a3.333 3.333 0 0 0 3.332-3.334zm0 6.666a3.333 3.333 0 0 0-3.332-3.333H8.668a3.333 3.333 0 0 0-3.334 3.333 3.333 3.333 0 0 0 3.334 3.333h3.332a3.333 3.333 0 0 0 3.332-3.333z"/></svg>
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M15.332 8.668a3.333 3.333 0 0 0-3.332-3.334H8.668A3.333 3.333 0 0 0 5.334 8.67a3.333 3.333 0 0 0 3.334 3.333h3.332a3.333 3.333 0 0 0 3.332-3.334zm0 6.666a3.333 3.333 0 0 0-3.332-3.333H8.668a3.333 3.333 0 0 0-3.334 3.333 3.333 3.333 0 0 0 3.334 3.333h3.332a3.333 3.333 0 0 0 3.332-3.333z" /></svg>
                         <span>Figma</span>
                     </div>
                 </div>
             </div>
 
             {/* ── Statistics Section ── */}
-            <section style={{ borderTop: '1px solid var(--color-border)', padding: 'clamp(36px, 6vw, 56px) clamp(16px, 4vw, 24px)', background: 'var(--color-bg-elevated)' }}>
-                <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'clamp(20px, 4vw, 32px)', textAlign: 'center' }}>
+            <section style={{ borderTop: '1px solid var(--color-border)', padding: 'clamp(22px, 3.5vw, 34px) clamp(14px, 3vw, 20px)', background: 'var(--color-bg-elevated)' }}>
+                <div style={{ maxWidth: 1360, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'clamp(14px, 2.5vw, 22px)', textAlign: 'center' }}>
                     <div>
-                        <div style={{ fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', fontWeight: 800, color: '#fff', marginBottom: 2 }} className="gradient-text">10M+</div>
-                        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Meetings Hosted Daily</div>
+                        <div style={{ fontSize: 'clamp(1.4rem, 3vw, 1.85rem)', fontWeight: 800, color: '#fff', marginBottom: 2 }} className="gradient-text">10M+</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Meetings Hosted Daily</div>
                     </div>
                     <div>
-                        <div style={{ fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', fontWeight: 800, color: '#fff', marginBottom: 2 }} className="gradient-text">99.99%</div>
-                        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Service Uptime</div>
+                        <div style={{ fontSize: 'clamp(1.4rem, 3vw, 1.85rem)', fontWeight: 800, color: '#fff', marginBottom: 2 }} className="gradient-text">99.99%</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Service Uptime</div>
                     </div>
                     <div>
-                        <div style={{ fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', fontWeight: 800, color: '#fff', marginBottom: 2 }} className="gradient-text">&lt; 50ms</div>
-                        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Global Media Latency</div>
+                        <div style={{ fontSize: 'clamp(1.4rem, 3vw, 1.85rem)', fontWeight: 800, color: '#fff', marginBottom: 2 }} className="gradient-text">&lt; 50ms</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>Global Media Latency</div>
                     </div>
                     <div>
-                        <div style={{ fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', fontWeight: 800, color: '#fff', marginBottom: 2 }} className="gradient-text">E2EE</div>
-                        <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>End-to-End Encryption</div>
+                        <div style={{ fontSize: 'clamp(1.4rem, 3vw, 1.85rem)', fontWeight: 800, color: '#fff', marginBottom: 2 }} className="gradient-text">E2EE</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>End-to-End Encryption</div>
                     </div>
                 </div>
             </section>
 
             {/* ── Features Grid Section ── */}
-            <section id="features" style={{ padding: 'clamp(48px, 8vw, 80px) clamp(16px, 4vw, 24px)', maxWidth: 1040, margin: '0 auto' }}>
-                <div style={{ textAlign: 'center', marginBottom: 'clamp(32px, 5vw, 48px)' }}>
-                    <h2 style={{ fontSize: 'clamp(1.5rem, 3.5vw, 2rem)', fontWeight: 800, marginBottom: 12 }}>Everything you need for collaboration.</h2>
-                    <p style={{ color: 'var(--color-text-secondary)', maxWidth: 580, margin: '0 auto', fontSize: '0.9rem', lineHeight: 1.5 }}>
-                        Built with cutting-edge WebRTC technology for seamless audio, video, and data communication directly inside the browser.
+            <section id="features" style={{ padding: 'clamp(28px, 4vw, 44px) clamp(14px, 3vw, 20px)', maxWidth: 1360, margin: '0 auto' }}>
+                <div style={{ textAlign: 'center', marginBottom: 'clamp(18px, 3vw, 26px)' }}>
+                    <h2 style={{ fontSize: 'clamp(1.25rem, 2.5vw, 1.65rem)', fontWeight: 800, marginBottom: 6 }}>Everything you need for enterprise collaboration.</h2>
+                    <p style={{ color: 'var(--color-text-secondary)', maxWidth: 560, margin: '0 auto', fontSize: '0.8125rem', lineHeight: 1.45 }}>
+                        Complete suite of video conferencing, team messaging, AI intelligence, webhooks, and mobile apps in one platform.
                     </p>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'clamp(14px, 2vw, 20px)' }}>
-                    {/* Feature 1 */}
-                    <div className="glass-card" style={{ padding: 'clamp(20px, 3vw, 26px)', display: 'flex', flexDirection: 'column', gap: 12, transition: 'transform var(--duration-normal)', cursor: 'default' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-3px)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', background: 'var(--color-accent-light)', color: '#818cf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <IconVideo />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                    {[
+                        {
+                            icon: <IconVideo />,
+                            bg: 'var(--color-accent-light)',
+                            color: '#818cf8',
+                            title: 'HD Video, Audio & Huddles',
+                            desc: 'WebRTC conferences, instant 1-click channel huddles, noise suppression, and adaptive quality.'
+                        },
+                        {
+                            icon: <IconUsers />,
+                            bg: 'rgba(245,158,11,0.15)',
+                            color: '#fbbf24',
+                            title: 'Channels & Direct Messages',
+                            desc: 'Rich formatting, voice notes, async video clips, code snippets, inline image previews & threads.'
+                        },
+                        {
+                            icon: <IconZap />,
+                            bg: 'rgba(168,85,247,0.15)',
+                            color: '#c084fc',
+                            title: 'AI Meeting Intelligence',
+                            desc: 'Live speech transcription, automated Gemini meeting summaries, key decisions & action items.'
+                        },
+                        {
+                            icon: <IconZap />,
+                            bg: 'rgba(34,197,94,0.15)',
+                            color: '#4ade80',
+                            title: 'Screen Share & Whiteboard',
+                            desc: 'Share full screens or windows alongside a real-time collaborative whiteboard and file vault.'
+                        },
+                        {
+                            icon: <IconFolder />,
+                            bg: 'rgba(56,189,248,0.15)',
+                            color: '#38bdf8',
+                            title: 'Calendar Sync & Scheduling',
+                            desc: 'Schedule meetings with waiting rooms, live .ics feeds for Google Calendar & Outlook, and reminders.'
+                        },
+                        {
+                            icon: <IconFolder />,
+                            bg: 'rgba(239,68,68,0.15)',
+                            color: '#f87171',
+                            title: 'Webhooks, Slack & SMTP Alerts',
+                            desc: 'Connect Slack, Teams, Discord, Zapier, HMAC-SHA256 REST webhooks, and automated email alerts.'
+                        },
+                        {
+                            icon: <IconShield />,
+                            bg: 'var(--color-accent-light)',
+                            color: '#a5b4fc',
+                            title: 'Orgs, Teams & Admin Console',
+                            desc: 'Multi-tenant workspaces, role-based access control, conference history, and real-time audit logs.'
+                        },
+                        {
+                            icon: <IconZap />,
+                            bg: 'rgba(16,185,129,0.15)',
+                            color: '#34d399',
+                            title: 'Android App & Google OAuth',
+                            desc: 'Native Android app with instant call signaling, Google Sign-In deep-linking, and biometric lock.'
+                        },
+                        {
+                            icon: <IconShield />,
+                            bg: 'rgba(255,255,255,0.06)',
+                            color: 'var(--color-text-primary)',
+                            title: 'Enterprise E2EE & Security',
+                            desc: 'DTLS-SRTP media encryption, TLS transport, JWT auth, host room locks, and zero-install browser join.'
+                        },
+                        {
+                            icon: <IconUsers />,
+                            bg: 'rgba(99,102,241,0.15)',
+                            color: '#818cf8',
+                            title: 'Waiting Rooms & Host Controls',
+                            desc: 'Admit or deny guests, mute-all, lock rooms, passcode protection, and live hand-raise & reactions.'
+                        },
+                        {
+                            icon: <IconVideo />,
+                            bg: 'rgba(244,63,94,0.15)',
+                            color: '#fb7185',
+                            title: 'Cloud Recording & History',
+                            desc: 'Record sessions to the cloud, review conference history logs, duration stats, and attendee records.'
+                        },
+                        {
+                            icon: <IconZap />,
+                            bg: 'rgba(234,179,8,0.15)',
+                            color: '#facc15',
+                            title: 'Custom Branding & Plans',
+                            desc: 'Organization logo, custom theme colors, workspace quotas, and role-based Super Admin controls.'
+                        }
+                    ].map((feat, idx) => (
+                        <div
+                            key={idx}
+                            id={feat.title.includes('Security') ? 'security' : undefined}
+                            className="glass-card"
+                            style={{ padding: '15px 16px', display: 'flex', flexDirection: 'column', gap: 8, transition: 'transform var(--duration-normal)', cursor: 'default' }}
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-3px)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                        >
+                            <div style={{ width: 32, height: 32, borderRadius: 'var(--radius-md)', background: feat.bg, color: feat.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {feat.icon}
+                            </div>
+                            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, margin: 0 }}>{feat.title}</h3>
+                            <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.45 }}>
+                                {feat.desc}
+                            </p>
                         </div>
-                        <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>HD Video & Audio</h3>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                            Experience crystal-clear video and high-fidelity audio meetings with automated bandwidth scaling and latency correction.
-                        </p>
-                    </div>
-
-                    {/* Feature 2 */}
-                    <div className="glass-card" style={{ padding: 'clamp(20px, 3vw, 26px)', display: 'flex', flexDirection: 'column', gap: 12, transition: 'transform var(--duration-normal)', cursor: 'default' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-3px)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', background: 'rgba(34,197,94,0.15)', color: '#4ade80', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <IconZap />
-                        </div>
-                        <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>Instant Screen Share</h3>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                            Share your entire screen or individual app windows with single-click ease. Fully responsive layout updates for other users instantly.
-                        </p>
-                    </div>
-
-                    {/* Feature 3 */}
-                    <div className="glass-card" style={{ padding: 'clamp(20px, 3vw, 26px)', display: 'flex', flexDirection: 'column', gap: 12, transition: 'transform var(--duration-normal)', cursor: 'default' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-3px)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', background: 'rgba(239,68,68,0.15)', color: '#f87171', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <IconFolder />
-                        </div>
-                        <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>Secure File Sharing</h3>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                            Upload documents, slides, or images directly to your meeting room. Securely saved, stored in the cloud, and easily downloadable.
-                        </p>
-                    </div>
-
-                    {/* Feature 4 */}
-                    <div className="glass-card" style={{ padding: 'clamp(20px, 3vw, 26px)', display: 'flex', flexDirection: 'column', gap: 12, transition: 'transform var(--duration-normal)', cursor: 'default' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-3px)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', background: 'rgba(245,158,11,0.15)', color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <IconUsers />
-                        </div>
-                        <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>Real-time Text Chat</h3>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                            Exchange messages with typing indicators and smooth enter-exit animations to keep alignment active without interrupting speakers.
-                        </p>
-                    </div>
-
-                    {/* Feature 5 */}
-                    <div id="security" className="glass-card" style={{ padding: 'clamp(20px, 3vw, 26px)', display: 'flex', flexDirection: 'column', gap: 12, transition: 'transform var(--duration-normal)', cursor: 'default' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-3px)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', background: 'var(--color-accent-light)', color: '#a5b4fc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <IconShield />
-                        </div>
-                        <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>Enterprise Security</h3>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                            All calls use TLS encryption and WebRTC security context, with token authentication ensuring unauthorized guests cannot access rooms.
-                        </p>
-                    </div>
-
-                    {/* Feature 6 */}
-                    <div className="glass-card" style={{ padding: 'clamp(20px, 3vw, 26px)', display: 'flex', flexDirection: 'column', gap: 12, transition: 'transform var(--duration-normal)', cursor: 'default' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-3px)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.06)', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <IconZap />
-                        </div>
-                        <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>Zero Installs Required</h3>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                            Works natively in any modern web browser. Generate a link, share it, and jump right into the meeting room instantly.
-                        </p>
-                    </div>
+                    ))}
                 </div>
             </section>
 
@@ -1382,14 +1420,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
             {/* ── 4. How It Works (3 Simple Steps) ── */}
             <section className="how-it-works-section">
-                <div style={{ maxWidth: 1080, margin: '0 auto', textAlign: 'center' }}>
+                <div style={{ maxWidth: 1360, margin: '0 auto', textAlign: 'center' }}>
                     <div className="badge badge-accent" style={{ marginBottom: 14, fontSize: '0.74rem', padding: '4px 12px', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <IconZap size={13} /> EFFORTLESS WORKFLOW
                     </div>
-                    <h2 style={{ fontSize: 'clamp(1.7rem, 4vw, 2.4rem)', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 14 }}>
+                    <h2 style={{ fontSize: 'clamp(1.3rem, 2.5vw, 1.7rem)', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 8 }}>
                         Start meeting in <span className="gradient-text">3 simple steps</span>
                     </h2>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.94rem', maxWidth: 600, margin: '0 auto' }}>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.82rem', maxWidth: 560, margin: '0 auto' }}>
                         No clunky software installations, no forced signups for guests, and no browser extensions required.
                     </p>
 
@@ -1437,8 +1475,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             </section>
 
             {/* ── Testimonials Section ── */}
-            <section style={{ background: 'var(--color-bg-elevated)', padding: 'clamp(48px, 8vw, 80px) clamp(16px, 4vw, 24px)', borderTop: '1px solid var(--color-border)' }}>
-                <div style={{ maxWidth: 1040, margin: '0 auto' }}>
+            <section style={{ background: 'var(--color-bg-elevated)', padding: 'clamp(24px, 3.5vw, 36px) clamp(14px, 3vw, 20px)', borderTop: '1px solid var(--color-border)' }}>
+                <div style={{ maxWidth: 1360, margin: '0 auto' }}>
                     <div style={{ textAlign: 'center', marginBottom: 'clamp(32px, 5vw, 48px)' }}>
                         <h2 style={{ fontSize: 'clamp(1.5rem, 3.5vw, 2rem)', fontWeight: 800, marginBottom: 12 }}>Trusted by leaders worldwide</h2>
                         <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>Hear from teams that upgraded their workflows with JTS Meet.</p>
@@ -1475,7 +1513,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             </section>
 
             {/* ── Pricing Section ── */}
-            <section id="pricing" style={{ padding: 'clamp(48px, 8vw, 80px) clamp(16px, 4vw, 24px)', maxWidth: 1040, margin: '0 auto' }}>
+            <section id="pricing" style={{ padding: 'clamp(24px, 3.5vw, 36px) clamp(14px, 3vw, 20px)', maxWidth: 1360, margin: '0 auto' }}>
                 <div style={{ textAlign: 'center', marginBottom: 'clamp(32px, 5vw, 48px)' }}>
                     <h2 style={{ fontSize: 'clamp(1.5rem, 3.5vw, 2rem)', fontWeight: 800, marginBottom: 12 }}>Simple, transparent pricing.</h2>
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>Start for free and scale as your organization grows.</p>
@@ -1604,30 +1642,38 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             </section>
 
             {/* ── FAQ Section ── */}
-            <section id="faq" style={{ padding: 'clamp(48px, 8vw, 80px) clamp(16px, 4vw, 24px)', background: 'var(--color-bg-elevated)', borderTop: '1px solid var(--color-border)' }}>
-                <div style={{ maxWidth: 800, margin: '0 auto' }}>
-                    <div style={{ textAlign: 'center', marginBottom: 'clamp(32px, 5vw, 48px)' }}>
-                        <h2 style={{ fontSize: 'clamp(1.5rem, 3.5vw, 2rem)', fontWeight: 800, marginBottom: 12 }}>Frequently Asked Questions</h2>
-                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>Everything you need to know about the platform.</p>
+            <section id="faq" style={{ padding: 'clamp(24px, 3.5vw, 36px) clamp(14px, 3vw, 20px)', background: 'var(--color-bg-elevated)', borderTop: '1px solid var(--color-border)' }}>
+                <div style={{ maxWidth: 1360, margin: '0 auto' }}>
+                    <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                        <h2 style={{ fontSize: 'clamp(1.3rem, 2.5vw, 1.7rem)', fontWeight: 800, marginBottom: 6 }}>Frequently Asked Questions</h2>
+                        <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.82rem', margin: 0 }}>Everything you need to know about the platform.</p>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 12 }}>
                         {[
                             {
                                 q: "Do I need to install any software or app extensions?",
-                                a: "No. JTS Meet is built using HTML5 and WebRTC, which means it runs entirely inside any modern web browser on desktop, tablet, and mobile. Just open the link and start."
+                                a: "No. JTS Meet runs entirely inside any modern web browser via WebRTC, and also offers an Android mobile app for on-the-go calls and chat."
                             },
                             {
                                 q: "How secure is file sharing and communication?",
-                                a: "All communication streams are encrypted end-to-end. Uploaded files are securely kept in enterprise cloud storage with authorization headers, and access permissions are validated through our secure backend middleware."
+                                a: "Media streams use WebRTC DTLS-SRTP encryption, all API/chat traffic uses TLS, and file uploads & rooms are protected by JWT authentication."
                             },
                             {
                                 q: "Can I manage organizations and teams?",
-                                a: "Yes! Once authenticated, users can create organizations, invite members, segment them into different teams, and create scoped communication channels with ease."
+                                a: "Yes! Create organizations, invite members, organize teams and channels, and manage permissions from the Admin Console."
                             },
                             {
                                 q: "Is there a limit on file sharing?",
-                                a: "For free accounts, files up to 10MB can be uploaded. Pro and Enterprise accounts support up to 25MB file sizes with broad MIME-type support including images, PDFs, spreadsheets, and zip folders."
+                                a: "Free accounts support up to 10MB per file, while Pro and Enterprise accounts support larger uploads including images, PDFs, spreadsheets, voice notes, and video clips."
+                            },
+                            {
+                                q: "Does it include AI summaries & calendar sync?",
+                                a: "Yes! Meetings support live transcription and Gemini AI summaries, plus .ics calendar feeds for Google Calendar and Outlook."
+                            },
+                            {
+                                q: "Can I connect Slack, Teams, or email alerts?",
+                                a: "Yes! Admin Console Integrations supports Slack, Microsoft Teams, Discord, Zapier, HMAC-SHA256 webhooks, and SMTP email alerts."
                             }
                         ].map((item, index) => (
                             <div key={index} className="glass-card-sm" style={{ padding: '14px 18px', cursor: 'pointer' }} onClick={() => toggleFaq(index)}>
@@ -1654,7 +1700,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                     <div className="landing-footer-grid">
                         {/* Brand Column */}
                         <div className="landing-footer-brand-col">
-                            <div 
+                            <div
                                 style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', width: 'fit-content' }}
                                 onClick={() => {
                                     window.scrollTo({ top: 0, behavior: 'smooth' });

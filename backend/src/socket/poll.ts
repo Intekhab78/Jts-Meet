@@ -2,6 +2,7 @@ import { Server, Socket } from 'socket.io'
 import { AuthenticatedSocket } from './auth'
 import { SocketEvents } from './events'
 import { verifyIsHostOrCoHost } from './meeting'
+import { saveMeetingState, loadMeetingState, deleteMeetingState } from '../services/meetingStateStore'
 
 interface PollOption {
     id: string
@@ -27,21 +28,33 @@ export function registerPollHandlers(io: Server, socket: Socket) {
     const userId = authSocket.userId
 
     // Late-joiner / modal open initial poll retrieval
-    socket.on('poll:get_all', (payload: { meetingId: string }) => {
+    socket.on('poll:get_all', async (payload: { meetingId: string }) => {
         if (!payload?.meetingId) return
-        const polls = meetingPollsMap.get(payload.meetingId) || []
+        let polls = meetingPollsMap.get(payload.meetingId)
+        if (!polls) {
+            const restored = await loadMeetingState<MeetingPoll[]>('polls', payload.meetingId)
+            if (restored) {
+                polls = restored
+                meetingPollsMap.set(payload.meetingId, polls)
+            }
+        }
         socket.emit(SocketEvents.POLL_UPDATE, {
             meetingId: payload.meetingId,
-            polls
+            polls: polls || []
         })
     })
 
-    socket.on(SocketEvents.POLL_CREATE, (payload: {
+    socket.on(SocketEvents.POLL_CREATE, async (payload: {
         meetingId: string
         question: string
         options: string[]
     }) => {
         if (!userId || !payload?.meetingId || !payload?.question || !Array.isArray(payload?.options)) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can create polls' })
+            return
+        }
 
         const pollId = `poll_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
         const newPoll: MeetingPoll = {
@@ -59,13 +72,16 @@ export function registerPollHandlers(io: Server, socket: Socket) {
         }
 
         if (!meetingPollsMap.has(payload.meetingId)) {
-            meetingPollsMap.set(payload.meetingId, [])
+            const restored = await loadMeetingState<MeetingPoll[]>('polls', payload.meetingId)
+            meetingPollsMap.set(payload.meetingId, restored || [])
         }
-        meetingPollsMap.get(payload.meetingId)!.push(newPoll)
+        const polls = meetingPollsMap.get(payload.meetingId)!
+        polls.push(newPoll)
+        void saveMeetingState('polls', payload.meetingId, polls)
 
         io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.POLL_UPDATE, {
             meetingId: payload.meetingId,
-            polls: meetingPollsMap.get(payload.meetingId)
+            polls
         })
     })
 
@@ -91,6 +107,7 @@ export function registerPollHandlers(io: Server, socket: Socket) {
         if (selectedOption) {
             selectedOption.votes.push(userId)
         }
+        void saveMeetingState('polls', payload.meetingId, polls)
 
         io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.POLL_UPDATE, {
             meetingId: payload.meetingId,
@@ -118,6 +135,7 @@ export function registerPollHandlers(io: Server, socket: Socket) {
         }
 
         poll.active = false
+        void saveMeetingState('polls', payload.meetingId, polls)
 
         io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.POLL_UPDATE, {
             meetingId: payload.meetingId,
@@ -128,4 +146,5 @@ export function registerPollHandlers(io: Server, socket: Socket) {
 
 export function cleanupPolls(meetingId: string) {
     meetingPollsMap.delete(meetingId)
+    void deleteMeetingState('polls', meetingId)
 }

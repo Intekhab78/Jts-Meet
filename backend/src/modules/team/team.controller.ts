@@ -1,6 +1,8 @@
 import { Request, Response } from 'express'
 import { Types } from 'mongoose'
+import { User } from '../../models/user.model'
 import { Team } from './team.model'
+import { getOrganizationById } from '../organization/organization.service'
 import {
     createTeam,
     getTeam,
@@ -61,8 +63,23 @@ export const teamController = {
 
     listOrganizationTeams: async (req: AuthRequest, res: Response) => {
         const organizationId = Array.isArray(req.params.organizationId) ? req.params.organizationId[0] : req.params.organizationId
-        if (!organizationId) {
-            return sendError(res, 400, 'organizationId is required')
+        if (!organizationId || !Types.ObjectId.isValid(organizationId)) {
+            return sendError(res, 400, 'Valid organizationId is required')
+        }
+        if (!req.userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        if (!req.isSuperAdmin) {
+            const org = await getOrganizationById(organizationId)
+            if (!org) {
+                return sendError(res, 404, 'Organization not found')
+            }
+            const isOrgMember =
+                String((org.ownerId as any)?._id || org.ownerId) === String(req.userId) ||
+                org.members.some((m: any) => String((m.userId as any)?._id || m.userId) === String(req.userId) && m.status === 'active')
+            if (!isOrgMember) {
+                return sendError(res, 403, 'Forbidden: Not a member of this organization')
+            }
         }
 
         if (req.query.cursor !== undefined || req.query.pageSize !== undefined || req.query.search !== undefined || req.query.visibility !== undefined || req.query.status !== undefined) {
@@ -145,7 +162,18 @@ export const teamController = {
         }
 
         try {
-            const team = await inviteTeamMember(req.body.teamId, req.userId, { userId: req.body.userId, role: req.body.role })
+            let targetUserId = req.body.userId
+            if (!targetUserId && req.body.email) {
+                const invitedUser = await User.findOne({ email: String(req.body.email).toLowerCase().trim() })
+                    .select('_id')
+                    .lean()
+                if (!invitedUser) {
+                    return sendError(res, 404, 'No registered user found with that email address')
+                }
+                targetUserId = String(invitedUser._id)
+            }
+
+            const team = await inviteTeamMember(req.body.teamId, req.userId, { userId: targetUserId, role: req.body.role })
             if (!team) {
                 return sendError(res, 404, 'Team not found')
             }
@@ -156,13 +184,13 @@ export const teamController = {
     },
 
     joinPublicTeam: async (req: AuthRequest, res: Response) => {
-        const { valid, errors } = validateTeamMembershipAction(req.body)
-        if (!valid) {
-            return sendError(res, 400, 'Validation failed', { errors })
-        }
-
         if (!req.userId) {
             return sendError(res, 401, 'Unauthorized access')
+        }
+
+        const { valid, errors } = validateTeamMembershipAction({ ...req.body, userId: req.userId })
+        if (!valid) {
+            return sendError(res, 400, 'Validation failed', { errors })
         }
 
         try {
@@ -177,13 +205,13 @@ export const teamController = {
     },
 
     leaveTeam: async (req: AuthRequest, res: Response) => {
-        const { valid, errors } = validateTeamMembershipAction(req.body)
-        if (!valid) {
-            return sendError(res, 400, 'Validation failed', { errors })
-        }
-
         if (!req.userId) {
             return sendError(res, 401, 'Unauthorized access')
+        }
+
+        const { valid, errors } = validateTeamMembershipAction({ ...req.body, userId: req.userId })
+        if (!valid) {
+            return sendError(res, 400, 'Validation failed', { errors })
         }
 
         try {

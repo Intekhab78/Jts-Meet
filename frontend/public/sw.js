@@ -66,6 +66,8 @@ self.addEventListener('notificationclick', (event) => {
                 body: JSON.stringify({
                     meetingId,
                     callerId: data.callerId,
+                    recipientId: data.recipientId,
+                    rejectToken: data.rejectToken,
                     reason: 'declined_from_push'
                 })
             }).catch((err) => {

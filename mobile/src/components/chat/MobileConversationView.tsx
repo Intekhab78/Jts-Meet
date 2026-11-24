@@ -7,6 +7,7 @@ import {
   parseFileAttachment,
   getFileExtension,
   isImageAttachment,
+  isAudioAttachment,
   formatCallDuration,
   renderClickableText,
   downloadFileInApp,
@@ -67,10 +68,50 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
   const [showMoreEmojis, setShowMoreEmojis] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [inAppPreviewImage, setInAppPreviewImage] = useState<{ url: string; name: string } | null>(null);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [voiceDurationSec, setVoiceDurationSec] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
+  const voiceTimerRef = useRef<any>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pressTimerRef = useRef<any>(null);
+
+  // Clean up any active voice recording stream/timer on unmount or chat switch
+  useEffect(() => {
+    return () => {
+      if (voiceTimerRef.current) {
+        clearInterval(voiceTimerRef.current);
+        voiceTimerRef.current = null;
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try {
+          mediaRecorderRef.current.onstop = null;
+          mediaRecorderRef.current.stop();
+        } catch (_) {}
+      }
+      mediaRecorderRef.current = null;
+      if (voiceStreamRef.current) {
+        voiceStreamRef.current.getTracks().forEach((t) => t.stop());
+        voiceStreamRef.current = null;
+      }
+      setIsRecordingVoice(false);
+    };
+  }, [chatId]);
+
+  const resolveUploadedFileUrl = (json: any): string => {
+    const d = json?.data || json || {};
+    const raw =
+      d.secureUrl ||
+      d.fileUrl ||
+      (d._id ? `${API_BASE}/api/file/${d._id}/download` : '') ||
+      (d.fileName ? `${API_BASE}/uploads/${d.fileName}` : '') ||
+      (d.filename ? `${API_BASE}/uploads/${d.filename}` : '');
+    if (!raw || typeof raw !== 'string') return '';
+    return normalizeFileUrl(raw.startsWith('http') ? raw : `${API_BASE}${raw.startsWith('/') ? '' : '/'}${raw}`);
+  };
 
   useEffect(() => {
     if (status) setCurrentStatus(status);
@@ -147,47 +188,45 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
           ? json.messages
           : [];
 
-        if (rawList.length > 0) {
-          const chronologicalList = isChannel ? rawList : [...rawList].reverse();
-          const mapped: MobileChatMessage[] = chronologicalList.map((m: any) => {
-            const rawSender = m.sender || m.senderId || m.userId;
-            const sId = rawSender?._id || rawSender?.id || (typeof rawSender === 'object' ? rawSender?.toString() : rawSender);
-            const isMe = String(sId) === String(resolvedUserId);
-            const sName = isMe ? 'You' : (rawSender?.fullName || rawSender?.name || chatName);
-            const content = m.message || m.content || m.text || '';
-            const parsedAttach = parseFileAttachment(content);
-            const resolvedFileUrl = m.fileUrl || parsedAttach?.fileUrl;
-            const resolvedFileName = m.fileName || parsedAttach?.fileName;
-            const resolvedFileSize = parsedAttach?.fileSize;
-            return {
-              id: m._id || String(Math.random()),
-              senderId: sId,
-              senderName: sName,
-              text: content,
-              timestamp: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              isMe,
-              type: m.messageType === 'call' || m.type === 'call' ? 'call' : 'text',
-              messageType: m.messageType || (m.callInfo ? 'call' : 'text'),
-              callInfo: m.callInfo || null,
-              fileUrl: resolvedFileUrl,
-              fileName: resolvedFileName,
-              fileSize: resolvedFileSize,
-              reactions: Array.isArray(m.reactions)
-                ? m.reactions.map((r: any) => ({
-                    userId: typeof r.userId === 'object' ? (r.userId?._id || r.userId?.id || String(r.userId)) : String(r.userId),
-                    emoji: r.emoji,
-                    createdAt: r.createdAt,
-                  }))
-                : [],
-              isDeleted: Boolean(m.isDeleted || m.deleted),
-              deletedAt: m.deletedAt,
-            };
-          });
-          setMessages(mapped);
-          try {
-            localStorage.setItem(`jts_chat_cache_${chatId}`, JSON.stringify(mapped));
-          } catch (_) {}
-        }
+        const chronologicalList = isChannel ? rawList : [...rawList].reverse();
+        const mapped: MobileChatMessage[] = chronologicalList.map((m: any) => {
+          const rawSender = m.sender || m.senderId || m.userId;
+          const sId = rawSender?._id || rawSender?.id || (typeof rawSender === 'object' ? rawSender?.toString() : rawSender);
+          const isMe = String(sId) === String(resolvedUserId);
+          const sName = isMe ? 'You' : (rawSender?.fullName || rawSender?.name || chatName);
+          const content = m.message || m.content || m.text || '';
+          const parsedAttach = parseFileAttachment(content);
+          const resolvedFileUrl = m.fileUrl || parsedAttach?.fileUrl;
+          const resolvedFileName = m.fileName || parsedAttach?.fileName;
+          const resolvedFileSize = parsedAttach?.fileSize;
+          return {
+            id: m._id || String(Math.random()),
+            senderId: sId,
+            senderName: sName,
+            text: content,
+            timestamp: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            isMe,
+            type: (m.messageType === 'call' || m.type === 'call' ? 'call' : 'text') as MobileChatMessage['type'],
+            messageType: (m.messageType || (m.callInfo ? 'call' : 'text')) as MobileChatMessage['messageType'],
+            callInfo: m.callInfo || null,
+            fileUrl: resolvedFileUrl,
+            fileName: resolvedFileName,
+            fileSize: resolvedFileSize,
+            reactions: Array.isArray(m.reactions)
+              ? m.reactions.map((r: any) => ({
+                  userId: typeof r.userId === 'object' ? (r.userId?._id || r.userId?.id || String(r.userId)) : String(r.userId),
+                  emoji: r.emoji,
+                  createdAt: r.createdAt,
+                }))
+              : [],
+            isDeleted: Boolean(m.isDeleted || m.deleted),
+            deletedAt: m.deletedAt,
+          };
+        });
+        setMessages(mapped);
+        try {
+          localStorage.setItem(`jts_chat_cache_${chatId}`, JSON.stringify(mapped));
+        } catch (_) {}
       } catch (err) {
         console.warn('[MobileChat] Error loading chat history:', err);
       } finally {
@@ -203,10 +242,9 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     const handleNewMessage = (payload: any) => {
       const rawSender = payload?.sender || payload?.senderId || payload?.userId;
       const sId = rawSender?._id || rawSender?.id || (typeof rawSender === 'object' ? rawSender?.toString() : rawSender);
-      const isFromTarget =
-        String(sId) === String(chatId) ||
-        String(payload?.receiverId) === String(chatId) ||
-        String(payload?.channelId) === String(chatId);
+      const isFromTarget = isChannel
+        ? String(payload?.channelId) === String(chatId)
+        : !payload?.channelId && (String(sId) === String(chatId) || String(payload?.receiverId) === String(chatId));
 
       if (isFromTarget) {
         const isMe = String(sId) === String(resolvedUserId);
@@ -248,8 +286,8 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
               text,
               timestamp: new Date(payload.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               isMe,
-              type: payload.messageType === 'call' || payload.type === 'call' ? 'call' : 'text',
-              messageType: payload.messageType || (payload.callInfo ? 'call' : 'text'),
+              type: (payload.messageType === 'call' || payload.type === 'call' ? 'call' : 'text') as 'call' | 'text',
+              messageType: (payload.messageType || (payload.callInfo ? 'call' : 'text')) as 'call' | 'text',
               callInfo: payload.callInfo || null,
               fileUrl: resolvedFileUrl,
               fileName: resolvedFileName,
@@ -279,6 +317,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
       const emoji = payload?.emoji;
       const uId = payload?.userId || payload?.senderId;
       if (!emoji) return;
+      if (resolvedUserId && String(uId) === String(resolvedUserId)) return;
 
       setMessages((prev) =>
         prev.map((m) => {
@@ -362,21 +401,24 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
       socket.emit('chat:seen', { senderId: chatId });
     }
 
-    socket.on('chat:receive', handleNewMessage);
-    socket.on('chat:message', handleNewMessage);
-    socket.on('channel:message:receive', handleNewMessage);
-    socket.on('channel:message', handleNewMessage);
-
-    socket.on('chat:reaction', handleReactionUpdate);
-    socket.on('reaction:add', handleReactionAdd);
-    socket.on('reaction:remove', handleReactionRemove);
-    socket.on('chat:message:delete', handleMessageDelete);
-    socket.on('message:delete', handleMessageDelete);
-    socket.on('chat:message:undo', handleMessageUndo);
-    socket.on('channel:reaction', handleReactionUpdate);
-    socket.on('channel:message:reaction', handleReactionUpdate);
-    socket.on('channel:message:delete', handleMessageDelete);
-    socket.on('channel:message:undo', handleMessageUndo);
+    if (isChannel) {
+      socket.on('channel:message:receive', handleNewMessage);
+      socket.on('channel:message', handleNewMessage);
+      socket.on('channel:reaction', handleReactionUpdate);
+      socket.on('channel:message:reaction', handleReactionUpdate);
+      socket.on('channel:message:delete', handleMessageDelete);
+      socket.on('channel:message:undo', handleMessageUndo);
+    } else {
+      socket.on('chat:receive', handleNewMessage);
+      socket.on('chat:message', handleNewMessage);
+      socket.on('chat:reaction', handleReactionUpdate);
+      socket.on('reaction:add', handleReactionAdd);
+      socket.on('reaction:remove', handleReactionRemove);
+      socket.on('chat:message:delete', handleMessageDelete);
+      socket.on('message:delete', handleMessageDelete);
+      socket.on('chat:message:undo', handleMessageUndo);
+      socket.on('message:undo-delete', handleMessageUndo);
+    }
 
     return () => {
       if (isChannel && chatId) {
@@ -394,6 +436,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
       socket.off('chat:message:delete', handleMessageDelete);
       socket.off('message:delete', handleMessageDelete);
       socket.off('chat:message:undo', handleMessageUndo);
+      socket.off('message:undo-delete', handleMessageUndo);
       socket.off('channel:reaction', handleReactionUpdate);
       socket.off('channel:message:reaction', handleReactionUpdate);
       socket.off('channel:message:delete', handleMessageDelete);
@@ -421,44 +464,43 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     // Send to backend API (REST endpoint saves to MongoDB and broadcasts CHAT_RECEIVE via socket)
     if (resolvedToken) {
       try {
-        if (isChannel) {
-          const res = await fetch(`${API_BASE}/api/channel/${chatId}/chat`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${resolvedToken}`,
-            },
-            body: JSON.stringify({ content: text }),
-          });
-          if (res.ok) {
-            const json = await res.json();
-            const saved = json?.data || json;
-            if (saved?._id) {
-              setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: saved._id } : m)));
-            }
+        const res = isChannel
+          ? await fetch(`${API_BASE}/api/channel/${chatId}/chat`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${resolvedToken}`,
+              },
+              body: JSON.stringify({ content: text }),
+            })
+          : await fetch(`${API_BASE}/api/chat/send`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${resolvedToken}`,
+              },
+              body: JSON.stringify({
+                receiverId: chatId,
+                message: text,
+              }),
+            });
+
+        if (res.ok) {
+          const json = await res.json();
+          const saved = json?.data || json;
+          if (saved?._id) {
+            setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: saved._id } : m)));
           }
         } else {
-          const res = await fetch(`${API_BASE}/api/chat/send`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${resolvedToken}`,
-            },
-            body: JSON.stringify({
-              receiverId: chatId,
-              message: text,
-            }),
-          });
-          if (res.ok) {
-            const json = await res.json();
-            const saved = json?.data || json;
-            if (saved?._id) {
-              setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: saved._id } : m)));
-            }
-          }
+          setMessages((prev) => prev.filter((m) => m.id !== tempId));
+          setToastMessage('Failed to send message. Please try again.');
+          setTimeout(() => setToastMessage(null), 3000);
         }
       } catch (err) {
         console.warn('[MobileChat] Failed to send message via REST:', err);
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setToastMessage('Network error: message could not be sent.');
+        setTimeout(() => setToastMessage(null), 3000);
       }
     }
   };
@@ -495,42 +537,11 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
     setSelectedMessageForAction(null);
     setShowMoreEmojis(false);
 
-    // Socket Emit
-    if (socket) {
-      if (isChannel) {
-        socket.emit('channel:reaction', {
-          channelId: chatId,
-          messageId,
-          userId: resolvedUserId,
-          emoji,
-        });
-      } else {
-        if (alreadyReacted) {
-          socket.emit('reaction:remove', {
-            messageId,
-            receiverId: chatId,
-            emoji,
-          });
-        } else {
-          socket.emit('chat:reaction', {
-            receiverId: chatId,
-            messageId,
-            emoji,
-          });
-          socket.emit('reaction:add', {
-            messageId,
-            receiverId: chatId,
-            emoji,
-          });
-        }
-      }
-    }
-
-    // REST API Persist
+    // Persist via REST when authenticated (REST broadcasts socket updates); otherwise fallback to socket
     if (resolvedToken) {
       try {
         if (isChannel) {
-          await fetch(`${API_BASE}/api/channel/${chatId}/chat/${messageId}/reaction`, {
+          const res = await fetch(`${API_BASE}/api/channel/${chatId}/chat/${messageId}/reaction`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -538,29 +549,56 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
             },
             body: JSON.stringify({ emoji }),
           });
-        } else {
-          if (alreadyReacted) {
-            await fetch(`${API_BASE}/api/chat/message/${messageId}/react`, {
-              method: 'DELETE',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${resolvedToken}`,
-              },
-              body: JSON.stringify({ emoji }),
-            });
-          } else {
-            await fetch(`${API_BASE}/api/chat/message/${messageId}/react`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${resolvedToken}`,
-              },
-              body: JSON.stringify({ emoji }),
-            });
+          if (res.ok) {
+            const resJson = await res.json().catch(() => ({}));
+            if (Array.isArray(resJson?.data?.reactions)) {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === messageId ? { ...m, reactions: resJson.data.reactions } : m))
+              );
+            }
           }
+        } else if (alreadyReacted) {
+          await fetch(`${API_BASE}/api/chat/message/${messageId}/react?emoji=${encodeURIComponent(emoji)}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${resolvedToken}`,
+            },
+            body: JSON.stringify({ emoji }),
+          });
+        } else {
+          await fetch(`${API_BASE}/api/chat/message/${messageId}/react`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${resolvedToken}`,
+            },
+            body: JSON.stringify({ emoji }),
+          });
         }
       } catch (err) {
         console.warn('[MobileChat] Failed to save reaction to API:', err);
+      }
+    } else if (socket) {
+      if (isChannel) {
+        socket.emit('channel:reaction', {
+          channelId: chatId,
+          messageId,
+          userId: resolvedUserId,
+          emoji,
+        });
+      } else if (alreadyReacted) {
+        socket.emit('reaction:remove', {
+          messageId,
+          receiverId: chatId,
+          emoji,
+        });
+      } else {
+        socket.emit('reaction:add', {
+          messageId,
+          receiverId: chatId,
+          emoji,
+        });
       }
     }
   };
@@ -624,6 +662,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
       if (isChannel) {
         socket.emit('channel:message:undo', { channelId: chatId, messageId });
       } else {
+        socket.emit('message:undo-delete', { messageId, receiverId: chatId });
         socket.emit('chat:message:undo', { messageId, receiverId: chatId });
       }
     }
@@ -713,8 +752,12 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
 
       if (res.ok) {
         const json = await res.json();
-        const fileUrl = json?.data?.fileUrl || json?.fileUrl || (json?.data?.filename ? `${API_BASE}/uploads/${json.data.filename}` : '');
-        const fullUrl = normalizeFileUrl(fileUrl.startsWith('http') ? fileUrl : `${API_BASE}${fileUrl.startsWith('/') ? '' : '/'}${fileUrl}`);
+        const fullUrl = resolveUploadedFileUrl(json);
+        if (!fullUrl) {
+          setToastMessage('Upload succeeded but no file URL was returned.');
+          setTimeout(() => setToastMessage(null), 3000);
+          return;
+        }
         const fileName = file.name;
         // Format as [File: name | url | size] so web and mobile clients share the exact same rich card
         const fileSizeFormatted = file.size > 1048576
@@ -770,14 +813,138 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
           }
         }
       } else {
-        alert('File upload failed. Please try a smaller file.');
+        setToastMessage('File upload failed. Please try a smaller file.');
+        setTimeout(() => setToastMessage(null), 3000);
       }
     } catch (err) {
       console.warn('[MobileChat] Upload error:', err);
-      alert('Error uploading file.');
+      setToastMessage('Error uploading file.');
+      setTimeout(() => setToastMessage(null), 3000);
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const uploadAndSendFile = async (file: File) => {
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('contextType', isChannel ? 'channel' : 'chat');
+      formData.append('contextId', chatId);
+
+      const res = await fetch(`${API_BASE}/api/file/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${resolvedToken}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        setToastMessage('Voice note upload failed.');
+        setTimeout(() => setToastMessage(null), 3000);
+        return;
+      }
+
+      const json = await res.json();
+      const fullUrl = resolveUploadedFileUrl(json);
+      if (!fullUrl) {
+        setToastMessage('Voice note upload succeeded without file URL.');
+        setTimeout(() => setToastMessage(null), 3000);
+        return;
+      }
+      const fileName = file.name;
+      const fileSizeFormatted = file.size > 1048576
+        ? `${(file.size / 1048576).toFixed(1)} MB`
+        : `${Math.max(1, Math.round(file.size / 1024))} KB`;
+      const msgText = `[File: ${fileName} | ${fullUrl} | ${fileSizeFormatted}]`;
+
+      const tempId = `local-${Date.now()}`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          senderId: resolvedUserId || 'me',
+          senderName: 'You',
+          text: msgText,
+          fileUrl: fullUrl,
+          fileName,
+          fileSize: fileSizeFormatted,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isMe: true,
+        },
+      ]);
+
+      const endpoint = isChannel ? `${API_BASE}/api/channel/${chatId}/chat` : `${API_BASE}/api/chat/send`;
+      const bodyPayload = isChannel
+        ? { content: msgText, fileUrl: fullUrl, fileName }
+        : { receiverId: chatId, message: msgText, fileUrl: fullUrl, fileName };
+
+      const sendRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${resolvedToken}`,
+        },
+        body: JSON.stringify(bodyPayload),
+      });
+      if (sendRes.ok) {
+        const sendJson = await sendRes.json();
+        const savedDoc = sendJson?.data || sendJson;
+        if (savedDoc?._id) {
+          setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: savedDoc._id } : m)));
+        }
+      }
+    } catch {
+      setToastMessage('Error sending voice note.');
+      setTimeout(() => setToastMessage(null), 3000);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const toggleVoiceRecording = async () => {
+    if (isRecordingVoice) {
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch (_) {}
+      setIsRecordingVoice(false);
+      if (voiceTimerRef.current) {
+        clearInterval(voiceTimerRef.current);
+        voiceTimerRef.current = null;
+      }
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceStreamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
+      voiceChunksRef.current = [];
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) voiceChunksRef.current.push(ev.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (voiceStreamRef.current === stream) {
+          voiceStreamRef.current = null;
+        }
+        const mime = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(voiceChunksRef.current, { type: mime });
+        if (blob.size > 500) {
+          const ext = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm';
+          const voiceFile = new File([blob], `voice_note_${Date.now()}.${ext}`, { type: blob.type });
+          uploadAndSendFile(voiceFile);
+        }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setVoiceDurationSec(0);
+      setIsRecordingVoice(true);
+      voiceTimerRef.current = setInterval(() => setVoiceDurationSec((s) => s + 1), 1000);
+    } catch {
+      setToastMessage('Microphone permission required for voice notes');
+      setTimeout(() => setToastMessage(null), 3000);
     }
   };
 
@@ -1280,6 +1447,23 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
                   );
                 }
 
+                if (isFile && isAudioAttachment(activeUrl, activeName)) {
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 210, marginBottom: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', fontWeight: 700, color: msg.isMe ? '#ffffff' : '#0f172a' }}>
+                        <span>🎤 Voice Note</span>
+                        {activeSize && <span style={{ opacity: 0.75, fontWeight: 500 }}>• {activeSize}</span>}
+                      </div>
+                      <audio
+                        controls
+                        preload="metadata"
+                        src={resolveAvatarUrl(activeUrl)}
+                        style={{ width: '100%', height: 34 }}
+                      />
+                    </div>
+                  );
+                }
+
                 if (isFile) {
                   const ext = getFileExtension(activeName);
                   const isZip = ext === 'ZIP' || ext === 'RAR' || ext === '7Z' || ext === 'TAR' || ext === 'GZ';
@@ -1536,7 +1720,7 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
           ref={fileInputRef}
           onChange={handleFileChange}
           style={{ display: 'none' }}
-          accept="image/*,.pdf,.doc,.docx,.txt"
+          accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z,.txt"
         />
 
         {/* Attachment paperclip icon button (Icon only) */}
@@ -1585,6 +1769,20 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
           onKeyDown={(e) => {
             if (e.key === 'Enter') handleSendMessage();
           }}
+          onPaste={(e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (let i = 0; i < items.length; i++) {
+              if (items[i].type.startsWith('image/')) {
+                const file = items[i].getAsFile();
+                if (file) {
+                  e.preventDefault();
+                  uploadAndSendFile(file);
+                  return;
+                }
+              }
+            }
+          }}
           style={{
             flex: 1,
             backgroundColor: '#f1f5f9',
@@ -1597,31 +1795,64 @@ export const MobileConversationView: React.FC<MobileConversationViewProps> = ({
           }}
         />
 
-        {/* Send Button (Icon only) */}
-        <button
-          onClick={handleSendMessage}
-          disabled={!inputText.trim()}
-          aria-label="Send"
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: '50%',
-            backgroundColor: inputText.trim() ? '#2563eb' : '#cbd5e1',
-            border: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            cursor: inputText.trim() ? 'pointer' : 'default',
-            flexShrink: 0,
-            transition: 'background-color 0.15s ease',
-          }}
-        >
-          <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
-        </button>
+        {/* Send Button or Voice Note Mic Button */}
+        {inputText.trim() ? (
+          <button
+            onClick={handleSendMessage}
+            aria-label="Send"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              backgroundColor: '#2563eb',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#ffffff',
+              cursor: 'pointer',
+              flexShrink: 0,
+              transition: 'background-color 0.15s ease',
+            }}
+          >
+            <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            onClick={toggleVoiceRecording}
+            disabled={isUploading}
+            aria-label={isRecordingVoice ? 'Stop Recording' : 'Record Voice Note'}
+            title={isRecordingVoice ? 'Tap to Send Voice Note' : 'Record Voice Note'}
+            style={{
+              width: isRecordingVoice ? 'auto' : 36,
+              minWidth: 36,
+              padding: isRecordingVoice ? '0 10px' : 0,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: isRecordingVoice ? '#ef4444' : '#f1f5f9',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 5,
+              color: isRecordingVoice ? '#ffffff' : '#2563eb',
+              cursor: isUploading ? 'default' : 'pointer',
+              flexShrink: 0,
+              fontSize: '0.72rem',
+              fontWeight: 700,
+            }}
+          >
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+            </svg>
+            {isRecordingVoice && <span>{formatCallDuration(voiceDurationSec)}</span>}
+          </button>
+        )}
       </div>
 
       {/* ══════════════════════════════════════════════════════════════

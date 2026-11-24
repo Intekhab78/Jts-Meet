@@ -94,14 +94,14 @@ export const IntegrationsAddModal: React.FC<IntegrationsAddModalProps> = ({
                     <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>
                         Configure {
                             modalType === 'jts_support' ? 'Website & CRM Webhook Gateway' :
-                            modalType === 'slack' ? 'Slack Incoming Webhook' :
-                            modalType === 'teams' ? 'Microsoft Teams Webhook' :
-                            modalType === 'discord' ? 'Discord Webhook' :
-                            modalType === 'calendar' ? 'Google Calendar & Outlook Sync' :
-                            modalType === 'googledrive' ? 'Google Drive Cloud Sync' :
-                            modalType === 'email' ? 'Enterprise Email Alerts' :
-                            modalType === 'zapier' ? 'Zapier / Make Automation' :
-                            'Custom REST Webhook'
+                                modalType === 'slack' ? 'Slack Incoming Webhook' :
+                                    modalType === 'teams' ? 'Microsoft Teams Webhook' :
+                                        modalType === 'discord' ? 'Discord Webhook' :
+                                            modalType === 'calendar' ? 'Google Calendar & Outlook Sync' :
+                                                modalType === 'googledrive' ? 'Google Drive Cloud Sync' :
+                                                    modalType === 'email' ? 'Enterprise Email Alerts' :
+                                                        modalType === 'zapier' ? 'Zapier / Make Automation' :
+                                                            'Custom REST Webhook'
                         }
                     </h3>
                     <button
@@ -148,184 +148,189 @@ export const IntegrationsAddModal: React.FC<IntegrationsAddModalProps> = ({
                     )}
 
                     <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>
-                            Endpoint Name:
-                        </label>
-                        <input
-                            type="text"
-                            value={formName}
-                            onChange={(e) => setFormName(e.target.value)}
-                            placeholder={
-                                modalType === 'jts_support' ? 'e.g. Production Website CRM Gateway' :
-                                modalType === 'slack' ? 'e.g. #general-alerts' :
-                                modalType === 'teams' ? 'e.g. MS Teams Engineering Bot' :
-                                'e.g. Webhook Service Endpoint'
-                            }
-                            required
-                            style={{
-                                width: '100%',
-                                boxSizing: 'border-box',
-                                padding: '10px 14px',
-                                borderRadius: 10,
-                                background: 'rgba(0, 0, 0, 0.4)',
-                                border: '1px solid rgba(255, 255, 255, 0.12)',
-                                color: '#fff',
-                                fontSize: '0.88rem'
-                            }}
-                        />
-                    </div>
-
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>
-                            Webhook URL Endpoint:
-                        </label>
-                        <input
-                            type="url"
-                            value={formUrl}
-                            onChange={(e) => setFormUrl(e.target.value)}
-                            placeholder={
-                                modalType === 'jts_support' ? 'https://api.yourwebsite.com/api/webhooks' :
-                                'https://...'
-                            }
-                            required
-                            style={{
-                                width: '100%',
-                                boxSizing: 'border-box',
-                                padding: '10px 14px',
-                                borderRadius: 10,
-                                background: 'rgba(0, 0, 0, 0.4)',
-                                border: '1px solid rgba(255, 255, 255, 0.12)',
-                                color: '#fff',
-                                fontSize: '0.88rem'
-                            }}
-                        />
-                    </div>
-
-                    <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8' }}>
-                                HMAC Secret Key (Used for SHA256 Signature Verification):
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>
+                                Endpoint Name:
                             </label>
+                            <input
+                                type="text"
+                                value={formName}
+                                onChange={(e) => setFormName(e.target.value)}
+                                placeholder={
+                                    modalType === 'jts_support' ? 'e.g. Production Website CRM Gateway' :
+                                        modalType === 'slack' ? 'e.g. #general-alerts' :
+                                            modalType === 'teams' ? 'e.g. MS Teams Engineering Bot' :
+                                                'e.g. Webhook Service Endpoint'
+                                }
+                                required
+                                style={{
+                                    width: '100%',
+                                    boxSizing: 'border-box',
+                                    padding: '10px 14px',
+                                    borderRadius: 10,
+                                    background: 'rgba(0, 0, 0, 0.4)',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    color: '#fff',
+                                    fontSize: '0.88rem'
+                                }}
+                            />
+                        </div>
+
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>
+                                {modalType === 'email'
+                                    ? 'Recipient Email(s) (or HTTP Webhook URL):'
+                                    : modalType === 'calendar'
+                                        ? 'Calendar .ics Feed URL (or Sync Webhook):'
+                                        : 'Webhook URL Endpoint:'}
+                            </label>
+                            <input
+                                type={modalType === 'email' ? 'text' : 'url'}
+                                value={formUrl}
+                                onChange={(e) => setFormUrl(e.target.value)}
+                                placeholder={
+                                    modalType === 'email' ? 'ops@company.com, admin@company.com' :
+                                        modalType === 'jts_support' ? 'https://api.yourwebsite.com/api/webhooks' :
+                                            'https://...'
+                                }
+                                required
+                                style={{
+                                    width: '100%',
+                                    boxSizing: 'border-box',
+                                    padding: '10px 14px',
+                                    borderRadius: 10,
+                                    background: 'rgba(0, 0, 0, 0.4)',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    color: '#fff',
+                                    fontSize: '0.88rem'
+                                }}
+                            />
+                        </div>
+
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8' }}>
+                                    HMAC Secret Key (Used for SHA256 Signature Verification):
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => setFormSecret('whsec_' + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 6))}
+                                    style={{
+                                        background: 'rgba(99, 102, 241, 0.15)',
+                                        border: '1px solid rgba(99, 102, 241, 0.35)',
+                                        color: '#a5b4fc',
+                                        fontSize: '0.74rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        padding: '2px 8px',
+                                        borderRadius: 6
+                                    }}
+                                >
+                                    ⚡ Regenerate Key
+                                </button>
+                            </div>
+                            <input
+                                type="text"
+                                value={formSecret}
+                                onChange={(e) => setFormSecret(e.target.value)}
+                                placeholder="e.g. whsec_..."
+                                style={{
+                                    width: '100%',
+                                    boxSizing: 'border-box',
+                                    padding: '10px 14px',
+                                    borderRadius: 10,
+                                    background: 'rgba(0, 0, 0, 0.4)',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    color: '#fff',
+                                    fontSize: '0.88rem'
+                                }}
+                            />
+                        </div>
+
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 8 }}>
+                                Trigger Events:
+                            </label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                {[
+                                    { id: 'meeting.started', label: 'Meeting Started', Icon: IconRocket, color: '#818cf8' },
+                                    { id: 'meeting.ended', label: 'Meeting Ended', Icon: IconFlag, color: '#f87171' },
+                                    { id: 'recording.ready', label: 'Recording Ready', Icon: IconVideo, color: '#fbbf24' },
+                                    { id: 'participant.joined', label: 'Participant Joined', Icon: IconUser, color: '#34d399' }
+                                ].map(item => {
+                                    const isChecked = selectedEvents.includes(item.id)
+                                    return (
+                                        <label
+                                            key={item.id}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 8,
+                                                fontSize: '0.82rem',
+                                                color: '#cbd5e1',
+                                                cursor: 'pointer',
+                                                padding: '8px 10px',
+                                                background: 'rgba(255, 255, 255, 0.03)',
+                                                borderRadius: 8,
+                                                border: '1px solid rgba(255, 255, 255, 0.06)'
+                                            }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setSelectedEvents([...selectedEvents, item.id])
+                                                    } else {
+                                                        setSelectedEvents(selectedEvents.filter(x => x !== item.id))
+                                                    }
+                                                }}
+                                                style={{ accentColor: '#6366f1' }}
+                                            />
+                                            <item.Icon size={14} color={item.color} />
+                                            <span>{item.label}</span>
+                                        </label>
+                                    )
+                                })}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
                             <button
                                 type="button"
-                                onClick={() => setFormSecret('whsec_' + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 6))}
+                                onClick={onClose}
                                 style={{
-                                    background: 'rgba(99, 102, 241, 0.15)',
-                                    border: '1px solid rgba(99, 102, 241, 0.35)',
-                                    color: '#a5b4fc',
-                                    fontSize: '0.74rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    padding: '2px 8px',
-                                    borderRadius: 6
+                                    flex: 1,
+                                    padding: '12px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    borderRadius: 10,
+                                    color: '#cbd5e1',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
                                 }}
                             >
-                                ⚡ Regenerate Key
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                style={{
+                                    flex: 2,
+                                    padding: '12px',
+                                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                                    border: 'none',
+                                    borderRadius: 10,
+                                    color: '#fff',
+                                    fontWeight: 700,
+                                    fontSize: '0.95rem',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+                                }}
+                            >
+                                Save & Activate Endpoint
                             </button>
                         </div>
-                        <input
-                            type="text"
-                            value={formSecret}
-                            onChange={(e) => setFormSecret(e.target.value)}
-                            placeholder="e.g. whsec_..."
-                            style={{
-                                width: '100%',
-                                boxSizing: 'border-box',
-                                padding: '10px 14px',
-                                borderRadius: 10,
-                                background: 'rgba(0, 0, 0, 0.4)',
-                                border: '1px solid rgba(255, 255, 255, 0.12)',
-                                color: '#fff',
-                                fontSize: '0.88rem'
-                            }}
-                        />
-                    </div>
-
-                    <div>
-                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8', marginBottom: 8 }}>
-                            Trigger Events:
-                        </label>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                            {[
-                                { id: 'meeting.started', label: 'Meeting Started', Icon: IconRocket, color: '#818cf8' },
-                                { id: 'meeting.ended', label: 'Meeting Ended', Icon: IconFlag, color: '#f87171' },
-                                { id: 'recording.ready', label: 'Recording Ready', Icon: IconVideo, color: '#fbbf24' },
-                                { id: 'participant.joined', label: 'Participant Joined', Icon: IconUser, color: '#34d399' }
-                            ].map(item => {
-                                const isChecked = selectedEvents.includes(item.id)
-                                return (
-                                    <label
-                                        key={item.id}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 8,
-                                            fontSize: '0.82rem',
-                                            color: '#cbd5e1',
-                                            cursor: 'pointer',
-                                            padding: '8px 10px',
-                                            background: 'rgba(255, 255, 255, 0.03)',
-                                            borderRadius: 8,
-                                            border: '1px solid rgba(255, 255, 255, 0.06)'
-                                        }}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={isChecked}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setSelectedEvents([...selectedEvents, item.id])
-                                                } else {
-                                                    setSelectedEvents(selectedEvents.filter(x => x !== item.id))
-                                                }
-                                            }}
-                                            style={{ accentColor: '#6366f1' }}
-                                        />
-                                        <item.Icon size={14} color={item.color} />
-                                        <span>{item.label}</span>
-                                    </label>
-                                )
-                            })}
-                        </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            style={{
-                                flex: 1,
-                                padding: '12px',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                                borderRadius: 10,
-                                color: '#cbd5e1',
-                                fontWeight: 600,
-                                cursor: 'pointer'
-                            }}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            style={{
-                                flex: 2,
-                                padding: '12px',
-                                background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                                border: 'none',
-                                borderRadius: 10,
-                                color: '#fff',
-                                fontWeight: 700,
-                                fontSize: '0.95rem',
-                                cursor: 'pointer',
-                                boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
-                            }}
-                        >
-                            Save & Activate Endpoint
-                        </button>
-                    </div>
-                </form>
+                    </form>
                 </div>
             </div>
         </div>

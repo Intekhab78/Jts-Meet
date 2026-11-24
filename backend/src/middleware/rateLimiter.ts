@@ -62,11 +62,12 @@ export function rateLimiter(windowMs: number = 60 * 1000, maxRequests: number = 
             // Redis error or offline: fallback to local in-memory store
         }
 
-        // 2. In-Memory fallback store
-        const record = ipRequestStore.get(clientIp)
+        // 2. In-Memory fallback store (scoped by keyPrefix so auth & global limiters do not collide)
+        const memKey = `${keyPrefix}:${clientIp}`
+        const record = ipRequestStore.get(memKey)
 
         if (!record || now > record.resetTime) {
-            ipRequestStore.set(clientIp, {
+            ipRequestStore.set(memKey, {
                 count: 1,
                 resetTime: now + windowMs
             })

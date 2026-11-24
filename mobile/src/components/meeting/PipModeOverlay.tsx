@@ -136,6 +136,24 @@ export const PipModeOverlay: React.FC<PipModeOverlayProps> = ({
     touchStartRef.current = { x: 0, y: 0, posX: 0, posY: 0 };
   };
 
+  const renderRemoteAudioStreams = () => (
+    <div style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, opacity: 0.001, pointerEvents: 'none' }}>
+      {participants.map((peer) => {
+        const s = remoteStreams[peer.userId] || remoteStreams[peer.userId.toLowerCase()];
+        return s ? (
+          <audio
+            key={peer.userId}
+            autoPlay
+            playsInline
+            ref={(el) => {
+              if (el && s && el.srcObject !== s) el.srcObject = s;
+            }}
+          />
+        ) : null;
+      })}
+    </div>
+  );
+
   if (isMinimized) {
     const activePipStream = presenterStream || Object.values(remoteStreams)[0] || localStream;
     const effectiveTitle = peerName || displayName || 'Call';
@@ -148,7 +166,8 @@ export const PipModeOverlay: React.FC<PipModeOverlayProps> = ({
     // ── COLLAPSED / HIDDEN COMPACT FLOATING PILL ──
     if (isCollapsed) {
       return (
-        <div
+        <>
+          <div
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -268,6 +287,8 @@ export const PipModeOverlay: React.FC<PipModeOverlayProps> = ({
             </button>
           </div>
         </div>
+        {renderRemoteAudioStreams()}
+        </>
       );
     }
 
@@ -417,6 +438,7 @@ export const PipModeOverlay: React.FC<PipModeOverlayProps> = ({
             <video
               autoPlay
               playsInline
+              muted
               ref={(el) => {
                 if (el && activePipStream && el.srcObject !== activePipStream) {
                   el.srcObject = activePipStream;
@@ -479,21 +501,7 @@ export const PipModeOverlay: React.FC<PipModeOverlayProps> = ({
         </div>
 
         {/* Keep audio tracks alive in mini PiP mode (Always in layout tree, off-screen) */}
-        <div style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1, opacity: 0.001, pointerEvents: 'none' }}>
-          {participants.map((peer) => {
-            const s = remoteStreams[peer.userId] || remoteStreams[peer.userId.toLowerCase()];
-            return s ? (
-              <audio
-                key={peer.userId}
-                autoPlay
-                playsInline
-                ref={(el) => {
-                  if (el && s && el.srcObject !== s) el.srcObject = s;
-                }}
-              />
-            ) : null;
-          })}
-        </div>
+        {renderRemoteAudioStreams()}
       </div>
     );
   }
@@ -529,7 +537,7 @@ export const PipModeOverlay: React.FC<PipModeOverlayProps> = ({
           <video
             autoPlay
             playsInline
-            muted={activePipStream === localStream}
+            muted
             ref={(el) => {
               if (el && activePipStream && el.srcObject !== activePipStream) {
                 el.srcObject = activePipStream;

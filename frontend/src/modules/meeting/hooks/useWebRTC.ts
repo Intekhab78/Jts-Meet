@@ -3,12 +3,15 @@ import type { Socket } from 'socket.io-client'
 import { SocketEvents } from '../services/socket.service'
 import { createPeerConnection, peerRemoteStreams, optimizePeerConnectionForHd } from '../services/webrtc.service'
 import { getScreenShareStream, stopScreenShareStream } from '../services/screen.service'
+import { sfuService } from '../services/sfu.service'
 
 function getTargetBitrateForPeers(peerCount: number): { as: number; tias: number } {
     if (peerCount <= 2) return { as: 2500, tias: 2500000 }
     if (peerCount <= 4) return { as: 1200, tias: 1200000 }
     if (peerCount <= 8) return { as: 600, tias: 600000 }
-    return { as: 350, tias: 350000 }
+    if (peerCount < 15) return { as: 350, tias: 350000 }
+    if (peerCount < 30) return { as: 140, tias: 140000 }
+    return { as: 90, tias: 90000 }
 }
 
 function enhanceSdpForHdVideo(sdp?: string, _peerCount: number = 1): string {
@@ -102,7 +105,7 @@ function getLocalUserId(): string {
                 return decoded.userId || decoded.id || decoded.sub || ''
             }
         }
-    } catch (_) {}
+    } catch (_) { }
     return ''
 }
 
@@ -122,6 +125,7 @@ interface UseWebRTCResult {
     isReconnecting: boolean
     retryConnection: () => Promise<void>
     peerIceStates: Record<string, RTCIceConnectionState>
+    transportMode: 'mesh' | 'sfu'
 }
 
 interface InternalPeerConnections {
@@ -142,12 +146,15 @@ export function useWebRTC(
 ): UseWebRTCResult {
     const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({})
     const [meetingId, setMeetingId] = useState<string>('')
+    const activeMeetingIdRef = useRef<string>('')
     const [screenSharingUserId, setScreenSharingUserId] = useState<string | null>(null)
     const [screenSharingUserIds, setScreenSharingUserIds] = useState<string[]>([])
     const [screenError, setScreenError] = useState<string | null>(null)
     const [networkStatus, setNetworkStatus] = useState<'online' | 'offline' | 'reconnecting'>(navigator.onLine ? 'online' : 'offline')
     const [isReconnecting, setIsReconnecting] = useState<boolean>(false)
     const [peerIceStates, setPeerIceStates] = useState<Record<string, RTCIceConnectionState>>({})
+    const [transportMode, setTransportMode] = useState<'mesh' | 'sfu'>('mesh')
+    const sfuAttemptedRef = useRef<string>('')
     const peerConnectionsRef = useRef<InternalPeerConnections>({})
     const localStreamRef = useRef<MediaStream | null>(null)
     const pendingCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({})
@@ -227,7 +234,7 @@ export function useWebRTC(
             }
             const pc = peerConnectionsRef.current[pId]
             if (pc) {
-                try { pc.close() } catch (e) {}
+                try { pc.close() } catch (e) { }
                 delete peerConnectionsRef.current[pId]
             }
             delete pendingCandidatesRef.current[pId]
@@ -264,7 +271,8 @@ export function useWebRTC(
         clearReconnectFailsafe()
         setIsReconnecting(false)
         setNetworkStatus('online')
-        const activeMeetingId = meetingId || sessionStorage.getItem('jts_active_meeting_id') || ''
+        const activeMeetingId = activeMeetingIdRef.current || meetingId || sessionStorage.getItem('jts_active_meeting_id') || ''
+        activeMeetingIdRef.current = ''
         setMeetingId('')
         setJoined(false)
         setScreenSharingUserId(null)
@@ -274,19 +282,21 @@ export function useWebRTC(
         if (screenAudioMixerRef.current) {
             try {
                 screenAudioMixerRef.current.mixedTrack.stop()
-                screenAudioMixerRef.current.audioCtx.close().catch(() => {})
-            } catch {}
+                screenAudioMixerRef.current.audioCtx.close().catch(() => { })
+            } catch { }
             screenAudioMixerRef.current = null
         }
         if (window.location.hash.startsWith('#meeting')) {
             window.history.replaceState(null, '', '/#meeting')
         }
         Object.keys(peerConnectionsRef.current).forEach((userId) => cleanupPeer(userId))
+        sfuService.disconnect()
+        sfuAttemptedRef.current = ''
+        setTransportMode('mesh')
         setRemoteStreams({})
         peerRemoteStreams.clear()
         if (socket && activeMeetingId) {
             socket.emit(SocketEvents.MEETING_LEAVE, { meetingId: activeMeetingId })
-            socket.emit('meeting:leave', { meetingId: activeMeetingId })
         }
     }, [cleanupPeer, clearReconnectFailsafe, meetingId, setJoined, socket, clearParticipants])
 
@@ -299,11 +309,15 @@ export function useWebRTC(
             // Fresh meeting join: cleanly tear down any previous peer connections, ghost streams, and UI roster
             clearParticipants?.()
             Object.keys(peerConnectionsRef.current).forEach((uId) => cleanupPeer(uId))
+            sfuService.disconnect()
+            sfuAttemptedRef.current = ''
+            setTransportMode('mesh')
             setRemoteStreams({})
             peerRemoteStreams.clear()
             setScreenSharingUserId(null)
             setScreenSharingUserIds([])
 
+            activeMeetingIdRef.current = targetMeetingId
             setMeetingId(targetMeetingId)
             if (!isDirectCall) {
                 sessionStorage.setItem('jts_active_meeting_id', targetMeetingId)
@@ -323,7 +337,7 @@ export function useWebRTC(
                         }
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
 
             const vTrack = localStreamRef.current?.getVideoTracks()[0]
             const aTrack = localStreamRef.current?.getAudioTracks()[0]
@@ -343,7 +357,12 @@ export function useWebRTC(
                 ? (!aTrack.enabled || aTrack.readyState === 'ended' || isInitialMicMuted)
                 : isInitialMicMuted
 
-            socket.emit(SocketEvents.WEBRTC_JOIN, { 
+            if (!isDirectCall) {
+                socket.emit(SocketEvents.MEETING_JOIN, {
+                    meetingId: targetMeetingId
+                })
+            }
+            socket.emit(SocketEvents.WEBRTC_JOIN, {
                 meetingId: targetMeetingId,
                 displayName: effectiveName || undefined,
                 isVideoOff: isLocalVideoOff,
@@ -494,7 +513,7 @@ export function useWebRTC(
         if (socket && !socket.connected) {
             try {
                 socket.connect()
-            } catch (e) {}
+            } catch (e) { }
         }
 
         const peerIds = Object.keys(peerConnectionsRef.current)
@@ -526,9 +545,13 @@ export function useWebRTC(
             const isScreen = !!screenTrackRef.current && newTrack === screenTrackRef.current
             const peerCount = Object.keys(peerConnectionsRef.current).length + 1
 
+            if (sfuService.isConnected()) {
+                sfuService.replaceTrack(newTrack, kind as 'audio' | 'video')
+            }
+
             Object.entries(peerConnectionsRef.current).forEach(([targetUserId, pc]) => {
                 // Find matching transceiver strictly for this kind (audio or video)
-                const tc = pc.getTransceivers().find(t => 
+                const tc = pc.getTransceivers().find(t =>
                     (t.receiver?.track && t.receiver.track.kind === kind) ||
                     (t.sender?.track && t.sender.track.kind === kind)
                 )
@@ -557,7 +580,11 @@ export function useWebRTC(
                     }
                 }
 
-                const sender = pc.getSenders().find((s) => (s.track && s.track.kind === kind) || (!s.track && kind === 'video') || (!s.track && kind === 'audio'))
+                const sender = pc.getSenders().find((s) => {
+                    if (s.track) return s.track.kind === kind
+                    const matchingTc = pc.getTransceivers?.().find((t) => t.sender === s)
+                    return matchingTc?.receiver?.track?.kind === kind
+                })
                 if (sender) {
                     const hadNoTrack = !sender.track
                     sender.replaceTrack(newTrack).then(() => {
@@ -587,7 +614,7 @@ export function useWebRTC(
         if (screenTrackRef.current) {
             try {
                 screenTrackRef.current.stop()
-            } catch {}
+            } catch { }
             screenTrackRef.current = null
         }
 
@@ -597,8 +624,8 @@ export function useWebRTC(
             screenAudioMixerRef.current = null
             try {
                 mixedTrack.stop()
-                audioCtx.close().catch(() => {})
-            } catch {}
+                audioCtx.close().catch(() => { })
+            } catch { }
             if (originalMicTrack && originalMicTrack.readyState === 'live') {
                 replaceTrackOnPeers(originalMicTrack, 'audio')
             }
@@ -670,7 +697,7 @@ export function useWebRTC(
                     if (AudioContextClass) {
                         const audioCtx = new AudioContextClass()
                         if (audioCtx.state === 'suspended') {
-                            await audioCtx.resume().catch(() => {})
+                            await audioCtx.resume().catch(() => { })
                         }
                         const destination = audioCtx.createMediaStreamDestination()
 
@@ -716,7 +743,7 @@ export function useWebRTC(
             const activeMeetingId = meetingId || (typeof window !== 'undefined' ? new URLSearchParams(window.location.hash.split('?')[1]).get('id') : '') || sessionStorage.getItem('jts_active_meeting_id') || localStorage.getItem('jts_last_meeting_id') || ''
             if (activeMeetingId) {
                 const localId = getLocalUserId()
-                socket.emit(SocketEvents.SCREEN_START, { 
+                socket.emit(SocketEvents.SCREEN_START, {
                     meetingId: activeMeetingId,
                     userId: localId || socket.id
                 })
@@ -802,9 +829,56 @@ export function useWebRTC(
             return
         }
 
+        const isCurrentMeeting = (incomingMeetingId?: string) => {
+            const activeId = activeMeetingIdRef.current || sessionStorage.getItem('jts_active_meeting_id') || ''
+            if (!incomingMeetingId || !activeId) return true
+            return incomingMeetingId === activeId
+        }
+
+        const tryUpgradeToSfu = async (targetMeetingId: string, totalUsers: number) => {
+            if (!targetMeetingId || totalUsers < 15) return
+            if (sfuService.isConnected() || sfuAttemptedRef.current === targetMeetingId) return
+            sfuAttemptedRef.current = targetMeetingId
+
+            const displayName = localStorage.getItem('jts_guest_name') || localStorage.getItem('jts_user_name') || undefined
+            const upgraded = await sfuService.connect(targetMeetingId, localStreamRef.current, displayName, {
+                onRemoteStream: (userId, stream) => {
+                    setRemoteStreams(prev => ({
+                        ...prev,
+                        [userId]: stream,
+                        [userId.toLowerCase()]: stream
+                    }))
+                },
+                onRemoveStream: (userId) => {
+                    setRemoteStreams(prev => {
+                        const next = { ...prev }
+                        delete next[userId]
+                        delete next[userId.toLowerCase()]
+                        return next
+                    })
+                },
+                onDisconnected: () => {
+                    setTransportMode('mesh')
+                    sfuAttemptedRef.current = ''
+                }
+            })
+
+            if (upgraded) {
+                console.log(`[Hybrid WebRTC] Upgraded meeting ${targetMeetingId} (${totalUsers} users) from P2P Mesh to LiveKit SFU`)
+                setTransportMode('sfu')
+                Object.keys(peerConnectionsRef.current).forEach(uId => cleanupPeer(uId))
+            }
+        }
+
         const handleUserJoined = async (payload: { userId: string; meetingId: string }) => {
+            if (!isCurrentMeeting(payload?.meetingId)) return
             const localId = getLocalUserId()
             if (!payload.userId || payload.userId === socket.id || (localId && payload.userId === localId) || payload.userId === 'me') {
+                return
+            }
+
+            if (sfuService.isConnected()) {
+                addParticipant(payload.userId)
                 return
             }
 
@@ -823,7 +897,7 @@ export function useWebRTC(
             // regardless of whether iceConnectionState has timed out yet.
             const existingPc = peerConnectionsRef.current[payload.userId]
             if (existingPc) {
-                try { existingPc.close() } catch (e) {}
+                try { existingPc.close() } catch (e) { }
                 delete peerConnectionsRef.current[payload.userId]
             }
 
@@ -879,7 +953,7 @@ export function useWebRTC(
                                 }
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) { }
 
                     const vTrack = localStreamRef.current?.getVideoTracks()[0]
                     const aTrack = localStreamRef.current?.getAudioTracks()[0]
@@ -904,6 +978,7 @@ export function useWebRTC(
         }
 
         const handleOffer = async (payload: { fromUserId: string; meetingId: string; offer: RTCSessionDescriptionInit }) => {
+            if (!isCurrentMeeting(payload?.meetingId)) return
             const localId = getLocalUserId()
             if (!payload.fromUserId || payload.fromUserId === socket.id || (localId && payload.fromUserId === localId) || payload.fromUserId === 'me') {
                 return
@@ -926,7 +1001,7 @@ export function useWebRTC(
 
             if (!isExistingActive) {
                 if (pc) {
-                    try { pc.close() } catch (e) {}
+                    try { pc.close() } catch (e) { }
                 }
 
                 pc = createPeerConnection(
@@ -1007,7 +1082,7 @@ export function useWebRTC(
                             }
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
 
                 const vTrack = localStreamRef.current?.getVideoTracks()[0]
                 const aTrack = localStreamRef.current?.getAudioTracks()[0]
@@ -1043,6 +1118,7 @@ export function useWebRTC(
         }
 
         const handleAnswer = async (payload: { fromUserId: string; meetingId: string; answer: RTCSessionDescriptionInit }) => {
+            if (!isCurrentMeeting(payload?.meetingId)) return
             const actualPeerId = Object.keys(peerConnectionsRef.current).find(id => id.toLowerCase() === payload.fromUserId?.toLowerCase()) || payload.fromUserId
             const pc = peerConnectionsRef.current[actualPeerId]
             if (!pc) {
@@ -1061,6 +1137,7 @@ export function useWebRTC(
         }
 
         const handleIceCandidate = async (payload: { fromUserId: string; meetingId: string; candidate: RTCIceCandidateInit }) => {
+            if (!isCurrentMeeting(payload?.meetingId)) return
             if (!payload?.candidate || !payload.candidate.candidate) return
             const actualPeerId = Object.keys(peerConnectionsRef.current).find(id => id.toLowerCase() === payload.fromUserId?.toLowerCase()) || payload.fromUserId
             const pc = peerConnectionsRef.current[actualPeerId]
@@ -1081,10 +1158,12 @@ export function useWebRTC(
         }
 
         const handleUserLeft = (payload: { userId: string; meetingId?: string }) => {
+            if (!isCurrentMeeting(payload?.meetingId)) return
             if (!payload?.userId) return
             const targetId = String(payload.userId).trim()
             removeParticipant(targetId)
             cleanupPeer(targetId)
+            rebalanceMeshBitrate()
             setScreenSharingUserIds(prev => {
                 const remaining = prev.filter(id => id.trim().toLowerCase() !== targetId.toLowerCase())
                 setScreenSharingUserId(curr => (curr && curr.trim().toLowerCase() === targetId.toLowerCase() ? (remaining.length > 0 ? remaining[remaining.length - 1] : null) : curr))
@@ -1093,6 +1172,7 @@ export function useWebRTC(
         }
 
         const handleScreenStart = (payload: { userId: string; meetingId: string; }) => {
+            if (!isCurrentMeeting(payload?.meetingId)) return
             const localId = getLocalUserId()
             if (!payload?.userId || payload.userId === socket.id || (localId && payload.userId === localId) || payload.userId === 'me') {
                 return
@@ -1143,8 +1223,8 @@ export function useWebRTC(
                     pc.getReceivers().forEach(receiver => {
                         if (receiver.track && receiver.track.kind === 'video' && typeof (receiver as any).requestKeyFrame === 'function') {
                             try {
-                                (receiver as any).requestKeyFrame().catch(() => {})
-                            } catch (_) {}
+                                (receiver as any).requestKeyFrame().catch(() => { })
+                            } catch (_) { }
                         }
                     })
                 }
@@ -1164,20 +1244,21 @@ export function useWebRTC(
             setTimeout(() => {
                 document.querySelectorAll('video, audio').forEach((el: any) => {
                     if (el && typeof el.play === 'function' && el.paused && !el.muted) {
-                        el.play().catch(() => {})
+                        el.play().catch(() => { })
                     }
                 })
             }, 100)
             setTimeout(() => {
                 document.querySelectorAll('video').forEach((el: any) => {
                     if (el && typeof el.play === 'function' && el.paused) {
-                        el.play().catch(() => {})
+                        el.play().catch(() => { })
                     }
                 })
             }, 600)
         }
 
         const handleScreenStop = (payload: { userId: string; meetingId: string; }) => {
+            if (!isCurrentMeeting(payload?.meetingId)) return
             const localId = getLocalUserId()
             const targetId = String(payload?.userId || '')
             if (!targetId || targetId === socket.id || (localId && targetId === localId) || targetId === 'me') {
@@ -1205,8 +1286,8 @@ export function useWebRTC(
                 pc.getReceivers().forEach(receiver => {
                     if (receiver.track && receiver.track.kind === 'video' && typeof (receiver as any).requestKeyFrame === 'function') {
                         try {
-                            (receiver as any).requestKeyFrame().catch(() => {})
-                        } catch (_) {}
+                            (receiver as any).requestKeyFrame().catch(() => { })
+                        } catch (_) { }
                     }
                 })
             }
@@ -1214,13 +1295,14 @@ export function useWebRTC(
             setTimeout(() => {
                 document.querySelectorAll('video, audio').forEach((el: any) => {
                     if (el && typeof el.play === 'function' && el.paused && !el.muted) {
-                        el.play().catch(() => {})
+                        el.play().catch(() => { })
                     }
                 })
             }, 100)
         }
 
         const handleScreenChanged = (payload: { userId: string; meetingId: string; active: boolean }) => {
+            if (!isCurrentMeeting(payload?.meetingId)) return
             const localId = getLocalUserId()
             const targetId = String(payload?.userId || '')
             if (!targetId || targetId === socket.id || (localId && targetId === localId) || targetId === 'me') {
@@ -1251,26 +1333,27 @@ export function useWebRTC(
                 pc.getReceivers().forEach(receiver => {
                     if (receiver.track && receiver.track.kind === 'video' && typeof (receiver as any).requestKeyFrame === 'function') {
                         try {
-                            (receiver as any).requestKeyFrame().catch(() => {})
-                        } catch (_) {}
+                            (receiver as any).requestKeyFrame().catch(() => { })
+                        } catch (_) { }
                     }
                 })
             }
         }
 
         const handleRosterSync = (payload: { meetingId: string; participants: number; peers?: Array<{ userId: string; displayName?: string; isVideoOff?: boolean; isMuted?: boolean; isScreenSharing?: boolean }> }) => {
+            if (!isCurrentMeeting(payload?.meetingId)) return
             if (Array.isArray(payload?.peers)) {
                 const localId = getLocalUserId()
                 const currentPeerSet = new Set(payload.peers.map(p => p.userId.trim().toLowerCase()))
                 const validPeerIds: string[] = []
 
-                payload.peers.forEach((peer) => {
+                payload.peers.forEach((peer, peerIdx) => {
                     if (peer.userId && peer.userId !== socket.id && (!localId || peer.userId.trim().toLowerCase() !== localId.trim().toLowerCase()) && peer.userId !== 'me') {
                         validPeerIds.push(peer.userId)
                         if (peer.displayName && peer.displayName.trim()) {
                             try {
                                 sessionStorage.setItem(`jts_peer_name_${peer.userId.trim().toLowerCase()}`, peer.displayName.trim())
-                            } catch {}
+                            } catch { }
                         }
                         addParticipant(peer.userId)
                         if (peer.isScreenSharing) {
@@ -1278,17 +1361,23 @@ export function useWebRTC(
                             setScreenSharingUserId(peer.userId)
                         }
 
-                        // Reconnect / refresh failsafe: If remote peer has not connected with us within 1800ms,
-                        // initiate an offer from this side to guarantee connection
+                        // Reconnect / refresh failsafe: Stagger offers in large rooms (15+ peers)
+                        // to prevent CPU/signaling bursts when joining 40-100 user meetings.
+                        const staggerMs = 1800 + Math.min(peerIdx * 45, 3000)
                         setTimeout(() => {
+                            if (sfuService.isConnected()) return
                             const hasConnection = Object.keys(peerConnectionsRef.current).some(id => id.trim().toLowerCase() === peer.userId.trim().toLowerCase())
                             if (!hasConnection && socket.connected) {
                                 console.log(`[WebRTC] Initiating offer for existing roster peer ${peer.userId}...`)
                                 handleUserJoined({ userId: peer.userId, meetingId: payload.meetingId })
                             }
-                        }, 1800)
+                        }, staggerMs)
                     }
                 })
+                rebalanceMeshBitrate()
+                if (payload.peers.length + 1 >= 15) {
+                    tryUpgradeToSfu(payload.meetingId, payload.peers.length + 1)
+                }
 
                 // Strictly sync UI roster to valid peers verified by the server
                 if (setParticipantsList) {
@@ -1311,6 +1400,7 @@ export function useWebRTC(
         }
 
         const handleUserReconnected = (payload: { userId: string; meetingId: string }) => {
+            if (!isCurrentMeeting(payload?.meetingId)) return
             console.log(`[WebRTC] Remote peer ${payload.userId} reconnected! Re-establishing fresh peer connection...`)
             handleUserJoined({ userId: payload.userId, meetingId: payload.meetingId })
         }
@@ -1322,7 +1412,6 @@ export function useWebRTC(
         socket.on(SocketEvents.WEBRTC_ICE_CANDIDATE, handleIceCandidate)
         socket.on(SocketEvents.WEBRTC_USER_LEFT, handleUserLeft)
         socket.on(SocketEvents.MEETING_LEAVE, handleUserLeft)
-        socket.on('meeting:leave', handleUserLeft)
         socket.on('meeting:user-left', handleUserLeft)
         socket.on('webrtc:user-reconnecting', handleUserReconnecting)
         socket.on('webrtc:user-reconnected', handleUserReconnected)
@@ -1338,7 +1427,6 @@ export function useWebRTC(
             socket.off(SocketEvents.WEBRTC_ICE_CANDIDATE, handleIceCandidate)
             socket.off(SocketEvents.WEBRTC_USER_LEFT, handleUserLeft)
             socket.off(SocketEvents.MEETING_LEAVE, handleUserLeft)
-            socket.off('meeting:leave', handleUserLeft)
             socket.off('meeting:user-left', handleUserLeft)
             socket.off('webrtc:user-reconnecting', handleUserReconnecting)
             socket.off('webrtc:user-reconnected', handleUserReconnected)
@@ -1412,7 +1500,8 @@ export function useWebRTC(
             networkStatus,
             isReconnecting,
             retryConnection,
-            peerIceStates
+            peerIceStates,
+            transportMode
         }),
         [
             remoteStreams,
@@ -1429,7 +1518,8 @@ export function useWebRTC(
             networkStatus,
             isReconnecting,
             retryConnection,
-            peerIceStates
+            peerIceStates,
+            transportMode
         ]
     )
 }

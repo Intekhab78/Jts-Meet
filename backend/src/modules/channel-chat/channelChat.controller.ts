@@ -71,7 +71,6 @@ export class ChannelChatController {
         const io = getIO()
         if (io) {
             io.to(channelId).to(`channel:${channelId}`).emit('channel:message:receive', message)
-            io.emit('channel:message:receive', message)
         }
 
         return sendSuccess(res, message, 'Message created')
@@ -99,7 +98,7 @@ export class ChannelChatController {
         const { channelId, messageId } = req.params as { channelId: string; messageId: string }
 
         await ChannelService.ensureMember(channelId, req.userId as string)
-        await ChannelChatService.deleteMessage(messageId, req.userId as string)
+        await ChannelChatService.deleteMessage(messageId, req.userId as string, channelId)
 
         const io = getIO()
         if (io) {
@@ -113,7 +112,7 @@ export class ChannelChatController {
         const { channelId, messageId } = req.params as { channelId: string; messageId: string }
 
         await ChannelService.ensureMember(channelId, req.userId as string)
-        const message = await ChannelChatService.undoDeleteMessage(messageId, req.userId as string)
+        const message = await ChannelChatService.undoDeleteMessage(messageId, req.userId as string, channelId)
 
         const io = getIO()
         if (io) {
@@ -132,7 +131,7 @@ export class ChannelChatController {
         }
 
         await ChannelService.ensureMember(channelId, req.userId as string)
-        const updated = await ChannelChatService.addReactionToMessage(messageId, req.userId as string, emoji)
+        const updated = await ChannelChatService.addReactionToMessage(messageId, req.userId as string, emoji, channelId)
         if (!updated) {
             return sendError(res, 404, 'Message not found')
         }
@@ -149,7 +148,7 @@ export class ChannelChatController {
         const { channelId, messageId } = req.params as { channelId: string; messageId: string }
 
         await ChannelService.ensureMember(channelId, req.userId as string)
-        const updated = await ChannelChatService.togglePinMessage(messageId, req.userId as string)
+        const updated = await ChannelChatService.togglePinMessage(messageId, req.userId as string, channelId)
 
         const io = getIO()
         if (io) {

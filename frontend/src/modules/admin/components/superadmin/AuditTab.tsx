@@ -189,6 +189,31 @@ export const AuditTab: React.FC<AuditTabProps> = ({
                     </table>
                 </div>
             </div>
+
+            {auditTotal > 40 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--color-border)', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                    <span>Showing {auditLogs.length} of {auditTotal} events</span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                            type="button"
+                            onClick={() => setAuditPage((p) => Math.max(1, p - 1))}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem', padding: '4px 12px' }}
+                        >
+                            ← Previous
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setAuditPage((p) => p + 1)}
+                            disabled={auditLogs.length < 40}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem', padding: '4px 12px' }}
+                        >
+                            Next →
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

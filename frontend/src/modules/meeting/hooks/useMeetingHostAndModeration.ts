@@ -27,6 +27,7 @@ export interface UseMeetingHostAndModerationProps {
     backstageUserIds: string[]
     setBackstageUserIds: React.Dispatch<React.SetStateAction<string[]>>
     currentPlanTier: string
+    canAccessWhiteboard?: boolean
     canManageRef: React.MutableRefObject<boolean>
     token?: string
     isLocked: boolean
@@ -66,6 +67,7 @@ export function useMeetingHostAndModeration({
     backstageUserIds,
     setBackstageUserIds,
     currentPlanTier,
+    canAccessWhiteboard = true,
     canManageRef,
     token,
     isLocked,
@@ -110,6 +112,7 @@ export function useMeetingHostAndModeration({
         showWhiteboard,
         backstageUserIds,
         currentPlanTier,
+        canAccessWhiteboard,
         canManageRef
     })
 

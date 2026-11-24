@@ -1,4 +1,3 @@
-import { jsPDF } from 'jspdf'
 import type { StrokeData } from '../whiteboard.types'
 import { drawStroke } from './whiteboard.drawing'
 
@@ -26,7 +25,7 @@ export function exportWhiteboardPNG(
     }
 }
 
-export function exportWhiteboardPDF(
+export async function exportWhiteboardPDF(
     canvas: HTMLCanvasElement | null,
     meetingId: string,
     pages: StrokeData[][],
@@ -34,6 +33,7 @@ export function exportWhiteboardPDF(
     currentStrokes: StrokeData[]
 ) {
     if (!canvas) return
+    const { jsPDF } = await import('jspdf')
 
     const allPages = [...pages]
     allPages[currentPageIndex] = [...currentStrokes]

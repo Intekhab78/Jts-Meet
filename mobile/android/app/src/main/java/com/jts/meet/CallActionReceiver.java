@@ -25,6 +25,8 @@ public class CallActionReceiver extends BroadcastReceiver {
         if ("com.jts.meet.ACTION_DECLINE_CALL".equals(action)) {
             final String meetingId = intent.getStringExtra("meetingId");
             final String callerId = intent.getStringExtra("callerId");
+            final String recipientId = intent.getStringExtra("recipientId");
+            final String rejectToken = intent.getStringExtra("rejectToken");
 
             // 1. Immediately silence ringtone and cancel notification
             CallNotificationService.stopRinging();
@@ -38,27 +40,33 @@ public class CallActionReceiver extends BroadcastReceiver {
             // 2. Clear pending call in MainActivity so reopening app won't show call
             MainActivity.notifyCallDeclined(meetingId, callerId);
 
-            // 3. Notify backend server via HTTP POST so caller (web/mobile) stops ringing immediately
+            // 3. Notify backend server via HTTP POST (keep receiver alive with goAsync)
             if (meetingId != null && !meetingId.isEmpty()) {
+                final PendingResult pendingResult = goAsync();
                 new Thread(() -> {
                     HttpURLConnection conn = null;
                     try {
                         URL url = new URL(API_ENDPOINT);
                         conn = (HttpURLConnection) url.openConnection();
                         conn.setRequestMethod("POST");
-                        conn.setRequestProperty("Content-Type", "application/json; utf-8");
+                        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
                         conn.setDoOutput(true);
                         conn.setConnectTimeout(4000);
                         conn.setReadTimeout(4000);
 
-                        String jsonInput = String.format(
-                            "{\"meetingId\":\"%s\",\"callerId\":\"%s\",\"reason\":\"declined_from_notification\"}",
-                            meetingId,
-                            callerId != null ? callerId : ""
-                        );
+                        org.json.JSONObject jsonObj = new org.json.JSONObject();
+                        jsonObj.put("meetingId", meetingId);
+                        jsonObj.put("callerId", callerId != null ? callerId : "");
+                        if (recipientId != null && !recipientId.isEmpty()) {
+                            jsonObj.put("recipientId", recipientId);
+                        }
+                        if (rejectToken != null && !rejectToken.isEmpty()) {
+                            jsonObj.put("rejectToken", rejectToken);
+                        }
+                        jsonObj.put("reason", "declined_from_notification");
 
                         try (OutputStream os = conn.getOutputStream()) {
-                            byte[] input = jsonInput.getBytes("utf-8");
+                            byte[] input = jsonObj.toString().getBytes("utf-8");
                             os.write(input, 0, input.length);
                         }
 
@@ -69,15 +77,16 @@ public class CallActionReceiver extends BroadcastReceiver {
                         if (conn != null) {
                             conn.disconnect();
                         }
+                        if (pendingResult != null) {
+                            try { pendingResult.finish(); } catch (Exception ignored) {}
+                        }
                     }
                 }).start();
             }
         } else if ("com.jts.meet.ACTION_END_CALL".equals(action)) {
             final String meetingId = intent.getStringExtra("meetingId");
             try {
-                Intent stopService = new Intent(context, OngoingCallService.class);
-                stopService.setAction(OngoingCallService.ACTION_STOP);
-                context.startService(stopService);
+                context.stopService(new Intent(context, OngoingCallService.class));
             } catch (Exception ignored) {}
 
             MainActivity.notifyNativeHangup(meetingId);

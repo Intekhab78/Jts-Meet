@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useId, useMemo, useState } from 'react'
 import { useFileUpload } from '../useFileUpload'
 import type { FileContextType } from '../file.types'
 import { FilePreview } from './FilePreview'
@@ -33,6 +33,7 @@ export function FileUploader({
     allowMultiple = true,
     onUploadComplete,
 }: FileUploaderProps) {
+    const inputId = useId()
     const {
         selectedFiles,
         previewFiles,
@@ -88,7 +89,7 @@ export function FileUploader({
                     style={{ position: 'relative' }}
                 >
                     <label
-                        htmlFor="jts-file-input"
+                        htmlFor={inputId}
                         style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}
                     >
                         <div style={{ color: dragOver ? 'var(--color-accent)' : 'var(--color-text-muted)', transition: 'color 200ms' }}>
@@ -111,7 +112,7 @@ export function FileUploader({
                             </p>
                         </div>
                         <input
-                            id="jts-file-input"
+                            id={inputId}
                             type="file"
                             multiple={allowMultiple}
                             onChange={handleInputChange}

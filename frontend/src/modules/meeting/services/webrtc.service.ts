@@ -109,11 +109,23 @@ export function optimizePeerConnectionForHd(pc: RTCPeerConnection, peerCount: nu
                 // 1-2 participants: 3.5 Mbps (Crisp 1080p60)
                 // 3-4 participants: 1.0 Mbps (720p30)
                 // 5-6 participants: 500 kbps (balanced CPU)
-                // 7+ participants: 250 kbps (ultra-lightweight grid)
+                // 7-14 participants: 250 kbps (lightweight grid)
+                // 15-29 participants: 140 kbps @ 15fps (large room protection)
+                // 30+ participants: 90 kbps @ 10fps (massive room protection)
                 let maxBitrate = 3_500_000
                 let maxFramerate = 60
                 let scaleDown = 1.0
-                if (peerCount >= 7) {
+                if (peerCount >= 30) {
+                    maxBitrate = 90_000
+                    maxFramerate = 10
+                    scaleDown = 4.0
+                    ;(params as any).degradationPreference = 'maintain-framerate'
+                } else if (peerCount >= 15) {
+                    maxBitrate = 140_000
+                    maxFramerate = 15
+                    scaleDown = 3.0
+                    ;(params as any).degradationPreference = 'maintain-framerate'
+                } else if (peerCount >= 7) {
                     maxBitrate = 250_000
                     maxFramerate = 20
                     scaleDown = 2.0

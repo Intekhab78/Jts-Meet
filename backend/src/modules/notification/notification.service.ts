@@ -1,5 +1,7 @@
+import crypto from 'crypto'
 import webpush from 'web-push'
 import { Types } from 'mongoose'
+import { JWT_SECRET } from '../../config'
 import { Notification, INotification } from './notification.model'
 import { PushSubscription } from '../../models/pushSubscription.model'
 import { FcmDevice } from '../../models/fcmDevice.model'
@@ -20,6 +22,21 @@ export interface NotificationPayload {
 }
 
 // ─── Web Push & VAPID Initialization ─────────────────────────────────────────
+export function generateCallRejectToken(meetingId: string, recipientId: string): string {
+    return crypto
+        .createHmac('sha256', JWT_SECRET)
+        .update(`${meetingId}:${recipientId}`)
+        .digest('hex')
+}
+
+export function verifyCallRejectToken(meetingId: string, recipientId: string, token: string): boolean {
+    if (!meetingId || !recipientId || !token) return false
+    const expected = generateCallRejectToken(meetingId, recipientId)
+    const providedBuf = Buffer.from(token)
+    const expectedBuf = Buffer.from(expected)
+    return providedBuf.length === expectedBuf.length && crypto.timingSafeEqual(providedBuf, expectedBuf)
+}
+
 let vapidPublicKey = process.env.VAPID_PUBLIC_KEY || ''
 let vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || ''
 const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:support@jtsmiddleeast.com'
@@ -103,9 +120,13 @@ export class NotificationService {
         ).exec()
     }
 
-    static async removeFcmDevice(fcmToken: string) {
-        if (!fcmToken) return
-        return FcmDevice.deleteOne({ fcmToken }).exec()
+    static async removeFcmDevice(userId: string, fcmToken?: string) {
+        if (!userId || !Types.ObjectId.isValid(userId)) return
+        const filter: Record<string, any> = { userId: new Types.ObjectId(userId) }
+        if (fcmToken && typeof fcmToken === 'string' && fcmToken.trim()) {
+            filter.fcmToken = fcmToken.trim()
+        }
+        return FcmDevice.deleteMany(filter).exec()
     }
 
     /**
@@ -160,6 +181,8 @@ export class NotificationService {
                 fcmDevices ? fcmDevices.map((d) => d.fcmToken).filter(Boolean) : []
             ))
 
+            const callRejectToken = generateCallRejectToken(String(callData.meetingId), String(targetUserId))
+
             if (targetTokens.length > 0) {
                 const messaging = getFirebaseMessaging()
                 if (messaging) {
@@ -182,6 +205,8 @@ export class NotificationService {
                                 callerAvatar: safeCallerAvatar,
                                 callType: String(callData.callType || 'video'),
                                 callerId: String(callData.callerId || ''),
+                                recipientId: String(targetUserId),
+                                rejectToken: callRejectToken,
                                 sentAt: String(Date.now()), // Server NTP timestamp prevents client clock skew drops
                                 title: callTitle,
                                 body: callBody.slice(0, 200),
@@ -257,6 +282,8 @@ export class NotificationService {
                         callerName: callData.callerName,
                         callerAvatar: safePushAvatar,
                         callerId: callData.callerId,
+                        recipientId: String(targetUserId),
+                        rejectToken: callRejectToken,
                         callType: callData.callType || 'video',
                         url: callDirectUrl
                     }

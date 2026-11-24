@@ -66,8 +66,7 @@ const corsMiddleware = cors({
             origin.startsWith('electron://') ||
             origin.startsWith('capacitor://') ||
             origin === 'https://localhost' ||
-            origin === 'http://localhost' ||
-            origin === 'null'
+            origin === 'http://localhost'
         ) {
             return callback(null, true)
         }
@@ -98,13 +97,12 @@ const corsMiddleware = cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 })
 
-// Public Inbound Webhook / Integration Gateway - Open CORS for any external website or client
+// Public Inbound Webhook / Integration Gateway - Open CORS for any external website or client (no credentials with wildcard)
 app.use((req: Request, res: Response, next: any) => {
     if (req.path.startsWith('/api/integrations/webhook')) {
-        res.header('Access-Control-Allow-Origin', req.headers.origin || '*')
+        res.header('Access-Control-Allow-Origin', '*')
         res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, x-jts-signature, x-jts-timestamp, x-jts-event')
-        res.header('Access-Control-Allow-Credentials', 'true')
         if (req.method === 'OPTIONS') {
             return res.sendStatus(204)
         }
@@ -156,7 +154,9 @@ app.get('/meet/:id', handleMeetingRedirect)
 app.get('/meeting/:id', handleMeetingRedirect)
 app.get('/join/:id', handleMeetingRedirect)
 
-// Unrestricted access for all meeting, chat, auth, and workspace routes (No limits / Unlimited 24/7)
+// Baseline API rate limiter (high ceiling to avoid interrupting active enterprise users)
+app.use('/api', rateLimiter(15 * 60 * 1000, 1500, 'api'))
+
 app.use('/api/auth', authRoutes)
 app.use('/api/chat', chatRoutes)
 app.use('/api/meeting', meetingRoutes)

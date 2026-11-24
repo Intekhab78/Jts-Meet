@@ -23,12 +23,35 @@ export function UserStatusSelectorPopover({
     socket
 }: UserStatusSelectorPopoverProps) {
     const [isOpen, setIsOpen] = useState(false)
-    const [status, setStatus] = useState<PresenceStatus>((currentStatus as PresenceStatus) || 'online')
-    const [customStatus, setCustomStatus] = useState(currentCustomStatus)
+    const [status, setStatus] = useState<PresenceStatus>(() => {
+        const saved = typeof window !== 'undefined' ? localStorage.getItem('jts_user_status') : null
+        if (saved === 'available') return 'online'
+        if (saved && ['online', 'busy', 'away', 'dnd', 'in_meeting', 'offline'].includes(saved)) {
+            return saved as PresenceStatus
+        }
+        return (currentStatus as PresenceStatus) || 'online'
+    })
+    const [customStatus, setCustomStatus] = useState(() => {
+        if (currentCustomStatus) return currentCustomStatus
+        return (typeof window !== 'undefined' ? localStorage.getItem('jts_status_message') : '') || ''
+    })
     const [editingCustomStatus, setEditingCustomStatus] = useState(false)
-    const [customStatusInput, setCustomStatusInput] = useState(currentCustomStatus)
+    const [customStatusInput, setCustomStatusInput] = useState(customStatus)
     const [isSaving, setIsSaving] = useState(false)
     const popoverRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        const onSynced = (e: Event) => {
+            const detail = (e as CustomEvent).detail
+            if (detail?.status) setStatus(detail.status as PresenceStatus)
+            if (detail?.customStatus !== undefined) {
+                setCustomStatus(detail.customStatus)
+                setCustomStatusInput(detail.customStatus)
+            }
+        }
+        window.addEventListener('jts:status-updated', onSynced)
+        return () => window.removeEventListener('jts:status-updated', onSynced)
+    }, [])
 
     useEffect(() => {
         if (currentStatus) setStatus(currentStatus as PresenceStatus)
@@ -71,6 +94,7 @@ export function UserStatusSelectorPopover({
                 },
                 body: JSON.stringify({ status: newStatus, customStatus })
             })
+            localStorage.setItem('jts_user_status', newStatus === 'online' ? 'available' : newStatus)
             onStatusUpdated?.(newStatus, customStatus)
         } catch (err) {
             console.warn('[Presence] Failed to update status:', err)

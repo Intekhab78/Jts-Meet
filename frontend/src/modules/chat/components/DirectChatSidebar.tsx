@@ -124,7 +124,18 @@ export function DirectChatSidebar({
                             {chat.latestMessage.isDeleted ? (
                                 <span style={{ fontStyle: 'italic', color: '#94a3b8' }}>This message was deleted</span>
                             ) : (
-                                <>{isLastSentByMe ? 'You: ' : ''}{chat.latestMessage.message.replace(/\[File:\s*(.*?)\s*\|.*?\]/, '📎 $1')}</>
+                                <>{isLastSentByMe ? 'You: ' : ''}{(() => {
+                                    const raw = chat.latestMessage.message || ''
+                                    if (raw.startsWith('[Video Clip]')) return '🎥 Video Clip'
+                                    const fileMatch = raw.match(/\[File:\s*(.*?)\s*\|.*?\]/)
+                                    if (fileMatch) {
+                                        const ext = fileMatch[1].split('.').pop()?.toLowerCase() || ''
+                                        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return '📷 Photo'
+                                        if (['mp3', 'wav', 'ogg', 'm4a', 'webm'].includes(ext) && !fileMatch[1].toLowerCase().includes('clip')) return '🎙️ Voice Note'
+                                        return `📎 ${fileMatch[1]}`
+                                    }
+                                    return raw
+                                })()}</>
                             )}
                         </span>
                         {isLastSentByMe && (

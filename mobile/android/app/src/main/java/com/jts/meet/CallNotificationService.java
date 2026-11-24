@@ -11,6 +11,8 @@ import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -34,11 +36,14 @@ public class CallNotificationService extends FirebaseMessagingService {
 
     private static Ringtone activeRingtone = null;
     private static Vibrator activeVibrator = null;
+    private static final Handler ringTimeoutHandler = new Handler(Looper.getMainLooper());
+    private static final Runnable stopRingingRunnable = CallNotificationService::stopRinging;
 
     /**
      * Instantly stops native ringtone and vibration when call is answered, declined, or cancelled.
      */
     public static synchronized void stopRinging() {
+        ringTimeoutHandler.removeCallbacks(stopRingingRunnable);
         try {
             if (activeRingtone != null && activeRingtone.isPlaying()) {
                 activeRingtone.stop();
@@ -67,7 +72,7 @@ public class CallNotificationService extends FirebaseMessagingService {
             return;
         }
 
-        // Silent Call Cancel / Timeout Push: Dismiss notification and stop ringing
+        // Silent Call Cancel / Timeout Push: Dismiss notification, stop ringing, and clear MainActivity state
         if ("call_cancelled".equals(type) || "call_ended".equals(type)) {
             stopRinging();
             try {
@@ -76,6 +81,7 @@ public class CallNotificationService extends FirebaseMessagingService {
                     nm.cancel(CALL_NOTIFICATION_ID);
                 }
             } catch (Exception ignored) {}
+            MainActivity.notifyCallCancelled(data.get("meetingId"));
             return;
         }
 
@@ -93,6 +99,8 @@ public class CallNotificationService extends FirebaseMessagingService {
         String callerAvatar = data.get("callerAvatar");
         String callType = data.get("callType");
         String callerId = data.get("callerId");
+        String recipientId = data.get("recipientId");
+        String rejectToken = data.get("rejectToken");
         boolean isAudio = "audio".equalsIgnoreCase(callType);
 
         // Discard stale/queued calls:
@@ -167,7 +175,7 @@ public class CallNotificationService extends FirebaseMessagingService {
             e.printStackTrace();
         }
 
-        // 3. Start continuous phone vibration
+        // 3. Start continuous phone vibration + enforce 60s max ringing timeout
         try {
             activeVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
             if (activeVibrator != null) {
@@ -179,6 +187,9 @@ public class CallNotificationService extends FirebaseMessagingService {
                 }
             }
         } catch (Exception ignored) {}
+        ringTimeoutHandler.postDelayed(stopRingingRunnable, 60000);
+
+        long effectiveTimestamp = callTimestamp > 0 ? callTimestamp : System.currentTimeMillis();
 
         // 4. Prepare Full-Screen Intent for MainActivity
         Intent fullScreenIntent = new Intent(this, MainActivity.class);
@@ -194,7 +205,9 @@ public class CallNotificationService extends FirebaseMessagingService {
         fullScreenIntent.putExtra("callerAvatar", callerAvatar);
         fullScreenIntent.putExtra("callType", callType);
         fullScreenIntent.putExtra("callerId", callerId);
-        fullScreenIntent.putExtra("callTimestamp", System.currentTimeMillis());
+        fullScreenIntent.putExtra("recipientId", recipientId);
+        fullScreenIntent.putExtra("rejectToken", rejectToken);
+        fullScreenIntent.putExtra("callTimestamp", effectiveTimestamp);
 
         // 5. Try direct startActivity to immediately display UI over lock screen
         try {
@@ -225,6 +238,9 @@ public class CallNotificationService extends FirebaseMessagingService {
         acceptIntent.putExtra("callerAvatar", callerAvatar);
         acceptIntent.putExtra("callType", callType);
         acceptIntent.putExtra("callerId", callerId);
+        acceptIntent.putExtra("recipientId", recipientId);
+        acceptIntent.putExtra("rejectToken", rejectToken);
+        acceptIntent.putExtra("callTimestamp", effectiveTimestamp);
         PendingIntent acceptPendingIntent = PendingIntent.getActivity(
             this,
             (int) System.currentTimeMillis() + 1,
@@ -237,6 +253,8 @@ public class CallNotificationService extends FirebaseMessagingService {
         declineIntent.setAction("com.jts.meet.ACTION_DECLINE_CALL");
         declineIntent.putExtra("meetingId", meetingId);
         declineIntent.putExtra("callerId", callerId);
+        declineIntent.putExtra("recipientId", recipientId);
+        declineIntent.putExtra("rejectToken", rejectToken);
         PendingIntent declinePendingIntent = PendingIntent.getBroadcast(
             this,
             (int) System.currentTimeMillis() + 2,
@@ -280,7 +298,7 @@ public class CallNotificationService extends FirebaseMessagingService {
         String callTitle = isAudio ? "📞 Incoming Audio Call" : "📹 Incoming Video Call";
         String callBody = callerName + " is calling you on JTS Meet...";
 
-        // 7. Build Notification with setFullScreenIntent(..., true) and action buttons
+        // 7. Build Notification with setFullScreenIntent(..., true) and action buttons (silent to avoid double ringtone with activeRingtone)
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_CALLS_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(callTitle)
@@ -288,8 +306,7 @@ public class CallNotificationService extends FirebaseMessagingService {
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setSound(ringtoneUri)
-            .setVibrate(new long[]{0, 1000, 800, 1000, 800, 1000})
+            .setSilent(true)
             .setAutoCancel(true)
             .setOngoing(true)
             .setContentIntent(fullScreenPendingIntent)

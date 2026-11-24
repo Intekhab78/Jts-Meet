@@ -107,18 +107,19 @@ export const PlansTab: React.FC<PlansTabProps> = ({
                                 }}
                             >
                                 {/* Top Card Title & Badge */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                    <div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: '#fff' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                            <h3 style={{ fontSize: '1.08rem', fontWeight: 800, margin: 0, color: '#fff', whiteSpace: 'nowrap' }}>
                                                 {plan.name}
                                             </h3>
                                             {plan.badge && (
                                                 <span style={{
-                                                    fontSize: '0.68rem',
+                                                    fontSize: '0.64rem',
                                                     fontWeight: 700,
-                                                    padding: '2px 8px',
+                                                    padding: '2px 7px',
                                                     borderRadius: 9999,
+                                                    whiteSpace: 'nowrap',
                                                     background: isEnterprise ? 'rgba(99,102,241,0.2)' : 'rgba(59,130,246,0.15)',
                                                     color: isEnterprise ? '#a5b4fc' : '#60a5fa',
                                                     border: `1px solid ${isEnterprise ? 'rgba(99,102,241,0.4)' : 'rgba(59,130,246,0.3)'}`
@@ -208,42 +209,31 @@ export const PlansTab: React.FC<PlansTabProps> = ({
 
                                 {/* Feature Flags Chips */}
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                    <span style={{
-                                        fontSize: '0.68rem', padding: '3px 8px', borderRadius: 6,
-                                        background: plan.features?.aiSummary ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.04)',
-                                        color: plan.features?.aiSummary ? '#818cf8' : '#71717a',
-                                        display: 'inline-flex', alignItems: 'center', gap: 5
-                                    }}>
-                                        {plan.features?.aiSummary ? <IconCheck size={11} color="#818cf8" /> : <IconX size={10} color="#71717a" />}
-                                        <span>AI Summary</span>
-                                    </span>
-                                    <span style={{
-                                        fontSize: '0.68rem', padding: '3px 8px', borderRadius: 6,
-                                        background: plan.features?.cloudRecording ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.04)',
-                                        color: plan.features?.cloudRecording ? '#f87171' : '#71717a',
-                                        display: 'inline-flex', alignItems: 'center', gap: 5
-                                    }}>
-                                        {plan.features?.cloudRecording ? <IconCheck size={11} color="#f87171" /> : <IconX size={10} color="#71717a" />}
-                                        <span>Recording</span>
-                                    </span>
-                                    <span style={{
-                                        fontSize: '0.68rem', padding: '3px 8px', borderRadius: 6,
-                                        background: plan.features?.whiteboard ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.04)',
-                                        color: plan.features?.whiteboard ? '#4ade80' : '#71717a',
-                                        display: 'inline-flex', alignItems: 'center', gap: 5
-                                    }}>
-                                        {plan.features?.whiteboard ? <IconCheck size={11} color="#4ade80" /> : <IconX size={10} color="#71717a" />}
-                                        <span>Whiteboard</span>
-                                    </span>
-                                    <span style={{
-                                        fontSize: '0.68rem', padding: '3px 8px', borderRadius: 6,
-                                        background: plan.features?.ssoLogin ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.04)',
-                                        color: plan.features?.ssoLogin ? '#c084fc' : '#71717a',
-                                        display: 'inline-flex', alignItems: 'center', gap: 5
-                                    }}>
-                                        {plan.features?.ssoLogin ? <IconCheck size={11} color="#c084fc" /> : <IconX size={10} color="#71717a" />}
-                                        <span>SAML / SSO</span>
-                                    </span>
+                                    {[
+                                        { enabled: plan.features?.aiSummary, label: 'AI Summary', bg: 'rgba(99,102,241,0.2)', color: '#818cf8' },
+                                        { enabled: plan.features?.cloudRecording, label: 'Recording', bg: 'rgba(239,68,68,0.15)', color: '#f87171' },
+                                        { enabled: plan.features?.whiteboard, label: 'Whiteboard', bg: 'rgba(34,197,94,0.15)', color: '#4ade80' },
+                                        { enabled: plan.features?.ssoLogin, label: 'SAML / SSO', bg: 'rgba(168,85,247,0.2)', color: '#c084fc' },
+                                        { enabled: plan.features?.customBranding, label: 'Branding', bg: 'rgba(59,130,246,0.18)', color: '#60a5fa' },
+                                        { enabled: plan.features?.prioritySupport, label: '24/7 Support', bg: 'rgba(245,158,11,0.18)', color: '#fbbf24' }
+                                    ].map((chip) => (
+                                        <span
+                                            key={chip.label}
+                                            style={{
+                                                fontSize: '0.68rem',
+                                                padding: '3px 8px',
+                                                borderRadius: 6,
+                                                background: chip.enabled ? chip.bg : 'rgba(255,255,255,0.04)',
+                                                color: chip.enabled ? chip.color : '#71717a',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 5
+                                            }}
+                                        >
+                                            {chip.enabled ? <IconCheck size={11} color={chip.color} /> : <IconX size={10} color="#71717a" />}
+                                            <span>{chip.label}</span>
+                                        </span>
+                                    ))}
                                 </div>
 
                                 {/* Bullets */}

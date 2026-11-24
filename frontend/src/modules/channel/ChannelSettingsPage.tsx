@@ -118,6 +118,75 @@ export function ChannelSettingsPage({
     const [isHuddleMuted, setIsHuddleMuted] = useState(false)
     const [isHuddleCollapsed, setIsHuddleCollapsed] = useState(false)
     const [ambientAudioMode, setAmbientAudioMode] = useState<'off' | 'lofi' | 'rain'>('off')
+    const huddleStreamRef = useRef<MediaStream | null>(null)
+    const ambientAudioCtxRef = useRef<AudioContext | null>(null)
+
+    const stopHuddleAudio = () => {
+        if (huddleStreamRef.current) {
+            huddleStreamRef.current.getTracks().forEach(t => t.stop())
+            huddleStreamRef.current = null
+        }
+        if (ambientAudioCtxRef.current) {
+            ambientAudioCtxRef.current.close().catch(() => {})
+            ambientAudioCtxRef.current = null
+        }
+    }
+
+    useEffect(() => {
+        return () => stopHuddleAudio()
+    }, [])
+
+    useEffect(() => {
+        if (ambientAudioCtxRef.current) {
+            ambientAudioCtxRef.current.close().catch(() => {})
+            ambientAudioCtxRef.current = null
+        }
+        if (!isHuddleActive || ambientAudioMode === 'off') return
+        try {
+            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+            if (!AudioCtx) return
+            const ctx = new AudioCtx()
+            ambientAudioCtxRef.current = ctx
+            const masterGain = ctx.createGain()
+            masterGain.gain.value = 0.035
+            masterGain.connect(ctx.destination)
+
+            if (ambientAudioMode === 'lofi') {
+                // Warm low-pass chord pad (C4 - E4 - G4 - B4)
+                ;[261.63, 329.63, 392.0, 493.88].forEach((freq) => {
+                    const osc = ctx.createOscillator()
+                    const filter = ctx.createBiquadFilter()
+                    osc.type = 'sine'
+                    osc.frequency.value = freq
+                    filter.type = 'lowpass'
+                    filter.frequency.value = 480
+                    osc.connect(filter)
+                    filter.connect(masterGain)
+                    osc.start()
+                })
+            } else if (ambientAudioMode === 'rain') {
+                // Gentle brown/pink rain noise generator
+                const bufferSize = ctx.sampleRate * 2
+                const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+                const output = noiseBuffer.getChannelData(0)
+                let lastOut = 0.0
+                for (let i = 0; i < bufferSize; i++) {
+                    const white = Math.random() * 2 - 1
+                    output[i] = (lastOut + 0.02 * white) / 1.02
+                    lastOut = output[i]
+                }
+                const whiteNoise = ctx.createBufferSource()
+                whiteNoise.buffer = noiseBuffer
+                whiteNoise.loop = true
+                const filter = ctx.createBiquadFilter()
+                filter.type = 'lowpass'
+                filter.frequency.value = 800
+                whiteNoise.connect(filter)
+                filter.connect(masterGain)
+                whiteNoise.start()
+            }
+        } catch (_) {}
+    }, [isHuddleActive, ambientAudioMode])
 
     // Resolved current user ID with JWT token decoding fallback
     const resolvedUserId = useMemo(() => {
@@ -195,7 +264,8 @@ export function ChannelSettingsPage({
         unreadChannelCounts,
         setUnreadChannelCounts,
         incomingNotificationToast,
-        setIncomingNotificationToast
+        setIncomingNotificationToast,
+        huddleParticipants
     } = useChannelSocket({
         selectedChannel,
         token,
@@ -482,10 +552,12 @@ export function ChannelSettingsPage({
     }
 
     // Live Huddle Handler (Slack 2.0 Style)
-    const handleToggleHuddle = () => {
+    const handleToggleHuddle = async () => {
         if (!selectedChannel) return
         if (isHuddleActive) {
             setIsHuddleActive(false)
+            setAmbientAudioMode('off')
+            stopHuddleAudio()
             if (socketInstance) {
                 socketInstance.emit('channel:huddle:leave', {
                     channelId: selectedChannel._id,
@@ -497,6 +569,13 @@ export function ChannelSettingsPage({
         } else {
             setIsHuddleActive(true)
             setIsHuddleMuted(false)
+            if (navigator.mediaDevices?.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                    .then((stream) => {
+                        huddleStreamRef.current = stream
+                    })
+                    .catch(() => {})
+            }
             if (socketInstance) {
                 socketInstance.emit('channel:huddle:join', {
                     channelId: selectedChannel._id,
@@ -505,6 +584,23 @@ export function ChannelSettingsPage({
                 })
             }
             soundEffects.playJoinChime()
+        }
+    }
+
+    const handleToggleHuddleMute = () => {
+        const nextMuted = !isHuddleMuted
+        setIsHuddleMuted(nextMuted)
+        if (huddleStreamRef.current) {
+            huddleStreamRef.current.getAudioTracks().forEach(t => {
+                t.enabled = !nextMuted
+            })
+        }
+        if (socketInstance && selectedChannel) {
+            socketInstance.emit('channel:huddle:mute', {
+                channelId: selectedChannel._id,
+                userId: resolvedUserId,
+                muted: nextMuted
+            })
         }
     }
 
@@ -792,12 +888,19 @@ export function ChannelSettingsPage({
                 channelName={selectedChannel?.name || ''}
                 isHuddleMuted={isHuddleMuted}
                 ambientAudioMode={ambientAudioMode}
-                onToggleMute={() => setIsHuddleMuted(!isHuddleMuted)}
+                participants={huddleParticipants}
+                onToggleMute={handleToggleHuddleMute}
                 onToggleCollapse={setIsHuddleCollapsed}
                 onCycleAmbient={() => {
                     const next = ambientAudioMode === 'off' ? 'lofi' : (ambientAudioMode === 'lofi' ? 'rain' : 'off')
                     setAmbientAudioMode(next)
                 }}
+                onLaunchFullRoom={onStartMeeting && selectedChannel ? () => {
+                    const roomId = `huddle-${selectedChannel._id}`
+                    stopHuddleAudio()
+                    setIsHuddleActive(false)
+                    onStartMeeting(roomId)
+                } : undefined}
                 onLeaveHuddle={handleToggleHuddle}
             />
 

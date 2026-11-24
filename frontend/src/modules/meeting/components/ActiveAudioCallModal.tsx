@@ -356,10 +356,14 @@ export function ActiveAudioCallModal({ call, onEndCall, onUpgradeToVideo }: Acti
 
     return (
         <>
-            {/* Persistent 1-on-1 Remote Audio Playback with Autoplay Gesture Unlock */}
-            {Object.entries(remoteStreams).map(([peerId, stream]) => (
-                <PersistentDirectCallAudio key={peerId} peerId={peerId} stream={stream} />
-            ))}
+            {/* Persistent 1-on-1 Remote Audio Playback with Autoplay Gesture Unlock (deduplicated by stream.id) */}
+            {Object.entries(remoteStreams)
+                .filter(([, stream], idx, arr) =>
+                    stream && arr.findIndex(([, s]) => s === stream || (s?.id && s.id === stream.id)) === idx
+                )
+                .map(([peerId, stream]) => (
+                    <PersistentDirectCallAudio key={peerId} peerId={peerId} stream={stream} />
+                ))}
 
             {isMinimized ? (
                 /* ─────────────────────────────────────────────────────────────

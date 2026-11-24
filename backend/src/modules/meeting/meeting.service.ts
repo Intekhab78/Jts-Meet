@@ -3,6 +3,7 @@ import { Meeting, IMeeting } from './meeting.model'
 import { Organization } from '../organization/organization.model'
 import { Team } from '../team/team.model'
 import { User } from '../../models/user.model'
+import { isSuperAdminUser } from '../../middleware/adminMiddleware'
 import { sendMeetingInvitationEmail } from '../../services/email.service'
 import { NotificationService } from '../notification/notification.service'
 import { FRONTEND_URL } from '../../config'
@@ -48,9 +49,13 @@ export async function createMeeting(hostId: string, options: string | CreateMeet
         .filter(id => Types.ObjectId.isValid(id))
         .map(id => new Types.ObjectId(id))
 
-    // Resolve organization and host's active planTier
+    // Resolve organization and host's active planTier (SuperAdmin host always gets enterprise)
     let resolvedOrgId = opts.organizationId && Types.ObjectId.isValid(opts.organizationId) ? new Types.ObjectId(opts.organizationId) : null
     let resolvedPlanTier = 'free'
+    const hostUserDoc = Types.ObjectId.isValid(hostId)
+        ? await User.findById(hostObjectId).select('isSuperAdmin role email').lean().exec()
+        : null
+    const isHostSuperAdmin = Boolean(hostUserDoc && isSuperAdminUser(hostUserDoc as any))
 
     if (resolvedOrgId) {
         const org = await Organization.findById(resolvedOrgId).select('planTier').exec()
@@ -63,7 +68,7 @@ export async function createMeeting(hostId: string, options: string | CreateMeet
                 { ownerId: hostObjectId },
                 { 'members.userId': hostObjectId, 'members.status': 'active' }
             ],
-            planTier: { $in: ['enterprise', 'pro', 'starter'] }
+            planTier: { $ne: 'free' }
         }).select('planTier').sort({ updatedAt: -1 }).exec() || await Organization.findOne({
             $or: [
                 { ownerId: hostObjectId },
@@ -77,6 +82,9 @@ export async function createMeeting(hostId: string, options: string | CreateMeet
                 resolvedPlanTier = userOrg.planTier.toLowerCase()
             }
         }
+    }
+    if (isHostSuperAdmin) {
+        resolvedPlanTier = 'enterprise'
     }
 
     const meeting = new Meeting({
@@ -179,7 +187,7 @@ export async function getMeetingByMeetingId(meetingId: string): Promise<IMeeting
                             { ownerId: new Types.ObjectId(hostId) },
                             { 'members.userId': new Types.ObjectId(hostId), 'members.status': 'active' }
                         ],
-                        planTier: { $in: ['enterprise', 'pro', 'starter'] }
+                        planTier: { $ne: 'free' }
                     }).select('planTier').sort({ updatedAt: -1 }).exec() || await Organization.findOne({
                         $or: [
                             { ownerId: new Types.ObjectId(hostId) },
@@ -215,12 +223,14 @@ export async function joinMeeting(meetingId: string, userId: string): Promise<IM
         let instantPlanTier = 'free'
         let instantOrgId: Types.ObjectId | null = null
         try {
+            const hostUser = await User.findById(userObjectId).select('isSuperAdmin role email').lean().exec()
+            const isHostSuperAdmin = Boolean(hostUser && isSuperAdminUser(hostUser as any))
             const userOrg = await Organization.findOne({
                 $or: [
                     { ownerId: userObjectId },
                     { 'members.userId': userObjectId, 'members.status': 'active' }
                 ],
-                planTier: { $in: ['enterprise', 'pro', 'starter'] }
+                planTier: { $ne: 'free' }
             }).select('planTier').exec() || await Organization.findOne({
                 $or: [
                     { ownerId: userObjectId },
@@ -233,6 +243,9 @@ export async function joinMeeting(meetingId: string, userId: string): Promise<IM
                 if (userOrg.planTier) {
                     instantPlanTier = userOrg.planTier
                 }
+            }
+            if (isHostSuperAdmin) {
+                instantPlanTier = 'enterprise'
             }
         } catch (_) {}
 
@@ -264,7 +277,7 @@ export async function joinMeeting(meetingId: string, userId: string): Promise<IM
                     { ownerId: new Types.ObjectId(hostId) },
                     { 'members.userId': new Types.ObjectId(hostId), 'members.status': 'active' }
                 ],
-                planTier: { $in: ['enterprise', 'pro', 'starter'] }
+                planTier: { $ne: 'free' }
             }).select('planTier').exec()
             if (userOrg?.planTier && userOrg.planTier !== 'free') {
                 meeting.planTier = userOrg.planTier

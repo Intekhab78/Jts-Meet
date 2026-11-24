@@ -207,7 +207,14 @@ export const MobileOutgoingCallModal: React.FC<MobileOutgoingCallModalProps> = (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
           {/* Mic Mute Toggle */}
           <button
-            onClick={() => setIsMuted(!isMuted)}
+            onClick={() => {
+              const next = !isMuted;
+              setIsMuted(next);
+              try {
+                localStorage.setItem('jts_pref_mute_join', String(next));
+                (window as any).MobileAppBridge?.showToast?.(next ? 'Mic muted for call' : 'Mic unmuted');
+              } catch (_) {}
+            }}
             title={isMuted ? 'Unmute' : 'Mute'}
             aria-label="Mute Microphone"
             style={{
@@ -244,7 +251,14 @@ export const MobileOutgoingCallModal: React.FC<MobileOutgoingCallModalProps> = (
 
           {/* Speaker / Audio Output Icon */}
           <button
-            onClick={() => setIsSpeaker(!isSpeaker)}
+            onClick={() => {
+              const next = !isSpeaker;
+              setIsSpeaker(next);
+              try {
+                (window as any).MobileAppBridge?.setAudioMode?.(next ? 'speaker' : 'earpiece');
+                (window as any).MobileAppBridge?.showToast?.(next ? 'Speaker ON' : 'Earpiece ON');
+              } catch (_) {}
+            }}
             title="Speaker"
             aria-label="Speaker"
             style={{

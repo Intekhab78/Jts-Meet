@@ -2,6 +2,7 @@ import { Response } from 'express'
 import { Types } from 'mongoose'
 import { Meeting } from '../meeting/meeting.model'
 import { AuditLog } from './audit.model'
+import { Organization } from '../organization/organization.model'
 import { sendError, sendSuccess } from '../../utils/responseHelper'
 import { 
     getDashboardStats, 
@@ -32,6 +33,28 @@ import {
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { parseCursorQuery, executeCursorQuery } from '../../utils/paginationHelper'
 
+async function getAdminOrgScope(req: AuthRequest): Promise<{ isSuperAdmin: boolean; orgIds: string[]; memberUserIds: string[] }> {
+    if (req.isSuperAdmin) {
+        return { isSuperAdmin: true, orgIds: [], memberUserIds: [] }
+    }
+    const orgs = await Organization.find({
+        $or: [
+            { ownerId: req.userId },
+            { members: { $elemMatch: { userId: req.userId, role: { $in: ['owner', 'admin'] }, status: 'active' } } }
+        ]
+    }).select('_id ownerId members.userId').lean().exec()
+
+    const orgIds = orgs.map(o => String(o._id))
+    const userSet = new Set<string>()
+    orgs.forEach(o => {
+        if (o.ownerId) userSet.add(String(o.ownerId))
+        ;(o.members || []).forEach((m: any) => {
+            if (m?.userId) userSet.add(String(m.userId))
+        })
+    })
+    return { isSuperAdmin: false, orgIds, memberUserIds: Array.from(userSet) }
+}
+
 export const adminController = {
     getStats: async (req: AuthRequest, res: Response) => {
         if (!req.userId) {
@@ -39,7 +62,8 @@ export const adminController = {
         }
 
         try {
-            const stats = await getDashboardStats()
+            const scope = await getAdminOrgScope(req)
+            const stats = await getDashboardStats(scope.isSuperAdmin ? undefined : scope.orgIds, scope.isSuperAdmin ? undefined : scope.memberUserIds)
             return sendSuccess(res, stats, 'Dashboard stats retrieved successfully')
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to retrieve dashboard statistics')
@@ -51,11 +75,14 @@ export const adminController = {
             return sendError(res, 401, 'Unauthorized access')
         }
 
+        const scope = await getAdminOrgScope(req)
+        const baseQuery: any = scope.isSuperAdmin ? {} : { organizationId: { $in: scope.orgIds } }
+
         if (req.query.cursor !== undefined || req.query.pageSize !== undefined || req.query.search !== undefined || req.query.status !== undefined) {
             const params = parseCursorQuery(req.query)
             const result = await executeCursorQuery(
                 Meeting,
-                {},
+                baseQuery,
                 params,
                 ['title'],
                 { status: req.query.status }
@@ -75,7 +102,13 @@ export const adminController = {
         const status = (req.query.status as any) || ''
 
         try {
-            const result = await getRecentMeetings({ page, limit, search, status })
+            const result = await getRecentMeetings({
+                page,
+                limit,
+                search,
+                status,
+                scopedOrgIds: scope.isSuperAdmin ? undefined : scope.orgIds
+            })
             return sendSuccess(res, result, 'Meetings list retrieved successfully')
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to retrieve meetings list')
@@ -87,11 +120,14 @@ export const adminController = {
             return sendError(res, 401, 'Unauthorized access')
         }
 
+        const scope = await getAdminOrgScope(req)
+        const baseQuery: any = scope.isSuperAdmin ? {} : { userId: { $in: scope.memberUserIds } }
+
         if (req.query.cursor !== undefined || req.query.pageSize !== undefined || req.query.search !== undefined || req.query.action !== undefined) {
             const params = parseCursorQuery(req.query)
             const result = await executeCursorQuery(
                 AuditLog,
-                {},
+                baseQuery,
                 params,
                 ['action', 'details'],
                 { action: req.query.action }
@@ -111,7 +147,7 @@ export const adminController = {
         const search = (req.query.search as any) || ''
 
         try {
-            const result = await getAuditLogs(page, limit, action, search)
+            const result = await getAuditLogs(page, limit, action, search, scope.isSuperAdmin ? undefined : scope.memberUserIds)
             return sendSuccess(res, result, 'Audit logs retrieved successfully')
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to retrieve audit logs')
@@ -360,7 +396,11 @@ export const adminController = {
     getPlatformSettingsAction: async (req: AuthRequest, res: Response) => {
         try {
             const settings = await getPlatformSettings()
-            return sendSuccess(res, settings, 'Platform settings retrieved successfully')
+            const plain = typeof (settings as any)?.toObject === 'function' ? (settings as any).toObject() : { ...(settings as any) }
+            if (plain.smtpPass) {
+                plain.smtpPass = '••••••••'
+            }
+            return sendSuccess(res, plain, 'Platform settings retrieved successfully')
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to retrieve platform settings')
         }

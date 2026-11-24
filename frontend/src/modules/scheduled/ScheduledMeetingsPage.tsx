@@ -87,10 +87,19 @@ export function ScheduledMeetingsPage({
 
     const handleSyncGoogleCalendar = (item: ScheduledMeeting) => {
         const link = `${window.location.origin}/meet/${item.id}`
-        const startUtc = item.date ? `${item.date.replace(/-/g, '')}T${(item.time || '10:00').replace(/:/g, '')}00Z` : ''
+        let datesParam = ''
+        if (item.date) {
+            const startLocal = new Date(`${item.date}T${item.time || '10:00'}:00`)
+            if (!Number.isNaN(startLocal.getTime())) {
+                const mins = parseInt(String(item.duration || '30'), 10) || 30
+                const endLocal = new Date(startLocal.getTime() + mins * 60 * 1000)
+                const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+                datesParam = `&dates=${fmt(startLocal)}/${fmt(endLocal)}`
+            }
+        }
         const title = encodeURIComponent(item.title)
         const details = encodeURIComponent(`Join JTS-Meet Conference:\n${link}\nMeeting ID: ${item.id}`)
-        const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&location=${encodeURIComponent(link)}${startUtc ? `&dates=${startUtc}/${startUtc}` : ''}`
+        const gCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&location=${encodeURIComponent(link)}${datesParam}`
         window.open(gCalUrl, '_blank', 'noopener,noreferrer')
         showToast(`Opening Google Calendar for "${item.title}"...`)
     }
@@ -189,7 +198,7 @@ export function ScheduledMeetingsPage({
             }
             if (filterTab === 'my_hosted') {
                 if (!currentUserId) return true
-                return String(item.hostId) === String(currentUserId) || item.host.toLowerCase().includes('admin')
+                return String(item.hostId) === String(currentUserId)
             }
             return true
         })
@@ -219,6 +228,8 @@ export function ScheduledMeetingsPage({
                         title: formTitle.trim(),
                         scheduledDate: formDate,
                         scheduledTime: formTime,
+                        duration: formDuration,
+                        durationMinutes: parseInt(formDuration, 10) || 30,
                         isRecurring: formRecurring,
                         recurrencePattern: formRecurring ? formPattern : 'none',
                         teamId: formTeamId || undefined,
@@ -245,6 +256,8 @@ export function ScheduledMeetingsPage({
                         title: formTitle.trim(),
                         scheduledDate: formDate,
                         scheduledTime: formTime,
+                        duration: formDuration,
+                        durationMinutes: parseInt(formDuration, 10) || 30,
                         isRecurring: formRecurring,
                         recurrencePattern: formRecurring ? formPattern : 'none',
                         organizationId: currentOrgId || undefined,

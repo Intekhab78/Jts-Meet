@@ -2,11 +2,11 @@ import React, { useState, Suspense } from 'react'
 import { SocketProvider } from './modules/meeting/context/SocketContext'
 import { MeetingProvider } from './modules/meeting/context/MeetingContext'
 import { WebRTCProvider } from './modules/meeting/context/WebRTCContext'
-import { LandingPage } from './modules/landing/components/LandingPage'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { API_BASE } from './config'
-import { onTokenRefreshed, onAuthLogout, refreshAccessToken, getJwtExpiryMs, isUserInActiveMeeting } from './utils/authClient'
+import { onTokenRefreshed, onAuthLogout, refreshAccessToken, getJwtExpiryMs, isUserInActiveMeeting, decodeJwtPayload } from './utils/authClient'
 
+const LandingPage = React.lazy(() => import('./modules/landing/components/LandingPage').then(m => ({ default: m.LandingPage })))
 const AppWorkspace = React.lazy(() => import('./modules/dashboard/components/AppWorkspace').then(m => ({ default: m.AppWorkspace })))
 const MeetingRoom = React.lazy(() => import('./modules/meeting/components/MeetingRoom').then(m => ({ default: m.MeetingRoom })))
 const AuthPages = React.lazy(() => import('./modules/auth/components/AuthPages').then(m => ({ default: m.AuthPages })))
@@ -47,16 +47,16 @@ const getMeetingIdFromUrl = (): string | null => {
             const hashParts = hash.split('?')
             if (hashParts.length > 1) {
                 const params = new URLSearchParams(hashParts[1])
-                const id = params.get('id') || params.get('meetingId')
+                const id = params.get('id') || params.get('meetingId') || params.get('room')
                 if (id) return id
             }
         }
     } catch (e) { }
 
-    // 3. Search query ?id=xxx or ?meetingId=xxx
+    // 3. Search query ?id=xxx or ?meetingId=xxx or ?room=xxx
     try {
         const searchParams = new URLSearchParams(window.location.search)
-        const id = searchParams.get('id') || searchParams.get('meetingId')
+        const id = searchParams.get('id') || searchParams.get('meetingId') || searchParams.get('room')
         if (id) return id
     } catch (e) { }
 
@@ -72,11 +72,7 @@ const getMeetingIdFromUrl = (): string | null => {
 }
 
 const parseJwt = (token: string) => {
-    try {
-        return JSON.parse(atob(token.split('.')[1]))
-    } catch (e) {
-        return null
-    }
+    return decodeJwtPayload<any>(token)
 }
 
 function App() {
@@ -123,6 +119,9 @@ function App() {
         }
         if (window.location.pathname.startsWith('/auth/google/callback')) {
             return 'google-callback'
+        }
+        if (window.location.pathname === '/login' || window.location.hash === '#login') {
+            return 'login'
         }
         const params = new URLSearchParams(window.location.search)
         const urlToken = params.get('token')
@@ -174,18 +173,27 @@ function App() {
     }
 
     const handleLogout = () => {
+        const storedRefreshToken = localStorage.getItem('jts_refresh_token') || ''
         fetch(`${API_BASE}/api/auth/logout`, {
             method: 'POST',
-            credentials: 'include'
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(storedRefreshToken ? { refreshToken: storedRefreshToken } : {})
         }).catch(() => {})
 
         localStorage.removeItem('jts_token')
+        localStorage.removeItem('jts_refresh_token')
         localStorage.removeItem('jts_guest_token')
         localStorage.removeItem('jts_guest_user_id')
+        localStorage.removeItem('jts_guest_details')
+        localStorage.removeItem('jts_guest_name')
+        localStorage.removeItem('jts_last_meeting_id')
         sessionStorage.removeItem('jts_active_meeting_id')
         sessionStorage.removeItem('jts_meeting_joined')
+        sessionStorage.removeItem('jts_pending_logout')
         setToken('')
         setGuestToken('')
+        setMeetingIdFromUrl(null)
         setView('landing')
         window.history.pushState({}, '', '/')
     }
@@ -243,10 +251,11 @@ function App() {
         const meetId = getMeetingIdFromUrl()
         if (!token && !guestToken && isJoined && meetId) {
             const savedGuestName = localStorage.getItem('jts_guest_name') || 'Guest'
+            const savedGuestUserId = localStorage.getItem('jts_guest_user_id') || undefined
             fetch(`${API_BASE}/api/guest/request`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ meetingId: meetId, guestName: savedGuestName })
+                body: JSON.stringify({ meetingId: meetId, guestName: savedGuestName, existingUserId: savedGuestUserId })
             })
                 .then(res => res.json())
                 .then(data => {
@@ -270,7 +279,7 @@ function App() {
 
     // Cleanup stale meeting data if at root landing page
     React.useEffect(() => {
-        const isMeetingRoute = window.location.pathname.startsWith('/meet') || window.location.pathname.startsWith('/join') || window.location.hash.startsWith('#meeting') || window.location.search.includes('id=')
+        const isMeetingRoute = window.location.pathname.startsWith('/meet') || window.location.pathname.startsWith('/meeting') || window.location.pathname.startsWith('/join') || window.location.hash.startsWith('#meeting') || window.location.search.includes('id=') || window.location.search.includes('room=')
         if (!isMeetingRoute) {
             try {
                 localStorage.removeItem('jts_guest_token')
@@ -316,6 +325,11 @@ function App() {
                 return
             }
 
+            if (window.location.hash === '#login' || window.location.pathname === '/login') {
+                setView('login')
+                return
+            }
+
             // Default to landing page when at home root /
             try {
                 localStorage.removeItem('jts_guest_token')
@@ -327,9 +341,15 @@ function App() {
             setView('landing')
         }
 
+        const onForceLogout = () => {
+            handleLogout()
+            setView('login')
+        }
+        window.addEventListener('jts:force-logout', onForceLogout)
         window.addEventListener('hashchange', handleHashOrPopState)
         window.addEventListener('popstate', handleHashOrPopState)
         return () => {
+            window.removeEventListener('jts:force-logout', onForceLogout)
             window.removeEventListener('hashchange', handleHashOrPopState)
             window.removeEventListener('popstate', handleHashOrPopState)
         }
@@ -362,7 +382,11 @@ function App() {
     }
 
     if (view === 'landing') {
-        return <LandingPage onNavigate={setView} />
+        return (
+            <Suspense fallback={<AppLoadingFallback />}>
+                <LandingPage onNavigate={setView} />
+            </Suspense>
+        )
     }
 
     if (view === 'guest-preview' && meetingIdFromUrl) {
@@ -458,7 +482,11 @@ function App() {
 
     // If not logged in and not on a meeting route, always show LandingPage
     if (!token) {
-        return <LandingPage onNavigate={setView} />
+        return (
+            <Suspense fallback={<AppLoadingFallback />}>
+                <LandingPage onNavigate={setView} />
+            </Suspense>
+        )
     }
 
     return (
@@ -484,7 +512,10 @@ function App() {
 export default App
 
 function MicrosoftCallbackPage({ onAuthSuccess, onAuthFailure }: { onAuthSuccess: (token: string) => void, onAuthFailure: (error: string) => void }) {
+    const submittedRef = React.useRef(false)
     React.useEffect(() => {
+        if (submittedRef.current) return
+        submittedRef.current = true
         const params = new URLSearchParams(window.location.search)
         const code = params.get('code')
         const error = params.get('error')
@@ -504,6 +535,7 @@ function MicrosoftCallbackPage({ onAuthSuccess, onAuthFailure }: { onAuthSuccess
         fetch(`${API_BASE}/api/auth/microsoft`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ code, redirectUri })
         })
             .then(async (res) => {
@@ -511,13 +543,16 @@ function MicrosoftCallbackPage({ onAuthSuccess, onAuthFailure }: { onAuthSuccess
                 if (!res.ok) {
                     throw new Error(data.error || 'Microsoft authentication failed')
                 }
+                if (data.data?.refreshToken) {
+                    localStorage.setItem('jts_refresh_token', data.data.refreshToken)
+                }
                 window.history.pushState({}, '', '/')
                 onAuthSuccess(data.data.accessToken)
             })
             .catch((err) => {
                 onAuthFailure(err.message || 'Identity Provider authentication failed.')
             })
-    }, [onAuthSuccess, onAuthFailure])
+    }, [])
 
     return (
         <div style={{
@@ -539,7 +574,10 @@ function MicrosoftCallbackPage({ onAuthSuccess, onAuthFailure }: { onAuthSuccess
 }
 
 function GoogleCallbackPage({ onAuthSuccess, onAuthFailure }: { onAuthSuccess: (token: string) => void, onAuthFailure: (error: string) => void }) {
+    const submittedRef = React.useRef(false)
     React.useEffect(() => {
+        if (submittedRef.current) return
+        submittedRef.current = true
         const hashParams = new URLSearchParams(window.location.hash.substring(1))
         const idToken = hashParams.get('id_token')
         const error = hashParams.get('error')
@@ -557,6 +595,7 @@ function GoogleCallbackPage({ onAuthSuccess, onAuthFailure }: { onAuthSuccess: (
         fetch(`${API_BASE}/api/auth/google`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ idToken })
         })
             .then(async (res) => {
@@ -564,13 +603,16 @@ function GoogleCallbackPage({ onAuthSuccess, onAuthFailure }: { onAuthSuccess: (
                 if (!res.ok) {
                     throw new Error(data.error || 'Google authentication failed')
                 }
+                if (data.data?.refreshToken) {
+                    localStorage.setItem('jts_refresh_token', data.data.refreshToken)
+                }
                 window.history.pushState({}, '', '/')
                 onAuthSuccess(data.data.accessToken)
             })
             .catch((err) => {
                 onAuthFailure(err.message || 'Identity Provider authentication failed.')
             })
-    }, [onAuthSuccess, onAuthFailure])
+    }, [])
 
     return (
         <div style={{

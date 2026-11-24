@@ -21,18 +21,24 @@ export interface SettingsPanelProps {
     onToggleWaitingRoom: (enabled: boolean) => void
     screenSharePolicy?: 'everyone' | 'host_only'
     onToggleScreenSharePolicy?: (policy: 'everyone' | 'host_only') => void
+    onAudioSourceChange?: (deviceId: string) => Promise<void>
+    onVideoSourceChange?: (deviceId: string) => Promise<void>
 }
 
 export function SettingsPanel({
     localStream, onClose, addToast, isHost,
     isGuestJoinEnabled, onToggleGuestJoin, isWaitingRoomEnabled, onToggleWaitingRoom,
-    screenSharePolicy = 'everyone', onToggleScreenSharePolicy
+    screenSharePolicy = 'everyone', onToggleScreenSharePolicy,
+    onAudioSourceChange, onVideoSourceChange
 }: SettingsPanelProps) {
     const [activeTab, setActiveTab] = useState<'audio' | 'video' | 'background' | 'accessibility' | 'shortcuts' | 'theme' | 'host'>('audio')
     const [micTesting, setMicTesting] = useState(false)
     const [selectedMic, setSelectedMic] = useState('default')
     const [selectedCam, setSelectedCam] = useState('default')
     const [selectedSpeaker, setSelectedSpeaker] = useState('default')
+    const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([])
+    const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([])
+    const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([])
     const [noiseSuppression, setNoiseSuppression] = useState(true)
     const [echoCancellation, setEchoCancellation] = useState(true)
     const [mirrorVideo, setMirrorVideo] = useState(true)
@@ -42,6 +48,52 @@ export function SettingsPanel({
     const [theme, setTheme] = useState<'dark' | 'light'>('dark')
 
     const videoRef = useRef<HTMLVideoElement>(null)
+
+    // Enumerate real hardware audio/video devices
+    useEffect(() => {
+        let mounted = true
+        const loadDevices = async () => {
+            if (!navigator.mediaDevices?.enumerateDevices) return
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices()
+                if (!mounted) return
+                setAudioInputs(devices.filter(d => d.kind === 'audioinput'))
+                setAudioOutputs(devices.filter(d => d.kind === 'audiooutput'))
+                setVideoInputs(devices.filter(d => d.kind === 'videoinput'))
+            } catch (_) {}
+        }
+        loadDevices()
+        navigator.mediaDevices?.addEventListener?.('devicechange', loadDevices)
+        return () => {
+            mounted = false
+            navigator.mediaDevices?.removeEventListener?.('devicechange', loadDevices)
+        }
+    }, [])
+
+    // Sync currently active track deviceIds into selects
+    useEffect(() => {
+        const audioTrack = localStream?.getAudioTracks?.()[0]
+        const videoTrack = localStream?.getVideoTracks?.()[0]
+        const audioDevId = audioTrack?.getSettings?.()?.deviceId
+        const videoDevId = videoTrack?.getSettings?.()?.deviceId
+        if (audioDevId) setSelectedMic(audioDevId)
+        if (videoDevId) setSelectedCam(videoDevId)
+    }, [localStream])
+
+    const handleSpeakerChange = async (deviceId: string) => {
+        setSelectedSpeaker(deviceId)
+        try {
+            const mediaEls = document.querySelectorAll('audio, video')
+            for (const el of Array.from(mediaEls)) {
+                if (typeof (el as any).setSinkId === 'function') {
+                    await (el as any).setSinkId(deviceId).catch(() => {})
+                }
+            }
+            addToast('Speaker output updated', 'success')
+        } catch {
+            addToast('Speaker switching is not supported in this browser', 'warning')
+        }
+    }
 
     // Play test Sound
     const playTestSound = () => {
@@ -57,6 +109,9 @@ export function SettingsPanel({
             gain.gain.setValueAtTime(0.25, ctx.currentTime)
             gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6)
 
+            osc.onended = () => {
+                ctx.close().catch(() => {})
+            }
             osc.start()
             osc.stop(ctx.currentTime + 0.6)
             addToast('Test chime played successfully', 'success')
@@ -196,15 +251,27 @@ export function SettingsPanel({
                                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Microphone Input</label>
                                 <select
                                     value={selectedMic}
-                                    onChange={(e) => setSelectedMic(e.target.value)}
+                                    onChange={(e) => {
+                                        const devId = e.target.value
+                                        setSelectedMic(devId)
+                                        if (onAudioSourceChange) {
+                                            onAudioSourceChange(devId).catch(() => {})
+                                        }
+                                    }}
                                     style={{
                                         background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
                                         color: '#fff', padding: '8px 12px', borderRadius: 'var(--radius-sm)', outline: 'none'
                                     }}
                                 >
-                                    <option value="default">Default System Microphone</option>
-                                    <option value="builtin">Built-in Digital Mic</option>
-                                    <option value="usb">USB Gaming Headset Mic</option>
+                                    {audioInputs.length === 0 ? (
+                                        <option value="default">Default System Microphone</option>
+                                    ) : (
+                                        audioInputs.map((d, idx) => (
+                                            <option key={d.deviceId || idx} value={d.deviceId}>
+                                                {d.label || `Microphone ${idx + 1}`}
+                                            </option>
+                                        ))
+                                    )}
                                 </select>
                             </div>
 
@@ -228,15 +295,21 @@ export function SettingsPanel({
                                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Speaker Output</label>
                                 <select
                                     value={selectedSpeaker}
-                                    onChange={(e) => setSelectedSpeaker(e.target.value)}
+                                    onChange={(e) => handleSpeakerChange(e.target.value)}
                                     style={{
                                         background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
                                         color: '#fff', padding: '8px 12px', borderRadius: 'var(--radius-sm)', outline: 'none'
                                     }}
                                 >
-                                    <option value="default">Default System Speaker</option>
-                                    <option value="headphones">External Headphones</option>
-                                    <option value="monitor">HDMI Display Audio</option>
+                                    {audioOutputs.length === 0 ? (
+                                        <option value="default">Default System Speaker</option>
+                                    ) : (
+                                        audioOutputs.map((d, idx) => (
+                                            <option key={d.deviceId || idx} value={d.deviceId}>
+                                                {d.label || `Speaker ${idx + 1}`}
+                                            </option>
+                                        ))
+                                    )}
                                 </select>
                             </div>
 
@@ -271,15 +344,27 @@ export function SettingsPanel({
                                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Camera device</label>
                                 <select
                                     value={selectedCam}
-                                    onChange={(e) => setSelectedCam(e.target.value)}
+                                    onChange={(e) => {
+                                        const devId = e.target.value
+                                        setSelectedCam(devId)
+                                        if (onVideoSourceChange) {
+                                            onVideoSourceChange(devId).catch(() => {})
+                                        }
+                                    }}
                                     style={{
                                         background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
                                         color: '#fff', padding: '8px 12px', borderRadius: 'var(--radius-sm)', outline: 'none'
                                     }}
                                 >
-                                    <option value="default">Default Web Camera</option>
-                                    <option value="builtin">FaceTime HD Webcam</option>
-                                    <option value="obs">OBS Virtual Camera</option>
+                                    {videoInputs.length === 0 ? (
+                                        <option value="default">Default Web Camera</option>
+                                    ) : (
+                                        videoInputs.map((d, idx) => (
+                                            <option key={d.deviceId || idx} value={d.deviceId}>
+                                                {d.label || `Camera ${idx + 1}`}
+                                            </option>
+                                        ))
+                                    )}
                                 </select>
                             </div>
 
@@ -498,13 +583,6 @@ export function MicLevelIndicator({ stream, testing }: { stream: MediaStream | n
         if (!testing) {
             setLevel(0)
             return
-        }
-
-        if (testing) {
-            const interval = setInterval(() => {
-                setLevel(Math.floor(Math.random() * 60) + 20)
-            }, 100)
-            return () => clearInterval(interval)
         }
 
         if (!stream || stream.getAudioTracks().length === 0) {

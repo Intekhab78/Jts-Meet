@@ -138,16 +138,35 @@ export async function fetchWithAuth(input: RequestInfo | URL, init?: RequestInit
 }
 
 /**
+ * Safely decode a Base64URL-encoded JWT payload without throwing on '-' / '_' / missing padding.
+ */
+export function decodeJwtPayload<T = Record<string, any>>(token: string): T | null {
+    try {
+        if (!token || typeof token !== 'string') return null
+        const parts = token.split('.')
+        if (parts.length < 2 || !parts[1]) return null
+        let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+        const pad = base64.length % 4
+        if (pad) base64 += '='.repeat(4 - pad)
+        const jsonStr = decodeURIComponent(
+            atob(base64)
+                .split('')
+                .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+        )
+        return JSON.parse(jsonStr) as T
+    } catch {
+        return null
+    }
+}
+
+/**
  * Parse JWT expiration time
  */
 export function getJwtExpiryMs(token: string): number | null {
-    try {
-        const parts = token.split('.')
-        if (parts.length < 2) return null
-        const payload = JSON.parse(atob(parts[1]))
-        if (payload && typeof payload.exp === 'number') {
-            return payload.exp * 1000
-        }
-    } catch (_) {}
+    const payload = decodeJwtPayload<{ exp?: number }>(token)
+    if (payload && typeof payload.exp === 'number') {
+        return payload.exp * 1000
+    }
     return null
 }

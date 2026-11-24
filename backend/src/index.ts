@@ -21,6 +21,8 @@ process.on('uncaughtException', (error: Error) => {
   if (error?.message?.includes('Redis') || (error as any)?.code === 'ECONNRESET' || (error as any)?.code === 'EPIPE') {
     return
   }
+  // Exit cleanly on fatal uncaught exceptions so PM2 restarts the worker in a clean state
+  setTimeout(() => process.exit(1), 500)
 })
 
 // Handle raw WebSocket upgrade for Twilio PSTN Phone Call Media Streams

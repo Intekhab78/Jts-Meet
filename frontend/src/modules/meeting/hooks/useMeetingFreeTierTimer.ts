@@ -3,20 +3,24 @@ import { useMeetingTimer } from './useMeetingTimer'
 interface UseMeetingFreeTierTimerProps {
     currentPlanTier: string
     isGuest: boolean
+    maxMeetingDurationMins?: number
 }
 
 export const useMeetingFreeTierTimer = ({
     currentPlanTier,
-    isGuest
+    maxMeetingDurationMins
 }: UseMeetingFreeTierTimerProps) => {
-    // Meeting timer & Free Tier Limit (45 minutes = 2700s)
-    // When the host has a paid plan (Starter, Pro, Enterprise), meetings have UNLIMITED duration for ALL attendees.
     const { timerStr, seconds: meetingSecondsElapsed } = useMeetingTimer()
-    const FREE_PLAN_LIMIT_SECONDS = 2700
-    const freeTimeRemaining = Math.max(0, FREE_PLAN_LIMIT_SECONDS - meetingSecondsElapsed)
-    const isMeetingPaid = ['starter', 'pro', 'enterprise'].includes(currentPlanTier)
-    const isTimeLimitExpired = !isMeetingPaid && freeTimeRemaining <= 0 && !isGuest
-    const isLowTimeWarning = !isMeetingPaid && freeTimeRemaining <= 600 && freeTimeRemaining > 0
+    const resolvedDurationMins = maxMeetingDurationMins !== undefined
+        ? Number(maxMeetingDurationMins)
+        : (['starter', 'pro', 'enterprise'].includes(currentPlanTier) ? 0 : 45)
+
+    const limitSeconds = resolvedDurationMins > 0 ? resolvedDurationMins * 60 : 0
+    const isMeetingPaid = limitSeconds === 0
+    const freeTimeRemaining = limitSeconds > 0 ? Math.max(0, limitSeconds - meetingSecondsElapsed) : 0
+    const isTimeLimitExpired = limitSeconds > 0 && freeTimeRemaining <= 0
+    const lowThreshold = Math.min(600, Math.floor(limitSeconds / 3))
+    const isLowTimeWarning = limitSeconds > 0 && freeTimeRemaining <= lowThreshold && freeTimeRemaining > 0
 
     const formatRemainingTime = (totalSec: number) => {
         const mins = Math.floor(totalSec / 60)

@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { planController } from './plan.controller'
 import { asyncWrapper } from '../../utils/asyncWrapper'
 import { authenticate } from '../../middleware/authMiddleware'
-import { requireAdmin } from '../../middleware/adminMiddleware'
+import { requireSuperAdmin } from '../../middleware/adminMiddleware'
 
 const router = Router()
 
@@ -10,9 +10,9 @@ const router = Router()
 router.get('/', asyncWrapper(planController.getPublicPlans))
 
 // Super Admin Dynamic Plan Management
-router.get('/admin', authenticate, requireAdmin, asyncWrapper(planController.getAllPlans))
-router.post('/admin', authenticate, requireAdmin, asyncWrapper(planController.createPlan))
-router.patch('/admin/:planId', authenticate, requireAdmin, asyncWrapper(planController.updatePlan))
-router.delete('/admin/:planId', authenticate, requireAdmin, asyncWrapper(planController.deletePlan))
+router.get('/admin', authenticate, requireSuperAdmin, asyncWrapper(planController.getAllPlans))
+router.post('/admin', authenticate, requireSuperAdmin, asyncWrapper(planController.createPlan))
+router.patch('/admin/:planId', authenticate, requireSuperAdmin, asyncWrapper(planController.updatePlan))
+router.delete('/admin/:planId', authenticate, requireSuperAdmin, asyncWrapper(planController.deletePlan))
 
 export default router

@@ -14,7 +14,10 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
         }
 
         try {
-            socket.join(`meeting:${payload.meetingId}`)
+            if (!socket.rooms.has(`meeting:${payload.meetingId}`)) {
+                socket.emit('error', { message: 'Forbidden: You must join the meeting room before sending meeting chat' })
+                return
+            }
             const senderDisplayName = authSocket.guestName || (socket.handshake.query?.displayName as string) || undefined
             let chatObj: any
             try {
@@ -58,11 +61,10 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
     })
 
     socket.on(SocketEvents.MEETING_CHAT_TYPING, async (payload: { meetingId: string }) => {
-        if (!userId || !payload?.meetingId) {
+        if (!userId || !payload?.meetingId || !socket.rooms.has(`meeting:${payload.meetingId}`)) {
             return
         }
 
-        socket.join(`meeting:${payload.meetingId}`)
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_CHAT_TYPING, {
             meetingId: payload.meetingId,
             userId
@@ -70,7 +72,7 @@ export function registerMeetingChatHandlers(io: Server, socket: Socket) {
     })
 
     socket.on(SocketEvents.MEETING_CHAT_STOP_TYPING, async (payload: { meetingId: string }) => {
-        if (!userId || !payload?.meetingId) {
+        if (!userId || !payload?.meetingId || !socket.rooms.has(`meeting:${payload.meetingId}`)) {
             return
         }
 

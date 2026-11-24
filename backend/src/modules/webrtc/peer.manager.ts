@@ -119,8 +119,8 @@ export function getMeetingPeersInfo(meetingId: string) {
 
     for (const uId of userIds) {
         const s = peersByUserId.get(uId)
-        if (!s) {
-            // Prune stale participant from meetingPeers set
+        if (!s || s.meetingId !== meetingId) {
+            // Prune stale participant or participant who switched to another meeting from meetingPeers set
             const meetingSet = meetingPeers.get(meetingId)
             if (meetingSet) {
                 meetingSet.delete(uId)

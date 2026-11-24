@@ -15,6 +15,14 @@ export function useSocket(): UseSocketResult {
 
     const connectSocket = useCallback((token: string) => {
         if (socket) {
+            const currentAuthToken = (socket.auth as any)?.token
+            if (token && currentAuthToken !== token) {
+                socket.auth = { token }
+                if (socket.connected) {
+                    socket.disconnect()
+                }
+                socket.connect()
+            }
             return
         }
 

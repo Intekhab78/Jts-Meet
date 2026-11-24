@@ -3,11 +3,13 @@ import { useState, useEffect } from 'react';
 export interface UseWakeLockAndNetworkProps {
   peerConnectionsRef: React.RefObject<Record<string, RTCPeerConnection>>;
   audioContextRef: React.RefObject<AudioContext | null>;
+  onOnlineReconnect?: () => void;
 }
 
 export function useWakeLockAndNetwork({
   peerConnectionsRef,
   audioContextRef,
+  onOnlineReconnect,
 }: UseWakeLockAndNetworkProps) {
   const [networkStatus, setNetworkStatus] = useState<'online' | 'reconnecting'>('online');
   const [reconnectBannerText, setReconnectBannerText] = useState<string | null>(null);
@@ -33,7 +35,9 @@ export function useWakeLockAndNetwork({
     const handleOnline = () => {
       setNetworkStatus('online');
       setReconnectBannerText('Connected! Re-syncing audio & video...');
-      if (peerConnectionsRef.current) {
+      if (onOnlineReconnect) {
+        onOnlineReconnect();
+      } else if (peerConnectionsRef.current) {
         Object.values(peerConnectionsRef.current).forEach((pc) => {
           try { pc.restartIce(); } catch (_) {}
         });

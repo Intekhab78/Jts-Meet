@@ -109,7 +109,12 @@ export function EnterpriseDashboardHub({
         const list = historyItems.slice(0, 5)
         if (!recentSearch.trim()) return list
         const q = recentSearch.toLowerCase()
-        return list.filter(m => (m.title || '').toLowerCase().includes(q) || (m.host || '').toLowerCase().includes(q) || (m.id || '').toLowerCase().includes(q))
+        return list.filter(m => {
+            const hostStr = typeof m.host === 'string'
+                ? m.host
+                : ((m.host as any)?.fullName || (m.host as any)?.email || '')
+            return (m.title || '').toLowerCase().includes(q) || hostStr.toLowerCase().includes(q) || (m.id || '').toLowerCase().includes(q)
+        })
     }, [historyItems, recentSearch])
 
     // Quick Join Handler
@@ -174,18 +179,10 @@ export function EnterpriseDashboardHub({
         actionItems: string[]
         sentiment: string
     }>({
-        summary: 'Latest sprint sync concluded with full team alignment on deployment checklists and Middle East edge telemetry.',
-        highlights: [
-            'All WebRTC media nodes verified with zero packet loss in Dubai region',
-            'Teams channel drag-and-drop file sharing rolled out to all members',
-            'SMTP notification pipeline tested with automated invitation alerts'
-        ],
-        actionItems: [
-            'Review audio/video studio noise cancellation benchmarks (Due Friday)',
-            'Distribute permanent PMI room links to client team leads',
-            'Schedule next weekly architecture review for Thursday 11:00 AM'
-        ],
-        sentiment: 'High Velocity & Productive'
+        summary: 'No AI recap generated yet. Click "Generate AI Recap" to summarize your recent meetings and extract action items.',
+        highlights: [],
+        actionItems: [],
+        sentiment: 'Ready'
     })
     const [isGeneratingAi, setIsGeneratingAi] = useState(false)
     const [completedActionItems, setCompletedActionItems] = useState<Record<number, boolean>>({})

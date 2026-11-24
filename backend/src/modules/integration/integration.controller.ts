@@ -5,6 +5,13 @@ import * as integrationService from './integration.service'
 import { FRONTEND_URL } from '../../config'
 import { adHocRoomSettings } from '../../routes/guest.routes'
 
+function handleIntegrationError(res: Response, err: any, fallbackMessage: string) {
+    const status =
+        err?.status ||
+        (err?.message?.startsWith('Forbidden') ? 403 : err?.message === 'Integration not found' ? 404 : 500)
+    return sendError(res, status, err?.message || fallbackMessage)
+}
+
 export const integrationController = {
     handleInboundWebhook: async (req: Request, res: Response) => {
         try {
@@ -60,7 +67,7 @@ export const integrationController = {
             const data = await integrationService.listIntegrations(req.userId, orgId)
             return sendSuccess(res, data, 'Integrations retrieved successfully')
         } catch (err: any) {
-            return sendError(res, 500, err.message || 'Failed to list integrations')
+            return handleIntegrationError(res, err, 'Failed to list integrations')
         }
     },
 
@@ -85,7 +92,7 @@ export const integrationController = {
 
             return sendSuccess(res, item, 'Integration endpoint configured successfully')
         } catch (err: any) {
-            return sendError(res, 500, err.message || 'Failed to create integration')
+            return handleIntegrationError(res, err, 'Failed to create integration')
         }
     },
 
@@ -96,7 +103,7 @@ export const integrationController = {
             await integrationService.deleteIntegration(req.userId, id)
             return sendSuccess(res, { success: true }, 'Integration removed successfully')
         } catch (err: any) {
-            return sendError(res, 500, err.message || 'Failed to delete integration')
+            return handleIntegrationError(res, err, 'Failed to delete integration')
         }
     },
 
@@ -111,7 +118,7 @@ export const integrationController = {
             const updated = await integrationService.toggleIntegration(req.userId, id, status)
             return sendSuccess(res, updated, `Integration ${status === 'active' ? 'resumed' : 'paused'} successfully`)
         } catch (err: any) {
-            return sendError(res, 500, err.message || 'Failed to toggle integration')
+            return handleIntegrationError(res, err, 'Failed to toggle integration')
         }
     },
 
@@ -122,7 +129,7 @@ export const integrationController = {
             const result = await integrationService.testIntegration(req.userId, id)
             return sendSuccess(res, result, 'Test simulation payload sent')
         } catch (err: any) {
-            return sendError(res, 500, err.message || 'Failed to execute integration test')
+            return handleIntegrationError(res, err, 'Failed to execute integration test')
         }
     }
 }

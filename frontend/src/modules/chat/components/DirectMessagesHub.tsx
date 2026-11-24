@@ -511,7 +511,18 @@ export function DirectMessagesHub({
 
                         {/* TAB VIEW 1: CHAT FEED + COMPOSER */}
                         {headerTab === 'chat' && (
-                            <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+                            <div
+                                style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}
+                                onDragOver={(e) => {
+                                    if (e.dataTransfer?.types?.includes('Files')) e.preventDefault()
+                                }}
+                                onDrop={(e) => {
+                                    if (e.dataTransfer?.files?.length) {
+                                        e.preventDefault()
+                                        Array.from(e.dataTransfer.files).forEach(f => ops.handleFileUpload(f))
+                                    }
+                                }}
+                            >
                                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
                                     <DirectChatMessageFeed
                                         messages={filteredMessages}
@@ -548,6 +559,7 @@ export function DirectMessagesHub({
                                         setShowEmojiPicker={editor.setShowEmojiPicker}
                                         handleInsertEmoji={editor.handleInsertEmoji}
                                         onTriggerFileUpload={() => fileInputRef.current?.click()}
+                                        onUploadFile={ops.handleFileUpload}
                                         isUploadingFile={ops.isUploadingFile}
                                         onOpenClipModal={() => setShowClipModal(true)}
                                         sendingMessage={ops.sendingMessage}

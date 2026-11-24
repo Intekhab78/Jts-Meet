@@ -7,7 +7,7 @@ const config: CapacitorConfig = {
   server: {
     hostname: 'meet.jtsmiddleeast.com',
     androidScheme: 'https',
-    cleartext: true
+    cleartext: false
   },
   plugins: {
     CapacitorHttp: {
@@ -15,8 +15,8 @@ const config: CapacitorConfig = {
     }
   },
   android: {
-    allowMixedContent: true,
-    webContentsDebuggingEnabled: true
+    allowMixedContent: false,
+    webContentsDebuggingEnabled: false
   }
 };
 

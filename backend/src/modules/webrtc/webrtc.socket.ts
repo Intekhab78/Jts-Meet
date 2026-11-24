@@ -43,7 +43,12 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         }
 
         if (authSocket.meetingId && authSocket.meetingId !== payload.meetingId) {
+            const prevBase = authSocket.meetingId.includes('__sub_') ? authSocket.meetingId.split('__sub_')[0] : authSocket.meetingId
             socket.leave(`meeting:${authSocket.meetingId}`)
+            // Keep main meeting room subscription active while inside a breakout sub-room so broadcast/end events reach sub-rooms
+            if (prevBase === baseMeetingId && payload.meetingId.includes('__sub_')) {
+                socket.join(`meeting:${baseMeetingId}`)
+            }
             socket.to(`meeting:${authSocket.meetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
                 userId,
                 meetingId: authSocket.meetingId
@@ -52,6 +57,9 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         }
 
         socket.join(`meeting:${payload.meetingId}`)
+        if (payload.meetingId.includes('__sub_')) {
+            socket.join(`meeting:${baseMeetingId}`)
+        }
         authSocket.meetingId = payload.meetingId
 
         let effectiveName = payload.displayName || authSocket.guestName
@@ -69,6 +77,8 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         }
 
         const sessionKey = `${userId}:${payload.meetingId}`
+        const previousSession = getPeerSessionByUserId(userId)
+        const wasScreenSharingBeforeRefresh = Boolean(previousSession?.isScreenSharing)
         if (pendingDisconnectTimeouts.has(sessionKey)) {
             clearTimeout(pendingDisconnectTimeouts.get(sessionKey)!)
             pendingDisconnectTimeouts.delete(sessionKey)
@@ -80,6 +90,13 @@ export function registerWebRTCHandlers(io: Server, socket: Socket) {
         }
 
         addPeerSession(userId, payload.meetingId, socket.id, effectiveName, payload.isVideoOff, payload.isMuted)
+
+        // If user was screen sharing before browser refresh, reset their screen share state so peers don't stay frozen
+        if (wasScreenSharingBeforeRefresh) {
+            updatePeerSession(userId, { isScreenSharing: false })
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_STOP, { userId, meetingId: payload.meetingId })
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.SCREEN_CHANGED, { userId, meetingId: payload.meetingId, active: false })
+        }
 
         // Broadcast to other participants in the room across all nodes
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.WEBRTC_USER_JOINED, { 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 
 export interface TranscriptItem {
     speaker: string
@@ -22,6 +22,8 @@ interface UseMeetingAIExtensionsProps {
     activeSpeaker: string | null
     isMuted: boolean
     myDisplayName: string
+    socket?: any
+    meetingId?: string
 }
 
 export const useMeetingAIExtensions = ({
@@ -30,7 +32,9 @@ export const useMeetingAIExtensions = ({
     messages,
     activeSpeaker,
     isMuted,
-    myDisplayName
+    myDisplayName,
+    socket,
+    meetingId
 }: UseMeetingAIExtensionsProps) => {
     // Late-Joiner AI "Catch Me Up" (Teams / Zoom Copilot feature)
     const [showCatchUpPrompt, setShowCatchUpPrompt] = useState(false)
@@ -41,9 +45,38 @@ export const useMeetingAIExtensions = ({
     // Captions / Dubbing Transcripts
     const [transcripts, setTranscripts] = useState<TranscriptItem[]>([])
 
-    // In-Meeting Live Action-Item Detector
+    // In-Meeting Live Action-Item Detector & Shared Persisted Notes
     const [detectedActionItem, setDetectedActionItem] = useState<DetectedActionItem | null>(null)
-    const [meetingNotes, setMeetingNotes] = useState<string>('')
+    const [meetingNotes, setMeetingNotesState] = useState<string>('')
+    const notesSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    useEffect(() => {
+        if (!socket) return
+        const handleNotesSync = (payload: { meetingId?: string; notes?: string }) => {
+            if (payload?.meetingId && meetingId && payload.meetingId !== meetingId) return
+            if (typeof payload?.notes === 'string') {
+                setMeetingNotesState(payload.notes)
+            }
+        }
+        socket.on('meeting:notes-sync', handleNotesSync)
+        return () => {
+            socket.off('meeting:notes-sync', handleNotesSync)
+            if (notesSyncTimerRef.current) clearTimeout(notesSyncTimerRef.current)
+        }
+    }, [socket, meetingId])
+
+    const setMeetingNotes = useCallback((nextOrUpdater: string | ((prev: string) => string)) => {
+        setMeetingNotesState(prev => {
+            const nextVal = typeof nextOrUpdater === 'function' ? nextOrUpdater(prev) : nextOrUpdater
+            if (socket && meetingId) {
+                if (notesSyncTimerRef.current) clearTimeout(notesSyncTimerRef.current)
+                notesSyncTimerRef.current = setTimeout(() => {
+                    socket.emit('meeting:notes-update', { meetingId, notes: nextVal })
+                }, 400)
+            }
+            return nextVal
+        })
+    }, [socket, meetingId])
 
     // Talk-Time Analytics & Leaderboard
     const [talkTimeMap, setTalkTimeMap] = useState<Record<string, number>>({})

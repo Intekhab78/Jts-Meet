@@ -1,3 +1,4 @@
+import { Types } from 'mongoose'
 import { Meeting } from '../meeting/meeting.model'
 
 export class CalendarService {
@@ -31,9 +32,11 @@ export class CalendarService {
      * Generate standard RFC 5545 .ics text for a single meeting
      */
     public async generateSingleMeetingIcs(meetingId: string, baseUrl: string): Promise<string | null> {
-        const meeting = await Meeting.findOne({
-            $or: [{ _id: meetingId }, { meetingId: meetingId }, { customId: meetingId }]
-        }).populate('host', 'fullName email')
+        const orClauses: any[] = [{ meetingId: meetingId }, { customId: meetingId }]
+        if (Types.ObjectId.isValid(meetingId)) {
+            orClauses.unshift({ _id: meetingId })
+        }
+        const meeting = await Meeting.findOne({ $or: orClauses }).populate('host', 'fullName email')
 
         if (!meeting) return null
 

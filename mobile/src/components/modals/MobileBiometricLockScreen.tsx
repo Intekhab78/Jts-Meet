@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
+import { clearAllSessionStorageAndData } from '../../config';
 
 interface MobileBiometricLockScreenProps {
   isLocked: boolean;
@@ -13,7 +15,7 @@ export const MobileBiometricLockScreen: React.FC<MobileBiometricLockScreenProps>
   const [errorMsg, setErrorMsg] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  // Attempt biometric prompt automatically when lock appears
+  // Attempt biometric prompt automatically and block hardware back button while locked
   useEffect(() => {
     if (!isLocked) {
       setPinInput('');
@@ -21,6 +23,17 @@ export const MobileBiometricLockScreen: React.FC<MobileBiometricLockScreenProps>
       return;
     }
     triggerBiometricPrompt();
+    let backHandle: any = null;
+    try {
+      CapacitorApp.addListener('backButton', () => {
+        // Deliberately swallow hardware Back while lock screen is active
+      }).then((h) => {
+        backHandle = h;
+      });
+    } catch (_) {}
+    return () => {
+      backHandle?.remove?.();
+    };
   }, [isLocked]);
 
   const triggerBiometricPrompt = async () => {
@@ -39,18 +52,20 @@ export const MobileBiometricLockScreen: React.FC<MobileBiometricLockScreenProps>
         const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
         if (available) {
           // Native platform biometric sensor prompt (Fingerprint / Face ID challenge)
-          try {
-            const challenge = new Uint8Array(32);
-            window.crypto.getRandomValues(challenge);
-            await navigator.credentials.get({
-              publicKey: {
-                challenge,
-                timeout: 60000,
-                userVerification: 'preferred',
-              },
-            });
-          } catch (_) {
-            // User cancelled or simulated in dev - allow fallback
+          const challenge = new Uint8Array(32);
+          window.crypto.getRandomValues(challenge);
+          const credential = await navigator.credentials.get({
+            publicKey: {
+              challenge,
+              timeout: 60000,
+              userVerification: 'required',
+            },
+          });
+
+          if (!credential) {
+            setErrorMsg('Biometric verification cancelled. Use PIN to unlock.');
+            setIsAuthenticating(false);
+            return;
           }
 
           // Verified successfully
@@ -65,7 +80,7 @@ export const MobileBiometricLockScreen: React.FC<MobileBiometricLockScreenProps>
         }
       }
     } catch (_) {
-      // fallback to PIN
+      setErrorMsg('Biometric verification failed or cancelled. Use PIN to unlock.');
     }
     setIsAuthenticating(false);
   };
@@ -179,9 +194,6 @@ export const MobileBiometricLockScreen: React.FC<MobileBiometricLockScreenProps>
             <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569' }}>
               Enter Security PIN
             </label>
-            <span style={{ fontSize: '0.67rem', color: '#94a3b8' }}>
-              Default: 1234
-            </span>
           </div>
           <input
             type="password"
@@ -226,48 +238,27 @@ export const MobileBiometricLockScreen: React.FC<MobileBiometricLockScreenProps>
           Unlock Workspace
         </button>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: 4 }}>
           <button
             type="button"
             onClick={() => {
-              localStorage.setItem('jts_security_pin', '1234');
-              setPinInput('1234');
-              setErrorMsg('');
-              alert('PIN reset to default: 1234');
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#64748b',
-              fontSize: '0.7rem',
-              cursor: 'pointer',
-              textDecoration: 'underline',
-              padding: 0,
-            }}
-          >
-            Forgot PIN? Reset to 1234
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm('Do you want to disable App Lock? You can turn it back on anytime in Settings.')) {
-                localStorage.setItem('jts_biometric_lock_enabled', 'false');
-                onUnlock();
+              if (window.confirm('Forgot PIN? You will be signed out so you can log in again and reset App Lock.')) {
+                clearAllSessionStorageAndData();
+                window.location.reload();
               }
             }}
             style={{
               background: 'none',
               border: 'none',
               color: '#dc2626',
-              fontSize: '0.7rem',
+              fontSize: '0.72rem',
               fontWeight: 600,
               cursor: 'pointer',
               textDecoration: 'underline',
               padding: 0,
             }}
           >
-            Turn Off Lock
+            Forgot PIN? Sign out to reset
           </button>
         </div>
       </form>

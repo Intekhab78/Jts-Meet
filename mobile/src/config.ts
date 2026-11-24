@@ -1,5 +1,5 @@
-export const API_BASE = 'https://meetapi.jtsmiddleeast.com';
-export const SOCKET_URL = 'https://meetapi.jtsmiddleeast.com';
+export const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'https://meetapi.jtsmiddleeast.com';
+export const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || 'https://meetapi.jtsmiddleeast.com';
 
 export function getStoredToken(): string | null {
   try {
@@ -15,6 +15,8 @@ export function setStoredToken(token: string | null): void {
       localStorage.setItem('jts_access_token', token);
     } else {
       localStorage.removeItem('jts_access_token');
+      localStorage.removeItem('jts_token');
+      sessionStorage.removeItem('jts_token');
     }
   } catch {}
 }
@@ -43,6 +45,7 @@ export function clearAllSessionStorageAndData(): void {
     const keysToRemove = [
       'jts_access_token',
       'jts_token',
+      'jts_refresh_token',
       'jts_user_profile',
       'jts_user_name',
       'jts_display_name',
@@ -55,16 +58,27 @@ export function clearAllSessionStorageAndData(): void {
       'jts_recent_meetings',
       'jts_active_mobile_meeting',
       'jts_last_meeting_id',
+      'jts_biometric_lock_enabled',
+      'jts_security_pin',
+      'jts_fcm_token',
+      'jts_pending_notification',
     ];
     keysToRemove.forEach((k) => {
       localStorage.removeItem(k);
       sessionStorage.removeItem(k);
     });
 
-    // Remove any dynamic chat or org cache keys
+    // Remove any dynamic chat, org, or call cache keys
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
-      if (key && (key.startsWith('jts_chat_') || key.startsWith('jts_org_') || key.startsWith('jts_team_'))) {
+      if (
+        key &&
+        (key.startsWith('jts_chat_') ||
+          key.startsWith('jts_org_') ||
+          key.startsWith('jts_team_') ||
+          key.startsWith('jts_declined_call_') ||
+          key.startsWith('jts_accepted_call_'))
+      ) {
         localStorage.removeItem(key);
       }
     }

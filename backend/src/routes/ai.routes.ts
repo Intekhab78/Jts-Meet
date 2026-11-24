@@ -13,6 +13,8 @@ import { JWT_SECRET, ADMIN_EMAIL } from '../config'
 import { User } from '../models/user.model'
 import { Organization } from '../modules/organization/organization.model'
 import { PlatformSettings } from '../modules/admin/platformSettings.model'
+import { getEffectivePlanForOrg, getEffectivePlanForUser } from '../modules/plan/planEntitlements'
+import { getMeetingByMeetingId } from '../modules/meeting/meeting.service'
 
 const router = Router()
 
@@ -20,16 +22,24 @@ interface AuthenticatedAiRequest extends Request {
     userId?: string
 }
 
-const optionalAuth = (req: any, _res: any, next: any) => {
+const optionalAuth = (req: any, res: any, next: any) => {
     const authHeader = req.headers.authorization
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
-    if (token) {
-        try {
-            const payload = jwt.verify(token, JWT_SECRET) as { userId: string }
-            req.userId = payload.userId
-        } catch (e) {}
+    if (!token) {
+        res.status(401).json({ success: false, message: 'Authentication required for AI services' })
+        return
     }
-    next()
+    try {
+        const payload = jwt.verify(token, JWT_SECRET) as { userId: string }
+        if (!payload?.userId) {
+            res.status(401).json({ success: false, message: 'Invalid authentication token' })
+            return
+        }
+        req.userId = payload.userId
+        next()
+    } catch (e) {
+        res.status(401).json({ success: false, message: 'Invalid or expired authentication token' })
+    }
 }
 
 async function getUserPlanTier(userId?: string): Promise<string> {
@@ -86,8 +96,45 @@ const enforceAiPlatformPolicy = async (req: any, res: any, next: any) => {
     }
 }
 
-// Generate AI meeting summary & action items (Available for all meeting participants)
-router.post('/summary', optionalAuth, async (req: Request, res: Response): Promise<void> => {
+const enforceAiFeatureEntitlement = async (req: any, res: any, next: any) => {
+    try {
+        let effectivePlan
+        if (req.userId) {
+            effectivePlan = await getEffectivePlanForUser(req.userId, req.body?.organizationId)
+        } else if (req.body?.meetingId) {
+            const meeting = await getMeetingByMeetingId(String(req.body.meetingId)).catch(() => null)
+            if (meeting?.organizationId) {
+                effectivePlan = await getEffectivePlanForOrg(String(meeting.organizationId))
+            } else if (meeting?.host) {
+                const hostId = (meeting.host as any)?._id || meeting.host
+                effectivePlan = await getEffectivePlanForUser(String(hostId))
+            } else {
+                effectivePlan = await getEffectivePlanForOrg(null)
+            }
+        } else {
+            effectivePlan = await getEffectivePlanForOrg(null)
+        }
+
+        if (!effectivePlan.features.aiSummary) {
+            res.status(403).json({
+                success: false,
+                code: 'UPGRADE_REQUIRED',
+                message: `AI features are not enabled on your ${effectivePlan.planTier.toUpperCase()} plan. Please upgrade to unlock AI Meeting Intelligence.`
+            })
+            return
+        }
+        next()
+    } catch (err) {
+        console.error('[AI Routes] Entitlement verification failed:', err)
+        res.status(500).json({
+            success: false,
+            message: 'Unable to verify AI feature entitlement'
+        })
+    }
+}
+
+// Generate AI meeting summary & action items
+router.post('/summary', optionalAuth, enforceAiPlatformPolicy, enforceAiFeatureEntitlement, async (req: Request, res: Response): Promise<void> => {
     try {
         const { title, participants, duration, notes, transcripts, chatMessages } = req.body
         const result = await generateMeetingSummary({
@@ -113,7 +160,7 @@ router.post('/summary', optionalAuth, async (req: Request, res: Response): Promi
 })
 
 // Ask JTS AI Companion
-router.post('/assistant', optionalAuth, enforceAiPlatformPolicy, async (req: Request, res: Response): Promise<void> => {
+router.post('/assistant', optionalAuth, enforceAiPlatformPolicy, enforceAiFeatureEntitlement, async (req: Request, res: Response): Promise<void> => {
     try {
         const { prompt, meetingContext } = req.body
         if (!prompt || typeof prompt !== 'string') {
@@ -136,7 +183,7 @@ router.post('/assistant', optionalAuth, enforceAiPlatformPolicy, async (req: Req
 })
 
 // Real-time Captions Translation Endpoint (Zoom/Teams feature)
-router.post('/translate', optionalAuth, async (req: Request, res: Response): Promise<void> => {
+router.post('/translate', optionalAuth, enforceAiPlatformPolicy, enforceAiFeatureEntitlement, async (req: Request, res: Response): Promise<void> => {
     try {
         const { text, targetLang } = req.body
         if (!text || typeof text !== 'string') {
@@ -155,7 +202,7 @@ router.post('/translate', optionalAuth, async (req: Request, res: Response): Pro
 })
 
 // Late-Joiner AI Summary: "Catch Me Up" (MS Teams Copilot feature)
-router.post('/catch-up', optionalAuth, async (req: Request, res: Response): Promise<void> => {
+router.post('/catch-up', optionalAuth, enforceAiPlatformPolicy, enforceAiFeatureEntitlement, async (req: Request, res: Response): Promise<void> => {
     try {
         const { title, transcripts, chatMessages } = req.body
         const result = await generateLateJoinerCatchUp({
@@ -174,20 +221,9 @@ router.post('/catch-up', optionalAuth, async (req: Request, res: Response): Prom
 })
 
 // AI Meeting Agenda & Prep Generator (Zoom / Teams Copilot style)
-router.post('/agenda-generate', optionalAuth, enforceAiPlatformPolicy, async (req: Request, res: Response): Promise<void> => {
+router.post('/agenda-generate', optionalAuth, enforceAiPlatformPolicy, enforceAiFeatureEntitlement, async (req: Request, res: Response): Promise<void> => {
     try {
         const { title, durationMinutes, context, participants } = req.body
-
-        // Free-tier gate: verify plan from DB and return upgrade prompt instead of 403
-        const plan = await getUserPlanTier((req as AuthenticatedAiRequest).userId)
-        if (plan === 'free') {
-            res.status(403).json({
-                success: false,
-                code: 'UPGRADE_REQUIRED',
-                message: 'AI Agenda Generator is available on Pro and Enterprise plans. Upgrade to unlock this feature.'
-            })
-            return
-        }
 
         if (!title || typeof title !== 'string') {
             res.status(400).json({ success: false, message: 'Meeting title is required' })
@@ -209,7 +245,7 @@ router.post('/agenda-generate', optionalAuth, enforceAiPlatformPolicy, async (re
 })
 
 // Cross-Browser Speech-to-Text Live Transcription (for Safari, Firefox, or AI backend captions)
-router.post('/transcribe', optionalAuth, async (req: Request, res: Response): Promise<void> => {
+router.post('/transcribe', optionalAuth, enforceAiPlatformPolicy, enforceAiFeatureEntitlement, async (req: Request, res: Response): Promise<void> => {
     try {
         const { audio, mimeType } = req.body
         if (!audio || typeof audio !== 'string') {

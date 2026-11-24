@@ -111,7 +111,7 @@ class MobileNotificationService {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${authKey}`,
               },
-              body: JSON.stringify({ fcmToken: token.value, platform: 'android' }),
+              body: JSON.stringify({ fcmToken: token.value, platform: Capacitor.getPlatform() || 'android' }),
             });
             const resJson = await res.json().catch(() => ({}));
             console.log('[FCM] Successfully registered device token on server:', resJson);
@@ -177,13 +177,31 @@ class MobileNotificationService {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${authKey}`,
           },
-          body: JSON.stringify({ fcmToken, platform: 'android' }),
+          body: JSON.stringify({ fcmToken, platform: Capacitor.getPlatform() || 'android' }),
         });
         const resJson = await res.json().catch(() => ({}));
         console.log('[FCM] Successfully synced FCM device token to user account:', resJson);
       }
     } catch (err) {
       console.warn('[FCM] Error in syncStoredFcmToken:', err);
+    }
+  }
+
+  public async unregisterFcmToken(authToken?: string | null): Promise<void> {
+    try {
+      const fcmToken = localStorage.getItem('jts_fcm_token') || undefined;
+      const authKey = authToken || getStoredToken() || localStorage.getItem('jts_access_token') || localStorage.getItem('jts_token');
+      if (!authKey) return;
+      await fetch(`${API_BASE}/api/notifications/fcm-token/unregister`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authKey}`,
+        },
+        body: JSON.stringify({ fcmToken }),
+      });
+    } catch (err) {
+      console.warn('[FCM] Error unregistering FCM token:', err);
     }
   }
 

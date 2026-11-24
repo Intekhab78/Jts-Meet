@@ -20,7 +20,7 @@ export interface TenantItem {
     owner?: { fullName: string; email: string; profileImage?: string }
     status: 'active' | 'inactive'
     timezone: string
-    planTier: 'free' | 'starter' | 'enterprise'
+    planTier: string
     maxSeats: number
     usedSeats: number
     maxStorageGb: number

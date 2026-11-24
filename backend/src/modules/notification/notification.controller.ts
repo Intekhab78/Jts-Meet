@@ -1,9 +1,10 @@
 import { Response } from 'express'
-import { NotificationService } from './notification.service'
+import { NotificationService, verifyCallRejectToken } from './notification.service'
 import { sendError, sendSuccess } from '../../utils/responseHelper'
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { getIO } from '../../socket/index'
 import { initiateDirectCall, cancelOrEndDirectCall } from '../../socket/directCall'
+import { markCallAccepted } from '../chat/callHistory.service'
 import { Meeting } from '../meeting/meeting.model'
 import { SocketEvents } from '../../socket/events'
 
@@ -111,10 +112,23 @@ export const notificationController = {
     },
 
     rejectCallFromPush: async (req: AuthRequest, res: Response) => {
-        const { meetingId, callerId, reason } = req.body
+        const { meetingId, callerId, reason, recipientId, rejectToken } = req.body || {}
+
+        const hasAuthenticatedUser = Boolean(req.userId)
+        const hasSignedPushToken = Boolean(
+            meetingId &&
+            recipientId &&
+            rejectToken &&
+            verifyCallRejectToken(String(meetingId), String(recipientId), String(rejectToken))
+        )
+
+        if (!hasAuthenticatedUser && !hasSignedPushToken) {
+            return sendError(res, 401, 'Unauthorized: Valid authentication or signed push rejection token is required')
+        }
 
         try {
             const io = req.app.get('io') || getIO()
+            const calleeUserId = req.userId || (recipientId ? String(recipientId) : '')
             let resolvedCallerId = callerId
 
             // If callerId not provided in body, lookup meeting host in DB
@@ -128,7 +142,7 @@ export const notificationController = {
             }
 
             const rejectData = {
-                calleeId: req.userId || 'callee',
+                calleeId: calleeUserId || 'callee',
                 callerId: resolvedCallerId,
                 meetingId,
                 reason: reason || 'declined_from_notification'
@@ -147,7 +161,7 @@ export const notificationController = {
                 }
 
                 // Stop active ringing timeouts and teardown direct call across backend
-                await cancelOrEndDirectCall(io, resolvedCallerId || 'system', {
+                await cancelOrEndDirectCall(io, calleeUserId || 'system', {
                     meetingId,
                     targetUserId: resolvedCallerId
                 })
@@ -176,6 +190,20 @@ export const notificationController = {
         }
     },
 
+    unregisterFcmToken: async (req: AuthRequest, res: Response) => {
+        const userId = req.userId
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        const fcmToken = (req.body?.fcmToken || req.query?.fcmToken) as string | undefined
+        try {
+            await NotificationService.removeFcmDevice(userId, fcmToken)
+            return sendSuccess(res, { unregistered: true }, 'FCM token unregistered successfully')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to unregister FCM token')
+        }
+    },
+
     initiateCall: async (req: AuthRequest, res: Response) => {
         const userId = req.userId
         if (!userId) {
@@ -190,6 +218,39 @@ export const notificationController = {
             return sendSuccess(res, result, 'Direct call initiated successfully')
         } catch (err: any) {
             return sendError(res, 500, err.message || 'Failed to initiate direct call')
+        }
+    },
+
+    acceptCall: async (req: AuthRequest, res: Response) => {
+        const userId = req.userId
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
+        const { meetingId, callerId } = req.body || {}
+        if (!meetingId) {
+            return sendError(res, 400, 'meetingId is required')
+        }
+        try {
+            const io = req.app.get('io') || (global as any).io || getIO()
+            markCallAccepted(meetingId)
+
+            const acceptData = { meetingId, calleeId: userId }
+            let targetCallerId = callerId
+            if (!targetCallerId) {
+                try {
+                    const meeting = await Meeting.findOne({ meetingId }).select('host').lean().exec()
+                    if (meeting?.host) targetCallerId = String(meeting.host)
+                } catch (_) {}
+            }
+            if (io) {
+                if (targetCallerId) {
+                    io.to(`user:${targetCallerId}`).emit(SocketEvents.CALL_ACCEPTED, acceptData)
+                }
+                io.to(`meeting:${meetingId}`).emit(SocketEvents.CALL_ACCEPTED, acceptData)
+            }
+            return sendSuccess(res, { accepted: true, meetingId }, 'Call accepted')
+        } catch (err: any) {
+            return sendError(res, 500, err.message || 'Failed to accept call')
         }
     },
 

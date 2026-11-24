@@ -31,6 +31,19 @@ export function getIO(): Server | null {
     return ioInstance
 }
 
+export function registerApprovedGuestHandlers(io: Server, guestSocket: Socket) {
+    const flagged = guestSocket as any
+    if (flagged._meetingHandlersRegistered) return
+    flagged._meetingHandlersRegistered = true
+    registerMeetingHandlers(io, guestSocket)
+    registerMeetingChatHandlers(io, guestSocket)
+    registerWebRTCHandlers(io, guestSocket)
+    registerWhiteboardHandlers(io, guestSocket)
+    registerPollHandlers(io, guestSocket)
+    registerBreakoutHandlers(io, guestSocket)
+    registerMeetingQAHandlers(io, guestSocket)
+}
+
 export async function initializeSocket(server: HttpServer): Promise<Server> {
     const io = new Server(server, {
         cors: {
@@ -113,13 +126,7 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
             guestSocket.leave(`lobby:${guestSocket.meetingId}`)
             
             // Register meeting and WebRTC handlers on approved guest socket
-            registerMeetingHandlers(io, guestSocket)
-            registerMeetingChatHandlers(io, guestSocket)
-            registerWebRTCHandlers(io, guestSocket)
-            registerWhiteboardHandlers(io, guestSocket)
-            registerPollHandlers(io, guestSocket)
-            registerBreakoutHandlers(io, guestSocket)
-            registerMeetingQAHandlers(io, guestSocket)
+            registerApprovedGuestHandlers(io, guestSocket)
 
             // Persist approved participant in MongoDB Meeting document
             try {
@@ -176,21 +183,10 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         const userId = authSocket.userId
         socket.join(`user:${userId}`)
 
-        // Register all handlers SYNCHRONOUSLY so client events like webrtc:join are never dropped during async operations
-        registerMeetingHandlers(io, socket)
-        registerMeetingChatHandlers(io, socket)
-        registerChannelChatHandlers(io, socket)
-        registerWebRTCHandlers(io, socket)
-        registerDirectCallHandlers(io, socket)
-        registerWhiteboardHandlers(io, socket)
-        registerPollHandlers(io, socket)
-        registerBreakoutHandlers(io, socket)
-        registerMeetingQAHandlers(io, socket)
-
-        // Handle Guest Flow
+        // Enforce Guest Flow BEFORE registering any operational meeting/chat/channel/WebRTC handlers
         if (authSocket.isGuest) {
             if (authSocket.isPending) {
-                // Join the guest lobby room
+                // Join the guest lobby room only
                 socket.join(`lobby:${authSocket.meetingId}`)
 
                 // If the meeting room already has participants/host, notify the connecting guest
@@ -218,10 +214,34 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
                 return
             }
 
+            registerApprovedGuestHandlers(io, socket)
             socket.on(SocketEvents.DISCONNECT, () => {
                 // Approved guest disconnect cleanup
             })
             return
+        }
+
+        // Register all handlers SYNCHRONOUSLY for authenticated registered users
+        registerApprovedGuestHandlers(io, socket)
+        registerChannelChatHandlers(io, socket)
+        registerDirectCallHandlers(io, socket)
+
+        // Asynchronous tokenVersion revocation check (non-blocking for initial join)
+        if (Types.ObjectId.isValid(userId)) {
+            const rawToken = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.toString().replace(/^Bearer\s+/i, '')
+            if (rawToken) {
+                try {
+                    const decoded: any = jwt.decode(rawToken)
+                    if (typeof decoded?.tokenVersion === 'number') {
+                        User.findById(userId).select('tokenVersion').lean().then((u: any) => {
+                            if (!u || (u.tokenVersion !== undefined && decoded.tokenVersion < u.tokenVersion)) {
+                                socket.emit('error', { message: 'Session revoked. Please log in again.' })
+                                socket.disconnect(true)
+                            }
+                        }).catch(() => {})
+                    }
+                } catch (_) {}
+            }
         }
 
         // For registered users, populate their full name into the socket
@@ -263,49 +283,55 @@ export async function initializeSocket(server: HttpServer): Promise<Server> {
         })
 
         socket.on(SocketEvents.CHAT_SEND, async (payload: { receiverId: string; message: string; parentMessageId?: string }) => {
-            const chatMessage = await createMessage(userId, payload)
-            let delivered = false
-
-            const populatedMessage = await Message.findById(chatMessage._id)
-                .populate('sender', 'fullName email profileImage')
-                .populate('receiver', 'fullName email profileImage')
-                .lean()
-                .exec() || chatMessage
-
-            if (payload.parentMessageId) {
-                const parentMsg = await Message.findById(payload.parentMessageId).exec()
-                io.to(`user:${userId}`).to(`user:${payload.receiverId}`).emit(SocketEvents.THREAD_CREATED, populatedMessage)
-                if (parentMsg) {
-                    io.to(`user:${userId}`).to(`user:${payload.receiverId}`).emit(SocketEvents.THREAD_UPDATED, parentMsg)
-                }
-                delivered = true
-            } else {
-                io.to(`user:${payload.receiverId}`).emit(SocketEvents.CHAT_RECEIVE, populatedMessage)
-                io.to(`user:${userId}`).emit(SocketEvents.CHAT_RECEIVE, populatedMessage)
-                const deliveredMessage = await markMessageDelivered(chatMessage._id.toString())
-                delivered = !!deliveredMessage
-            }
-
-            socket.emit(SocketEvents.CHAT_DELIVERED, { messageId: chatMessage._id, receiverId: payload.receiverId, delivered })
-            if (delivered) {
-                io.to(`user:${userId}`).emit(SocketEvents.MESSAGE_DELIVERED, {
-                    messageId: chatMessage._id,
-                    userId: payload.receiverId,
-                    deliveredAt: new Date()
-                })
-            }
-
-            // Real-Time High Priority FCM / Web Push (WhatsApp style banner & ringtone)
+            if (!payload?.receiverId || !payload?.message) return
             try {
-                const senderDoc = (populatedMessage as any)?.sender || {}
-                NotificationService.sendChatMessagePush(payload.receiverId, {
-                    senderId: userId,
-                    senderName: senderDoc.fullName || senderDoc.name || 'Colleague',
-                    senderAvatar: senderDoc.profileImage || '',
-                    text: payload.message,
-                    messageId: chatMessage._id.toString()
-                }).catch(() => {})
-            } catch (_) {}
+                const chatMessage = await createMessage(userId, payload)
+                let delivered = false
+
+                const populatedMessage = await Message.findById(chatMessage._id)
+                    .populate('sender', 'fullName email profileImage')
+                    .populate('receiver', 'fullName email profileImage')
+                    .lean()
+                    .exec() || chatMessage
+
+                if (payload.parentMessageId) {
+                    const parentMsg = await Message.findById(payload.parentMessageId).exec()
+                    io.to(`user:${userId}`).to(`user:${payload.receiverId}`).emit(SocketEvents.THREAD_CREATED, populatedMessage)
+                    if (parentMsg) {
+                        io.to(`user:${userId}`).to(`user:${payload.receiverId}`).emit(SocketEvents.THREAD_UPDATED, parentMsg)
+                    }
+                    delivered = true
+                } else {
+                    io.to(`user:${payload.receiverId}`).emit(SocketEvents.CHAT_RECEIVE, populatedMessage)
+                    io.to(`user:${userId}`).emit(SocketEvents.CHAT_RECEIVE, populatedMessage)
+                    const deliveredMessage = await markMessageDelivered(chatMessage._id.toString())
+                    delivered = !!deliveredMessage
+                }
+
+                socket.emit(SocketEvents.CHAT_DELIVERED, { messageId: chatMessage._id, receiverId: payload.receiverId, delivered })
+                if (delivered) {
+                    io.to(`user:${userId}`).emit(SocketEvents.MESSAGE_DELIVERED, {
+                        messageId: chatMessage._id,
+                        userId: payload.receiverId,
+                        deliveredAt: new Date()
+                    })
+                }
+
+                // Real-Time High Priority FCM / Web Push (WhatsApp style banner & ringtone)
+                try {
+                    const senderDoc = (populatedMessage as any)?.sender || {}
+                    NotificationService.sendChatMessagePush(payload.receiverId, {
+                        senderId: userId,
+                        senderName: senderDoc.fullName || senderDoc.name || 'Colleague',
+                        senderAvatar: senderDoc.profileImage || '',
+                        text: payload.message,
+                        messageId: chatMessage._id.toString()
+                    }).catch(() => {})
+                } catch (_) {}
+            } catch (err) {
+                console.error('Failed to send direct chat message via socket:', err)
+                socket.emit('error', { message: 'Failed to send message' })
+            }
         })
 
         socket.on(SocketEvents.CHAT_SEEN, async (payload: { senderId: string }) => {

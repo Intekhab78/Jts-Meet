@@ -295,6 +295,7 @@ export const MeetingSidePanels: React.FC<MeetingSidePanelsProps> = ({
                             const data = await response.json()
                             if (response.ok && data?.success) {
                                 setMeetingInfo(data.data)
+                                socket?.emit('meeting:waiting-room-toggle', { meetingId: effectiveMeetingId, enabled })
                                 addToast(`Waiting Room ${enabled ? 'enabled' : 'disabled'}`, 'success')
                             } else {
                                 addToast(data.message || 'Failed to update setting', 'warning')

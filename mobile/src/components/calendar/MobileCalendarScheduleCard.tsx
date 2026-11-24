@@ -33,7 +33,7 @@ export const MobileCalendarScheduleCard: React.FC<MobileCalendarScheduleCardProp
 
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/api/meetings/mine`, {
+      const res = await fetch(`${API_BASE}/api/meeting/mine`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -91,13 +91,13 @@ export const MobileCalendarScheduleCard: React.FC<MobileCalendarScheduleCardProp
 
   const generateGoogleCalendarUrl = (m: CalendarMeeting) => {
     const title = encodeURIComponent(m.title);
-    const details = encodeURIComponent(`Join JTS Meet video conference: https://jts-meet.internal/meet/${m.meetingId}`);
+    const details = encodeURIComponent(`Join JTS Meet video conference: https://meet.jtsmiddleeast.com/meet/${m.meetingId}`);
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}`;
   };
 
   const generateOutlookCalendarUrl = (m: CalendarMeeting) => {
     const title = encodeURIComponent(m.title);
-    const details = encodeURIComponent(`Join JTS Meet video conference: https://jts-meet.internal/meet/${m.meetingId}`);
+    const details = encodeURIComponent(`Join JTS Meet video conference: https://meet.jtsmiddleeast.com/meet/${m.meetingId}`);
     return `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=${title}&body=${details}`;
   };
 

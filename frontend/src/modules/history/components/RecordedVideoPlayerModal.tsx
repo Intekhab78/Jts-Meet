@@ -178,52 +178,23 @@ export function RecordedVideoPlayerModal({
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
     }
 
-    // High fidelity transcript cues: provided or generated
+    // Real persisted transcript cues (empty when none recorded)
     const transcriptCues = useMemo<TranscriptCue[]>(() => {
         if (initialTranscript && initialTranscript.length > 0) {
             return initialTranscript
         }
-        const total = Math.max(duration || recordingDuration || 120, 60)
-        const step = Math.max(Math.floor(total / 5), 15)
-        return [
-            {
-                speaker: 'Host',
-                time: 0,
-                text: `Welcome everyone to "${meetingTitle || 'the conference session'}". Let's review the primary goals and project milestones.`
-            },
-            {
-                speaker: 'Engineering Lead',
-                time: Math.min(step * 1, total - 40),
-                text: 'All services are functioning well with optimal response times and high availability.'
-            },
-            {
-                speaker: 'Product Manager',
-                time: Math.min(step * 2, total - 30),
-                text: 'Customer feedback indicates great reception of the latest collaboration features and WebRTC capabilities.'
-            },
-            {
-                speaker: 'QA Specialist',
-                time: Math.min(step * 3, total - 20),
-                text: 'Automated test suites and latency tests have passed with zero regressions across environments.'
-            },
-            {
-                speaker: 'Host',
-                time: Math.min(step * 4, total - 10),
-                text: 'Excellent teamwork! Let us finalize the action items and follow up in the scheduled review.'
-            }
-        ]
-    }, [initialTranscript, duration, recordingDuration, meetingTitle])
+        return []
+    }, [initialTranscript])
 
-    // Key Chapters with clickable bookmarks
+    // Key Chapters derived from real transcript milestones (empty when no transcript exists)
     const chapters = useMemo(() => {
-        const total = Math.max(duration || recordingDuration || 120, 60)
-        return [
-            { title: 'Session Kickoff & Roll Call', time: 0, desc: 'Welcome participants and establish session objectives' },
-            { title: 'Project Status & Metrics', time: Math.floor(total * 0.25), desc: 'Review key performance and delivery metrics' },
-            { title: 'Technical Architecture & Collaboration', time: Math.floor(total * 0.55), desc: 'System architecture deep dive and team Q&A' },
-            { title: 'Action Items & Wrap-Up', time: Math.floor(total * 0.85), desc: 'Next steps assignment and meeting closure' }
-        ]
-    }, [duration, recordingDuration])
+        if (!transcriptCues || transcriptCues.length === 0) return []
+        return transcriptCues.slice(0, 6).map((cue, idx) => ({
+            title: `${cue.speaker || `Segment ${idx + 1}`}`,
+            time: cue.time || 0,
+            desc: cue.text.slice(0, 80) + (cue.text.length > 80 ? '...' : '')
+        }))
+    }, [transcriptCues])
 
     // Filter cues by search
     const filteredCues = useMemo(() => {

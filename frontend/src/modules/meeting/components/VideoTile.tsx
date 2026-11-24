@@ -182,10 +182,12 @@ export const VideoTile = React.memo(function VideoTile({
     const currentVideoTrackId = stream?.getVideoTracks()[0]?.id
 
     // Stable video stream assignment to prevent unneeded srcObject resets
+    // Immediately detach srcObject when camera is OFF so browser releases hardware webcam LED without delay
     useEffect(() => {
         const el = videoRef.current
         if (!el) return
-        if (stream) {
+        const hasActiveVideo = !!stream && !isVideoOff && stream.getVideoTracks().some(t => t.readyState === 'live' && t.enabled)
+        if (stream && hasActiveVideo) {
             if (el.srcObject !== stream) {
                 el.srcObject = stream
             }
@@ -239,10 +241,11 @@ export const VideoTile = React.memo(function VideoTile({
             }
         } else {
             if (el.srcObject) {
+                el.pause()
                 el.srcObject = null
             }
         }
-    }, [stream, currentVideoTrackId, isScreenShare])
+    }, [stream, currentVideoTrackId, isScreenShare, isVideoOff])
 
     // Track status monitor (avoids checking vTrack.muted to prevent speech-induced flickers)
     useEffect(() => {

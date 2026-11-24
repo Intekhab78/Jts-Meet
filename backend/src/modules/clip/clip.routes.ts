@@ -26,7 +26,15 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage,
-    limits: { fileSize: 250 * 1024 * 1024 } // 250MB max for HD 10-min clips
+    limits: { fileSize: 250 * 1024 * 1024 }, // 250MB max for HD 10-min clips
+    fileFilter: (_req, file, cb) => {
+        const mime = (file.mimetype || '').toLowerCase()
+        if (mime.startsWith('video/') || mime.startsWith('audio/')) {
+            cb(null, true)
+        } else {
+            cb(new Error('Invalid clip format: only video/* or audio/* files are allowed'))
+        }
+    }
 })
 
 router.post('/upload', authenticate, upload.single('clip'), asyncWrapper(ClipController.uploadClip))

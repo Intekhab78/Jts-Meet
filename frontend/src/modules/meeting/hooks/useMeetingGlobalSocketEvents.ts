@@ -160,28 +160,14 @@ export const useMeetingGlobalSocketEvents = ({
             addToast(data.enabled ? 'Confidential Watermark enabled by host' : 'Confidential Watermark disabled', 'info')
         }
 
-        const onReactionEvent = (data: { emoji: string; senderName?: string }) => {
-            if (data?.emoji) {
-                spawnReaction(data.emoji, data.senderName)
-            }
-        }
-
-        socket.on('meeting:mute-all', onMuteAllEvent)
         socket.on(SocketEvents.MEETING_MUTE_ALL, onMuteAllEvent)
-        socket.on('meeting:unmute-all', onUnmuteAllEvent)
         socket.on(SocketEvents.MEETING_UNMUTE_ALL, onUnmuteAllEvent)
         socket.on('meeting:lock-toggle', onLockToggleEvent)
-        socket.on('meeting:end-all', onEndAllEvent)
-        socket.on('meeting:end', onEndAllEvent)
         socket.on(SocketEvents.MEETING_END, onEndAllEvent)
         socket.on(SocketEvents.MEETING_END_ALL, onEndAllEvent)
         socket.on(SocketEvents.MEETING_WATERMARK_TOGGLE, onWatermarkToggleEvent)
-        socket.on(SocketEvents.MEETING_REACTION, onReactionEvent)
-        socket.on('meeting:mute-user', onMuteUserEvent)
         socket.on(SocketEvents.MEETING_MUTE_USER, onMuteUserEvent)
-        socket.on('meeting:unmute-user', onUnmuteUserEvent)
         socket.on(SocketEvents.MEETING_UNMUTE_USER, onUnmuteUserEvent)
-        socket.on('meeting:remove-user', onRemoveUserEvent)
         socket.on(SocketEvents.MEETING_REMOVE_USER, onRemoveUserEvent)
 
         // Virtual Green Room — Stage Status Change
@@ -205,31 +191,21 @@ export const useMeetingGlobalSocketEvents = ({
         }
         socket.on(SocketEvents.WEBRTC_USER_LEFT, onUserLeftGlobal)
         socket.on(SocketEvents.MEETING_LEAVE, onUserLeftGlobal)
-        socket.on('meeting:leave', onUserLeftGlobal)
 
         return () => {
-            socket.off('meeting:mute-all', onMuteAllEvent)
             socket.off(SocketEvents.MEETING_MUTE_ALL, onMuteAllEvent)
-            socket.off('meeting:unmute-all', onUnmuteAllEvent)
             socket.off(SocketEvents.MEETING_UNMUTE_ALL, onUnmuteAllEvent)
             socket.off('meeting:lock-toggle', onLockToggleEvent)
-            socket.off('meeting:end-all', onEndAllEvent)
-            socket.off('meeting:end', onEndAllEvent)
             socket.off(SocketEvents.MEETING_END, onEndAllEvent)
             socket.off(SocketEvents.MEETING_END_ALL, onEndAllEvent)
             socket.off(SocketEvents.MEETING_WATERMARK_TOGGLE, onWatermarkToggleEvent)
-            socket.off(SocketEvents.MEETING_REACTION, onReactionEvent)
-            socket.off('meeting:mute-user', onMuteUserEvent)
             socket.off(SocketEvents.MEETING_MUTE_USER, onMuteUserEvent)
-            socket.off('meeting:unmute-user', onUnmuteUserEvent)
             socket.off(SocketEvents.MEETING_UNMUTE_USER, onUnmuteUserEvent)
-            socket.off('meeting:remove-user', onRemoveUserEvent)
             socket.off(SocketEvents.MEETING_REMOVE_USER, onRemoveUserEvent)
             socket.off(SocketEvents.STAGE_STATUS_CHANGE, onStageStatusChange)
             socket.off(SocketEvents.STAGE_STATE_SYNC, onStageStateSync)
             socket.off(SocketEvents.WEBRTC_USER_LEFT, onUserLeftGlobal)
             socket.off(SocketEvents.MEETING_LEAVE, onUserLeftGlobal)
-            socket.off('meeting:leave', onUserLeftGlobal)
         }
     }, [socket, isLocalHost, localUserId, meetingId, localStream, setIsMuted, setIsLocked, setMeetingInput, handleExitMeeting, isGuest, token, setIsWatermarkEnabled, spawnReaction, setBackstageUserIds, addToast])
 }

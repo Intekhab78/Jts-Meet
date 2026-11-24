@@ -24,6 +24,7 @@ import { validateCreateMeeting, validateMeetingAction } from './meeting.validato
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { User } from '../../models/user.model'
 import { cloudRecordingWorker } from '../../workers/cloudRecording.worker'
+import { getEffectivePlanForOrg, getEffectivePlanForUser } from '../plan/planEntitlements'
 import { Organization } from '../organization/organization.model'
 import { NotificationService } from '../notification/notification.service'
 import { sendMeetingInvitationEmail, sendPostMeetingSummaryEmail } from '../../services/email.service'
@@ -62,17 +63,40 @@ export const meetingController = {
         const meeting = await getMeetingByMeetingId(meetingId)
 
         if (!meeting) {
+            const effectivePlan = await getEffectivePlanForUser(req.userId)
             // Return 200 with minimal ad-hoc meeting payload to avoid 404 error in browser console for instant rooms
             return sendSuccess(res, {
                 meetingId,
                 title: `Meeting (${meetingId})`,
                 isAdHoc: true,
                 participants: [],
-                status: 'active'
+                status: 'active',
+                planTier: effectivePlan.planTier,
+                planLimits: {
+                    planTier: effectivePlan.planTier,
+                    isPaid: effectivePlan.isPaid,
+                    limits: effectivePlan.limits,
+                    features: effectivePlan.features
+                }
             }, 'Ad-hoc meeting metadata')
         }
 
-        return sendSuccess(res, meeting, 'Meeting retrieved')
+        const orgIdRaw = (meeting.organizationId as any)?._id || meeting.organizationId
+        const hostIdRaw = (meeting.host as any)?._id || meeting.host
+        const effectivePlan = orgIdRaw
+            ? await getEffectivePlanForOrg(String(orgIdRaw))
+            : await getEffectivePlanForUser(String(hostIdRaw))
+
+        const meetingObj = typeof (meeting as any).toObject === 'function' ? (meeting as any).toObject() : meeting
+        return sendSuccess(res, {
+            ...meetingObj,
+            planLimits: {
+                planTier: effectivePlan.planTier,
+                isPaid: effectivePlan.isPaid,
+                limits: effectivePlan.limits,
+                features: effectivePlan.features
+            }
+        }, 'Meeting retrieved')
     },
 
     joinMeeting: async (req: AuthRequest, res: Response) => {
@@ -84,6 +108,19 @@ export const meetingController = {
         const userId = req.userId
         if (!userId) {
             return sendError(res, 401, 'Unauthorized access')
+        }
+
+        const existingMeeting = await getMeetingByMeetingId(req.body.meetingId)
+        if (existingMeeting) {
+            const orgIdRaw = (existingMeeting.organizationId as any)?._id || existingMeeting.organizationId
+            const hostIdRaw = (existingMeeting.host as any)?._id || existingMeeting.host
+            const effectivePlan = orgIdRaw
+                ? await getEffectivePlanForOrg(String(orgIdRaw))
+                : await getEffectivePlanForUser(String(hostIdRaw))
+            const alreadyIn = existingMeeting.participants?.some(p => String((p as any)?._id || p) === String(userId))
+            if (!alreadyIn && existingMeeting.participants && existingMeeting.participants.length >= effectivePlan.limits.maxParticipantsPerCall) {
+                return sendError(res, 403, `Room capacity reached (${effectivePlan.limits.maxParticipantsPerCall} max participants for ${effectivePlan.planTier.toUpperCase()} plan).`)
+            }
         }
 
         const meeting = await joinMeeting(req.body.meetingId, userId)
@@ -734,6 +771,10 @@ export const meetingController = {
             return sendError(res, 400, 'Meeting ID is required')
         }
         try {
+            const effectivePlan = await getEffectivePlanForUser(req.userId)
+            if (!effectivePlan.features.cloudRecording) {
+                return sendError(res, 403, `Cloud Recording is not included in the ${effectivePlan.planTier.toUpperCase()} plan. Please upgrade to enable recording.`)
+            }
             const hostUser = req.userId ? await User.findById(req.userId).select('fullName') : null
             const hostName = hostUser?.fullName || 'Meeting Host'
             const result = await cloudRecordingWorker.startRecording(meetingId, hostName)

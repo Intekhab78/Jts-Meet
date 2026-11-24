@@ -154,14 +154,17 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
       }).catch(() => {});
 
       // 3. Update Password if entered
+      let passwordFailed = false;
       if (showPasswordSection && oldPassword && newPassword) {
         if (newPassword.length < 8) {
           setPasswordMsg({ type: 'error', text: 'New password must be at least 8 characters' });
+          passwordFailed = true;
         } else if (newPassword !== confirmPassword) {
           setPasswordMsg({ type: 'error', text: 'Passwords do not match' });
+          passwordFailed = true;
         } else {
           const pwdRes = await fetch(`${API_BASE}/api/auth/change-password`, {
-            method: 'PUT',
+            method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${resolvedToken}`,
@@ -176,6 +179,7 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
             setConfirmPassword('');
           } else {
             setPasswordMsg({ type: 'error', text: pwdJson.message || 'Failed to change password' });
+            passwordFailed = true;
           }
         }
       }
@@ -204,11 +208,13 @@ export const MobileUserProfileModal: React.FC<MobileUserProfileModalProps> = ({
       if (phone.trim()) localStorage.setItem('jts_user_phone', phone.trim());
 
       onUpdateUser(updatedUser);
-      setSaveSuccess(true);
-      setTimeout(() => {
-        setSaveSuccess(false);
-        onClose();
-      }, 1200);
+      if (!passwordFailed) {
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setSaveSuccess(false);
+          onClose();
+        }, 1200);
+      }
     } catch (err: any) {
       alert(err.message || 'Failed to save profile changes');
     } finally {

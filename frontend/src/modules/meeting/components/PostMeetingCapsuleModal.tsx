@@ -61,13 +61,11 @@ export function PostMeetingCapsuleModal({
     onClose,
     onRejoin
 }: PostMeetingCapsuleModalProps) {
-    if (!isOpen || !capsule) return null
-
     const [activeTab, setActiveTab] = useState<CapsuleTab>('summary')
     const [copiedRoomId, setCopiedRoomId] = useState(false)
     const [copiedSummary, setCopiedSummary] = useState(false)
     const [actionItems, setActionItems] = useState<PostMeetingCapsuleActionItem[]>(() => {
-        if (capsule.actionItems && capsule.actionItems.length > 0) {
+        if (capsule?.actionItems && capsule.actionItems.length > 0) {
             return capsule.actionItems
         }
         return []
@@ -76,7 +74,7 @@ export function PostMeetingCapsuleModal({
 
     // Format meeting end time
     const formattedEndTime = useMemo(() => {
-        const d = capsule.endTime ? new Date(capsule.endTime) : new Date()
+        const d = capsule?.endTime ? new Date(capsule.endTime) : new Date()
         return d.toLocaleDateString(undefined, {
             weekday: 'short',
             year: 'numeric',
@@ -85,26 +83,28 @@ export function PostMeetingCapsuleModal({
             hour: '2-digit',
             minute: '2-digit'
         })
-    }, [capsule.endTime])
+    }, [capsule?.endTime])
 
     // Compile attendees and calculate talk time totals
     const attendeesList = useMemo(() => {
-        if (capsule.attendees && capsule.attendees.length > 0) {
+        if (capsule?.attendees && capsule.attendees.length > 0) {
             return capsule.attendees
         }
         return [
             {
                 id: 'me',
-                name: capsule.hostName || 'Host',
-                talkTimeSeconds: capsule.talkTime?.['me'] || 0,
+                name: capsule?.hostName || 'Host',
+                talkTimeSeconds: capsule?.talkTime?.['me'] || 0,
                 isHost: true
             }
         ]
-    }, [capsule.attendees, capsule.hostName, capsule.talkTime])
+    }, [capsule?.attendees, capsule?.hostName, capsule?.talkTime])
 
     const totalTalkSeconds = useMemo(() => {
         return attendeesList.reduce((acc, a) => acc + (a.talkTimeSeconds || 0), 0) || 1
     }, [attendeesList])
+
+    if (!isOpen || !capsule) return null
 
     const formatSeconds = (sec: number = 0) => {
         const m = Math.floor(sec / 60)
@@ -125,6 +125,10 @@ export function PostMeetingCapsuleModal({
         setActionItems(prev => prev.map(item =>
             item.id === id ? { ...item, done: !item.done } : item
         ))
+    }
+
+    const removeActionItem = (id: string) => {
+        setActionItems(prev => prev.filter(item => item.id !== id))
     }
 
     const handleAddActionItem = (e: React.FormEvent) => {
@@ -227,215 +231,242 @@ export function PostMeetingCapsuleModal({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: 20
+            padding: '12px 16px',
+            boxSizing: 'border-box'
         }}>
             <div style={{
                 background: 'linear-gradient(180deg, #131929 0%, #0d121f 100%)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: 24,
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                borderRadius: 20,
                 width: '100%',
-                maxWidth: 680,
-                maxHeight: '92vh',
-                boxShadow: '0 30px 70px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(99, 102, 241, 0.15)',
+                maxWidth: 840,
+                maxHeight: 'calc(100dvh - 28px)',
+                boxShadow: '0 24px 64px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(99, 102, 241, 0.15)',
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden'
             }}>
-                {/* ── Top Header ── */}
+                {/* ── Compact Top Header ── */}
                 <div style={{
-                    padding: '24px 28px 18px 28px',
+                    padding: '14px 22px 12px 22px',
                     borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                    position: 'relative'
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    flexShrink: 0
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                        {/* Branded pill */}
-                        <div style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            padding: '4px 10px',
-                            borderRadius: 20,
-                            background: 'rgba(99, 102, 241, 0.15)',
-                            border: '1px solid rgba(99, 102, 241, 0.35)',
-                            fontSize: '0.7rem',
-                            fontWeight: 700,
-                            letterSpacing: '0.05em',
-                            color: '#a5b4fc',
-                            textTransform: 'uppercase'
-                        }}>
-                            <span style={{ fontSize: '0.75rem' }}>📦</span>
-                            <span>Executive Meeting Capsule</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                            <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                padding: '2px 9px',
+                                borderRadius: 9999,
+                                background: 'rgba(99, 102, 241, 0.16)',
+                                border: '1px solid rgba(99, 102, 241, 0.35)',
+                                fontSize: '0.65rem',
+                                fontWeight: 800,
+                                letterSpacing: '0.05em',
+                                color: '#a5b4fc',
+                                textTransform: 'uppercase'
+                            }}>
+                                📦 Executive Meeting Capsule
+                            </span>
+                            <h2 style={{
+                                margin: 0,
+                                fontSize: '1.15rem',
+                                fontWeight: 800,
+                                color: '#ffffff',
+                                letterSpacing: '-0.02em',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                            }}>
+                                {capsule.title}
+                            </h2>
                         </div>
 
-                        {/* Top Right Quick Rejoin & Close */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            {onRejoin && (
+                        <div style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
+                            gap: 10,
+                            fontSize: '0.75rem',
+                            color: '#94a3b8'
+                        }}>
+                            {capsule.meetingId && (
                                 <button
                                     type="button"
-                                    onClick={onRejoin}
+                                    onClick={handleCopyRoomId}
+                                    title="Click to copy Room Code"
                                     style={{
-                                        display: 'flex',
+                                        display: 'inline-flex',
                                         alignItems: 'center',
-                                        gap: 5,
-                                        padding: '5px 12px',
-                                        borderRadius: 8,
-                                        background: 'rgba(56, 189, 248, 0.12)',
-                                        border: '1px solid rgba(56, 189, 248, 0.3)',
-                                        color: '#38bdf8',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 600,
+                                        gap: 4,
+                                        padding: '2px 7px',
+                                        borderRadius: 6,
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                                        color: copiedRoomId ? '#4ade80' : '#cbd5e1',
+                                        fontFamily: 'monospace',
+                                        fontSize: '0.72rem',
                                         cursor: 'pointer'
                                     }}
                                 >
-                                    <span>🔄 Rejoin</span>
+                                    <span>🏷️ {capsule.meetingId}</span>
+                                    <span style={{ fontSize: '0.65rem', opacity: 0.85 }}>{copiedRoomId ? '✓ Copied' : '📋'}</span>
                                 </button>
                             )}
-                            <button
-                                type="button"
-                                onClick={onClose}
-                                style={{
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: '50%',
-                                    background: 'rgba(255, 255, 255, 0.06)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    color: '#94a3b8',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '1rem',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                ✕
-                            </button>
+                            <span>•</span>
+                            <span>{formattedEndTime}</span>
+                            {capsule.hostName && (
+                                <>
+                                    <span>•</span>
+                                    <span style={{ color: '#cbd5e1' }}>Host: <strong>{capsule.hostName}</strong></span>
+                                </>
+                            )}
                         </div>
                     </div>
 
-                    {/* Title and Room ID */}
-                    <h2 style={{
-                        margin: '0 0 6px 0',
-                        fontSize: '1.45rem',
-                        fontWeight: 800,
-                        color: '#ffffff',
-                        letterSpacing: '-0.02em',
-                        lineHeight: 1.2
-                    }}>
-                        {capsule.title}
-                    </h2>
-
-                    <div style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        alignItems: 'center',
-                        gap: 12,
-                        fontSize: '0.8rem',
-                        color: '#94a3b8'
-                    }}>
-                        {capsule.meetingId && (
+                    {/* Top Right Quick Rejoin & Close */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {onRejoin && (
                             <button
                                 type="button"
-                                onClick={handleCopyRoomId}
-                                title="Click to copy Room Code"
+                                onClick={onRejoin}
                                 style={{
-                                    display: 'inline-flex',
+                                    display: 'flex',
                                     alignItems: 'center',
                                     gap: 5,
-                                    padding: '3px 8px',
-                                    borderRadius: 6,
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                                    color: copiedRoomId ? '#4ade80' : '#cbd5e1',
-                                    fontFamily: 'monospace',
+                                    padding: '6px 12px',
+                                    borderRadius: 8,
+                                    background: 'rgba(56, 189, 248, 0.14)',
+                                    border: '1px solid rgba(56, 189, 248, 0.35)',
+                                    color: '#38bdf8',
                                     fontSize: '0.75rem',
+                                    fontWeight: 700,
                                     cursor: 'pointer'
                                 }}
                             >
-                                <span>🏷️ {capsule.meetingId}</span>
-                                <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>{copiedRoomId ? '✓ Copied' : '📋'}</span>
+                                <span>🔄 Rejoin Room</span>
                             </button>
                         )}
-                        <span>•</span>
-                        <span>{formattedEndTime}</span>
-                        {capsule.hostName && (
-                            <>
-                                <span>•</span>
-                                <span style={{ color: '#cbd5e1' }}>Host: <strong>{capsule.hostName}</strong></span>
-                            </>
-                        )}
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            style={{
+                                width: 30,
+                                height: 30,
+                                borderRadius: '50%',
+                                background: 'rgba(255, 255, 255, 0.06)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                color: '#94a3b8',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '0.9rem',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            ✕
+                        </button>
                     </div>
                 </div>
 
-                {/* ── Key Metric Stat Grid (4 Cards) ── */}
+                {/* ── Key Metric Stat Grid (4 Compact Inline Cards) ── */}
                 <div style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(4, 1fr)',
                     gap: 10,
-                    padding: '16px 28px',
+                    padding: '10px 22px',
                     background: 'rgba(0, 0, 0, 0.25)',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                    flexShrink: 0
                 }}>
-                    {/* Stat 1: Duration */}
                     <div style={{
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid rgba(255, 255, 255, 0.06)',
-                        borderRadius: 12,
-                        padding: '10px 14px'
+                        background: 'rgba(56, 189, 248, 0.06)',
+                        border: '1px solid rgba(56, 189, 248, 0.18)',
+                        borderRadius: 10,
+                        padding: '8px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
                     }}>
-                        <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
                             <IconClock size={13} color="#38bdf8" />
                             <span>DURATION</span>
                         </div>
-                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#38bdf8', marginTop: 4 }}>
+                        <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#38bdf8' }}>
                             {capsule.duration}
                         </div>
                     </div>
 
-                    {/* Stat 2: Attendees */}
-                    <div style={{
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid rgba(255, 255, 255, 0.06)',
-                        borderRadius: 12,
-                        padding: '10px 14px'
-                    }}>
-                        <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div
+                        onClick={() => setActiveTab('attendees')}
+                        style={{
+                            background: 'rgba(165, 180, 252, 0.06)',
+                            border: '1px solid rgba(165, 180, 252, 0.18)',
+                            borderRadius: 10,
+                            padding: '8px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
                             <IconUsers size={13} color="#a5b4fc" />
                             <span>ATTENDEES</span>
                         </div>
-                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#ffffff', marginTop: 4 }}>
-                            {attendeesList.length} <span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#94a3b8' }}>present</span>
+                        <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#ffffff' }}>
+                            {attendeesList.length}
                         </div>
                     </div>
 
-                    {/* Stat 3: Discussion Volume */}
-                    <div style={{
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid rgba(255, 255, 255, 0.06)',
-                        borderRadius: 12,
-                        padding: '10px 14px'
-                    }}>
-                        <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div
+                        onClick={() => setActiveTab('chat')}
+                        style={{
+                            background: 'rgba(52, 211, 153, 0.06)',
+                            border: '1px solid rgba(52, 211, 153, 0.18)',
+                            borderRadius: 10,
+                            padding: '8px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
                             <IconStickyNote size={13} color="#34d399" />
                             <span>MESSAGES</span>
                         </div>
-                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#ffffff', marginTop: 4 }}>
-                            {capsule.messages?.length || 0} <span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#94a3b8' }}>logged</span>
+                        <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#34d399' }}>
+                            {capsule.messages?.length || 0}
                         </div>
                     </div>
 
-                    {/* Stat 4: Action Items */}
-                    <div style={{
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid rgba(255, 255, 255, 0.06)',
-                        borderRadius: 12,
-                        padding: '10px 14px'
-                    }}>
-                        <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div
+                        onClick={() => setActiveTab('summary')}
+                        style={{
+                            background: 'rgba(251, 191, 36, 0.06)',
+                            border: '1px solid rgba(251, 191, 36, 0.18)',
+                            borderRadius: 10,
+                            padding: '8px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
                             <IconZap size={13} color="#fbbf24" />
-                            <span>ACTION ITEMS</span>
+                            <span>TASKS</span>
                         </div>
-                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fbbf24', marginTop: 4 }}>
-                            {actionItems.length} <span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#94a3b8' }}>items</span>
+                        <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#fbbf24' }}>
+                            {actionItems.length}
                         </div>
                     </div>
                 </div>
@@ -444,20 +475,21 @@ export function PostMeetingCapsuleModal({
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    padding: '8px 28px 0 28px',
+                    padding: '4px 22px 0 22px',
                     borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                    gap: 16
+                    gap: 18,
+                    flexShrink: 0
                 }}>
                     <button
                         type="button"
                         onClick={() => setActiveTab('summary')}
                         style={{
-                            padding: '10px 4px',
+                            padding: '8px 4px',
                             background: 'none',
                             border: 'none',
                             borderBottom: activeTab === 'summary' ? '2px solid #6366f1' : '2px solid transparent',
                             color: activeTab === 'summary' ? '#ffffff' : '#94a3b8',
-                            fontSize: '0.8125rem',
+                            fontSize: '0.78rem',
                             fontWeight: 700,
                             cursor: 'pointer',
                             display: 'flex',
@@ -531,124 +563,196 @@ export function PostMeetingCapsuleModal({
                     </button>
                 </div>
 
-                {/* ── Scrollable Tab Content ── */}
+                {/* ── Compact Tab Content (2-Column Grid for Summary & Action Items to avoid vertical scroll) ── */}
                 <div style={{
-                    padding: '20px 28px',
+                    padding: '14px 22px',
                     overflowY: 'auto',
                     flex: 1,
-                    minHeight: 260,
+                    minHeight: 0,
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 16
+                    gap: 12
                 }}>
-                    {/* TAB 1: Summary & Action Items */}
+                    {/* TAB 1: Summary & Action Items (Side-by-Side 2-Column Layout) */}
                     {activeTab === 'summary' && (
-                        <>
-                            {/* Executive Brief Box */}
-                            <div style={{
-                                background: 'rgba(99, 102, 241, 0.06)',
-                                border: '1px solid rgba(99, 102, 241, 0.2)',
-                                borderRadius: 14,
-                                padding: '16px 18px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 6
-                            }}>
-                                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#a5b4fc', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                                    ✨ Executive Session Briefing
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))',
+                            gap: 14,
+                            alignItems: 'stretch'
+                        }}>
+                            {/* Left Column: Executive Brief + Attendees Quick Preview */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div style={{
+                                    background: 'rgba(99, 102, 241, 0.07)',
+                                    border: '1px solid rgba(99, 102, 241, 0.22)',
+                                    borderRadius: 12,
+                                    padding: '13px 16px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 6
+                                }}>
+                                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#a5b4fc', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                                        ✨ Executive Session Briefing
+                                    </div>
+                                    <div style={{ fontSize: '0.8125rem', color: '#e2e8f0', lineHeight: 1.5 }}>
+                                        {capsule.notes && capsule.notes.trim() ? (
+                                            <div style={{ whiteSpace: 'pre-wrap' }}>{capsule.notes}</div>
+                                        ) : (
+                                            <div>
+                                                The conference session <strong style={{ color: '#fff' }}>"{capsule.title}"</strong> concluded normally after <strong style={{ color: '#38bdf8' }}>{capsule.duration}</strong> with <strong style={{ color: '#fff' }}>{attendeesList.length} participant(s)</strong>.
+                                                {attendeesList.length === 1
+                                                    ? ' Single presenter broadcast completed with hardware feeds closed normally.'
+                                                    : ' Active group discussion took place with speaking metrics tracked in the Attendees tab.'}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div style={{ fontSize: '0.85rem', color: '#e2e8f0', lineHeight: 1.55 }}>
-                                    {capsule.notes && capsule.notes.trim() ? (
-                                        <div style={{ whiteSpace: 'pre-wrap' }}>{capsule.notes}</div>
-                                    ) : (
-                                        <div>
-                                            The conference session <strong style={{ color: '#fff' }}>"{capsule.title}"</strong> concluded normally after <strong style={{ color: '#38bdf8' }}>{capsule.duration}</strong> with <strong style={{ color: '#fff' }}>{attendeesList.length} participant(s)</strong>.
-                                            {attendeesList.length === 1
-                                                ? ' Single presenter broadcast completed with hardware feeds closed normally.'
-                                                : ` Active group discussion took place with speaking metrics tracked below.`}
-                                        </div>
-                                    )}
+
+                                {/* Compact Attendee Chips */}
+                                <div style={{
+                                    background: 'rgba(255, 255, 255, 0.025)',
+                                    border: '1px solid rgba(255, 255, 255, 0.07)',
+                                    borderRadius: 12,
+                                    padding: '11px 14px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 8
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                            👥 Participants ({attendeesList.length})
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveTab('attendees')}
+                                            style={{ background: 'none', border: 'none', color: '#818cf8', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                                        >
+                                            Speaking Stats →
+                                        </button>
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                        {attendeesList.slice(0, 6).map((a, idx) => (
+                                            <span
+                                                key={a.id || idx}
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 6,
+                                                    padding: '4px 10px',
+                                                    borderRadius: 9999,
+                                                    background: 'rgba(255,255,255,0.05)',
+                                                    border: '1px solid rgba(255,255,255,0.08)',
+                                                    fontSize: '0.74rem',
+                                                    color: '#e2e8f0',
+                                                    fontWeight: 600
+                                                }}
+                                            >
+                                                <span style={{ width: 7, height: 7, borderRadius: '50%', background: a.isHost ? '#fbbf24' : '#38bdf8' }} />
+                                                <span>{a.name}</span>
+                                                {a.isHost && <span style={{ fontSize: '0.64rem', color: '#fbbf24' }}>Host</span>}
+                                            </span>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Action Items Interactive Checklist */}
+                            {/* Right Column: Interactive Follow-up Action Items */}
                             <div style={{
                                 background: 'rgba(255, 255, 255, 0.03)',
                                 border: '1px solid rgba(255, 255, 255, 0.08)',
-                                borderRadius: 14,
-                                padding: '16px 18px'
+                                borderRadius: 12,
+                                padding: '13px 16px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'space-between',
+                                gap: 10
                             }}>
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    marginBottom: 12
-                                }}>
-                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#cbd5e1', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                                        🎯 Follow-up Action Items
-                                    </div>
-                                    <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                                        {actionItems.filter(i => i.done).length} of {actionItems.length} completed
-                                    </span>
-                                </div>
-
-                                {/* Items list */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    {actionItems.length === 0 ? (
-                                        <div style={{ fontSize: '0.8125rem', color: '#94a3b8', fontStyle: 'italic', padding: '8px 0' }}>
-                                            No action items logged yet. You can add one below for your post-meeting notes.
+                                <div>
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        marginBottom: 8
+                                    }}>
+                                        <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#cbd5e1', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                                            🎯 Follow-up Action Items
                                         </div>
-                                    ) : (
-                                        actionItems.map(item => (
-                                            <div
-                                                key={item.id}
-                                                onClick={() => toggleActionItem(item.id)}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'flex-start',
-                                                    gap: 10,
-                                                    padding: '8px 10px',
-                                                    borderRadius: 8,
-                                                    background: item.done ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255, 255, 255, 0.03)',
-                                                    border: item.done ? '1px solid rgba(34, 197, 94, 0.2)' : '1px solid rgba(255, 255, 255, 0.06)',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.15s ease'
-                                                }}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={!!item.done}
-                                                    onChange={() => {}}
-                                                    style={{ marginTop: 2, cursor: 'pointer', accentColor: '#22c55e' }}
-                                                />
-                                                <span style={{
-                                                    fontSize: '0.8125rem',
-                                                    color: item.done ? '#94a3b8' : '#e2e8f0',
-                                                    textDecoration: item.done ? 'line-through' : 'none',
-                                                    lineHeight: 1.4
-                                                }}>
-                                                    {item.text}
-                                                </span>
+                                        <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600 }}>
+                                            {actionItems.filter(i => i.done).length}/{actionItems.length} done
+                                        </span>
+                                    </div>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 135, overflowY: 'auto' }}>
+                                        {actionItems.length === 0 ? (
+                                            <div style={{ fontSize: '0.76rem', color: '#94a3b8', fontStyle: 'italic', padding: '6px 0' }}>
+                                                No action items yet. Add a quick task below to include in your report.
                                             </div>
-                                        ))
-                                    )}
+                                        ) : (
+                                            actionItems.map(item => (
+                                                <div
+                                                    key={item.id}
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        gap: 8,
+                                                        padding: '6px 9px',
+                                                        borderRadius: 8,
+                                                        background: item.done ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                                                        border: item.done ? '1px solid rgba(34, 197, 94, 0.2)' : '1px solid rgba(255, 255, 255, 0.06)'
+                                                    }}
+                                                >
+                                                    <div
+                                                        onClick={() => toggleActionItem(item.id)}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer', minWidth: 0 }}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={!!item.done}
+                                                            onChange={() => {}}
+                                                            style={{ cursor: 'pointer', accentColor: '#22c55e' }}
+                                                        />
+                                                        <span style={{
+                                                            fontSize: '0.78rem',
+                                                            color: item.done ? '#94a3b8' : '#e2e8f0',
+                                                            textDecoration: item.done ? 'line-through' : 'none',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap'
+                                                        }}>
+                                                            {item.text}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeActionItem(item.id)}
+                                                        style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.75rem', padding: '0 4px' }}
+                                                        title="Remove task"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Quick inline add action item */}
-                                <form onSubmit={handleAddActionItem} style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                                <form onSubmit={handleAddActionItem} style={{ display: 'flex', gap: 6 }}>
                                     <input
                                         type="text"
-                                        placeholder="Add quick follow-up task or note..."
+                                        placeholder="Add quick follow-up task..."
                                         value={newActionText}
                                         onChange={e => setNewActionText(e.target.value)}
                                         style={{
                                             flex: 1,
-                                            padding: '8px 12px',
+                                            padding: '7px 10px',
                                             borderRadius: 8,
                                             background: 'rgba(0, 0, 0, 0.35)',
                                             border: '1px solid rgba(255, 255, 255, 0.15)',
                                             color: '#ffffff',
-                                            fontSize: '0.8125rem',
+                                            fontSize: '0.78rem',
                                             outline: 'none'
                                         }}
                                     />
@@ -656,22 +760,23 @@ export function PostMeetingCapsuleModal({
                                         type="submit"
                                         disabled={!newActionText.trim()}
                                         style={{
-                                            padding: '8px 14px',
+                                            padding: '7px 12px',
                                             borderRadius: 8,
                                             background: newActionText.trim() ? '#6366f1' : 'rgba(255,255,255,0.08)',
                                             border: 'none',
                                             color: '#ffffff',
-                                            fontSize: '0.78rem',
+                                            fontSize: '0.75rem',
                                             fontWeight: 700,
                                             cursor: newActionText.trim() ? 'pointer' : 'default',
-                                            opacity: newActionText.trim() ? 1 : 0.5
+                                            opacity: newActionText.trim() ? 1 : 0.5,
+                                            whiteSpace: 'nowrap'
                                         }}
                                     >
-                                        + Add Task
+                                        + Add
                                     </button>
                                 </form>
                             </div>
-                        </>
+                        </div>
                     )}
 
                     {/* TAB 2: Attendees & Speaking Stats */}
@@ -821,15 +926,17 @@ export function PostMeetingCapsuleModal({
                     )}
                 </div>
 
-                {/* ── Sticky Bottom Action Bar ── */}
+                {/* ── Always-Visible Compact Bottom Action Bar ── */}
                 <div style={{
-                    padding: '16px 28px',
+                    padding: '12px 22px',
                     borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                    background: 'rgba(0, 0, 0, 0.4)',
+                    background: 'rgba(0, 0, 0, 0.45)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    gap: 12
+                    flexWrap: 'wrap',
+                    gap: 10,
+                    flexShrink: 0
                 }}>
                     {/* Left: Copy & Download buttons */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

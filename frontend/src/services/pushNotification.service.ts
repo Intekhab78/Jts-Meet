@@ -72,7 +72,7 @@ class PushNotificationService {
             const readyReg = await navigator.serviceWorker.ready
 
             // 3. Fetch VAPID Public Key from backend
-            const authToken = token || localStorage.getItem('token') || ''
+            const authToken = token || localStorage.getItem('jts_token') || localStorage.getItem('token') || ''
             const res = await fetch(`${API_BASE}/api/notifications/vapid-public-key`, {
                 headers: {
                     'Authorization': authToken ? `Bearer ${authToken}` : '',

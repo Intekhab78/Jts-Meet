@@ -55,7 +55,7 @@ export function ConferenceHistoryPage({
 }: ConferenceHistoryPageProps) {
     const [searchQuery, setSearchQuery] = useState('')
     const [filterTab, setFilterTab] = useState<'all' | 'recorded' | 'my_hosted' | 'standard'>('all')
-    const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'duration' | 'attendees'>('newest')
+    const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'duration' | 'longest' | 'attendees'>('newest')
     const [inspectingMeeting, setInspectingMeeting] = useState<HistoryMeeting | null>(null)
     const [toastMessage, setToastMessage] = useState<string | null>(null)
     const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -88,7 +88,7 @@ export function ConferenceHistoryPage({
                     }
                 }
             }
-        } catch (_) {}
+        } catch (_) { }
     }, [historyItems])
 
     const showToast = (msg: string) => {
@@ -155,7 +155,7 @@ export function ConferenceHistoryPage({
                     const timeB = b.rawStartedAt ? new Date(b.rawStartedAt).getTime() : 0
                     return timeA - timeB
                 }
-                if (sortBy === 'duration') {
+                if (sortBy === 'duration' || sortBy === 'longest') {
                     return (b.durationMinutes || 0) - (a.durationMinutes || 0)
                 }
                 if (sortBy === 'attendees') {
@@ -173,32 +173,35 @@ export function ConferenceHistoryPage({
         }
 
         const headers = ['Topic', 'Session ID', 'Date', 'Time', 'Duration', 'Duration (Mins)', 'Host Name', 'Host Email', 'Total Attendees', 'Status', 'Recording URL']
+        const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
         const rows = historyItems.map(item => {
             const hostName = typeof item.host === 'object' ? item.host?.fullName || 'N/A' : 'N/A'
             const hostEmail = typeof item.host === 'object' ? item.host?.email || 'N/A' : 'N/A'
             return [
-                `"${(item.title || '').replace(/"/g, '""')}"`,
-                `"${item.id}"`,
-                `"${item.date}"`,
-                `"${item.time}"`,
-                `"${item.duration}"`,
-                item.durationMinutes || 15,
-                `"${hostName}"`,
-                `"${hostEmail}"`,
+                esc(item.title || ''),
+                esc(item.id),
+                esc(item.date),
+                esc(item.time),
+                esc(item.duration),
+                item.durationMinutes ?? 0,
+                esc(hostName),
+                esc(hostEmail),
                 item.participants || 1,
-                `"${item.status}"`,
-                `"${item.recordingUrl || 'None'}"`
+                esc(item.status),
+                esc(item.recordingUrl || 'None')
             ].join(',')
         })
 
-        const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n')
-        const encodedUri = encodeURI(csvContent)
+        const csvBody = '\uFEFF' + [headers.join(','), ...rows].join('\n')
+        const blob = new Blob([csvBody], { type: 'text/csv;charset=utf-8;' })
+        const blobUrl = URL.createObjectURL(blob)
         const link = document.createElement('a')
-        link.setAttribute('href', encodedUri)
+        link.setAttribute('href', blobUrl)
         link.setAttribute('download', `JTS-Meet-Conference-History-${new Date().toISOString().slice(0, 10)}.csv`)
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
         showToast('Conference History CSV exported successfully!')
     }
 
@@ -247,7 +250,7 @@ export function ConferenceHistoryPage({
 
     return (
         <div className="anim-fade-in" style={{ padding: '16px 20px', maxWidth: '100%', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16, boxSizing: 'border-box' }}>
-            
+
             {/* TOAST NOTIFICATION */}
             {toastMessage && (
                 <div style={{
@@ -523,7 +526,7 @@ export function ConferenceHistoryPage({
                                     <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', transition: 'background 0.15s ease' }}>
                                         {/* TOPIC & ID */}
                                         <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
-                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                                                 <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.875rem', lineHeight: 1.3 }}>
                                                     {item.title}
                                                 </span>
@@ -642,7 +645,7 @@ export function ConferenceHistoryPage({
                                                             <IconPlay size={10} color="#ffffff" /> Watch
                                                         </button>
                                                         <a
-                                                            href={item.recordingUrl}
+                                                            href={item.recordingUrl?.startsWith('http') ? item.recordingUrl : `${API_BASE}${item.recordingUrl}`}
                                                             target="_blank"
                                                             rel="noreferrer"
                                                             style={{

@@ -288,13 +288,21 @@ export function IntegrationsTab({ token, currentOrgId, planTier }: IntegrationsT
             setFormUrl('https://discord.com/api/webhooks/XXXX')
         } else if (type === 'calendar') {
             setFormName('Google Calendar & Outlook Sync')
-            setFormUrl('https://calendar-sync.enterprise.com/api/v1/jts-events')
+            let uid = 'me'
+            try {
+                const rawUser = localStorage.getItem('user') || localStorage.getItem('jts_user_profile')
+                if (rawUser) {
+                    const parsed = JSON.parse(rawUser)
+                    uid = parsed._id || parsed.id || 'me'
+                }
+            } catch (_) {}
+            setFormUrl(`${API_BASE}/api/calendar/feed/${uid}.ics`)
         } else if (type === 'googledrive') {
             setFormName('Google Drive Cloud Vault')
             setFormUrl('https://script.google.com/macros/s/XXXX/exec')
         } else if (type === 'email') {
             setFormName('Enterprise Email Alert Gateway')
-            setFormUrl('https://api.smtp-gateway.internal/events/jts-meet')
+            setFormUrl('')
         } else if (type === 'zapier') {
             setFormName('Zapier / Make Automation Pipeline')
             setFormUrl('https://hooks.zapier.com/hooks/catch/XXXX')

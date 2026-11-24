@@ -53,7 +53,6 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
   onStartChannelCall,
 }) => {
   const resolvedToken = token || getStoredToken();
-  if (!isOpen || !resolvedToken) return null;
 
   // Active Sub-tab
   const [activeTab, setActiveTab] = useState<'channels' | 'members' | 'settings' | 'allTeams'>('channels');
@@ -104,9 +103,10 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
 
   // Android Hardware Back Button handling
   useEffect(() => {
-    let backListener: any;
+    if (!isOpen) return;
+    let backHandle: any = null;
     try {
-      backListener = CapacitorApp.addListener('backButton', () => {
+      CapacitorApp.addListener('backButton', () => {
         if (isCreateChannelOpen) {
           setIsCreateChannelOpen(false);
         } else if (isCreateTeamOpen) {
@@ -116,15 +116,15 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
         } else {
           onClose();
         }
+      }).then((h) => {
+        backHandle = h;
       });
     } catch (_) {}
 
     return () => {
-      if (backListener && typeof backListener.remove === 'function') {
-        backListener.remove();
-      }
+      backHandle?.remove?.();
     };
-  }, [isCreateChannelOpen, isCreateTeamOpen, isInviteMemberOpen, onClose]);
+  }, [isOpen, isCreateChannelOpen, isCreateTeamOpen, isInviteMemberOpen, onClose]);
 
   // Load Organization & Teams
   const loadTeams = async () => {
@@ -199,9 +199,10 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
   };
 
   useEffect(() => {
+    if (!isOpen || !resolvedToken) return;
     loadTeams();
     loadOrgMembers();
-  }, [resolvedToken, currentOrgId]);
+  }, [isOpen, resolvedToken, currentOrgId]);
 
   const activeTeam = teams.find((t) => t._id === activeTeamId) || teams[0];
 
@@ -241,10 +242,12 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
   };
 
   useEffect(() => {
-    if (activeTeam?._id) {
+    if (isOpen && activeTeam?._id) {
       loadTeamChannels();
     }
-  }, [activeTeam?._id, resolvedToken]);
+  }, [isOpen, activeTeam?._id, resolvedToken]);
+
+  if (!isOpen || !resolvedToken) return null;
 
   // Determine permissions
   const myUserId = currentUser?._id || currentUser?.id;
@@ -262,6 +265,7 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
     setCreatingChannel(true);
     try {
       const cleanName = newChannelName.trim().toLowerCase().replace(/\s+/g, '-');
+      const orgId = activeTeam.organizationId || currentOrgId || localStorage.getItem('jts_current_org_id');
       const res = await fetch(`${API_BASE}/api/channel`, {
         method: 'POST',
         headers: {
@@ -269,10 +273,11 @@ export const MobileTeamHubModal: React.FC<MobileTeamHubModalProps> = ({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          organizationId: orgId || undefined,
           teamId: activeTeam._id,
           name: cleanName,
           description: newChannelDesc.trim() || undefined,
-          isPrivate: isChannelPrivate,
+          type: isChannelPrivate ? 'private' : 'public',
         }),
       });
 

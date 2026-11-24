@@ -138,6 +138,7 @@ export const DirectVideoCallView: React.FC<DirectVideoCallViewProps> = ({
             <video
               autoPlay
               playsInline
+              muted
               webkit-playsinline="true"
               controls={false}
               ref={(el) => {

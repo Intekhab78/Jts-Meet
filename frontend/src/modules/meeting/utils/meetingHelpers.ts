@@ -1,13 +1,10 @@
 /**
  * Shared meeting helper functions and utilities
  */
+import { decodeJwtPayload } from '../../../utils/authClient'
 
 export const parseJwt = (token: string) => {
-    try {
-        return JSON.parse(atob(token.split('.')[1]))
-    } catch (e) {
-        return null
-    }
+    return decodeJwtPayload<any>(token)
 }
 
 export function createDummyVideoTrack(): MediaStreamTrack {
@@ -45,12 +42,8 @@ export function getInitials(name: string): string {
 
 export function getUserIdFromToken(token: string): string {
     if (!token) return ''
-    try {
-        const payload = JSON.parse(atob(token.split('.')[1]))
-        return payload.id || payload.userId || payload._id || ''
-    } catch (e) {
-        return ''
-    }
+    const payload = decodeJwtPayload<any>(token)
+    return payload?.id || payload?.userId || payload?._id || ''
 }
 
 export function getAvatarGradient(name: string): string {

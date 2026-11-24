@@ -62,6 +62,9 @@ function playToneChime(type: 'join' | 'leave' | 'chat') {
       osc.start(now);
       osc.stop(now + 0.12);
     }
+    setTimeout(() => {
+      try { ctx.close(); } catch (_) {}
+    }, 500);
   } catch (_) {}
 }
 
@@ -106,16 +109,13 @@ const MobileRemoteAudioStream: React.FC<{ peerId: string; stream: MediaStream }>
     const el = audioRef.current;
     if (!el || !stream) return;
 
-    try {
-      (window as any).MobileAppBridge?.setAudioMode?.('speaker');
-    } catch (_) {}
-
     const playAudio = () => {
       if (el.srcObject !== stream) {
         el.srcObject = stream;
       }
       el.volume = 1.0;
       el.muted = false;
+      if (!el.paused) return;
       const p = el.play();
       if (p !== undefined) {
         p.catch((err) => {
@@ -146,7 +146,11 @@ const MobileRemoteAudioStream: React.FC<{ peerId: string; stream: MediaStream }>
       t.addEventListener('unmute', onTrackChange);
     });
 
-    const watchdog = setInterval(playAudio, 2000);
+    const watchdog = setInterval(() => {
+      if (el.paused || el.srcObject !== stream) {
+        playAudio();
+      }
+    }, 2000);
 
     return () => {
       clearInterval(watchdog);
@@ -203,27 +207,35 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     }
   }, [callType]);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const isMutedRef = useRef(isMuted);
+  isMutedRef.current = isMuted;
+  const isVideoOffRef = useRef(isVideoOff);
+  isVideoOffRef.current = isVideoOff;
+  const facingModeRef = useRef(facingMode);
+  facingModeRef.current = facingMode;
   const {
     isSpeaker,
     setIsSpeaker,
     audioRoute,
+    setAudioRoute,
     bluetoothDeviceName,
     applyAudioSink,
     cycleAudioRoute,
   } = useAudioRouting();
 
   // Set Android Native Audio Mode to Communication Mode on Meeting Entry
+  // Use 'earpiece' for 1-on-1 voice calls (eliminates speaker-to-mic hiss/echo) and 'speaker' for video calls
   useEffect(() => {
-    try {
-      (window as any).MobileAppBridge?.setAudioMode?.('speaker');
-      applyAudioSink('speaker');
-    } catch (_) {}
+    const defaultRoute: 'earpiece' | 'speaker' = currentCallType === 'audio' && isDirectCall ? 'earpiece' : 'speaker';
+    setAudioRoute(defaultRoute);
+    setIsSpeaker(defaultRoute === 'speaker');
+    applyAudioSink(defaultRoute);
     return () => {
       try {
         (window as any).MobileAppBridge?.resetAudioMode?.();
       } catch (_) {}
     };
-  }, [applyAudioSink]);
+  }, [applyAudioSink, currentCallType, isDirectCall, setAudioRoute, setIsSpeaker]);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [activeSheet, setActiveSheet] = useState<'none' | 'chat' | 'participants' | 'invite' | 'more' | 'virtual_background'>(
     (showInitialInvite && !isDirectCall) ? 'invite' : 'none'
@@ -354,8 +366,12 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
           setShowLeaveConfirm(false);
           return;
         }
-        if (activeSheet !== 'none') {
+        if (activeSheetRef.current !== 'none') {
           setActiveSheet('none');
+          return;
+        }
+        if (isFullscreenShare) {
+          setIsFullscreenShare(false);
           return;
         }
         if (isMinimized) {
@@ -375,7 +391,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     return () => {
       backHandle?.remove?.();
     };
-  }, [showLeaveConfirm, activeSheet, isMinimized, onMinimize]);
+  }, [showLeaveConfirm, isFullscreenShare, isMinimized, onMinimize]);
 
   const handleStageTap = () => {
     if (isLandscape || isFullscreenShare) {
@@ -469,24 +485,28 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
 
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
   const iceServersRef = useRef<RTCIceServer[]>(ICE_SERVERS);
+  const iceServersPromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/webrtc/ice-servers`)
+    iceServersPromiseRef.current = fetch(`${API_BASE}/api/webrtc/ice-servers`)
       .then((r) => r.json())
       .then((data) => {
         if (data?.success && Array.isArray(data?.iceServers) && data.iceServers.length > 0) {
           iceServersRef.current = data.iceServers;
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .then(() => undefined);
   }, []);
   const peerStreamsRef = useRef<Record<string, MediaStream>>({});
+  const pendingIceByPeerRef = useRef<Record<string, any[]>>({});
   const timerSecRef = useRef(0);
   const myUserIdRef = useRef<string>('');
   const audioContextRef = useRef<AudioContext | null>(null);
   const analysersRef = useRef<Record<string, { analyser: AnalyserNode; dataArray: Uint8Array<ArrayBuffer> }>>({});
   const hasEndedRef = useRef(false);
   const handledLeftUsersRef = useRef<Set<string>>(new Set());
+  const renegotiateRef = useRef<((normId: string, attempt?: number, iceRestart?: boolean) => Promise<void>) | null>(null);
 
   // Unified single-dispatch call termination (guarantees chime and toast execute strictly once)
   const terminateDirectCall = (_reason: string = 'ended') => {
@@ -517,25 +537,6 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   };
 
   const meetingUrl = `https://meet.jtsmiddleeast.com/meet/${meetingId}`;
-
-  // 1. Android Native Back Button Intercept (Capacitor)
-  useEffect(() => {
-    const backListener = CapacitorApp.addListener('backButton', () => {
-      if (showLeaveConfirm) {
-        setShowLeaveConfirm(false);
-      } else if (activeSheetRef.current !== 'none') {
-        setActiveSheet('none');
-      } else if (isFullscreenShare) {
-        setIsFullscreenShare(false);
-      } else {
-        setShowLeaveConfirm(true);
-      }
-    });
-
-    return () => {
-      backListener.then((h: any) => h.remove()).catch(() => {});
-    };
-  }, [showLeaveConfirm, isFullscreenShare]);
 
   // 1a. Native Android PiP (Picture-in-Picture) Full-Screen Video Mode Listener
   useEffect(() => {
@@ -599,6 +600,11 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   } = useWakeLockAndNetwork({
     peerConnectionsRef,
     audioContextRef,
+    onOnlineReconnect: () => {
+      Object.keys(peerConnectionsRef.current).forEach((normId) => {
+        renegotiateRef.current?.(normId, 0, true);
+      });
+    },
   });
 
     // Attach local tracks to a peer connection. Returns true if renegotiation is required.
@@ -633,41 +639,46 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     return needsNegotiation;
   };
 
-  // Apply ICE candidates that arrived before the remote description
-  const flushPendingIce = async (pc: RTCPeerConnection) => {
+  // Apply ICE candidates that arrived before the remote description or before PeerConnection init
+  const flushPendingIce = async (pc: RTCPeerConnection, normId?: string) => {
     const queue: any[] = (pc as any).__pendingIce || [];
     (pc as any).__pendingIce = [];
-    for (const c of queue) {
+    const peerQueue: any[] = normId ? (pendingIceByPeerRef.current[normId] || []) : [];
+    if (normId) {
+      delete pendingIceByPeerRef.current[normId];
+    }
+    for (const c of [...queue, ...peerQueue]) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(c));
       } catch (_) {}
     }
   };
 
-  // Send a fresh offer to a peer (used when our camera/mic becomes available after connecting)
-  const renegotiate = async (normId: string, attempt = 0) => {
+  // Send a fresh offer to a peer (used for track changes or ICE restart recovery)
+  const renegotiate = async (normId: string, attempt = 0, iceRestart = false) => {
     const pc = peerConnectionsRef.current[normId];
     const socket = socketRef.current;
     if (!pc || !socket) return;
     if (pc.signalingState !== 'stable') {
-      if (attempt < 5) setTimeout(() => renegotiate(normId, attempt + 1), 1200);
+      if (attempt < 5) setTimeout(() => renegotiate(normId, attempt + 1, iceRestart), 1200);
       return;
     }
     try {
-      const offer = await pc.createOffer();
+      const offer = await pc.createOffer(iceRestart ? { iceRestart: true } : undefined);
       await pc.setLocalDescription(offer);
       socket.emit('webrtc:offer', {
         targetUserId: peerIdMapRef.current[normId] || normId,
         meetingId,
         offer,
         displayName,
-        isVideoOff,
-        isMuted,
+        isVideoOff: isVideoOffRef.current,
+        isMuted: isMutedRef.current,
       });
     } catch (err) {
       console.warn('[Mobile WebRTC] Renegotiation failed:', err);
     }
   };
+  renegotiateRef.current = renegotiate;
 
   // 3. Local Camera & Mic Stream
   useEffect(() => {
@@ -675,17 +686,34 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     let cancelled = false;
     async function startMedia() {
       try {
-        const shouldRequestVideo = !isVideoOff && currentCallType !== 'audio';
+        const currentVideoOff = isVideoOffRef.current;
+        const currentMuted = isMutedRef.current;
+        const shouldRequestVideo = !currentVideoOff && currentCallType !== 'audio';
+        // Tuned voice-call audio constraints: disable AGC pumping that causes background "sss/ppp/ttt" hiss
+        const voiceAudioConstraints: MediaTrackConstraints = {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: false,
+          channelCount: 1,
+          sampleRate: 48000,
+          advanced: [
+            { googEchoCancellation: true },
+            { googNoiseSuppression: true },
+            { googHighpassFilter: true },
+            { googTypingNoiseDetection: true },
+            { googAutoGainControl: false },
+          ] as any,
+        };
         try {
           if (shouldRequestVideo) {
             stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
-              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+              video: { facingMode: facingModeRef.current, width: { ideal: 640 }, height: { ideal: 480 } },
+              audio: voiceAudioConstraints,
             });
           } else {
             stream = await navigator.mediaDevices.getUserMedia({
               video: false,
-              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+              audio: voiceAudioConstraints,
             });
           }
         } catch (videoErr) {
@@ -696,10 +724,10 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
-        if (isMuted) {
+        if (isMutedRef.current) {
           stream.getAudioTracks().forEach((t) => (t.enabled = false));
         }
-        if (isVideoOff) {
+        if (isVideoOffRef.current) {
           stream.getVideoTracks().forEach((t) => (t.enabled = false));
         }
         localStreamRef.current = stream;
@@ -708,8 +736,8 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
           localVideoRef.current.srcObject = stream;
           localVideoRef.current.play().catch(() => {});
         }
-        socketRef.current?.emit('meeting:camera-toggle', { meetingId, isVideoOff });
-        socketRef.current?.emit('meeting:mic-toggle', { meetingId, isMuted });
+        socketRef.current?.emit('meeting:camera-toggle', { meetingId, isVideoOff: isVideoOffRef.current });
+        socketRef.current?.emit('meeting:mic-toggle', { meetingId, isMuted: isMutedRef.current });
 
         // Add or update tracks on existing peer connections (+ renegotiate if new tracks were added)
         Object.entries(peerConnectionsRef.current).forEach(([normId, pc]) => {
@@ -729,13 +757,24 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
       cancelled = true;
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, [facingMode]);
+  }, []);
 
   // Helper: Create/Retrieve Peer Connection
   const getOrCreatePeerConnection = (targetUserId: string, targetName: string): RTCPeerConnection => {
     const normId = targetUserId.toLowerCase();
-    if (peerConnectionsRef.current[normId]) {
-      return peerConnectionsRef.current[normId];
+    const existingPc = peerConnectionsRef.current[normId];
+    if (existingPc) {
+      if (
+        existingPc.connectionState === 'failed' ||
+        existingPc.connectionState === 'closed' ||
+        existingPc.iceConnectionState === 'failed' ||
+        existingPc.iceConnectionState === 'closed'
+      ) {
+        try { existingPc.close(); } catch (_) {}
+        delete peerConnectionsRef.current[normId];
+      } else {
+        return existingPc;
+      }
     }
 
     const pc = new RTCPeerConnection({
@@ -797,12 +836,10 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
       }
     };
 
-    // Auto-recover if ICE failed; DO NOT delete participant on temporary disconnected state!
+    // Auto-recover if ICE failed via full SDP offer with iceRestart
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'failed') {
-        try {
-          pc.restartIce();
-        } catch (_) {}
+        renegotiate(normId, 0, true);
       }
     };
 
@@ -855,10 +892,16 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
 
       if (isCancelled) return;
 
-      // Wait for our own camera/mic (max 15s) so the first offer/answer already carries our video
-      await Promise.race([
-        mediaReadyPromiseRef.current,
-        new Promise<void>((resolve) => setTimeout(resolve, 15000)),
+      // Wait for ICE servers (max 2.5s) & our own camera/mic (max 15s) before signaling
+      await Promise.all([
+        Promise.race([
+          iceServersPromiseRef.current || Promise.resolve(),
+          new Promise<void>((resolve) => setTimeout(resolve, 2500)),
+        ]),
+        Promise.race([
+          mediaReadyPromiseRef.current || Promise.resolve(),
+          new Promise<void>((resolve) => setTimeout(resolve, 15000)),
+        ]),
       ]);
 
       if (isCancelled) return;
@@ -871,16 +914,24 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
       socketRef.current = socket;
 
       socket.on('connect', () => {
+        const liveVideoOff = isVideoOffRef.current;
+        const liveMuted = isMutedRef.current;
+        socket?.emit('meeting:join', {
+          meetingId,
+          displayName: resolvedDisplayName,
+          isVideoOff: liveVideoOff,
+          isMuted: liveMuted,
+        });
         socket?.emit('webrtc:join', {
           meetingId,
           displayName: resolvedDisplayName,
-          isVideoOff,
-          isMuted,
+          isVideoOff: liveVideoOff,
+          isMuted: liveMuted,
         });
-        socket?.emit('meeting:camera-toggle', { meetingId, isVideoOff });
-        socket?.emit('meeting:video-toggle', { meetingId, isVideoOff });
-        socket?.emit('meeting:mic-toggle', { meetingId, isMuted });
-        socket?.emit('meeting:audio-toggle', { meetingId, isMuted });
+        socket?.emit('meeting:camera-toggle', { meetingId, isVideoOff: liveVideoOff });
+        socket?.emit('meeting:video-toggle', { meetingId, isVideoOff: liveVideoOff });
+        socket?.emit('meeting:mic-toggle', { meetingId, isMuted: liveMuted });
+        socket?.emit('meeting:audio-toggle', { meetingId, isMuted: liveMuted });
       });
 
       // Existing peers in room: Register them & wait for their offer.
@@ -891,6 +942,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
             if (!peer.userId || peer.userId.toLowerCase() === myUserIdRef.current.toLowerCase()) continue;
 
             const normId = peer.userId.toLowerCase();
+            handledLeftUsersRef.current.delete(normId);
             setParticipants((prev) => {
               if (!prev.some((p) => p.userId.toLowerCase() === normId)) {
                 return [...prev, { userId: peer.userId, displayName: peer.displayName || 'Participant', isVideoOff: peer.isVideoOff, isMuted: peer.isMuted }];
@@ -899,9 +951,16 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
             });
 
             const pc = getOrCreatePeerConnection(peer.userId, peer.displayName);
-            // Failsafe: if remote hasn't sent us an offer in 1500ms, initiate offer from mobile
+            // Failsafe: if remote hasn't sent an offer or connection needs recovery after 1500ms, initiate offer
             setTimeout(async () => {
-              if (pc.signalingState === 'stable' && !peerStreamsRef.current[normId] && socket?.connected) {
+              if (
+                pc.signalingState === 'stable' &&
+                (!peerStreamsRef.current[normId] ||
+                  pc.iceConnectionState === 'disconnected' ||
+                  pc.iceConnectionState === 'failed' ||
+                  pc.iceConnectionState === 'new') &&
+                socket?.connected
+              ) {
                 try {
                   if (localStreamRef.current) {
                     attachLocalTracks(pc, localStreamRef.current);
@@ -913,8 +972,8 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
                     meetingId,
                     offer,
                     displayName,
-                    isVideoOff,
-                    isMuted,
+                    isVideoOff: isVideoOffRef.current,
+                    isMuted: isMutedRef.current,
                   });
                 } catch (_) {}
               }
@@ -928,6 +987,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         if (!payload?.userId || payload.userId.toLowerCase() === myUserIdRef.current.toLowerCase()) return;
         playToneChime('join');
         const normId = payload.userId.toLowerCase();
+        handledLeftUsersRef.current.delete(normId);
 
         setParticipants((prev) => {
           if (!prev.some((p) => p.userId.toLowerCase() === normId)) {
@@ -951,8 +1011,8 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
             meetingId,
             offer,
             displayName: resolvedDisplayName,
-            isVideoOff,
-            isMuted,
+            isVideoOff: isVideoOffRef.current,
+            isMuted: isMutedRef.current,
           });
         } catch (err) {
           console.error('[Mobile WebRTC] Offer error to joining user:', err);
@@ -965,6 +1025,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
           if (mediaReadyPromiseRef.current) {
             await mediaReadyPromiseRef.current;
           }
+          const normId = payload.fromUserId.toLowerCase();
           const pc = getOrCreatePeerConnection(payload.fromUserId, payload.displayName || 'Participant');
           if (pc.signalingState === 'have-local-offer') {
             // Offer collision: rollback local offer and accept incoming remote offer
@@ -973,7 +1034,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
             } catch (_) {}
           }
           await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
-          await flushPendingIce(pc);
+          await flushPendingIce(pc, normId);
           // Make sure our local camera/mic tracks are attached before answering
           let needsFollowUp = false;
           if (localStreamRef.current) {
@@ -986,11 +1047,11 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
             meetingId,
             answer,
             displayName: resolvedDisplayName,
-            isVideoOff,
-            isMuted,
+            isVideoOff: isVideoOffRef.current,
+            isMuted: isMutedRef.current,
           });
           if (needsFollowUp) {
-            setTimeout(() => renegotiate(payload.fromUserId.toLowerCase()), 800);
+            setTimeout(() => renegotiate(normId), 800);
           }
         } catch (err) {
           console.error('[Mobile WebRTC] Offer handling error:', err);
@@ -1004,7 +1065,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
           const pc = peerConnectionsRef.current[normId];
           if (pc) {
             await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
-            await flushPendingIce(pc);
+            await flushPendingIce(pc, normId);
           }
         } catch (err) {
           console.error('[Mobile WebRTC] Answer handling error:', err);
@@ -1015,15 +1076,18 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
       socket.on('webrtc:ice-candidate', async (payload: { fromUserId: string; candidate: any }) => {
         try {
           const normId = payload.fromUserId.toLowerCase();
+          if (!payload.candidate) return;
           const pc = peerConnectionsRef.current[normId];
-          if (pc && payload.candidate) {
-            if (!pc.remoteDescription) {
-              const queue = ((pc as any).__pendingIce ||= []) as any[];
-              queue.push(payload.candidate);
-              return;
-            }
-            await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+          if (!pc) {
+            (pendingIceByPeerRef.current[normId] ||= []).push(payload.candidate);
+            return;
           }
+          if (!pc.remoteDescription) {
+            const queue = ((pc as any).__pendingIce ||= []) as any[];
+            queue.push(payload.candidate);
+            return;
+          }
+          await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
         } catch (_) {}
       });
 
@@ -1271,6 +1335,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     localStreamRef,
     screenStreamRef,
     onCloseSheet: () => setActiveSheet('none'),
+    renegotiate: (normId: string) => renegotiate(normId),
   });
 
     // Floating Emoji Reaction Helper
@@ -1309,6 +1374,7 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
   // Controls
   const toggleMute = () => {
     const next = !isMuted;
+    isMutedRef.current = next;
     setIsMuted(next);
     localStreamRef.current?.getAudioTracks().forEach((t) => (t.enabled = !next));
     socketRef.current?.emit('meeting:audio-toggle', { meetingId, isMuted: next });
@@ -1317,24 +1383,32 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
 
   const toggleVideo = async () => {
     const next = !isVideoOff;
+    isVideoOffRef.current = next;
     setIsVideoOff(next);
     const existingVideoTracks = localStreamRef.current?.getVideoTracks() || [];
     if (!next && existingVideoTracks.length === 0) {
       try {
         const vStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+          video: { facingMode: facingModeRef.current, width: { ideal: 640 }, height: { ideal: 480 } },
         });
         const vTrack = vStream.getVideoTracks()[0];
         if (vTrack && localStreamRef.current) {
           localStreamRef.current.addTrack(vTrack);
-          Object.values(peerConnectionsRef.current).forEach((pc) => {
-            pc.addTrack(vTrack, localStreamRef.current!);
+          const updatedLocal = new MediaStream(localStreamRef.current.getTracks());
+          localStreamRef.current = updatedLocal;
+          setLocalStream(updatedLocal);
+          if (currentCallType === 'audio') {
+            setCurrentCallType('video');
+          }
+          Object.entries(peerConnectionsRef.current).forEach(([normId, pc]) => {
+            if (attachLocalTracks(pc, updatedLocal)) {
+              renegotiate(normId);
+            }
           });
           if (localVideoRef.current) {
-            localVideoRef.current.srcObject = localStreamRef.current;
+            localVideoRef.current.srcObject = updatedLocal;
             localVideoRef.current.play().catch(() => {});
           }
-          triggerRenegotiation();
         }
       } catch (err) {
         console.warn('[Mobile] Failed to turn on camera dynamically:', err);
@@ -1346,8 +1420,47 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
     socketRef.current?.emit('meeting:camera-toggle', { meetingId, isVideoOff: next });
   };
 
-  const flipCamera = () => {
-    setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
+  const flipCamera = async () => {
+    const nextMode: 'user' | 'environment' = facingModeRef.current === 'user' ? 'environment' : 'user';
+    facingModeRef.current = nextMode;
+    setFacingMode(nextMode);
+    if (!localStreamRef.current) return;
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: nextMode, width: { ideal: 640 }, height: { ideal: 480 } },
+      });
+      const newVideoTrack = newStream.getVideoTracks()[0];
+      if (!newVideoTrack) return;
+      newVideoTrack.enabled = !isVideoOffRef.current;
+
+      const oldVideoTracks = localStreamRef.current.getVideoTracks();
+      oldVideoTracks.forEach((t) => {
+        try {
+          localStreamRef.current?.removeTrack(t);
+          t.stop();
+        } catch (_) {}
+      });
+      localStreamRef.current.addTrack(newVideoTrack);
+
+      const updatedLocal = new MediaStream(localStreamRef.current.getTracks());
+      localStreamRef.current = updatedLocal;
+      setLocalStream(updatedLocal);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = updatedLocal;
+        localVideoRef.current.play().catch(() => {});
+      }
+
+      Object.entries(peerConnectionsRef.current).forEach(([normId, pc]) => {
+        const sender = pc.getSenders().find((s) => s.track?.kind === 'video' || (s as any).kind === 'video');
+        if (sender) {
+          sender.replaceTrack(newVideoTrack).catch(() => {});
+        } else if (attachLocalTracks(pc, updatedLocal)) {
+          renegotiate(normId);
+        }
+      });
+    } catch (err) {
+      console.warn('[Mobile] Failed to flip camera:', err);
+    }
   };
 
   const toggleHand = () => {
@@ -1872,7 +1985,22 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         currentPreset={currentPreset}
         onOpenVirtualBackground={() => setActiveSheet('virtual_background')}
         isNoiseShieldActive={isNoiseShieldActive}
-        onToggleNoiseShield={() => setIsNoiseShieldActive((prev) => !prev)}
+        onToggleNoiseShield={() => {
+          setIsNoiseShieldActive((prev) => {
+            const next = !prev;
+            localStreamRef.current?.getAudioTracks().forEach((track) => {
+              track.applyConstraints({
+                noiseSuppression: next,
+                echoCancellation: true,
+                autoGainControl: true,
+              }).catch(() => {});
+            });
+            try {
+              (window as any).MobileAppBridge?.showToast?.(next ? 'Voice Shield ON' : 'Voice Shield OFF');
+            } catch (_) {}
+            return next;
+          });
+        }}
         isDataSaverActive={isDataSaverActive}
         onToggleDataSaver={toggleDataSaver}
         onOpenInvite={() => setActiveSheet('invite')}

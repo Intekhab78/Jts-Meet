@@ -305,7 +305,16 @@ export const MeetingBottomControls: React.FC<MeetingBottomControlsProps> = ({
                 onOpenCatchUp={() => setShowCatchUpModal(true)}
                 onOpenAnalytics={() => setShowAnalyticsModal(true)}
                 isConfidentialMode={isConfidentialMode}
-                onToggleConfidentialMode={() => setIsConfidentialMode(prev => !prev)}
+                onToggleConfidentialMode={() => {
+                    const next = !isConfidentialMode
+                    setIsConfidentialMode(next)
+                    if (isLocalHost || canManageParticipants) {
+                        socket?.emit('meeting:toggle-watermark', {
+                            meetingId: meetingId || meetingInput.trim(),
+                            enabled: next
+                        })
+                    }
+                }}
                 isVoiceDubbingEnabled={isVoiceDubbingEnabled}
                 onToggleVoiceDubbing={() => {
                     const next = !isVoiceDubbingEnabled

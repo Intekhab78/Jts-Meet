@@ -31,11 +31,8 @@ export const MobileIncomingCallModal: React.FC<MobileIncomingCallModalProps> = (
       return;
     }
 
-    // 1. Notify system and trigger mobile vibration
+    // 1. Notify system and trigger mobile vibration (App.tsx already handles the primary ringtone)
     mobileNotificationService.notifyIncomingCall(call);
-
-    // 2. Play synthesized soft modern chime ringtone
-    startRingtone();
 
     return () => {
       stopRingtone();

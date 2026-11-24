@@ -114,6 +114,7 @@ export interface MeetingStageSectionProps {
     screenSharePolicy: 'everyone' | 'host_only'
     handleToggleScreenSharePolicy: (newPolicy: 'everyone' | 'host_only') => Promise<void>
     meetingInput: string
+    isToolbarActuallyVisible?: boolean
 }
 
 export const MeetingStageSection: React.FC<MeetingStageSectionProps> = (props) => {

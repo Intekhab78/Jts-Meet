@@ -8,6 +8,7 @@ export interface UseScreenShareProps {
   localStreamRef: React.RefObject<MediaStream | null>;
   screenStreamRef: React.RefObject<MediaStream | null>;
   onCloseSheet: () => void;
+  renegotiate?: (normId: string) => void;
 }
 
 export function useScreenShare({
@@ -17,8 +18,13 @@ export function useScreenShare({
   localStreamRef,
   screenStreamRef,
   onCloseSheet,
+  renegotiate,
 }: UseScreenShareProps) {
   const [isSharingMyScreen, setIsSharingMyScreen] = useState(false);
+  const isSharingMyScreenRef = useRef(isSharingMyScreen);
+  isSharingMyScreenRef.current = isSharingMyScreen;
+  const renegotiateRef = useRef(renegotiate);
+  renegotiateRef.current = renegotiate;
   const isStoppingScreenShareRef = useRef(false);
   const nativeScreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -37,12 +43,12 @@ export function useScreenShare({
       screenStreamRef.current.getTracks().forEach((t) => t.stop());
       screenStreamRef.current = null;
     }
-    const camTrack = localStreamRef.current?.getVideoTracks()[0];
-    if (camTrack && peerConnectionsRef.current) {
+    const camTrack = localStreamRef.current?.getVideoTracks()[0] || null;
+    if (peerConnectionsRef.current) {
       Object.values(peerConnectionsRef.current).forEach((pc) => {
         const sender = pc.getSenders().find((s) => s.track?.kind === 'video' || (s as any).kind === 'video');
         if (sender) {
-          sender.replaceTrack(camTrack);
+          sender.replaceTrack(camTrack).catch(() => {});
         }
       });
     }
@@ -65,12 +71,15 @@ export function useScreenShare({
           screenStreamRef.current = stream;
           const track = stream.getVideoTracks()[0];
           if (track && peerConnectionsRef.current) {
-            Object.values(peerConnectionsRef.current).forEach((pc) => {
+            Object.entries(peerConnectionsRef.current).forEach(([normId, pc]) => {
               const sender = pc.getSenders().find((s) => s.track?.kind === 'video' || (s as any).kind === 'video');
               if (sender) {
-                sender.replaceTrack(track);
+                sender.replaceTrack(track).catch(() => {});
               } else {
-                try { pc.addTrack(track, stream); } catch (_) {}
+                try {
+                  pc.addTrack(track, stream);
+                  renegotiateRef.current?.(normId);
+                } catch (_) {}
               }
             });
 
@@ -122,7 +131,7 @@ export function useScreenShare({
     };
 
     (window as any).__onNativeScreenShareStopped = () => {
-      if (isSharingMyScreen && !isStoppingScreenShareRef.current) {
+      if (isSharingMyScreenRef.current && !isStoppingScreenShareRef.current) {
         stopPhoneScreenShare();
       }
     };
@@ -133,7 +142,7 @@ export function useScreenShare({
       delete (window as any).__onNativeScreenShareCancelled;
       delete (window as any).__onNativeScreenShareStopped;
     };
-  }, [meetingId, isSharingMyScreen, onCloseSheet, peerConnectionsRef, screenStreamRef, socketRef, stopPhoneScreenShare]);
+  }, [meetingId, onCloseSheet, peerConnectionsRef, screenStreamRef, socketRef, stopPhoneScreenShare]);
 
   const startPhoneScreenShare = async () => {
     // Priority 1: Native In-App Android Screen Capture
@@ -164,12 +173,15 @@ export function useScreenShare({
           screenStreamRef.current = stream;
 
           if (peerConnectionsRef.current) {
-            Object.values(peerConnectionsRef.current).forEach((pc) => {
+            Object.entries(peerConnectionsRef.current).forEach(([normId, pc]) => {
               const sender = pc.getSenders().find((s) => s.track?.kind === 'video' || (s as any).kind === 'video');
               if (sender) {
-                sender.replaceTrack(screenTrack);
+                sender.replaceTrack(screenTrack).catch(() => {});
               } else {
-                try { pc.addTrack(screenTrack, stream); } catch (_) {}
+                try {
+                  pc.addTrack(screenTrack, stream);
+                  renegotiateRef.current?.(normId);
+                } catch (_) {}
               }
             });
           }

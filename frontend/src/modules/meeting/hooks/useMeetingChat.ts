@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useMeetingContext } from '../context/MeetingContext'
 import { useSocketContext } from '../context/SocketContext'
 import { SocketEvents } from '../services/socket.service'
+import { API_BASE } from '../../../config'
+import { getUserIdFromToken } from '../utils/meetingHelpers'
 
 export interface ChatAttachment {
     name?: string
@@ -37,9 +39,43 @@ export function useMeetingChat() {
     const [messages, setMessages] = useState<MeetingChatMessage[]>([])
     const [typingUsers, setTypingUsers] = useState<string[]>([])
 
-    // Clear messages when meetingId changes (e.g., switching into/out of breakout rooms)
+    // Hydrate persisted in-meeting chat history when meetingId becomes active (survives page refresh & late join)
     useEffect(() => {
-        setMessages([])
+        if (!meetingId) {
+            setMessages([])
+            return
+        }
+        let cancelled = false
+        const authToken = localStorage.getItem('jts_token') || localStorage.getItem('jts_guest_token') || ''
+        const myId = getUserIdFromToken(authToken)
+        fetch(`${API_BASE}/api/meeting/chat/${encodeURIComponent(meetingId)}`, {
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {}
+        })
+            .then(res => res.ok ? res.json() : null)
+            .then(json => {
+                if (cancelled) return
+                const list = Array.isArray(json?.data) ? json.data : (Array.isArray(json) ? json : [])
+                if (list.length > 0) {
+                    const hydrated: MeetingChatMessage[] = list.map((m: any) => ({
+                        ...m,
+                        senderId: (myId && String(m.senderId) === String(myId)) ? 'me' : m.senderId,
+                        status: 'read'
+                    }))
+                    setMessages(prev => {
+                        const existingIds = new Set(prev.map(p => p._id).filter(Boolean))
+                        const merged = [...hydrated.filter(h => !h._id || !existingIds.has(h._id)), ...prev]
+                        return merged
+                    })
+                } else {
+                    setMessages([])
+                }
+            })
+            .catch(() => {
+                if (!cancelled) setMessages([])
+            })
+        return () => {
+            cancelled = true
+        }
     }, [meetingId])
 
     const sendMessage = useCallback(

@@ -101,6 +101,7 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
     const [confirmPassword, setConfirmPassword] = useState('')
     const [resetCode, setResetCode] = useState('')
     const [verifiedToken, setVerifiedToken] = useState('')
+    const [isTwoFactorLogin, setIsTwoFactorLogin] = useState(false)
 
     // SSO states
     const [ssoOrgSlug, setSsoOrgSlug] = useState('')
@@ -146,6 +147,16 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
 
             if (!response.ok) {
                 throw new Error(data.message || 'Login failed. Please check credentials.')
+            }
+
+            if (data.data?.requiresTwoFactor) {
+                setIsTwoFactorLogin(true)
+                setSuccess('Two-Factor verification code sent to your email!')
+                setTimeout(() => {
+                    setSuccess(null)
+                    onNavigate('otp-verification')
+                }, 800)
+                return
             }
 
             setSuccess('Login successful! Connecting...')
@@ -200,6 +211,9 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
                         throw new Error(callbackData.error || 'SSO authentication failed.')
                     }
 
+                    if (callbackData.data?.refreshToken) {
+                        localStorage.setItem('jts_refresh_token', callbackData.data.refreshToken)
+                    }
                     setSuccess(`Welcome to JTS Meet! Signed in via SSO.`)
                     setTimeout(() => {
                         onAuthSuccess(callbackData.data.accessToken)
@@ -220,8 +234,8 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
 
     const handleMicrosoftRedirect = () => {
         if (!AZURE_CLIENT_ID) {
-            console.error('AZURE_CLIENT_ID is not configured')
-            alert('Microsoft Client ID is not configured in the application environment.')
+            setError('Microsoft Client ID is not configured in the application environment.')
+            triggerShake()
             return
         }
         const redirectUri = encodeURIComponent(window.location.origin + '/auth/microsoft/callback')
@@ -403,6 +417,17 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ view, onNavigate, onAuthSu
                 throw new Error(data.message || 'OTP verification failed.')
             }
 
+            if (data.data?.refreshToken) {
+                localStorage.setItem('jts_refresh_token', data.data.refreshToken)
+            }
+            if (isTwoFactorLogin && data.data?.accessToken) {
+                setIsTwoFactorLogin(false)
+                setSuccess('Two-Factor Authentication verified! Signing in...')
+                setTimeout(() => {
+                    onAuthSuccess(data.data.accessToken)
+                }, 800)
+                return
+            }
             setVerifiedToken(data.data.accessToken)
             setSuccess('OTP Verified successfully!')
             setTimeout(() => {

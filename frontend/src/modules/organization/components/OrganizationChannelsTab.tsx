@@ -80,6 +80,7 @@ export function OrganizationChannelsTab({ channels }: OrganizationChannelsTabPro
                                         <button
                                             type="button"
                                             onClick={() => {
+                                                if (ch._id) localStorage.setItem('jts_current_channel_id', ch._id)
                                                 window.location.hash = '#channel'
                                             }}
                                             style={{

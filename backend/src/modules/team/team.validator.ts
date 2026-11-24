@@ -109,8 +109,8 @@ export function validateInviteTeamMember(payload: any): ValidationResult {
         errors.push('teamId is required')
     }
 
-    if (!isNonEmptyString(payload.userId)) {
-        errors.push('userId is required')
+    if (!isNonEmptyString(payload.userId) && !isNonEmptyString(payload.email)) {
+        errors.push('userId or email is required')
     }
 
     if (!['admin', 'member', 'guest'].includes(payload.role)) {

@@ -51,28 +51,116 @@ router.get('/ice-servers', (req: Request, res: Response) => {
 })
 
 import { sfuService } from '../../services/sfu.service'
-import { optionalAuthenticate, AuthRequest } from '../../middleware/authMiddleware'
+import { authenticate, AuthRequest } from '../../middleware/authMiddleware'
+import { LIVEKIT_URL } from '../../config'
 
 /**
  * GET /api/webrtc/sfu/status
- * Returns whether LiveKit SFU server configuration is active
+ * Returns whether LiveKit SFU server configuration is active AND actually reachable
  */
-router.get('/sfu/status', (_req: Request, res: Response) => {
+router.get('/sfu/status', async (_req: Request, res: Response) => {
+    const sfuConfigured = sfuService.isConfigured()
+    let sfuReachable = false
+
+    if (sfuConfigured && LIVEKIT_URL) {
+        try {
+            const httpUrl = LIVEKIT_URL
+                .replace(/^wss:\/\//i, 'https://')
+                .replace(/^ws:\/\//i, 'http://')
+                .replace(/\/$/, '')
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), 800)
+            const probe = await fetch(httpUrl, { method: 'GET', signal: controller.signal }).catch(() => null)
+            clearTimeout(timer)
+            sfuReachable = Boolean(probe && probe.status < 500)
+        } catch {
+            sfuReachable = false
+        }
+    }
+
     res.json({
         success: true,
-        sfuConfigured: sfuService.isConfigured()
+        sfuConfigured,
+        sfuReachable,
+        livekitUrl: sfuReachable ? LIVEKIT_URL : undefined
     })
 })
+
+import { Meeting } from '../meeting/meeting.model'
 
 /**
  * GET /api/webrtc/sfu/token/:meetingId
  * Issues a signed LiveKit SFU participant access token for high-density enterprise conferences
  */
-router.get('/sfu/token/:meetingId', optionalAuthenticate, async (req: AuthRequest, res: Response) => {
+router.get('/sfu/token/:meetingId', authenticate, async (req: AuthRequest, res: Response) => {
     const meetingId = req.params.meetingId as string
-    const userId = req.userId || (req.query.userId as string) || `guest_${Math.random().toString(36).slice(2, 8)}`
-    const displayName = (req.query.displayName as string) || 'Participant'
-    const isHost = req.query.isHost === 'true'
+    if (!req.userId || req.isPending) {
+        res.status(403).json({
+            success: false,
+            message: 'Forbidden: Approved participant authentication is required for SFU access'
+        })
+        return
+    }
+
+    const baseMeetingId = meetingId.includes('__') ? meetingId.split('__')[0] : meetingId
+    if (req.isGuest && req.meetingId !== meetingId && req.meetingId !== baseMeetingId) {
+        res.status(403).json({
+            success: false,
+            message: 'Forbidden: Guest token is not valid for this meeting'
+        })
+        return
+    }
+
+    const userId = req.userId
+    const displayName = (req.query.displayName as string) || (req.isGuest ? 'Guest Participant' : 'Participant')
+
+    // Never trust client query `isHost=true` directly; verify against Meeting host/coHosts when authenticated
+    let isHost = false
+    try {
+        const meeting = await Meeting.findOne({ meetingId: baseMeetingId })
+            .select('host coHosts status isLocked blockedUsers isGuestJoinEnabled')
+            .lean()
+            .exec()
+        if (meeting) {
+            if (meeting.status === 'ended') {
+                res.status(403).json({
+                    success: false,
+                    message: 'Meeting has ended'
+                })
+                return
+            }
+
+            const isOwner = String(meeting.host) === String(userId)
+            const isCoHost = Array.isArray((meeting as any).coHosts) && (meeting as any).coHosts.some((c: any) => String(c) === String(userId))
+            isHost = !req.isGuest && (isOwner || isCoHost)
+
+            const isBlocked = Array.isArray((meeting as any).blockedUsers) &&
+                (meeting as any).blockedUsers.some((b: any) => String(b) === String(userId))
+            if (isBlocked) {
+                res.status(403).json({
+                    success: false,
+                    message: 'You have been removed or blocked from this meeting'
+                })
+                return
+            }
+
+            if (meeting.isLocked && !isHost) {
+                res.status(403).json({
+                    success: false,
+                    message: 'Meeting is locked by the host'
+                })
+                return
+            }
+
+            if (req.isGuest && meeting.isGuestJoinEnabled === false) {
+                res.status(403).json({
+                    success: false,
+                    message: 'Guest access is disabled for this meeting'
+                })
+                return
+            }
+        }
+    } catch (_) {}
 
     const result = await sfuService.generateParticipantToken({
         meetingId,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { API_BASE } from '../../config';
+import { API_BASE, getStoredToken } from '../../config';
 
 // Normalize any attachment URL to HTTPS/API_BASE
 export function normalizeFileUrl(url?: string | null): string {
@@ -46,8 +46,8 @@ export function parseFileAttachment(text?: string | null): { fileName: string; f
     };
   }
 
-  // 3. Standalone image filename or path (e.g. Screenshot_2026-11-06-...jpg or IMG_...png)
-  if (/\.(jpeg|jpg|png|gif|webp|svg|bmp|pdf|zip|rar|7z|tar|gz|docx?|xlsx?|pptx?)$/i.test(trimmed)) {
+  // 3. Standalone image filename or path (must contain no whitespace so normal prose isn't treated as a file)
+  if (!/\s/.test(trimmed) && /\.(jpeg|jpg|png|gif|webp|svg|bmp|pdf|zip|rar|7z|tar|gz|docx?|xlsx?|pptx?)$/i.test(trimmed)) {
     // If it starts with http, it is a full URL; otherwise treat as filename uploaded to /uploads/
     const fileUrl = trimmed.startsWith('http')
       ? normalizeFileUrl(trimmed)
@@ -77,18 +77,30 @@ export function isImageAttachment(url?: string | null, name?: string | null): bo
   return check(url) || check(name);
 }
 
+// Check if a file or URL represents an audio / voice note
+export function isAudioAttachment(url?: string | null, name?: string | null): boolean {
+  const check = (str?: string | null) =>
+    typeof str === 'string' &&
+    (/\.(mp3|wav|ogg|m4a|aac|webm)(\?|$)/i.test(str) || str.startsWith('data:audio/'));
+  return check(url) || check(name);
+}
+
 // In-app silent file downloader (uses Android native DownloadManager via MobileAppBridge if available, otherwise invisible iframe)
 export function downloadFileInApp(url: string, fileName?: string): void {
   if (!url) return;
+  const token = getStoredToken();
   const bridge = (window as any).MobileAppBridge;
   if (bridge && typeof bridge.downloadFileSilently === 'function') {
-    bridge.downloadFileSilently(url, fileName || '');
+    bridge.downloadFileSilently(url, fileName || '', token || '');
     return;
   }
 
   // Fallback for WebView/Web without bridge: use fetch + blob download link
-  fetch(url)
-    .then((res) => res.blob())
+  fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
+    .then((res) => {
+      if (!res.ok) throw new Error('Download failed');
+      return res.blob();
+    })
     .then((blob) => {
       const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -139,8 +151,9 @@ export function renderClickableText(text: string, isMe: boolean): React.ReactNod
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => {
+            e.preventDefault();
             e.stopPropagation();
-            window.open(part, '_blank');
+            window.open(part, '_blank', 'noopener,noreferrer');
           }}
           style={{
             color: isMe ? '#ffffff' : '#2563eb',

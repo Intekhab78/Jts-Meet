@@ -7,6 +7,10 @@ import { User } from '../models/user.model'
 
 export interface AuthRequest extends Request {
     userId?: string
+    isGuest?: boolean
+    isPending?: boolean
+    meetingId?: string
+    isSuperAdmin?: boolean
 }
 
 export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -28,18 +32,28 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
     }
 
     try {
-        let payload: { userId: string; tokenVersion?: number }
-        try {
-            payload = jwt.verify(token, JWT_SECRET) as { userId: string; tokenVersion?: number }
-        } catch (err: any) {
-            const isMeetingOrAiPath = req.baseUrl?.includes('/meeting') || req.path?.includes('/meeting') || req.originalUrl?.includes('/meeting') || req.originalUrl?.includes('/ai')
-            if (err?.name === 'TokenExpiredError' && isMeetingOrAiPath) {
-                payload = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true }) as { userId: string; tokenVersion?: number }
-            } else {
-                throw err
+        const payload = jwt.verify(token, JWT_SECRET) as {
+            userId: string
+            tokenVersion?: number
+            isGuest?: boolean
+            isPending?: boolean
+            meetingId?: string
+        }
+
+        if (payload.isGuest) {
+            if (payload.isPending) {
+                return sendError(res, 403, 'Waiting for host approval')
+            }
+            const allowedGuestBase = ['/api/meeting', '/api/meeting/chat', '/api/webrtc', '/api/file']
+            if (!allowedGuestBase.includes(req.baseUrl)) {
+                return sendError(res, 403, 'Guest token cannot access this resource')
             }
         }
+
         req.userId = payload.userId
+        req.isGuest = Boolean(payload.isGuest)
+        req.isPending = Boolean(payload.isPending)
+        req.meetingId = payload.meetingId
 
         // Fast token revocation check: if tokenVersion is present, ensure it hasn't been bumped/revoked
         if (typeof payload.tokenVersion === 'number') {
@@ -72,8 +86,16 @@ export const optionalAuthenticate = (req: AuthRequest, res: Response, next: Next
     }
 
     try {
-        const payload = jwt.verify(token, JWT_SECRET) as { userId: string }
+        const payload = jwt.verify(token, JWT_SECRET) as {
+            userId: string
+            isGuest?: boolean
+            isPending?: boolean
+            meetingId?: string
+        }
         req.userId = payload.userId
+        req.isGuest = Boolean(payload.isGuest)
+        req.isPending = Boolean(payload.isPending)
+        req.meetingId = payload.meetingId
     } catch (_) {
         // Continue unauthenticated
     }

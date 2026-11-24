@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
-import { API_BASE, getStoredToken, resolveAvatarUrl } from '../../config';
+import { API_BASE, getStoredToken, getStoredUser, resolveAvatarUrl } from '../../config';
 import { MobileAvatar } from '../common/MobileAvatar';
 
 export interface AdminConsoleUser {
@@ -77,7 +77,6 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
   onClose,
 }) => {
   const resolvedToken = token || getStoredToken();
-  if (!isOpen || !resolvedToken) return null;
 
   // Active top tab: users | audit | recordings | integrations
   const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'recordings' | 'integrations'>('users');
@@ -130,6 +129,7 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
   const [webhookSecret, setWebhookSecret] = useState('');
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('jts_admin_api_key') || '');
   const [savingWebhook, setSavingWebhook] = useState(false);
+  const [integrationsList, setIntegrationsList] = useState<any[]>([]);
 
   // Upgrade Plan Modal
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
@@ -178,6 +178,7 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
 
   // Android Hardware Back button
   useEffect(() => {
+    if (!isOpen) return;
     let handle: any = null;
     try {
       CapacitorApp.addListener('backButton', () => {
@@ -195,12 +196,12 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
       }).then((h) => {
         handle = h;
       });
-    } catch (_) {}
+    } catch (_) { }
 
     return () => {
       handle?.remove?.();
     };
-  }, [playingRecording, inviteModalOpen, roleModalUser, isUpgradeModalOpen, onClose]);
+  }, [isOpen, playingRecording, inviteModalOpen, roleModalUser, isUpgradeModalOpen, onClose]);
 
   // Fetch Stats & KPI
   const loadStats = async () => {
@@ -226,7 +227,7 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
           totalMeetings: data.totalMeetings || data.meetings?.total || prev.totalMeetings,
         }));
       }
-    } catch (_) {}
+    } catch (_) { }
   };
 
   // Fetch Users
@@ -285,7 +286,10 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
     if (!resolvedToken) return;
     setAuditLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/audit-logs`, {
+      const currentUser = getStoredUser();
+      const isSuperAdmin = Boolean(currentUser?.isSuperAdmin || currentUser?.role === 'superadmin');
+      const primaryUrl = isSuperAdmin ? `${API_BASE}/api/admin/audit-logs` : `${API_BASE}/api/admin/logs`;
+      const res = await fetch(primaryUrl, {
         headers: { Authorization: `Bearer ${resolvedToken}` },
       });
       if (res.ok) {
@@ -294,8 +298,7 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
           ? json.data.logs
           : (Array.isArray(json.data) ? json.data : []);
         setAuditLogs(rawLogs);
-      } else {
-        // Fallback to /api/admin/logs
+      } else if (isSuperAdmin) {
         const fbRes = await fetch(`${API_BASE}/api/admin/logs`, {
           headers: { Authorization: `Bearer ${resolvedToken}` },
         });
@@ -308,6 +311,8 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
         } else {
           setAuditLogs([]);
         }
+      } else {
+        setAuditLogs([]);
       }
     } catch (_) {
       setAuditLogs([]);
@@ -372,13 +377,64 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
     }
   };
 
+  // Fetch Plans & Integrations dynamically
+  const loadPlans = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/plans`, {
+        headers: resolvedToken ? { Authorization: `Bearer ${resolvedToken}` } : undefined,
+      });
+      if (res.ok) {
+        const json = await res.json().catch(() => ({}));
+        const raw = Array.isArray(json.data) ? json.data : [];
+        if (raw.length > 0) {
+          setPlans(raw.map((p: any) => ({
+            planId: p.planId,
+            name: p.name,
+            price: p.priceMonthly ?? p.price ?? 0,
+            currency: p.currency || 'USD',
+            description: p.description || '',
+            maxSeats: p.limits?.maxSeats ?? p.maxSeats ?? 5,
+            maxStorageGb: p.limits?.maxStorageGb ?? p.maxStorageGb ?? 5,
+            features: Array.isArray(p.features) ? p.features : [],
+          })));
+        }
+      }
+    } catch (_) { }
+  };
+
+  const loadIntegrations = async () => {
+    if (!resolvedToken) return;
+    const orgId = currentOrgId || localStorage.getItem('jts_current_org_id') || '';
+    if (!orgId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/integrations?orgId=${encodeURIComponent(orgId)}`, {
+        headers: { Authorization: `Bearer ${resolvedToken}` },
+      });
+      if (res.ok) {
+        const json = await res.json().catch(() => ({}));
+        const list = Array.isArray(json.data) ? json.data : [];
+        setIntegrationsList(list);
+        const activeHook = list.find((i: any) => i.url);
+        if (activeHook) {
+          setWebhookUrl(activeHook.url || '');
+          if (activeHook.secret) setApiKey(activeHook.secret);
+        }
+      }
+    } catch (_) { }
+  };
+
   useEffect(() => {
+    if (!isOpen || !resolvedToken) return;
     loadStats();
     loadUsers();
     loadAuditLogs();
     loadAttendance();
     loadRecordings();
-  }, [resolvedToken, currentOrgId]);
+    loadPlans();
+    loadIntegrations();
+  }, [isOpen, resolvedToken, currentOrgId]);
+
+  if (!isOpen || !resolvedToken) return null;
 
   // Handler: Invite User
   const handleInviteUser = async (e: React.FormEvent) => {
@@ -386,6 +442,7 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
     if (!resolvedToken || !inviteEmail.trim()) return;
     setInviting(true);
     try {
+      const orgId = currentOrgId || localStorage.getItem('jts_current_org_id') || undefined;
       const res = await fetch(`${API_BASE}/api/admin/users/invite`, {
         method: 'POST',
         headers: {
@@ -394,8 +451,9 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
         },
         body: JSON.stringify({
           email: inviteEmail.trim(),
-          name: inviteName.trim() || undefined,
+          fullName: inviteName.trim() || undefined,
           role: inviteRole,
+          orgId,
         }),
       });
       if (!res.ok) {
@@ -419,13 +477,14 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
     if (!resolvedToken || !roleModalUser) return;
     setUpdatingRole(true);
     try {
+      const orgId = currentOrgId || localStorage.getItem('jts_current_org_id') || undefined;
       const res = await fetch(`${API_BASE}/api/admin/users/${roleModalUser.userId}/role`, {
         method: 'PATCH',
         headers: {
           Authorization: `Bearer ${resolvedToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ role: selectedNewRole }),
+        body: JSON.stringify({ role: selectedNewRole, orgId }),
       });
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
@@ -446,13 +505,14 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
     const nextStatus = user.status === 'suspended' ? 'active' : 'suspended';
     if (!window.confirm(`Are you sure you want to ${nextStatus === 'suspended' ? 'suspend' : 'activate'} ${user.fullName}?`)) return;
     try {
+      const orgId = currentOrgId || localStorage.getItem('jts_current_org_id') || undefined;
       const res = await fetch(`${API_BASE}/api/admin/users/${user.userId}/status`, {
         method: 'PATCH',
         headers: {
           Authorization: `Bearer ${resolvedToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({ status: nextStatus, orgId }),
       });
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
@@ -646,7 +706,7 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
           <div style={{ width: '100%', height: 4, backgroundColor: '#f1f5f9', borderRadius: 2, overflow: 'hidden' }}>
             <div
               style={{
-                width: `${Math.min(100, ((safeUsers.length || metrics.usedSeats) / metrics.totalSeats) * 100)}%`,
+                width: `${metrics.totalSeats > 0 ? Math.min(100, ((safeUsers.length || metrics.usedSeats) / metrics.totalSeats) * 100) : 0}%`,
                 height: '100%',
                 backgroundColor: '#2563eb',
               }}
@@ -682,7 +742,7 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
           <div style={{ width: '100%', height: 4, backgroundColor: '#f1f5f9', borderRadius: 2, overflow: 'hidden' }}>
             <div
               style={{
-                width: `${Math.min(100, (metrics.storageUsedGb / metrics.storageQuotaGb) * 100)}%`,
+                width: `${metrics.storageQuotaGb > 0 ? Math.min(100, (metrics.storageUsedGb / metrics.storageQuotaGb) * 100) : 0}%`,
                 height: '100%',
                 backgroundColor: '#10b981',
               }}
@@ -1548,8 +1608,45 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
                 }}
               />
               <button
-                onClick={() => {
-                  showToast('Webhook endpoint saved successfully!');
+                disabled={savingWebhook}
+                onClick={async () => {
+                  const orgId = currentOrgId || localStorage.getItem('jts_current_org_id') || '';
+                  if (!webhookUrl.trim()) {
+                    showToast('Please enter a valid webhook URL');
+                    return;
+                  }
+                  if (!orgId) {
+                    showToast('Please select an organization first');
+                    return;
+                  }
+                  setSavingWebhook(true);
+                  try {
+                    const res = await fetch(`${API_BASE}/api/integrations`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${resolvedToken}`,
+                      },
+                      body: JSON.stringify({
+                        organizationId: orgId,
+                        name: 'Mobile Outbound Webhook',
+                        type: 'webhook',
+                        url: webhookUrl.trim(),
+                        events: ['meeting.started', 'meeting.ended', 'recording.ready'],
+                      }),
+                    });
+                    if (res.ok) {
+                      showToast('Webhook endpoint saved to server!');
+                      loadIntegrations();
+                    } else {
+                      const err = await res.json().catch(() => ({}));
+                      showToast(err.message || 'Failed to save webhook');
+                    }
+                  } catch {
+                    showToast('Network error saving webhook');
+                  } finally {
+                    setSavingWebhook(false);
+                  }
                 }}
                 style={{
                   padding: '9px',
@@ -1560,9 +1657,10 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
                   fontWeight: 700,
                   border: 'none',
                   cursor: 'pointer',
+                  opacity: savingWebhook ? 0.6 : 1,
                 }}
               >
-                Save Webhook URL
+                {savingWebhook ? 'Saving...' : 'Save Webhook URL'}
               </button>
             </div>
 
@@ -1587,9 +1685,15 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
                     <div style={{ fontSize: '0.64rem', color: '#64748b' }}>Sync meeting invites & calendar events</div>
                   </div>
                 </div>
-                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#16a34a', backgroundColor: '#ecfdf5', padding: '2px 8px', borderRadius: 10 }}>
-                  Active
-                </span>
+                {integrationsList.some((i: any) => String(i.type).toLowerCase().includes('calendar') && i.status === 'active') ? (
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#16a34a', backgroundColor: '#ecfdf5', padding: '2px 8px', borderRadius: 10 }}>
+                    Active
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b', backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: 10 }}>
+                    Not Linked
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -1799,8 +1903,8 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
                       {r === 'admin'
                         ? 'Full administrative privileges across console'
                         : r === 'member'
-                        ? 'Standard user privileges for calls & chats'
-                        : 'Read-only access for guest participants'}
+                          ? 'Standard user privileges for calls & chats'
+                          : 'Read-only access for guest participants'}
                     </p>
                   </div>
                   {selectedNewRole === r && <span style={{ color: '#2563eb', fontWeight: 800 }}>✓</span>}
@@ -1947,7 +2051,8 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {plans.map((p) => {
-                const isSelected = p.planId === 'enterprise';
+                const normalizedTier = String(metrics.tier || '').toLowerCase();
+                const isSelected = normalizedTier.includes(String(p.planId || '').toLowerCase()) || normalizedTier === String(p.name || '').toLowerCase();
                 return (
                   <div
                     key={p.planId}
@@ -1998,9 +2103,34 @@ export const MobileAdminConsoleModal: React.FC<MobileAdminConsoleModalProps> = (
                     </div>
 
                     <button
-                      onClick={() => {
-                        showToast(`Selected "${p.name}" plan!`);
-                        setIsUpgradeModalOpen(false);
+                      disabled={isSelected}
+                      onClick={async () => {
+                        if (isSelected) return;
+                        const orgId = currentOrgId || localStorage.getItem('jts_current_org_id') || '';
+                        if (!orgId) {
+                          showToast('Please select an organization first');
+                          return;
+                        }
+                        try {
+                          const res = await fetch(`${API_BASE}/api/organization/${orgId}/plan`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              Authorization: `Bearer ${resolvedToken}`,
+                            },
+                            body: JSON.stringify({ planId: p.planId }),
+                          });
+                          const json = await res.json().catch(() => ({}));
+                          if (res.ok) {
+                            showToast(`Switched to "${p.name}" plan!`);
+                            setIsUpgradeModalOpen(false);
+                            loadStats();
+                          } else {
+                            showToast(json.message || 'Complete billing checkout on web to upgrade');
+                          }
+                        } catch {
+                          showToast('Network error switching plan');
+                        }
                       }}
                       style={{
                         marginTop: 4,

@@ -7,9 +7,11 @@ interface ChannelHuddleDockProps {
     channelName: string
     isHuddleMuted: boolean
     ambientAudioMode: 'off' | 'lofi' | 'rain'
+    participants?: Array<{ userId: string; username: string; muted: boolean }>
     onToggleMute: () => void
     onToggleCollapse: (collapsed: boolean) => void
     onCycleAmbient: () => void
+    onLaunchFullRoom?: () => void
     onLeaveHuddle: () => void
 }
 
@@ -19,9 +21,11 @@ export const ChannelHuddleDock: React.FC<ChannelHuddleDockProps> = ({
     channelName,
     isHuddleMuted,
     ambientAudioMode,
+    participants = [],
     onToggleMute,
     onToggleCollapse,
     onCycleAmbient,
+    onLaunchFullRoom,
     onLeaveHuddle
 }) => {
     if (!isHuddleActive) return null
@@ -129,7 +133,7 @@ export const ChannelHuddleDock: React.FC<ChannelHuddleDockProps> = ({
                         #{channelName} Huddle
                     </span>
                     <span style={{ fontSize: '0.68rem', color: '#c084fc', background: 'rgba(168, 85, 247, 0.18)', padding: '1px 6px', borderRadius: 9999 }}>
-                        Live Audio
+                        {participants.length > 0 ? `${participants.length} Live` : 'Live Audio'}
                     </span>
                 </div>
                 <button
@@ -154,6 +158,30 @@ export const ChannelHuddleDock: React.FC<ChannelHuddleDockProps> = ({
                     <span>Hide</span>
                 </button>
             </div>
+
+            {participants.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {participants.map(p => (
+                        <span
+                            key={p.userId}
+                            style={{
+                                fontSize: '0.68rem',
+                                color: p.muted ? '#94a3b8' : '#e2e8f0',
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: 9999,
+                                padding: '2px 8px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                            }}
+                        >
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.muted ? '#ef4444' : '#22c55e' }} />
+                            {p.username}
+                        </span>
+                    ))}
+                </div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {/* Mic Toggle */}
@@ -199,6 +227,26 @@ export const ChannelHuddleDock: React.FC<ChannelHuddleDockProps> = ({
                     <span>🎵</span>
                     <span>{ambientAudioMode === 'off' ? 'Ambient' : (ambientAudioMode === 'lofi' ? 'Lo-Fi' : 'Rain')}</span>
                 </button>
+
+                {onLaunchFullRoom && (
+                    <button
+                        type="button"
+                        onClick={onLaunchFullRoom}
+                        style={{
+                            background: 'rgba(168, 85, 247, 0.2)',
+                            border: '1px solid rgba(168, 85, 247, 0.45)',
+                            color: '#e9d5ff',
+                            borderRadius: 8,
+                            padding: '5px 10px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                        }}
+                        title="Open Full Video & Screen Share Room"
+                    >
+                        Video Room
+                    </button>
+                )}
 
                 {/* Leave */}
                 <button

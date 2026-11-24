@@ -25,8 +25,13 @@ import { getStoredToken, getStoredUser, setStoredToken, setStoredUser, clearAllS
 
 export function App() {
   const [activeTab, setActiveTab] = useState<MobileTab>('meet');
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [user, setUser] = useState<any>(getStoredUser());
   const [token, setToken] = useState<string | null>(getStoredToken());
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const userRef = useRef(user);
+  userRef.current = user;
 
   // Modals
   const [isJoinOpen, setIsJoinOpen] = useState(false);
@@ -79,7 +84,11 @@ export function App() {
     callerName: string;
     callerAvatar?: string;
     callType?: 'audio' | 'video';
+    recipientId?: string;
+    rejectToken?: string;
   } | null>(null);
+  const incomingCallRef = useRef(incomingCall);
+  incomingCallRef.current = incomingCall;
 
   const [outgoingCall, setOutgoingCall] = useState<{
     targetUserId: string;
@@ -89,6 +98,9 @@ export function App() {
     meetingId: string;
     channelName?: string;
   } | null>(null);
+  const outgoingCallRef = useRef(outgoingCall);
+  outgoingCallRef.current = outgoingCall;
+  const outgoingCallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Network Reconnection & Online/Offline Status (Enterprise 4G <-> Wi-Fi Sync)
   const [networkState, setNetworkState] = useState<'online' | 'reconnecting' | 'offline' | 'restored'>('online');
@@ -191,32 +203,64 @@ export function App() {
     return () => stopRingtone();
   }, [incomingCall]);
 
-  // Handle Google / Microsoft OAuth redirect with ?token=...
+  // Handle Google / Microsoft OAuth redirect (?token=... or jtsmeet://auth?token=... deep link)
   useEffect(() => {
+    const applyAuthToken = (incomingToken: string) => {
+      if (!incomingToken) return;
+      setStoredToken(incomingToken);
+      setToken(incomingToken);
+      setIsAuthOpen(false);
+      fetch(`${API_BASE}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${incomingToken}` },
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          const u = data?.data?.user || data?.user || data?.data;
+          if (u) {
+            setStoredUser(u);
+            setUser(u);
+          }
+          mobileNotificationService.syncStoredFcmToken(incomingToken);
+        })
+        .catch(() => {});
+    };
+
     try {
       const searchParams = new URLSearchParams(window.location.search);
       const tokenFromUrl = searchParams.get('token');
       if (tokenFromUrl) {
-        setStoredToken(tokenFromUrl);
-        setToken(tokenFromUrl);
-        fetch(`${API_BASE}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${tokenFromUrl}` },
-        })
-          .then((res) => res.json())
-          .then((data) => {
-            const u = data?.data?.user || data?.user || data?.data;
-            if (u) {
-              setStoredUser(u);
-              setUser(u);
-            }
-          })
-          .catch(() => {});
+        applyAuthToken(tokenFromUrl);
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     } catch (_) {}
+
+    let urlHandle: any = null;
+    try {
+      CapacitorApp.addListener('appUrlOpen', ({ url }) => {
+        try {
+          if (!url) return;
+          const parsed = new URL(url);
+          const tokenFromDeepLink = parsed.searchParams.get('token');
+          const errFromDeepLink = parsed.searchParams.get('error');
+          if (tokenFromDeepLink) {
+            applyAuthToken(tokenFromDeepLink);
+          } else if (errFromDeepLink) {
+            (window as any).MobileAppBridge?.showToast?.(errFromDeepLink);
+          }
+        } catch (_) {}
+      }).then((h) => {
+        urlHandle = h;
+      });
+    } catch (_) {}
+
+    return () => {
+      urlHandle?.remove?.();
+    };
   }, []);
 
   const closeChatConversationRef = useRef<(() => boolean) | null>(null);
+  const handleCancelOutgoingCallRef = useRef<() => void>(() => {});
+  const handleDeclineIncomingCallRef = useRef<(callOverride?: any) => void>(() => {});
 
   // Android Native Hardware Back Button Handler for App Navigation (Closes Modals & Tabs)
   useEffect(() => {
@@ -224,7 +268,7 @@ export function App() {
     try {
       CapacitorApp.addListener('backButton', () => {
         // If an active meeting is in foreground (not minimized), MobileMeetingRoom handles its own back flow
-        if (activeMeeting && !isMeetingMinimized) return;
+        if (activeMeetingRef.current && !isMeetingMinimized) return;
 
         // 1. Close open modals first
         if (isAdminConsoleOpen) {
@@ -259,12 +303,12 @@ export function App() {
           setIsScheduleOpen(false);
           return;
         }
-        if (outgoingCall) {
-          setOutgoingCall(null);
+        if (outgoingCallRef.current) {
+          handleCancelOutgoingCallRef.current();
           return;
         }
-        if (incomingCall) {
-          setIncomingCall(null);
+        if (incomingCallRef.current) {
+          handleDeclineIncomingCallRef.current(incomingCallRef.current);
           return;
         }
 
@@ -440,8 +484,11 @@ export function App() {
     bgSocket.on('call:incoming', (payload: any) => {
       console.log('[MobileApp] Received incoming call:', payload);
       if (payload?.meetingId) {
-        if (localStorage.getItem('jts_declined_call_' + payload.meetingId) === 'true') {
-          console.log('[MobileApp] Ignoring already declined call:', payload.meetingId);
+        if (
+          localStorage.getItem('jts_declined_call_' + payload.meetingId) === 'true' ||
+          localStorage.getItem('jts_accepted_call_' + payload.meetingId) === 'true'
+        ) {
+          console.log('[MobileApp] Ignoring already handled call:', payload.meetingId);
           return;
         }
         setIncomingCall({
@@ -450,20 +497,28 @@ export function App() {
           callerName: payload.callerName || 'Colleague',
           callerAvatar: payload.callerAvatar,
           callType: payload.callType || 'video',
+          recipientId: payload.recipientId,
+          rejectToken: payload.rejectToken,
         });
       }
     });
 
     bgSocket.on('call:accepted', (payload: any) => {
       console.log('[MobileApp] Outgoing call accepted:', payload);
+      if (outgoingCallTimerRef.current) {
+        clearTimeout(outgoingCallTimerRef.current);
+        outgoingCallTimerRef.current = null;
+      }
       setOutgoingCall((curr) => {
         if (curr && (!payload?.meetingId || payload.meetingId === curr.meetingId)) {
           stopRingtone();
-          const storedName = localStorage.getItem('jts_display_name') || user?.name || 'Mohit';
+          const currentUser = userRef.current;
+          const storedName = localStorage.getItem('jts_display_name') || currentUser?.fullName || currentUser?.name || 'User';
+          const muteOnJoin = localStorage.getItem('jts_pref_mute_join') === 'true';
           handleJoinMeeting(
             curr.meetingId,
             storedName,
-            false,
+            muteOnJoin,
             curr.callType === 'audio',
             false,
             curr.callType,
@@ -477,10 +532,19 @@ export function App() {
 
     bgSocket.on('call:rejected', (payload: any) => {
       console.log('[MobileApp] Call rejected or unavailable:', payload);
+      if (outgoingCallTimerRef.current) {
+        clearTimeout(outgoingCallTimerRef.current);
+        outgoingCallTimerRef.current = null;
+      }
+      try { (window as any).MobileAppBridge?.resetAudioMode?.(); } catch (_) {}
       setOutgoingCall((curr) => {
         if (curr) {
           stopRingtone();
-          alert(payload?.reason === 'no_answer' ? 'User is unavailable.' : 'Call declined.');
+          try {
+            (window as any).MobileAppBridge?.showToast?.(
+              payload?.reason === 'no_answer' ? 'User is unavailable.' : 'Call declined.'
+            );
+          } catch (_) {}
           return null;
         }
         return curr;
@@ -492,6 +556,17 @@ export function App() {
       setIncomingCall(null);
       stopRingtone();
     });
+
+    const handleUnreadMessage = (msg: any) => {
+      const senderId = msg?.sender?._id || msg?.sender || msg?.senderId;
+      const currentUser = userRef.current;
+      const myId = currentUser?._id || currentUser?.id;
+      if (myId && senderId && String(senderId) === String(myId)) return;
+      if (activeTabRef.current === 'messages') return;
+      setUnreadMessagesCount((c) => c + 1);
+    };
+    bgSocket.on('chat:receive', handleUnreadMessage);
+    bgSocket.on('channel:message:receive', handleUnreadMessage);
 
     return () => {
       window.removeEventListener('jts:fcm-token-refreshed', handleFcmTokenRefresh);
@@ -567,10 +642,15 @@ export function App() {
     }
 
     // Auto timeout after 60 seconds if unanswered (matches server ringing timeout)
-    setTimeout(() => {
+    if (outgoingCallTimerRef.current) {
+      clearTimeout(outgoingCallTimerRef.current);
+    }
+    outgoingCallTimerRef.current = setTimeout(() => {
+      outgoingCallTimerRef.current = null;
       setOutgoingCall((curr) => {
         if (curr && curr.meetingId === meetingId) {
           stopRingtone();
+          try { (window as any).MobileAppBridge?.resetAudioMode?.(); } catch (_) {}
           if (socketRef.current) {
             socketRef.current.emit('call:cancelled', {
               targetUserId,
@@ -595,6 +675,11 @@ export function App() {
   };
 
   const handleCancelOutgoingCall = () => {
+    if (outgoingCallTimerRef.current) {
+      clearTimeout(outgoingCallTimerRef.current);
+      outgoingCallTimerRef.current = null;
+    }
+    try { (window as any).MobileAppBridge?.resetAudioMode?.(); } catch (_) {}
     if (outgoingCall) {
       const cancelPayload = {
         targetUserId: outgoingCall.targetUserId,
@@ -620,6 +705,43 @@ export function App() {
     stopRingtone();
     setOutgoingCall(null);
   };
+  handleCancelOutgoingCallRef.current = handleCancelOutgoingCall;
+
+  const handleDeclineIncomingCall = (callOverride?: any) => {
+    const currentCall = callOverride || incomingCall;
+    if (currentCall?.meetingId) {
+      try { localStorage.setItem('jts_declined_call_' + currentCall.meetingId, 'true'); } catch (_) {}
+    }
+    try { (window as any).MobileAppBridge?.cancelCallNotification?.(); } catch (_) {}
+    stopRingtone();
+    if (socketRef.current && currentCall?.callerId) {
+      socketRef.current.emit('call:rejected', {
+        callerId: currentCall.callerId,
+        meetingId: currentCall.meetingId,
+        reason: 'declined',
+      });
+    }
+    if (currentCall?.meetingId) {
+      const effectiveToken = token || getStoredToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (effectiveToken) {
+        headers.Authorization = `Bearer ${effectiveToken}`;
+      }
+      fetch(`${API_BASE}/api/notifications/call-reject`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          meetingId: currentCall.meetingId,
+          callerId: currentCall.callerId || '',
+          recipientId: currentCall.recipientId,
+          rejectToken: currentCall.rejectToken,
+          reason: 'declined',
+        }),
+      }).catch(() => {});
+    }
+    setIncomingCall(null);
+  };
+  handleDeclineIncomingCallRef.current = handleDeclineIncomingCall;
 
   // Recent meetings (dynamically loaded from local history for authenticated user)
   const [recentMeetings, setRecentMeetings] = useState<string[]>(() => {
@@ -694,6 +816,32 @@ export function App() {
     return false;
   };
 
+  const emitCallAccepted = useCallback((meetingId: string, callerId?: string) => {
+    if (!meetingId) return;
+    try { localStorage.setItem('jts_accepted_call_' + meetingId, 'true'); } catch (_) {}
+    const payload = { meetingId, callerId: callerId || '' };
+    const sock = socketRef.current;
+    if (sock) {
+      if (sock.connected) {
+        sock.emit('call:accepted', payload);
+      } else {
+        sock.connect();
+        sock.once('connect', () => sock.emit('call:accepted', payload));
+      }
+    }
+    const effectiveToken = token || getStoredToken();
+    if (effectiveToken) {
+      fetch(`${API_BASE}/api/notifications/call-accept`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${effectiveToken}`,
+        },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    }
+  }, [token]);
+
   // ── Unified Push Notification & Call Action Routing (WhatsApp / MS Teams style) ──
   const handleNotificationAction = useCallback((data: any) => {
     if (!data) return;
@@ -707,13 +855,15 @@ export function App() {
       }
 
       if (data.actionId === 'decline') {
-        setIncomingCall(null);
-        stopRingtone();
+        handleDeclineIncomingCall(data);
         return;
       }
 
       if (data.actionId === 'accept' || data.autoAccept === 'true') {
-        const storedName = localStorage.getItem('jts_display_name') || user?.name || 'Mohit';
+        try { (window as any).MobileAppBridge?.cancelCallNotification?.(); } catch (_) {}
+        stopRingtone();
+        emitCallAccepted(data.meetingId, data.callerId);
+        const storedName = localStorage.getItem('jts_display_name') || user?.fullName || user?.name || 'User';
         handleJoinMeeting(
           data.meetingId,
           storedName,
@@ -733,6 +883,8 @@ export function App() {
         callerName: data.callerName || 'Colleague',
         callerAvatar: data.callerAvatar || '',
         callType: data.callType || 'audio',
+        recipientId: data.recipientId,
+        rejectToken: data.rejectToken,
       });
       return;
     }
@@ -747,10 +899,17 @@ export function App() {
         isChannel: data.isChannel === 'true' || Boolean(data.isChannel),
       });
     }
-  }, [user]);
+  }, [user, emitCallAccepted]);
 
   // Listen for background push actions and app launches from notifications
   useEffect(() => {
+    const isCallHandled = (mId?: string) =>
+      Boolean(
+        mId &&
+          (localStorage.getItem('jts_declined_call_' + mId) === 'true' ||
+            localStorage.getItem('jts_accepted_call_' + mId) === 'true')
+      );
+
     // 0. Check native pending call intent from Android Full-Screen Intent (Lockscreen / Background cold start)
     try {
       const bridge = (window as any).MobileAppBridge;
@@ -759,14 +918,20 @@ export function App() {
         if (raw && raw.trim() && raw !== '{}') {
           bridge.clearPendingCallData();
           const callData = JSON.parse(raw);
-          if (callData.meetingId && !isCallExpired(callData)) {
-            setIncomingCall({
-              meetingId: callData.meetingId,
-              callerId: callData.callerId,
-              callerName: callData.callerName || 'Colleague',
-              callerAvatar: callData.callerAvatar || '',
-              callType: callData.callType || 'audio',
-            });
+          if (callData.meetingId && !isCallHandled(callData.meetingId) && !isCallExpired(callData)) {
+            if (callData.autoAccept === 'true' || callData.autoAccept === true) {
+              handleNotificationAction(callData);
+            } else {
+              setIncomingCall({
+                meetingId: callData.meetingId,
+                callerId: callData.callerId,
+                callerName: callData.callerName || 'Colleague',
+                callerAvatar: callData.callerAvatar || '',
+                callType: callData.callType || 'audio',
+                recipientId: callData.recipientId,
+                rejectToken: callData.rejectToken,
+              });
+            }
           }
         }
       }
@@ -779,8 +944,7 @@ export function App() {
         localStorage.removeItem('jts_pending_notification');
         const pending = JSON.parse(pendingRaw);
         const mId = pending?.meetingId;
-        const isDeclined = mId && localStorage.getItem('jts_declined_call_' + mId) === 'true';
-        if (!isDeclined && !isCallExpired(pending)) {
+        if (!isCallHandled(mId) && !isCallExpired(pending)) {
           setTimeout(() => handleNotificationAction(pending), 400);
         }
       }
@@ -789,7 +953,7 @@ export function App() {
     // 2. Live event listeners while app is active or in memory
     const onAction = (e: any) => {
       const mId = e.detail?.meetingId;
-      if (mId && localStorage.getItem('jts_declined_call_' + mId) === 'true') {
+      if (isCallHandled(mId)) {
         return;
       }
       if (!isCallExpired(e.detail)) {
@@ -797,19 +961,26 @@ export function App() {
       }
     };
     const onCallPush = (e: any) => {
-      const mId = e.detail?.meetingId;
-      if (mId && localStorage.getItem('jts_declined_call_' + mId) === 'true') {
-        console.log('[App] Ignoring already declined call push:', mId);
+      const detail = e.detail;
+      const mId = detail?.meetingId;
+      if (isCallHandled(mId)) {
+        console.log('[App] Ignoring already handled call push:', mId);
         return;
       }
-      if (mId && !isCallExpired(e.detail)) {
-        setIncomingCall({
-          meetingId: e.detail.meetingId,
-          callerId: e.detail.callerId,
-          callerName: e.detail.callerName || 'Colleague',
-          callerAvatar: e.detail.callerAvatar || '',
-          callType: e.detail.callType || 'audio',
-        });
+      if (mId && !isCallExpired(detail)) {
+        if (detail.autoAccept === 'true' || detail.autoAccept === true) {
+          handleNotificationAction(detail);
+        } else {
+          setIncomingCall({
+            meetingId: detail.meetingId,
+            callerId: detail.callerId,
+            callerName: detail.callerName || 'Colleague',
+            callerAvatar: detail.callerAvatar || '',
+            callType: detail.callType || 'audio',
+            recipientId: detail.recipientId,
+            rejectToken: detail.rejectToken,
+          });
+        }
       }
     };
 
@@ -825,11 +996,13 @@ export function App() {
     window.addEventListener('jts:notification-action', onAction);
     window.addEventListener('jts:incoming-call-push', onCallPush);
     window.addEventListener('jts:call-declined-native', onNativeDecline);
+    window.addEventListener('jts:call-cancelled-native', onNativeDecline);
 
     return () => {
       window.removeEventListener('jts:notification-action', onAction);
       window.removeEventListener('jts:incoming-call-push', onCallPush);
       window.removeEventListener('jts:call-declined-native', onNativeDecline);
+      window.removeEventListener('jts:call-cancelled-native', onNativeDecline);
     };
   }, [handleNotificationAction]);
 
@@ -838,6 +1011,18 @@ export function App() {
     const checkUrlForMeeting = (fullUrl: string) => {
       try {
         if (!fullUrl) return;
+        // Never treat OAuth deep-link callbacks (jtsmeet://auth?token=...) as a meeting ID
+        if (fullUrl.startsWith('jtsmeet://auth')) {
+          return;
+        }
+        const hasExplicitMeetingTarget =
+          fullUrl.includes('callMeetingId=') ||
+          fullUrl.includes('?id=') ||
+          fullUrl.includes('/meet/') ||
+          fullUrl.includes('/room-');
+        if (!hasExplicitMeetingTarget && (fullUrl.includes('token=') || fullUrl.includes('error='))) {
+          return;
+        }
 
         // Check query params for direct call from URL or push click
         if (fullUrl.includes('callMeetingId=')) {
@@ -903,13 +1088,16 @@ export function App() {
   const handleStartNewMeeting = (videoOn: boolean, usePmi: boolean, customCode?: string) => {
     const meetingCode = customCode || (usePmi ? userPmi : `meet-${Math.random().toString(36).substring(2, 8)}`);
     const hostName = user?.fullName || user?.name || localStorage.getItem('jts_display_name') || 'Guest User';
-    handleJoinMeeting(meetingCode, hostName, false, !videoOn, true);
+    const prefMute = localStorage.getItem('jts_pref_mute_join') === 'true';
+    handleJoinMeeting(meetingCode, hostName, prefMute, !videoOn, true);
   };
 
   // Handle quick join from code input
   const handleQuickJoin = (code: string) => {
     const storedName = user?.fullName || user?.name || localStorage.getItem('jts_display_name') || 'Guest User';
-    handleJoinMeeting(code, storedName, false, false, false);
+    const prefMute = localStorage.getItem('jts_pref_mute_join') === 'true';
+    const prefVideoOff = localStorage.getItem('jts_pref_video_off_join') === 'true';
+    handleJoinMeeting(code, storedName, prefMute, prefVideoOff, false);
   };
 
   // Scheduled Meetings (Dynamically fetched from backend API for authenticated user)
@@ -1047,9 +1235,29 @@ export function App() {
 
   // Handle Logout - Strict Enterprise Data Isolation & Cache Purge
   const handleLogout = () => {
+    const currentToken = token || getStoredToken();
+    if (currentToken) {
+      mobileNotificationService.unregisterFcmToken(currentToken);
+      fetch(`${API_BASE}/api/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${currentToken}` },
+      }).catch(() => {});
+    }
+    if (outgoingCallTimerRef.current) {
+      clearTimeout(outgoingCallTimerRef.current);
+      outgoingCallTimerRef.current = null;
+    }
+    try { (window as any).MobileAppBridge?.cancelCallNotification?.(); } catch (_) {}
+    try { (window as any).MobileAppBridge?.resetAudioMode?.(); } catch (_) {}
+    stopRingtone();
     clearAllSessionStorageAndData();
     setUser(null);
     setToken(null);
+    setActiveMeeting(null);
+    setIsMeetingMinimized(false);
+    setIncomingCall(null);
+    setOutgoingCall(null);
+    setUnreadMessagesCount(0);
     setRecentMeetings([]);
     setScheduledMeetings([]);
     setTargetChat(null);
@@ -1136,44 +1344,13 @@ export function App() {
       {/* ── Native Full-Screen Incoming Call Screen (WhatsApp / Enterprise CallKit Style) ── */}
       <MobileIncomingCallModal
         call={incomingCall}
-        onDecline={() => {
-          const currentCall = incomingCall;
-          if (currentCall?.meetingId) {
-            try { localStorage.setItem('jts_declined_call_' + currentCall.meetingId, 'true'); } catch (_) {}
-          }
-          try { (window as any).MobileAppBridge?.cancelCallNotification?.(); } catch (_) {}
-          stopRingtone();
-          if (socketRef.current && currentCall?.callerId) {
-            socketRef.current.emit('call:rejected', {
-              callerId: currentCall.callerId,
-              meetingId: currentCall.meetingId,
-              reason: 'declined',
-            });
-          }
-          if (currentCall?.meetingId) {
-            fetch(`${API_BASE}/api/notifications/call-reject`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                meetingId: currentCall.meetingId,
-                callerId: currentCall.callerId || '',
-                reason: 'declined',
-              }),
-            }).catch(() => {});
-          }
-          setIncomingCall(null);
-        }}
+        onDecline={() => handleDeclineIncomingCall()}
         onAccept={() => {
           if (!incomingCall) return;
           try { (window as any).MobileAppBridge?.cancelCallNotification?.(); } catch (_) {}
           stopRingtone();
-          if (socketRef.current) {
-            socketRef.current.emit('call:accepted', {
-              meetingId: incomingCall.meetingId,
-              callerId: incomingCall.callerId,
-            });
-          }
-          const storedName = localStorage.getItem('jts_display_name') || user?.name || 'Mohit';
+          emitCallAccepted(incomingCall.meetingId, incomingCall.callerId);
+          const storedName = localStorage.getItem('jts_display_name') || user?.fullName || user?.name || 'User';
           handleJoinMeeting(
             incomingCall.meetingId,
             storedName,
@@ -1340,7 +1517,13 @@ export function App() {
       {/* ── Mobile Bottom Navigation Bar ── */}
       <MobileBottomNav
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        unreadMessagesCount={unreadMessagesCount}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          if (tab === 'messages') {
+            setUnreadMessagesCount(0);
+          }
+        }}
       />
 
       {/* ── Modals / Bottom Sheets ── */}

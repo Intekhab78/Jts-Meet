@@ -105,6 +105,7 @@ export const ConferenceParticipantGrid: React.FC<ConferenceParticipantGridProps>
                 <video
                   autoPlay
                   playsInline
+                  muted
                   webkit-playsinline="true"
                   controls={false}
                   ref={(el) => {

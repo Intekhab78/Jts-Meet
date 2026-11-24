@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { API_BASE } from '../../../config'
 import {
     SuperAdminTab,
@@ -114,7 +114,7 @@ export function useSuperAdminState({ token }: UseSuperAdminStateProps) {
 
     // Tenant Quota Edit Modal
     const [editingTenant, setEditingTenant] = useState<TenantItem | null>(null)
-    const [editTier, setEditTier] = useState<'free' | 'starter' | 'enterprise'>('enterprise')
+    const [editTier, setEditTier] = useState<string>('enterprise')
     const [editSeats, setEditSeats] = useState(50)
     const [editStorageGb, setEditStorageGb] = useState(25)
     const [savingQuota, setSavingQuota] = useState(false)
@@ -161,6 +161,7 @@ export function useSuperAdminState({ token }: UseSuperAdminStateProps) {
         }
     }, [tenantSearch, token])
 
+    const hasHydratedBroadcastRef = useRef(false)
     const fetchTelemetry = useCallback(async () => {
         setTelemetryLoading(true)
         try {
@@ -170,7 +171,8 @@ export function useSuperAdminState({ token }: UseSuperAdminStateProps) {
             if (res.ok) {
                 const data = await res.json()
                 setTelemetry(data.data)
-                if (data.data?.activeBroadcast) {
+                if (data.data?.activeBroadcast && !hasHydratedBroadcastRef.current) {
+                    hasHydratedBroadcastRef.current = true
                     setBroadcastMsg(data.data.activeBroadcast.message || '')
                     setBroadcastSeverity(data.data.activeBroadcast.severity || 'warning')
                     setBroadcastActive(data.data.activeBroadcast.active !== false)
@@ -285,7 +287,10 @@ export function useSuperAdminState({ token }: UseSuperAdminStateProps) {
 
     // Trigger tab-specific fetches
     useEffect(() => {
-        if (activeTab === 'tenants') fetchTenants()
+        if (activeTab === 'tenants') {
+            fetchTenants()
+            fetchPlans()
+        }
         if (activeTab === 'telemetry' || activeTab === 'broadcast') fetchTelemetry()
         if (activeTab === 'plans') fetchPlans()
         if (activeTab === 'policies') fetchPolicies()
@@ -340,7 +345,7 @@ export function useSuperAdminState({ token }: UseSuperAdminStateProps) {
             if (res.ok && data.data?.token) {
                 sessionStorage.setItem('jts_original_admin_token', token)
                 sessionStorage.setItem('jts_impersonated_org_name', tenant.name)
-                localStorage.setItem('token', data.data.token)
+                localStorage.setItem('jts_token', data.data.token)
                 showToast(`Switching to ${tenant.name} Support Session...`)
                 setTimeout(() => {
                     window.location.hash = ''

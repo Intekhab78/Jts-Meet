@@ -91,10 +91,12 @@ export interface MeetingStageAreaProps {
     setActivePanel: (panel: ActiveMeetingPanel) => void
     sidePanelsProps: Omit<MeetingSidePanelsProps, 'activePanel' | 'setActivePanel' | 'token' | 'meetingId' | 'socket'>
     addToast?: (msg: string, type?: any) => void
+    isToolbarActuallyVisible?: boolean
 }
 
 export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
     isWebinarAttendee,
+    isToolbarActuallyVisible = true,
     isWebinarMode,
     isLowTimeWarning,
     screenError,
@@ -263,9 +265,9 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
                     }
                 }}
                 style={{
-                    width: isSingleTile ? 'min(100%, calc((100vh - 160px) * 16 / 9))' : '100%',
-                    height: isSingleTile ? 'auto' : '100%',
-                    maxHeight: isSingleTile ? 'calc(100vh - 160px)' : undefined,
+                    width: isSingleTile ? 'min(100%, calc((100dvh - 148px) * 16 / 9))' : '100%',
+                    height: '100%',
+                    maxHeight: isSingleTile ? 'min(100%, calc(100dvh - 148px))' : '100%',
                     aspectRatio: isSingleTile ? '16 / 9' : undefined,
                     margin: isSingleTile ? 'auto' : undefined,
                     position: 'relative',
@@ -424,7 +426,9 @@ export const MeetingStageArea: React.FC<MeetingStageAreaProps> = ({
         <main style={{
             flex: 1,
             paddingTop: isWebinarMode ? (isLowTimeWarning ? 142 : 102) : (isLowTimeWarning ? 94 : 56),
-            paddingBottom: 10,
+            paddingBottom: isWebinarAttendee ? 12 : (isMobile ? 68 : 76),
+            paddingLeft: isMobile ? 8 : 16,
+            paddingRight: isMobile ? 8 : 16,
             display: 'flex',
             overflow: 'hidden',
             boxSizing: 'border-box'

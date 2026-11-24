@@ -101,9 +101,9 @@ export class ChannelChatService {
         return populated.toObject()
     }
 
-    static async deleteMessage(messageId: string, senderId: string) {
+    static async deleteMessage(messageId: string, senderId: string, expectedChannelId?: string) {
         const message = await ChannelChat.findById(messageId)
-        if (!message || message.deleted) {
+        if (!message || message.deleted || (expectedChannelId && String(message.channelId) !== String(expectedChannelId))) {
             throw new Error('Message not found')
         }
         if (message.senderId.toString() !== senderId) {
@@ -119,9 +119,9 @@ export class ChannelChatService {
         return message
     }
 
-    static async undoDeleteMessage(messageId: string, senderId: string) {
+    static async undoDeleteMessage(messageId: string, senderId: string, expectedChannelId?: string) {
         const message = await ChannelChat.findById(messageId)
-        if (!message) {
+        if (!message || (expectedChannelId && String(message.channelId) !== String(expectedChannelId))) {
             throw new Error('Message not found')
         }
         if (message.senderId.toString() !== senderId) {
@@ -134,13 +134,16 @@ export class ChannelChatService {
         return populated.toObject()
     }
 
-    static async addReactionToMessage(messageId: string, userId: string, emoji: string) {
+    static async addReactionToMessage(messageId: string, userId: string, emoji: string, expectedChannelId?: string) {
         const userObjectId = new Types.ObjectId(userId)
         const msg = await ChannelChat.findById(messageId)
-        if (!msg) return null
+        if (!msg || (expectedChannelId && String(msg.channelId) !== String(expectedChannelId))) return null
 
+        const hadSameEmoji = (msg.reactions || []).some((r: any) => r.userId.equals(userObjectId) && r.emoji === emoji)
         msg.reactions = (msg.reactions || []).filter((r: any) => !r.userId.equals(userObjectId))
-        msg.reactions.push({ userId: userObjectId, emoji })
+        if (!hadSameEmoji) {
+            msg.reactions.push({ userId: userObjectId, emoji })
+        }
         return msg.save()
     }
 
@@ -204,9 +207,9 @@ export class ChannelChatService {
         )
     }
 
-    static async togglePinMessage(messageId: string, userId: string) {
+    static async togglePinMessage(messageId: string, userId: string, expectedChannelId?: string) {
         const message = await ChannelChat.findById(messageId)
-        if (!message || message.deleted) {
+        if (!message || message.deleted || (expectedChannelId && String(message.channelId) !== String(expectedChannelId))) {
             throw new Error('Message not found')
         }
 

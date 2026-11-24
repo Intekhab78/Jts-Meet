@@ -82,21 +82,18 @@ export function useMeetingModeration({
         if (!isLocalHost && !canManageParticipants) return
         const activeRoom = meetingId || meetingInput.trim()
         socket?.emit(SocketEvents.MEETING_MUTE_USER, { meetingId: activeRoom, targetUserId })
-        socket?.emit('meeting:mute-user', { meetingId: activeRoom, targetUserId })
     }
 
     const handleUnmuteUser = (targetUserId: string) => {
         if (!isLocalHost && !canManageParticipants) return
         const activeRoom = meetingId || meetingInput.trim()
         socket?.emit(SocketEvents.MEETING_UNMUTE_USER, { meetingId: activeRoom, targetUserId })
-        socket?.emit('meeting:unmute-user', { meetingId: activeRoom, targetUserId })
     }
 
     const handleMuteAll = () => {
         if (!isLocalHost && !canManageParticipants) return
         const activeRoom = meetingId || meetingInput.trim()
         socket?.emit(SocketEvents.MEETING_MUTE_ALL, { meetingId: activeRoom })
-        socket?.emit('meeting:mute-all', { meetingId: activeRoom })
         addToast('Muted all participants', 'success')
     }
 
@@ -104,7 +101,6 @@ export function useMeetingModeration({
         if (!isLocalHost && !canManageParticipants) return
         const activeRoom = meetingId || meetingInput.trim()
         socket?.emit(SocketEvents.MEETING_UNMUTE_ALL, { meetingId: activeRoom })
-        socket?.emit('meeting:unmute-all', { meetingId: activeRoom })
         addToast('Unmuted all participants', 'success')
     }
 

@@ -80,6 +80,24 @@ export interface MoreOptionsMenuProps {
     onRequireUpgrade: (feature: { title: string; requiredPlan: string; icon: React.ReactNode; description: string }) => void
 }
 
+function MenuSectionHeader({ label }: { label: string }) {
+    return (
+        <div style={{
+            padding: '6px 10px 3px',
+            marginTop: 4,
+            fontSize: '0.625rem',
+            fontWeight: 800,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: 'rgba(148, 163, 184, 0.72)',
+            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+            userSelect: 'none'
+        }}>
+            {label}
+        </div>
+    )
+}
+
 export function MoreOptionsMenu({
     isOpen,
     onClose,
@@ -183,6 +201,17 @@ export function MoreOptionsMenu({
                 animation: 'jts-slide-up 0.18s ease-out'
             }}
         >
+            <div style={{
+                padding: '4px 10px 3px',
+                fontSize: '0.625rem',
+                fontWeight: 800,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: 'rgba(148, 163, 184, 0.72)',
+                userSelect: 'none'
+            }}>
+                Recording
+            </div>
             {/* Record Meeting */}
             {isScreenShareSupported() && canRecord && (
                 <button
@@ -254,9 +283,9 @@ export function MoreOptionsMenu({
                     if (!canAccessCloudRecording) {
                         onRequireUpgrade({
                             title: 'Cloud Server Recording',
-                            requiredPlan: 'Enterprise Tier',
+                            requiredPlan: 'Starter or Enterprise',
                             icon: <IconVideo size={20} color="#f43f5e" />,
-                            description: 'Headless 1080p automated server-side recording with secure cloud storage and shareable links requires the Enterprise tier.'
+                            description: 'Automated server-side recording with secure cloud storage vault and shareable links is available on Starter (Growth Pro) and Enterprise plans.'
                         })
                         return
                     }
@@ -290,8 +319,8 @@ export function MoreOptionsMenu({
                     <span style={{
                         fontSize: '0.625rem',
                         fontWeight: 800,
-                        background: 'linear-gradient(135deg, #a855f7, #6366f1)',
-                        color: '#fff',
+                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                        color: '#000',
                         padding: '1px 6px',
                         borderRadius: 4,
                         letterSpacing: '0.04em',
@@ -299,11 +328,12 @@ export function MoreOptionsMenu({
                         alignItems: 'center',
                         gap: 3
                     }}>
-                        <IconLock size={9} /> ENTERPRISE
+                        <IconLock size={9} /> PRO
                     </span>
                 )}
             </button>
 
+            <MenuSectionHeader label="Collaboration" />
             {/* Whiteboard */}
             {canUseWhiteboard && (
                 <button
@@ -451,6 +481,7 @@ export function MoreOptionsMenu({
                 )}
             </button>
 
+            <MenuSectionHeader label="AI & Analytics" />
             {/* AI Minutes of Meeting (Host only) */}
             {canManageParticipants && (
                 <button
@@ -673,6 +704,15 @@ export function MoreOptionsMenu({
             <button
                 onClick={() => {
                     onClose()
+                    if (!canAccessAI) {
+                        onRequireUpgrade({
+                            title: 'AI Live Voice Dubbing',
+                            requiredPlan: 'Starter or Enterprise',
+                            icon: <IconSparkles size={20} color="#34d399" />,
+                            description: 'Real-time AI multilingual voice translation and live dubbing is available on Starter (Growth Pro) and Enterprise plans.'
+                        })
+                        return
+                    }
                     onToggleVoiceDubbing()
                 }}
                 style={{
@@ -691,17 +731,34 @@ export function MoreOptionsMenu({
                 }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
                 </div>
-                <span style={{ flex: 1, textAlign: 'left' }}>AI Live Voice Dubbing</span>
-                <span style={{
-                    fontSize: '0.625rem',
-                    fontWeight: 800,
-                    color: isVoiceDubbingEnabled ? '#34d399' : '#94a3b8',
-                    background: isVoiceDubbingEnabled ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.06)',
-                    padding: '2px 6px',
-                    borderRadius: '6px'
-                }}>
-                    {isVoiceDubbingEnabled ? 'ACTIVE' : 'OFF'}
-                </span>
+                <span style={{ flex: 1, textAlign: 'left', opacity: canAccessAI ? 1 : 0.85 }}>AI Live Voice Dubbing</span>
+                {!canAccessAI ? (
+                    <span style={{
+                        fontSize: '0.625rem',
+                        fontWeight: 800,
+                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                        color: '#000',
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        letterSpacing: '0.04em',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3
+                    }}>
+                        <IconLock size={9} /> PRO
+                    </span>
+                ) : (
+                    <span style={{
+                        fontSize: '0.625rem',
+                        fontWeight: 800,
+                        color: isVoiceDubbingEnabled ? '#34d399' : '#94a3b8',
+                        background: isVoiceDubbingEnabled ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.06)',
+                        padding: '2px 6px',
+                        borderRadius: '6px'
+                    }}>
+                        {isVoiceDubbingEnabled ? 'ACTIVE' : 'OFF'}
+                    </span>
+                )}
             </button>
 
             {/* Shared Files */}
@@ -758,6 +815,7 @@ export function MoreOptionsMenu({
                 {activePanel === 'notes' && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#818cf8', background: 'rgba(99,102,241,0.18)', padding: '2px 6px', borderRadius: '6px' }}>OPEN</span>}
             </button>
 
+            <MenuSectionHeader label="Video, Broadcast & Security" />
             {/* Picture in Picture */}
             <button
                 onClick={() => {
@@ -1195,6 +1253,7 @@ export function MoreOptionsMenu({
 
             <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
 
+            <MenuSectionHeader label="System" />
             {/* Settings */}
             <button
                 onClick={() => {

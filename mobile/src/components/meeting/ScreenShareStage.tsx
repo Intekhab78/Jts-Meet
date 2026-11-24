@@ -355,7 +355,8 @@ export const ScreenShareStage: React.FC<ScreenShareStageProps> = ({
       {/* Screen Video Element with Pinch-to-Zoom & Pan Gesture */}
       <div
         ref={containerRef}
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation();
           if (zoomScale <= 1.08 && (isLandscape || isFullscreenShare)) {
             setShowControls((prev) => !prev);
             resetControlsTimer();

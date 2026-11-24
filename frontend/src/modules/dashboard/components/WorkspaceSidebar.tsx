@@ -288,7 +288,7 @@ export function WorkspaceSidebar({
                     {
                         id: 'team',
                         label: 'Teams Settings',
-                        adminOnly: true,
+                        adminOnly: false,
                         superAdminOnly: false,
                         icon: () => (
                             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
@@ -302,7 +302,7 @@ export function WorkspaceSidebar({
                     {
                         id: 'channel',
                         label: 'Channels Settings',
-                        adminOnly: true,
+                        adminOnly: false,
                         superAdminOnly: false,
                         icon: () => (
                             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">

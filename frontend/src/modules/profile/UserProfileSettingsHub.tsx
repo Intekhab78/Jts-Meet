@@ -112,6 +112,95 @@ export function UserProfileSettingsHub({
     const [passwordErrMsg, setPasswordErrMsg] = useState('')
     const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
     const [twoFactorEnabled, setTwoFactorEnabled] = useState<boolean>(() => localStorage.getItem('jts_pref_2fa') === 'true')
+    const [isSaving2FA, setIsSaving2FA] = useState(false)
+    const [activeSessions, setActiveSessions] = useState<Array<{ _id: string; deviceInfo?: string; ipAddress?: string; createdAt?: string; expiresAt?: string }>>([])
+    const [loadingSessions, setLoadingSessions] = useState(false)
+    const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null)
+
+    // Hydrate real 2FA status and active sessions from backend
+    useEffect(() => {
+        if (!token) return
+        fetch(`${API_BASE}/api/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(r => r.ok ? r.json() : null)
+            .then(json => {
+                const u = json?.data
+                if (u && typeof u.twoFactorEnabled === 'boolean') {
+                    setTwoFactorEnabled(u.twoFactorEnabled)
+                    try { localStorage.setItem('jts_pref_2fa', String(u.twoFactorEnabled)) } catch (_) {}
+                }
+            })
+            .catch(() => {})
+    }, [token])
+
+    useEffect(() => {
+        if (!token || activeTab !== 'security') return
+        setLoadingSessions(true)
+        fetch(`${API_BASE}/api/auth/sessions`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(r => r.ok ? r.json() : null)
+            .then(json => {
+                if (Array.isArray(json?.data)) {
+                    setActiveSessions(json.data)
+                }
+            })
+            .catch(() => {})
+            .finally(() => setLoadingSessions(false))
+    }, [token, activeTab])
+
+    const handleToggle2FA = async (enabled: boolean) => {
+        const previous = twoFactorEnabled
+        setTwoFactorEnabled(enabled)
+        try { localStorage.setItem('jts_pref_2fa', String(enabled)) } catch (_) {}
+        setIsSaving2FA(true)
+        try {
+            const res = await fetch(`${API_BASE}/api/auth/profile`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ twoFactorEnabled: enabled })
+            })
+            if (res.ok) {
+                setProfileSuccessMsg(enabled ? 'Two-Factor Email OTP (2FA) enabled on your account.' : 'Two-Factor Email OTP (2FA) disabled.')
+                setTimeout(() => setProfileSuccessMsg(''), 3500)
+            } else {
+                throw new Error('Failed to update Two-Factor setting.')
+            }
+        } catch {
+            setTwoFactorEnabled(previous)
+            try { localStorage.setItem('jts_pref_2fa', String(previous)) } catch (_) {}
+            setProfileErrMsg('Failed to update Two-Factor setting.')
+            setTimeout(() => setProfileErrMsg(''), 3500)
+        } finally {
+            setIsSaving2FA(false)
+        }
+    }
+
+    const handleRevokeSession = async (sessionId: string) => {
+        setRevokingSessionId(sessionId)
+        try {
+            const res = await fetch(`${API_BASE}/api/auth/sessions/${encodeURIComponent(sessionId)}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` }
+            })
+            if (res.ok) {
+                setActiveSessions(prev => prev.filter(s => String(s._id) !== String(sessionId)))
+                setProfileSuccessMsg('Session revoked successfully.')
+                setTimeout(() => setProfileSuccessMsg(''), 3000)
+            } else {
+                throw new Error('Failed to revoke session.')
+            }
+        } catch {
+            setProfileErrMsg('Failed to revoke session.')
+            setTimeout(() => setProfileErrMsg(''), 3500)
+        } finally {
+            setRevokingSessionId(null)
+        }
+    }
 
     // Region & Shortcuts State
     const [timezone, setTimezone] = useState<string>(() => localStorage.getItem('jts_pref_timezone') || 'Asia/Kolkata')
@@ -151,10 +240,15 @@ export function UserProfileSettingsHub({
     // Mic Level Testing
     useEffect(() => {
         let animFrameId: number
+        let cancelled = false
         if (isTestingMic) {
             navigator.mediaDevices.getUserMedia({
                 audio: selectedAudioDevice ? { deviceId: { exact: selectedAudioDevice } } : true
             }).then(stream => {
+                if (cancelled) {
+                    stream.getTracks().forEach(t => t.stop())
+                    return
+                }
                 micStreamRef.current = stream
                 const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
                 const audioCtx = new AudioContextClass()
@@ -190,6 +284,7 @@ export function UserProfileSettingsHub({
         }
 
         return () => {
+            cancelled = true
             if (animFrameId) cancelAnimationFrame(animFrameId)
             if (micStreamRef.current) micStreamRef.current.getTracks().forEach(t => t.stop())
             if (audioContextRef.current && audioContextRef.current.state !== 'closed') audioContextRef.current.close()
@@ -198,10 +293,15 @@ export function UserProfileSettingsHub({
 
     // Live Camera Preview on Audio/Video tab
     useEffect(() => {
+        let cancelled = false
         if (activeTab === 'audio_video') {
             navigator.mediaDevices.getUserMedia({
                 video: selectedVideoDevice ? { deviceId: { exact: selectedVideoDevice }, width: 640, height: 360 } : true
             }).then(stream => {
+                if (cancelled) {
+                    stream.getTracks().forEach(t => t.stop())
+                    return
+                }
                 cameraStreamRef.current = stream
                 if (cameraPreviewRef.current) {
                     cameraPreviewRef.current.srcObject = stream
@@ -217,6 +317,7 @@ export function UserProfileSettingsHub({
         }
 
         return () => {
+            cancelled = true
             if (cameraStreamRef.current) {
                 cameraStreamRef.current.getTracks().forEach(t => t.stop())
                 cameraStreamRef.current = null
@@ -258,7 +359,7 @@ export function UserProfileSettingsHub({
                 setAvatarError(false)
 
                 // Update server profile immediately
-                await fetch(`${API_BASE}/api/auth/profile`, {
+                const profileRes = await fetch(`${API_BASE}/api/auth/profile`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
@@ -266,6 +367,9 @@ export function UserProfileSettingsHub({
                     },
                     body: JSON.stringify({ profileImage: uploadedUrl })
                 })
+                if (!profileRes.ok) {
+                    throw new Error('Failed to save profile photo to your account')
+                }
 
                 if (onProfileUpdated) onProfileUpdated({ profileImage: uploadedUrl })
                 setProfileSuccessMsg('Profile photo updated successfully!')
@@ -283,10 +387,11 @@ export function UserProfileSettingsHub({
 
     // Avatar Remove Handler
     const handleRemovePhoto = async () => {
+        const previousUrl = avatarUrl
         setAvatarUrl('')
         setAvatarError(false)
         try {
-            await fetch(`${API_BASE}/api/auth/profile`, {
+            const res = await fetch(`${API_BASE}/api/auth/profile`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -294,10 +399,17 @@ export function UserProfileSettingsHub({
                 },
                 body: JSON.stringify({ profileImage: '' })
             })
+            if (!res.ok) {
+                throw new Error('Failed to remove profile photo')
+            }
             if (onProfileUpdated) onProfileUpdated({ profileImage: '' })
             setProfileSuccessMsg('Profile photo removed')
             setTimeout(() => setProfileSuccessMsg(''), 3000)
-        } catch (_) {}
+        } catch {
+            setAvatarUrl(previousUrl)
+            setProfileErrMsg('Failed to remove profile photo.')
+            setTimeout(() => setProfileErrMsg(''), 3500)
+        }
     }
 
     // Save Profile & Status
@@ -321,9 +433,27 @@ export function UserProfileSettingsHub({
             })
             const data = await res.json()
             if (data.success) {
+                const mappedStatus = userStatus === 'available' ? 'online' : userStatus
+                try {
+                    await fetch(`${API_BASE}/api/auth/status`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            status: mappedStatus,
+                            customStatus: statusMessage.trim()
+                        })
+                    })
+                } catch (_) {}
+
                 setProfileName(fullName.trim())
                 localStorage.setItem('jts_user_status', userStatus)
-                localStorage.setItem('jts_status_message', statusMessage)
+                localStorage.setItem('jts_status_message', statusMessage.trim())
+                window.dispatchEvent(new CustomEvent('jts:status-updated', {
+                    detail: { status: mappedStatus, customStatus: statusMessage.trim() }
+                }))
                 if (onProfileUpdated) onProfileUpdated({ fullName: fullName.trim(), profileImage: avatarUrl })
                 setProfileSuccessMsg('Profile and status preferences saved successfully!')
                 setTimeout(() => setProfileSuccessMsg(''), 4000)
@@ -591,6 +721,18 @@ export function UserProfileSettingsHub({
                                         onClick={() => {
                                             setUserStatus(s.id)
                                             localStorage.setItem('jts_user_status', s.id)
+                                            const mapped = s.id === 'available' ? 'online' : s.id
+                                            window.dispatchEvent(new CustomEvent('jts:status-updated', {
+                                                detail: { status: mapped, customStatus: statusMessage.trim() }
+                                            }))
+                                            fetch(`${API_BASE}/api/auth/status`, {
+                                                method: 'PUT',
+                                                headers: {
+                                                    'Content-Type': 'application/json',
+                                                    'Authorization': `Bearer ${token}`
+                                                },
+                                                body: JSON.stringify({ status: mapped, customStatus: statusMessage.trim() })
+                                            }).catch(() => {})
                                         }}
                                         style={{
                                             display: 'flex',
@@ -1057,34 +1199,99 @@ export function UserProfileSettingsHub({
                             <input
                                 type="checkbox"
                                 checked={twoFactorEnabled}
-                                onChange={(e) => {
-                                    setTwoFactorEnabled(e.target.checked)
-                                    localStorage.setItem('jts_pref_2fa', e.target.checked.toString())
-                                }}
-                                style={{ width: 18, height: 18, accentColor: '#6366f1', cursor: 'pointer' }}
+                                disabled={isSaving2FA}
+                                onChange={(e) => handleToggle2FA(e.target.checked)}
+                                style={{ width: 18, height: 18, accentColor: '#6366f1', cursor: isSaving2FA ? 'wait' : 'pointer' }}
                             />
                         </div>
 
                         {/* Active Sessions */}
-                        <div>
-                            <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff', marginBottom: 6 }}>Active Login Session</div>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(34, 197, 94, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <IconDashboard size={18} color="#4ade80" />
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>Current Browser Session</div>
-                                        <div style={{ fontSize: '0.6875rem', color: '#4ade80', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#4ade80' }} />
-                                            Active Now • Windows Chrome
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>
+                                    Active Login Sessions ({activeSessions.length || 1})
+                                </div>
+                                {loadingSessions && (
+                                    <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>Syncing...</span>
+                                )}
+                            </div>
+                            {activeSessions.length === 0 ? (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                        <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(34, 197, 94, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <IconDashboard size={18} color="#4ade80" />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>Current Browser Session</div>
+                                            <div style={{ fontSize: '0.6875rem', color: '#4ade80', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#4ade80' }} />
+                                                Active Now • {typeof navigator !== 'undefined' ? navigator.platform : 'Web'}
+                                            </div>
                                         </div>
                                     </div>
+                                    <span style={{ fontSize: '0.6875rem', background: 'rgba(34,197,94,0.2)', color: '#4ade80', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
+                                        This Device
+                                    </span>
                                 </div>
-                                <span style={{ fontSize: '0.6875rem', background: 'rgba(34,197,94,0.2)', color: '#4ade80', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
-                                    This Device
-                                </span>
-                            </div>
+                            ) : (
+                                activeSessions.slice(0, 6).map((sess, idx) => {
+                                    const isCurrent = idx === 0
+                                    const ua = sess.deviceInfo || 'Web Browser'
+                                    const shortUa = ua.includes('Chrome') ? 'Chrome Browser' : ua.includes('Firefox') ? 'Firefox Browser' : ua.includes('Safari') ? 'Safari Browser' : ua.slice(0, 32)
+                                    return (
+                                        <div
+                                            key={sess._id || idx}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                padding: '10px 14px',
+                                                background: isCurrent ? 'rgba(34,197,94,0.05)' : 'rgba(255,255,255,0.02)',
+                                                border: isCurrent ? '1px solid rgba(34,197,94,0.2)' : '1px solid rgba(255,255,255,0.06)',
+                                                borderRadius: 8
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                <div style={{ width: 32, height: 32, borderRadius: 8, background: isCurrent ? 'rgba(34, 197, 94, 0.15)' : 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <IconDashboard size={18} color={isCurrent ? '#4ade80' : '#818cf8'} />
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#fff' }}>
+                                                        {shortUa} {sess.ipAddress ? `• ${sess.ipAddress}` : ''}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.6875rem', color: isCurrent ? '#4ade80' : 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                        {isCurrent && <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#4ade80' }} />}
+                                                        {isCurrent ? 'Active Now' : (sess.createdAt ? new Date(sess.createdAt).toLocaleDateString() : 'Signed in')}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {isCurrent ? (
+                                                <span style={{ fontSize: '0.6875rem', background: 'rgba(34,197,94,0.2)', color: '#4ade80', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
+                                                    This Device
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    disabled={revokingSessionId === String(sess._id)}
+                                                    onClick={() => handleRevokeSession(String(sess._id))}
+                                                    style={{
+                                                        background: 'rgba(239, 68, 68, 0.15)',
+                                                        border: '1px solid rgba(239, 68, 68, 0.35)',
+                                                        color: '#f87171',
+                                                        padding: '3px 8px',
+                                                        borderRadius: 6,
+                                                        fontSize: '0.6875rem',
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    {revokingSessionId === String(sess._id) ? '...' : 'Revoke'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    )
+                                })
+                            )}
                         </div>
                     </div>
                 </div>

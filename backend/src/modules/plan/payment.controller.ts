@@ -2,8 +2,17 @@ import { Request, Response } from 'express'
 import { paymentService } from './payment.service'
 import { invoiceService } from '../../services/invoice.service'
 import { PaymentTransaction } from './payment.model'
+import { Organization } from '../organization/organization.model'
 import { Types } from 'mongoose'
 import { sendSuccess, sendError } from '../../utils/responseHelper'
+
+async function verifyOrgMember(orgId: string, userId?: string): Promise<boolean> {
+    if (!userId || !Types.ObjectId.isValid(orgId)) return false
+    const org = await Organization.findById(orgId).select('ownerId members').lean().exec()
+    if (!org) return false
+    return String(org.ownerId) === String(userId) ||
+        (Array.isArray(org.members) && org.members.some((m: any) => String(m.userId) === String(userId)))
+}
 
 export const paymentController = {
     /**
@@ -126,9 +135,15 @@ export const paymentController = {
      */
     getOrganizationTransactions: async (req: Request, res: Response) => {
         try {
+            const userId = (req as any).userId
             const organizationId = String(req.params.organizationId || '')
             if (!organizationId) {
                 return sendError(res, 400, 'organizationId is required')
+            }
+
+            const hasAccess = await verifyOrgMember(organizationId, userId)
+            if (!hasAccess) {
+                return sendError(res, 403, 'Forbidden: You do not have access to this organization\'s billing history')
             }
 
             const transactions = await paymentService.getOrganizationTransactions(organizationId)
@@ -144,6 +159,7 @@ export const paymentController = {
      */
     downloadInvoice: async (req: Request, res: Response) => {
         try {
+            const userId = (req as any).userId
             const transactionId = String(req.params.transactionId || '')
             if (!transactionId) {
                 return sendError(res, 400, 'transactionId is required')
@@ -155,6 +171,11 @@ export const paymentController = {
 
             if (!transaction) {
                 return sendError(res, 404, 'Transaction not found')
+            }
+
+            const hasAccess = await verifyOrgMember(String(transaction.organizationId), userId)
+            if (!hasAccess && String(transaction.userId) !== String(userId)) {
+                return sendError(res, 403, 'Forbidden: You do not have access to this invoice')
             }
 
             const invoiceData = await invoiceService.prepareInvoiceData(transaction)

@@ -16,6 +16,7 @@ interface AuthResult {
     accessToken: string
     refreshToken: string
     token?: string
+    requiresTwoFactor?: boolean
 }
 
 export async function createSession(
@@ -82,29 +83,21 @@ export async function registerUser(payload: RegisterPayload, deviceInfo?: string
         const otpExpires = new Date(Date.now() + 15 * 60 * 1000)
 
         if (user) {
-            if (!user.emailVerified) {
-                user.fullName = payload.fullName.trim()
-                user.password = payload.password
-                user.otpCode = otpCode
-                user.otpExpires = otpExpires
-                await user.save(session ? { session } : undefined)
-            } else {
-                throw { status: 409, message: 'Email already exists' }
-            }
-        } else {
-            user = new User({
-                fullName: payload.fullName.trim(),
-                email: payload.email.toLowerCase().trim(),
-                password: payload.password,
-                profileImage: payload.profileImage || '',
-                status: 'offline',
-                emailVerified: false,
-                lastSeen: null,
-                otpCode,
-                otpExpires
-            })
-            await user.save(session ? { session } : undefined)
+            throw { status: 409, message: 'Email already exists' }
         }
+
+        user = new User({
+            fullName: payload.fullName.trim(),
+            email: payload.email.toLowerCase().trim(),
+            password: payload.password,
+            profileImage: payload.profileImage || '',
+            status: 'offline',
+            emailVerified: false,
+            lastSeen: null,
+            otpCode,
+            otpExpires
+        })
+        await user.save(session ? { session } : undefined)
 
         const { accessToken, refreshToken } = await createSession(user._id.toString(), deviceInfo, ipAddress, session)
 
@@ -129,6 +122,22 @@ export async function loginUser(payload: LoginPayload, deviceInfo?: string, ipAd
             throw { status: 401, message: 'Invalid credentials' }
         }
 
+        if (user.twoFactorEnabled) {
+            const otpCode = generateOTP()
+            user.otpCode = otpCode
+            user.otpExpires = new Date(Date.now() + 15 * 60 * 1000)
+            await user.save(session ? { session } : undefined)
+            sendOTPEmail(user.email, otpCode).catch((err) => {
+                console.error('Failed to send 2FA OTP email:', err)
+            })
+            return {
+                user: user.toJSON(),
+                accessToken: '',
+                refreshToken: '',
+                requiresTwoFactor: true
+            }
+        }
+
         user.status = 'online'
         user.lastSeen = new Date()
         await user.save(session ? { session } : undefined)
@@ -143,7 +152,7 @@ export async function getCurrentUser(userId: string): Promise<Record<string, any
     if (!userId || !Types.ObjectId.isValid(userId)) {
         throw { status: 401, message: 'Invalid user session' }
     }
-    const user = await User.findById(userId)
+    const user = await User.findById(userId).select('-password -otpCode -otpExpires -refreshTokens')
     if (!user) {
         throw { status: 404, message: 'User not found' }
     }
@@ -309,13 +318,19 @@ export async function logoutAllDevices(userId: string): Promise<void> {
     await Session.deleteMany({ userId }).exec()
 }
 
-export async function updateUserProfile(userId: string, fullName?: string, profileImage?: string): Promise<Record<string, any>> {
+export async function updateUserProfile(
+    userId: string,
+    fullName?: string,
+    profileImage?: string,
+    twoFactorEnabled?: boolean
+): Promise<Record<string, any>> {
     const user = await User.findById(userId)
     if (!user) {
         throw { status: 404, message: 'User not found' }
     }
     if (fullName) user.fullName = fullName.trim()
     if (profileImage !== undefined) user.profileImage = profileImage
+    if (typeof twoFactorEnabled === 'boolean') user.twoFactorEnabled = twoFactorEnabled
     await user.save()
     return user.toJSON()
 }
@@ -338,11 +353,35 @@ export async function changeUserPassword(userId: string, oldPassword: string, ne
 }
 
 export async function listActiveSessions(userId: string): Promise<any[]> {
-    return Session.find({ userId }).sort({ createdAt: -1 }).exec()
+    const sessions = await Session.find({ userId }).select('-refreshToken').sort({ createdAt: -1 }).lean().exec()
+    if (sessions.length > 0) {
+        return sessions
+    }
+    // Also surface active refresh token families stored directly on User document
+    const user = await User.findById(userId).select('refreshTokens').lean().exec()
+    if (!user?.refreshTokens?.length) return []
+    const now = new Date()
+    return user.refreshTokens
+        .filter((rt: any) => !rt.revokedAt && new Date(rt.expiresAt) > now)
+        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .map((rt: any) => ({
+            _id: rt.familyId || rt._id,
+            userId,
+            deviceInfo: rt.userAgent || 'Browser Session',
+            ipAddress: rt.ip || '',
+            createdAt: rt.createdAt,
+            expiresAt: rt.expiresAt
+        }))
 }
 
 export async function revokeSession(userId: string, sessionId: string): Promise<void> {
-    await Session.deleteOne({ _id: sessionId, userId }).exec()
+    if (Types.ObjectId.isValid(sessionId)) {
+        await Session.deleteOne({ _id: sessionId, userId }).exec()
+    }
+    await User.updateOne(
+        { _id: userId },
+        { $pull: { refreshTokens: { $or: [{ familyId: sessionId }, ...(Types.ObjectId.isValid(sessionId) ? [{ _id: new Types.ObjectId(sessionId) }] : [])] } } }
+    ).exec()
 }
 
 export async function loginOrCreateSsoUser(email: string, orgSlug: string, deviceInfo = '', ipAddress = ''): Promise<AuthResult> {
@@ -401,9 +440,9 @@ export async function loginOrCreateSsoUser(email: string, orgSlug: string, devic
     })
 }
 
-async function verifyGoogleIdToken(idToken: string) {
+export async function verifyGoogleIdToken(idToken: string) {
     try {
-        const response = await (global as any).fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`)
+        const response = await (global as any).fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`)
         if (!response.ok) {
             throw new Error('Google token validation failed')
         }
@@ -411,6 +450,7 @@ async function verifyGoogleIdToken(idToken: string) {
             aud: string
             sub: string
             email: string
+            email_verified?: boolean | string
             name?: string
             picture?: string
         }
@@ -419,10 +459,15 @@ async function verifyGoogleIdToken(idToken: string) {
         if (GOOGLE_CLIENT_ID && payload.aud !== GOOGLE_CLIENT_ID) {
             throw new Error('Google token audience mismatch')
         }
+        const emailVerified = payload.email_verified === true || payload.email_verified === 'true'
+        if (!emailVerified) {
+            throw new Error('Google email is not verified')
+        }
 
         return {
             googleId: payload.sub,
             email: payload.email,
+            emailVerified: true,
             name: payload.name || payload.email.split('@')[0],
             picture: payload.picture || ''
         }

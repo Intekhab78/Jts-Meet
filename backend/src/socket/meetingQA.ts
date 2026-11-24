@@ -1,6 +1,7 @@
 import { Server, Socket } from 'socket.io'
 import { AuthenticatedSocket } from './auth'
 import { verifyIsHostOrCoHost } from './meeting'
+import { saveMeetingState, loadMeetingState, deleteMeetingState } from '../services/meetingStateStore'
 
 export interface QAQuestion {
     id: string
@@ -26,18 +27,23 @@ export function registerMeetingQAHandlers(io: Server, socket: Socket) {
     const effectiveUserId = authSocket.userId || authSocket.guestName || socket.id
 
     // Fetch all current questions for a meeting
-    socket.on('qa:get_all', (payload: { meetingId: string }) => {
+    socket.on('qa:get_all', async (payload: { meetingId: string }) => {
         if (!payload?.meetingId) return
-        const questions = meetingQuestionsMap.get(payload.meetingId) || []
+        let questions = meetingQuestionsMap.get(payload.meetingId)
+        if (!questions) {
+            const restored = await loadMeetingState<QAQuestion[]>('qa', payload.meetingId)
+            questions = restored || []
+            if (restored) meetingQuestionsMap.set(payload.meetingId, questions)
+        }
         socket.emit('qa:list', questions)
     })
 
     // Participant asks a question
-    socket.on('qa:ask', (payload: { meetingId: string; questionText: string; authorName?: string; isAnonymous?: boolean }) => {
+    socket.on('qa:ask', async (payload: { meetingId: string; questionText: string; authorName?: string; isAnonymous?: boolean }) => {
         if (!payload?.meetingId || !payload?.questionText?.trim()) return
 
-        const displayName = payload.isAnonymous 
-            ? 'Anonymous' 
+        const displayName = payload.isAnonymous
+            ? 'Anonymous'
             : (payload.authorName || authSocket.guestName || 'Participant')
 
         const question: QAQuestion = {
@@ -54,9 +60,10 @@ export function registerMeetingQAHandlers(io: Server, socket: Socket) {
             createdAt: Date.now()
         }
 
-        const existing = meetingQuestionsMap.get(payload.meetingId) || []
+        const existing = meetingQuestionsMap.get(payload.meetingId) || (await loadMeetingState<QAQuestion[]>('qa', payload.meetingId)) || []
         existing.unshift(question)
         meetingQuestionsMap.set(payload.meetingId, existing)
+        void saveMeetingState('qa', payload.meetingId, existing)
 
         io.to(`meeting:${payload.meetingId}`).emit('qa:new_question', question)
     })
@@ -80,8 +87,10 @@ export function registerMeetingQAHandlers(io: Server, socket: Socket) {
     })
 
     // Host marks a question as answered / unanswered
-    socket.on('qa:mark_answered', (payload: { meetingId: string; questionId: string; isAnswered: boolean }) => {
-        if (!payload?.meetingId || !payload?.questionId) return
+    socket.on('qa:mark_answered', async (payload: { meetingId: string; questionId: string; isAnswered: boolean }) => {
+        if (!payload?.meetingId || !payload?.questionId || !authSocket.userId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, authSocket.userId))) return
 
         const list = meetingQuestionsMap.get(payload.meetingId) || []
         const q = list.find(item => item.id === payload.questionId)
@@ -95,8 +104,10 @@ export function registerMeetingQAHandlers(io: Server, socket: Socket) {
     })
 
     // Host toggles pinning a question to top
-    socket.on('qa:pin', (payload: { meetingId: string; questionId: string; isPinned: boolean }) => {
-        if (!payload?.meetingId || !payload?.questionId) return
+    socket.on('qa:pin', async (payload: { meetingId: string; questionId: string; isPinned: boolean }) => {
+        if (!payload?.meetingId || !payload?.questionId || !authSocket.userId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, authSocket.userId))) return
 
         const list = meetingQuestionsMap.get(payload.meetingId) || []
         const q = list.find(item => item.id === payload.questionId)
@@ -107,8 +118,10 @@ export function registerMeetingQAHandlers(io: Server, socket: Socket) {
     })
 
     // Host indicates currently answering live on stage
-    socket.on('qa:live_answer', (payload: { meetingId: string; questionId: string; isLiveAnswering: boolean }) => {
-        if (!payload?.meetingId || !payload?.questionId) return
+    socket.on('qa:live_answer', async (payload: { meetingId: string; questionId: string; isLiveAnswering: boolean }) => {
+        if (!payload?.meetingId || !payload?.questionId || !authSocket.userId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, authSocket.userId))) return
 
         const list = meetingQuestionsMap.get(payload.meetingId) || []
         list.forEach(item => {
@@ -173,10 +186,12 @@ export function registerMeetingQAHandlers(io: Server, socket: Socket) {
             return
         }
         meetingQuestionsMap.set(payload.meetingId, [])
+        void saveMeetingState('qa', payload.meetingId, [])
         io.to(`meeting:${payload.meetingId}`).emit('qa:list', [])
     })
 }
 
 export function cleanupMeetingQA(meetingId: string) {
     meetingQuestionsMap.delete(meetingId)
+    void deleteMeetingState('qa', meetingId)
 }

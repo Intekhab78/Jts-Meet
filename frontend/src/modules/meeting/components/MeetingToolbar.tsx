@@ -99,10 +99,10 @@ export function MeetingToolbar({
             onMouseLeave={onToolbarMouseLeave}
             style={{
                 position: 'absolute',
-                bottom: windowWidth < 640 ? 12 : 20,
+                bottom: windowWidth < 640 ? 8 : 10,
                 left: '50%',
-                transform: `translateX(-50%) translateY(${isToolbarActuallyVisible ? '0px' : '100px'})`,
-                height: windowWidth < 640 ? 54 : 64,
+                transform: 'translateX(-50%)',
+                height: windowWidth < 640 ? 50 : 56,
                 display: 'flex',
                 alignItems: 'center',
                 gap: windowWidth < 640 ? 8 : 12,

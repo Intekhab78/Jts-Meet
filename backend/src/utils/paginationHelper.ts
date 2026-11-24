@@ -11,7 +11,8 @@ export interface CursorQueryParams {
 }
 
 export function parseCursorQuery(reqQuery: any) {
-    const limit = Math.min(100, Number(reqQuery.pageSize || reqQuery.limit) || 20)
+    const rawLimit = Number(reqQuery.pageSize || reqQuery.limit) || 20
+    const limit = Math.max(1, Math.min(100, rawLimit))
     const cursor = reqQuery.cursor ? String(reqQuery.cursor) : undefined
     const search = reqQuery.search ? String(reqQuery.search).trim() : undefined
     const sortBy = reqQuery.sortBy ? String(reqQuery.sortBy) : '_id'
@@ -28,7 +29,8 @@ export async function executeCursorQuery(
     populate?: any
 ) {
     const { limit, cursor, search, sortBy, sortOrder } = params
-    const query = { ...baseQuery }
+    const query: any = { ...baseQuery }
+    const andConditions: any[] = Array.isArray(query.$and) ? [...query.$and] : []
 
     // Apply filters
     for (const [key, val] of Object.entries(filterMappings)) {
@@ -37,14 +39,14 @@ export async function executeCursorQuery(
         }
     }
 
-    // Apply search
+    // Apply search without overwriting baseQuery.$or
     if (search && searchFields.length > 0) {
         const escapedSearch = search.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
         const searchRegex = new RegExp(escapedSearch, 'i')
-        query.$or = searchFields.map(field => ({ [field]: searchRegex }))
+        andConditions.push({ $or: searchFields.map(field => ({ [field]: searchRegex })) })
     }
 
-    // Apply cursor
+    // Apply cursor without overwriting baseQuery.$or
     if (cursor && Types.ObjectId.isValid(cursor)) {
         const cursorId = new Types.ObjectId(cursor)
         const sortDir = sortOrder === 'asc' ? 1 : -1
@@ -56,14 +58,20 @@ export async function executeCursorQuery(
             const sortFieldVal = await model.findById(cursorId).select(sortBy).exec()
             if (sortFieldVal && sortFieldVal[sortBy] !== undefined) {
                 const cmp = sortDir === 1 ? '$gt' : '$lt'
-                query.$or = [
-                    { [sortBy]: { [cmp]: sortFieldVal[sortBy] } },
-                    { [sortBy]: sortFieldVal[sortBy], _id: { [cmp]: cursorId } }
-                ]
+                andConditions.push({
+                    $or: [
+                        { [sortBy]: { [cmp]: sortFieldVal[sortBy] } },
+                        { [sortBy]: sortFieldVal[sortBy], _id: { [cmp]: cursorId } }
+                    ]
+                })
             } else {
                 query._id = sortDir === 1 ? { $gt: cursorId } : { $lt: cursorId }
             }
         }
+    }
+
+    if (andConditions.length > 0) {
+        query.$and = andConditions
     }
 
     const sortDirVal = sortOrder === 'asc' ? 1 : -1

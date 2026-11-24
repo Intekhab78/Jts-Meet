@@ -12,6 +12,7 @@ import {
     getMeetingByMeetingId
 } from '../modules/meeting/meeting.service'
 import { Meeting } from '../modules/meeting/meeting.model'
+import { getEffectivePlanForOrg, getEffectivePlanForUser } from '../modules/plan/planEntitlements'
 import { SocketEvents } from './events'
 import { adHocRoomSettings } from '../routes/guest.routes'
 import { dispatchWebhookEvent } from '../modules/integration/integration.service'
@@ -20,19 +21,33 @@ import { cleanupWhiteboard } from './whiteboard'
 import { cleanupMeetingQA } from './meetingQA'
 import { cleanupPolls } from './poll'
 import { cleanupBreakout, getActiveBreakoutSession } from './breakout'
+import { registerApprovedGuestHandlers } from './index'
 import { liveBroadcastService } from '../modules/webrtc/liveBroadcast.service'
 import { liveStreamService } from '../services/livestream.service'
 import { telephonyMediaService } from '../services/telephonyMedia.service'
 import { cloudRecordingWorker } from '../workers/cloudRecording.worker'
 import { clearMeetingPeerSessions } from '../modules/webrtc/peer.manager'
+import { saveMeetingState, loadMeetingState, deleteMeetingState } from '../services/meetingStateStore'
 
 // Track backstage participants per meeting room for Virtual Green Room
 const meetingBackstageMap = new Map<string, Set<string>>()
-// Track authorized remote control participants per meeting room
-const activeRemoteControllers = new Map<string, string>()
+// Track authorized remote control session per meeting room
+const activeRemoteControllers = new Map<string, { controllerId: string; presenterId: string }>()
+// Track promoted Co-Hosts per meeting room in memory (supports both ObjectId members & guest IDs / ad-hoc rooms)
+const meetingCoHostsMap = new Map<string, Set<string>>()
+// Track active Confidential Watermark state per meeting room
+const meetingWatermarkMap = new Map<string, boolean>()
+// Track raised hands per meeting room so refreshing users keep hand-raise state
+const meetingRaisedHandsMap = new Map<string, Set<string>>()
+// Track shared meeting notes per meeting room (synced with Redis + MongoDB)
+const meetingNotesMap = new Map<string, string>()
 
 export async function verifyIsHostOrCoHost(meetingId: string, checkUserId: string): Promise<boolean> {
     try {
+        if (!meetingId || !checkUserId) return false
+        if (meetingCoHostsMap.get(meetingId)?.has(String(checkUserId))) {
+            return true
+        }
         const meeting = await getMeetingByMeetingId(meetingId)
         if (!meeting) return false
         const hostId = (meeting.host as any)?._id ? String((meeting.host as any)._id) : String(meeting.host)
@@ -87,6 +102,37 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         }
 
         try {
+            const existingMeeting = await getMeetingByMeetingId(payload.meetingId)
+            const orgIdRaw = (existingMeeting?.organizationId as any)?._id || existingMeeting?.organizationId
+            const hostIdRaw = (existingMeeting?.host as any)?._id || existingMeeting?.host
+            const [orgPlan, hostUserPlan, joiningUserPlan] = await Promise.all([
+                orgIdRaw ? getEffectivePlanForOrg(String(orgIdRaw)) : Promise.resolve(null),
+                getEffectivePlanForUser(String(hostIdRaw || userId)),
+                String(hostIdRaw || userId) !== String(userId) ? getEffectivePlanForUser(String(userId)) : Promise.resolve(null)
+            ])
+            const candidatePlans = [orgPlan, hostUserPlan, joiningUserPlan].filter(Boolean) as any[]
+            candidatePlans.sort((a, b) => {
+                if (a.planTier === 'enterprise' && b.planTier !== 'enterprise') return -1
+                if (b.planTier === 'enterprise' && a.planTier !== 'enterprise') return 1
+                if (a.isPaid !== b.isPaid) return a.isPaid ? -1 : 1
+                return (b.priceMonthly || 0) - (a.priceMonthly || 0)
+            })
+            const effectivePlan = candidatePlans[0] || hostUserPlan
+
+            const roomSize = io.sockets.adapter.rooms.get(`meeting:${payload.meetingId}`)?.size || 0
+            const dbParticipantCount = existingMeeting?.participants?.length || 0
+            const liveCount = Math.max(dbParticipantCount, roomSize)
+            const alreadyIn = Boolean(
+                existingMeeting?.participants?.some(p => String((p as any)?._id || p) === String(userId)) ||
+                socket.rooms.has(`meeting:${payload.meetingId}`)
+            )
+            if (!alreadyIn && liveCount >= effectivePlan.limits.maxParticipantsPerCall) {
+                socket.emit('error', {
+                    message: `Room capacity reached (${effectivePlan.limits.maxParticipantsPerCall} max participants for ${effectivePlan.planTier.toUpperCase()} plan).`
+                })
+                return
+            }
+
             const meeting = await joinMeetingService(payload.meetingId, userId)
             if (!meeting) {
                 socket.emit('error', { message: 'Meeting not found' })
@@ -95,6 +141,14 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
             socket.join(`meeting:${payload.meetingId}`)
             authSocket.meetingId = payload.meetingId
+
+            socket.emit('meeting:plan-limits', {
+                planTier: effectivePlan.planTier,
+                isPaid: effectivePlan.isPaid,
+                maxMeetingDurationMins: effectivePlan.limits.maxMeetingDurationMins,
+                maxParticipantsPerCall: effectivePlan.limits.maxParticipantsPerCall,
+                features: effectivePlan.features
+            })
 
             io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_JOIN, { meetingId: payload.meetingId, participants: meeting.participants })
 
@@ -105,7 +159,11 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
             }
 
             // Notify waiting room / lobby guests that the host has arrived
-            const isHostOrCoHost = String(meeting.host) === String(userId) || (meeting.coHosts && meeting.coHosts.some(id => String(id) === String(userId)))
+            const inMemoryCoHosts = meetingCoHostsMap.get(payload.meetingId)
+            const isHostOrCoHost =
+                String(meeting.host) === String(userId) ||
+                Boolean(inMemoryCoHosts?.has(String(userId))) ||
+                Boolean(meeting.coHosts && meeting.coHosts.some(id => String((id as any)?._id || id) === String(userId)))
             if (isHostOrCoHost) {
                 const hostName = authSocket.guestName || 'Organizer'
                 io.to(`lobby:${payload.meetingId}`).emit('meeting:host-joined', { hostName, meetingId: payload.meetingId })
@@ -114,8 +172,70 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
             // Sync user role so UI can accurately show host controls or hide them for guests
             socket.emit('meeting:role', {
                 role: isHostOrCoHost ? 'host' : 'participant',
-                isHost: isHostOrCoHost
+                isHost: String(meeting.host) === String(userId)
             })
+
+            // Sync active raised hands to joining/refreshing participant
+            let raisedHandsSet = meetingRaisedHandsMap.get(payload.meetingId)
+            if (!raisedHandsSet) {
+                const restoredHands = await loadMeetingState<string[]>('hands', payload.meetingId)
+                if (restoredHands && restoredHands.length > 0) {
+                    raisedHandsSet = new Set(restoredHands)
+                    meetingRaisedHandsMap.set(payload.meetingId, raisedHandsSet)
+                }
+            }
+            if (raisedHandsSet && raisedHandsSet.size > 0) {
+                socket.emit('meeting:hands-sync', {
+                    meetingId: payload.meetingId,
+                    raisedUserIds: Array.from(raisedHandsSet)
+                })
+            }
+
+            // Sync persisted Shared Meeting Notes to joining/refreshing participant
+            let sharedNotes = meetingNotesMap.get(payload.meetingId)
+            if (sharedNotes === undefined) {
+                const restoredNotes = await loadMeetingState<string>('notes', payload.meetingId)
+                if (typeof restoredNotes === 'string') {
+                    sharedNotes = restoredNotes
+                } else if (typeof (meeting as any).sharedNotes === 'string' && (meeting as any).sharedNotes) {
+                    sharedNotes = (meeting as any).sharedNotes
+                }
+                if (sharedNotes !== undefined) {
+                    meetingNotesMap.set(payload.meetingId, sharedNotes)
+                }
+            }
+            if (sharedNotes) {
+                socket.emit('meeting:notes-sync', {
+                    meetingId: payload.meetingId,
+                    notes: sharedNotes
+                })
+            }
+
+            // Sync all active Co-Hosts to the joining/refreshing user
+            const allCoHosts = new Set<string>([
+                ...(inMemoryCoHosts ? Array.from(inMemoryCoHosts) : []),
+                ...(Array.isArray(meeting.coHosts) ? meeting.coHosts.map(id => String((id as any)?._id || id)) : [])
+            ])
+            allCoHosts.forEach(coHostUserId => {
+                socket.emit(SocketEvents.MEETING_COHOST_PROMOTE, {
+                    targetUserId: coHostUserId,
+                    meetingId: payload.meetingId
+                })
+            })
+
+            // Sync room lock and confidential watermark states on join or page refresh
+            if (meeting.isLocked) {
+                socket.emit('meeting:lock-toggle', { meetingId: payload.meetingId, isLocked: true })
+            }
+            if (meetingWatermarkMap.get(payload.meetingId)) {
+                socket.emit('meeting:toggle-watermark', { enabled: true })
+            }
+            if (meeting.isWebinarMode) {
+                socket.emit('webinar:mode-changed', { isWebinarMode: true })
+            }
+            if (meeting.screenSharePolicy) {
+                socket.emit('meeting:screen-share-policy', { policy: meeting.screenSharePolicy })
+            }
 
             // Sync virtual green room / backstage state to the joining user
             const currentBackstage = meetingBackstageMap.get(payload.meetingId)
@@ -171,12 +291,12 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                     setUserPresenceState(userId, 'online')
                     io.emit(SocketEvents.PRESENCE_UPDATE, { userId, status: 'online' })
                 }
-            } catch (e) {}
+            } catch (e) { }
 
-            io.to(`meeting:${targetMeetingId}`).emit(SocketEvents.MEETING_LEAVE, { 
+            io.to(`meeting:${targetMeetingId}`).emit(SocketEvents.MEETING_LEAVE, {
                 userId: effectiveUserId,
-                meetingId: targetMeetingId, 
-                participants 
+                meetingId: targetMeetingId,
+                participants
             })
             io.to(`meeting:${targetMeetingId}`).emit(SocketEvents.WEBRTC_USER_LEFT, {
                 userId: effectiveUserId,
@@ -202,15 +322,21 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                 return
             }
 
-            // Cleanup transient in-memory meeting state across all modules
+            // Cleanup transient in-memory & Redis meeting state across all modules
             meetingBackstageMap.delete(payload.meetingId)
             activeRemoteControllers.delete(payload.meetingId)
+            meetingCoHostsMap.delete(payload.meetingId)
+            meetingWatermarkMap.delete(payload.meetingId)
+            meetingRaisedHandsMap.delete(payload.meetingId)
+            meetingNotesMap.delete(payload.meetingId)
+            void deleteMeetingState('hands', payload.meetingId)
+            void deleteMeetingState('notes', payload.meetingId)
             cleanupWhiteboard(payload.meetingId)
             cleanupMeetingQA(payload.meetingId)
             cleanupPolls(payload.meetingId)
             cleanupBreakout(payload.meetingId)
 
-            io.emit(SocketEvents.MEETING_END, { meetingId: payload.meetingId, status: meeting.status, participants: meeting.participants })
+            io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_END, { meetingId: payload.meetingId, status: meeting.status, participants: meeting.participants })
         } catch (error: any) {
             socket.emit('error', { message: error.message || 'Forbidden' })
         }
@@ -218,7 +344,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
     const handleMuteUser = async (payload: { meetingId: string; targetUserId: string }) => {
         if (!userId || !payload?.meetingId || !payload?.targetUserId) return
-        
+
         const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
         const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
         if (!authorized) {
@@ -236,7 +362,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
     const handleUnmuteUser = async (payload: { meetingId: string; targetUserId: string }) => {
         if (!userId || !payload?.meetingId || !payload?.targetUserId) return
-        
+
         const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
         const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
         if (!authorized) {
@@ -268,7 +394,35 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     socket.on(SocketEvents.MEETING_RAISE_HAND, (payload: { meetingId: string; raised: boolean }) => {
         if (!userId || !payload?.meetingId) return
 
+        let raisedSet = meetingRaisedHandsMap.get(payload.meetingId)
+        if (!raisedSet) {
+            raisedSet = new Set<string>()
+            meetingRaisedHandsMap.set(payload.meetingId, raisedSet)
+        }
+        if (payload.raised) {
+            raisedSet.add(String(userId))
+        } else {
+            raisedSet.delete(String(userId))
+        }
+        void saveMeetingState('hands', payload.meetingId, Array.from(raisedSet))
+
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_RAISE_HAND, { userId, meetingId: payload.meetingId, raised: payload.raised })
+    })
+
+    socket.on('meeting:notes-update', async (payload: { meetingId: string; notes: string }) => {
+        if (!userId || !payload?.meetingId || typeof payload.notes !== 'string') return
+        const safeNotes = payload.notes.slice(0, 50000)
+        meetingNotesMap.set(payload.meetingId, safeNotes)
+        void saveMeetingState('notes', payload.meetingId, safeNotes)
+
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:notes-sync', {
+            meetingId: payload.meetingId,
+            notes: safeNotes,
+            updatedBy: userId
+        })
+
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        Meeting.updateOne({ meetingId: baseMeetId }, { $set: { sharedNotes: safeNotes } }).catch(() => {})
     })
 
     socket.on('meeting:speaking', (payload: { meetingId: string; isSpeaking: boolean }) => {
@@ -279,20 +433,35 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         })
     })
 
-    socket.on('meeting:record-toggle', (payload: { meetingId: string; isRecording: boolean }) => {
+    socket.on('meeting:record-toggle', async (payload: { meetingId: string; isRecording: boolean }) => {
         if (!userId || !payload?.meetingId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can toggle recording' })
+            return
+        }
         socket.to(`meeting:${payload.meetingId}`).emit('meeting:record-toggle', { userId, isRecording: payload.isRecording })
         if (!payload.isRecording) {
-            dispatchWebhookEvent(undefined, 'recording.ready', {
-                meetingId: payload.meetingId,
-                stoppedBy: userId,
-                timestamp: new Date().toISOString()
-            })
+            const meetingDoc = await Meeting.findOne({ meetingId: baseMeetId }).select('organizationId').lean().exec()
+            if (meetingDoc?.organizationId) {
+                dispatchWebhookEvent(String(meetingDoc.organizationId), 'recording.ready', {
+                    meetingId: payload.meetingId,
+                    stoppedBy: userId,
+                    timestamp: new Date().toISOString()
+                })
+            }
         }
     })
 
     socket.on(SocketEvents.LIVESTREAM_TOGGLE, async (payload: { meetingId: string; isStreaming: boolean; platform: string; broadcastTitle?: string; streamUrl?: string; streamKey?: string; resolution?: '720p' | '1080p'; bitrate?: string }) => {
         if (!userId || !payload?.meetingId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can control livestream' })
+            return
+        }
 
         if (payload.isStreaming) {
             try {
@@ -348,41 +517,80 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     socket.on(SocketEvents.MEETING_REACTION, (payload: { meetingId: string; emoji: string; senderName?: string }) => {
         if (!userId || !payload?.meetingId || !payload?.emoji) return
 
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_REACTION, { 
-            userId, 
-            meetingId: payload.meetingId, 
+        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_REACTION, {
+            userId,
+            meetingId: payload.meetingId,
             emoji: payload.emoji,
             senderName: payload.senderName || 'Participant'
         })
     })
 
-    socket.on('meeting:toggle-watermark', (payload: { meetingId: string; enabled: boolean }) => {
+    const handleWatermarkToggle = async (payload: { meetingId: string; enabled: boolean }) => {
         if (!userId || !payload?.meetingId) return
-        socket.to(`meeting:${payload.meetingId}`).emit('meeting:toggle-watermark', { enabled: payload.enabled })
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) return
+        meetingWatermarkMap.set(baseMeetId, Boolean(payload.enabled))
+        socket.to(`meeting:${payload.meetingId}`).emit('meeting:toggle-watermark', { enabled: Boolean(payload.enabled) })
+    }
+    socket.on('meeting:toggle-watermark', handleWatermarkToggle)
+
+    socket.on(SocketEvents.MEETING_COHOST_PROMOTE, async (payload: { meetingId: string; targetUserId: string }) => {
+        if (!userId || !payload?.meetingId || !payload?.targetUserId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can promote co-hosts' })
+            return
+        }
+        if (!meetingCoHostsMap.has(baseMeetId)) {
+            meetingCoHostsMap.set(baseMeetId, new Set())
+        }
+        meetingCoHostsMap.get(baseMeetId)!.add(String(payload.targetUserId))
+        if (Types.ObjectId.isValid(payload.targetUserId)) {
+            try {
+                await Meeting.updateOne(
+                    { meetingId: baseMeetId },
+                    { $addToSet: { coHosts: new Types.ObjectId(payload.targetUserId) } }
+                ).exec()
+            } catch (_) { }
+        }
+        io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_COHOST_PROMOTE, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
     })
 
-    socket.on(SocketEvents.MEETING_COHOST_PROMOTE, (payload: { meetingId: string; targetUserId: string }) => {
+    socket.on(SocketEvents.MEETING_COHOST_DEMOTE, async (payload: { meetingId: string; targetUserId: string }) => {
         if (!userId || !payload?.meetingId || !payload?.targetUserId) return
-
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_COHOST_PROMOTE, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can demote co-hosts' })
+            return
+        }
+        meetingCoHostsMap.get(baseMeetId)?.delete(String(payload.targetUserId))
+        if (Types.ObjectId.isValid(payload.targetUserId)) {
+            try {
+                await Meeting.updateOne(
+                    { meetingId: baseMeetId },
+                    { $pull: { coHosts: new Types.ObjectId(payload.targetUserId) } }
+                ).exec()
+            } catch (_) { }
+        }
+        io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_COHOST_DEMOTE, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
     })
 
-    socket.on(SocketEvents.MEETING_COHOST_DEMOTE, (payload: { meetingId: string; targetUserId: string }) => {
+    socket.on('meeting:permission-update', async (payload: { meetingId: string; targetUserId: string; permission: 'recording' | 'whiteboard' | 'screen-share'; enabled: boolean }) => {
         if (!userId || !payload?.meetingId || !payload?.targetUserId) return
-
-        socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_COHOST_DEMOTE, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
-    })
-
-    socket.on('meeting:permission-update', (payload: { meetingId: string; targetUserId: string; permission: 'recording' | 'whiteboard' | 'screen-share'; enabled: boolean }) => {
-        if (!userId || !payload?.meetingId || !payload?.targetUserId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) return
         socket.to(`meeting:${payload.meetingId}`).emit('meeting:permission-update', payload)
     })
 
     socket.on(SocketEvents.MEETING_WAITING_APPROVE, async (payload: { meetingId: string; targetUserId: string }) => {
         if (!userId || !payload?.meetingId || !payload?.targetUserId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can approve participants' })
+            return
+        }
 
         try {
-            const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
             if (Types.ObjectId.isValid(payload.targetUserId)) {
                 await Meeting.updateOne(
                     { meetingId: baseMeetId },
@@ -392,7 +600,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                     }
                 ).exec()
             }
-        } catch (e) {}
+        } catch (e) { }
 
         io.to(`user:${payload.targetUserId}`).emit(SocketEvents.MEETING_WAITING_APPROVE, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
         socket.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_WAITING_APPROVE, { targetUserId: payload.targetUserId, meetingId: payload.meetingId })
@@ -401,23 +609,26 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     socket.on('guest:approve', async (payload: { socketId?: string; guestSocketId?: string; meetingId?: string }) => {
         const targetSocketId = payload?.socketId || payload?.guestSocketId
         if (!userId || !targetSocketId) return
-        
+
         const guestSocket = io.sockets.sockets.get(targetSocketId) as AuthenticatedSocket
         const targetMeetingId = payload?.meetingId || guestSocket?.meetingId
-        if (targetMeetingId) {
-            const baseMeetId = targetMeetingId.includes('__sub_') ? targetMeetingId.split('__sub_')[0] : targetMeetingId
-            const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
-            if (!authorized) {
-                socket.emit('error', { message: 'Forbidden: Only host or co-host can approve guests' })
-                return
-            }
+        if (!targetMeetingId) {
+            socket.emit('error', { message: 'Forbidden: Meeting context is required to approve guests' })
+            return
+        }
+        const baseMeetId = targetMeetingId.includes('__sub_') ? targetMeetingId.split('__sub_')[0] : targetMeetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can approve guests' })
+            return
         }
 
         // Handle locally first (supports single-node in-memory dev fallback)
         if (guestSocket) {
             guestSocket.isPending = false
             guestSocket.leave(`lobby:${guestSocket.meetingId}`)
-            
+            registerApprovedGuestHandlers(io, guestSocket)
+
             // Persist approved participant in MongoDB Meeting document
             try {
                 const baseMeetId = guestSocket.meetingId?.includes('__sub_') ? guestSocket.meetingId.split('__sub_')[0] : guestSocket.meetingId
@@ -430,7 +641,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                         }
                     ).exec()
                 }
-            } catch (e) {}
+            } catch (e) { }
 
             // Generate updated token
             const token = jwt.sign(
@@ -459,15 +670,17 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
         const guestSocket = io.sockets.sockets.get(targetSocketId) as AuthenticatedSocket
         const targetMeetingId = payload?.meetingId || guestSocket?.meetingId
-        if (targetMeetingId) {
-            const baseMeetId = targetMeetingId.includes('__sub_') ? targetMeetingId.split('__sub_')[0] : targetMeetingId
-            const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
-            if (!authorized) {
-                socket.emit('error', { message: 'Forbidden: Only host or co-host can deny guests' })
-                return
-            }
+        if (!targetMeetingId) {
+            socket.emit('error', { message: 'Forbidden: Meeting context is required to deny guests' })
+            return
         }
-        
+        const baseMeetId = targetMeetingId.includes('__sub_') ? targetMeetingId.split('__sub_')[0] : targetMeetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can deny guests' })
+            return
+        }
+
         // Handle locally first
         if (guestSocket) {
             guestSocket.emit('guest:denied')
@@ -509,7 +722,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
             socket.emit('error', { message: 'Forbidden: Only host or co-host can approve guests' })
             return
         }
-        
+
         const lobbyRoom = io.sockets.adapter.rooms.get(`lobby:${payload.meetingId}`)
         if (lobbyRoom) {
             for (const sId of Array.from(lobbyRoom)) {
@@ -517,6 +730,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                 if (guestSocket && guestSocket.isPending) {
                     guestSocket.isPending = false
                     guestSocket.leave(`lobby:${guestSocket.meetingId}`)
+                    registerApprovedGuestHandlers(io, guestSocket)
 
                     try {
                         const baseMeetId = guestSocket.meetingId?.includes('__sub_') ? guestSocket.meetingId.split('__sub_')[0] : guestSocket.meetingId
@@ -529,7 +743,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                                 }
                             ).exec()
                         }
-                    } catch (e) {}
+                    } catch (e) { }
 
                     const token = jwt.sign(
                         {
@@ -552,12 +766,18 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     })
 
     socket.on('meeting:waiting-room-toggle', async (payload: { meetingId: string; enabled: boolean }) => {
-        if (!payload?.meetingId) return
+        if (!userId || !payload?.meetingId) return
         const { meetingId, enabled } = payload
+        const baseMeetId = meetingId.includes('__sub_') ? meetingId.split('__sub_')[0] : meetingId
+        const authorized = await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!authorized) {
+            socket.emit('error', { message: 'Forbidden: Only host or co-host can toggle the waiting room' })
+            return
+        }
 
         try {
             await Meeting.findOneAndUpdate({ meetingId }, { isWaitingRoomEnabled: enabled })
-        } catch (e) {}
+        } catch (e) { }
 
         if (!adHocRoomSettings[meetingId]) adHocRoomSettings[meetingId] = {}
         adHocRoomSettings[meetingId].isWaitingRoomEnabled = enabled
@@ -573,6 +793,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                     if (guestSocket && guestSocket.isPending) {
                         guestSocket.isPending = false
                         guestSocket.leave(`lobby:${guestSocket.meetingId}`)
+                        registerApprovedGuestHandlers(io, guestSocket)
                         const token = jwt.sign(
                             {
                                 userId: guestSocket.userId,
@@ -629,6 +850,10 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     socket.on('screen:stop', (payload: { meetingId: string; userId?: string }) => {
         const mId = payload?.meetingId || authSocket.meetingId
         if (!mId) return
+        const activeRemote = activeRemoteControllers.get(mId)
+        if (activeRemote && userId && String(activeRemote.presenterId) === String(userId)) {
+            activeRemoteControllers.delete(mId)
+        }
         io.to(`meeting:${mId}`).emit('screen:stop', {
             meetingId: mId,
             userId: payload?.userId || userId || socket.id
@@ -747,7 +972,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                     meetingId: payload.meetingId,
                     title: meeting.title,
                     endedAt: meeting.endedAt || new Date()
-                }).catch(() => {})
+                }).catch(() => { })
             }
             // Broadcast meeting end to all participants in this room and subrooms
             io.to(`meeting:${payload.meetingId}`).emit(SocketEvents.MEETING_END, {
@@ -769,7 +994,7 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
                 })
             }
             if (baseMeetId) {
-                await liveStreamService.stopStream(baseMeetId).catch(() => {})
+                await liveStreamService.stopStream(baseMeetId).catch(() => { })
             }
             clearMeetingPeerSessions(payload.meetingId)
             if (baseMeetId && baseMeetId !== payload.meetingId) {
@@ -853,43 +1078,64 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     })
 
     // Host Screen Sharing Policy Permissions Relay
-    socket.on('meeting:set-screen-share-permission', (payload: { meetingId: string; policy: 'everyone' | 'host_only' }) => {
-        if (!payload?.meetingId || !payload?.policy) return
+    socket.on('meeting:set-screen-share-permission', async (payload: { meetingId: string; policy: 'everyone' | 'host_only' }) => {
+        if (!userId || !payload?.meetingId || !payload?.policy) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) return
         io.to(`meeting:${payload.meetingId}`).emit('meeting:screen-share-permission-changed', {
             meetingId: payload.meetingId,
             policy: payload.policy
         })
-        Meeting.updateOne({ meetingId: payload.meetingId }, { screenSharePolicy: payload.policy }).exec().catch(() => {})
+        Meeting.updateOne({ meetingId: payload.meetingId }, { screenSharePolicy: payload.policy }).exec().catch(() => { })
     })
 
     // Remote Desktop Control Events Relay
     socket.on('remote-control:request', (payload: { meetingId: string; requesterId: string; requesterName: string; targetUserId: string }) => {
         const mId = payload?.meetingId || authSocket.meetingId
-        if (!mId || !payload?.targetUserId) return
+        if (!userId || !mId || !payload?.targetUserId || !socket.rooms.has(`meeting:${mId}`)) return
         socket.to(`meeting:${mId}`).emit('remote-control:request', {
             ...payload,
+            requesterId: userId,
             meetingId: mId,
-            requesterName: payload.requesterName || authSocket.guestName || 'Participant'
+            requesterName: authSocket.guestName || payload.requesterName || 'Participant'
         })
     })
 
     socket.on('remote-control:response', (payload: { meetingId: string; requesterId: string; granted: boolean; presenterId: string; presenterName?: string }) => {
         const mId = payload?.meetingId || authSocket.meetingId
-        if (!mId || !payload?.requesterId) return
+        if (!userId || !mId || !payload?.requesterId || !socket.rooms.has(`meeting:${mId}`)) return
+        if (String(payload.requesterId) === String(userId)) return
+        if (payload.presenterId && String(payload.presenterId) !== String(userId)) {
+            socket.emit('error', { message: 'Forbidden: Only the presenter can respond to remote control requests' })
+            return
+        }
         if (payload.granted) {
-            activeRemoteControllers.set(mId, payload.requesterId)
+            activeRemoteControllers.set(mId, { controllerId: String(payload.requesterId), presenterId: String(userId) })
         } else {
-            activeRemoteControllers.delete(mId)
+            const current = activeRemoteControllers.get(mId)
+            if (!current || String(current.presenterId) === String(userId)) {
+                activeRemoteControllers.delete(mId)
+            }
         }
         socket.to(`meeting:${mId}`).emit('remote-control:response', {
             ...payload,
+            presenterId: userId,
             meetingId: mId
         })
     })
 
-    socket.on('remote-control:revoke', (payload: { meetingId: string; controllerId?: string; presenterId: string }) => {
+    socket.on('remote-control:revoke', async (payload: { meetingId: string; controllerId?: string; presenterId: string }) => {
         const mId = payload?.meetingId || authSocket.meetingId
-        if (!mId) return
+        if (!userId || !mId || !socket.rooms.has(`meeting:${mId}`)) return
+        const current = activeRemoteControllers.get(mId)
+        const isCurrentParticipant =
+            current && (String(current.presenterId) === String(userId) || String(current.controllerId) === String(userId))
+        const baseMeetId = mId.includes('__sub_') ? mId.split('__sub_')[0] : mId
+        const isHostOrCoHost = isCurrentParticipant ? true : await verifyIsHostOrCoHost(baseMeetId, userId)
+        if (!isCurrentParticipant && !isHostOrCoHost) {
+            socket.emit('error', { message: 'Forbidden: Only presenter, controller, or host can revoke remote control' })
+            return
+        }
         activeRemoteControllers.delete(mId)
         socket.to(`meeting:${mId}`).emit('remote-control:revoke', {
             ...payload,
@@ -897,74 +1143,46 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         })
     })
 
-    socket.on('remote-control:mouse', (payload: { meetingId: string; controllerId: string; type: string; x: number; y: number; button?: number; deltaY?: number }) => {
+    const relayRemoteControlInput = (eventName: string, payload: any, hasRequiredField: boolean = true) => {
+        if (!hasRequiredField || !userId) return
         const mId = payload?.meetingId || authSocket.meetingId
-        if (!mId) return
-        const authorizedController = activeRemoteControllers.get(mId)
-        if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
+        if (!mId || !socket.rooms.has(`meeting:${mId}`)) return
+        const activeSession = activeRemoteControllers.get(mId)
+        if (!activeSession || String(activeSession.controllerId) !== String(userId)) {
             return
         }
-        socket.to(`meeting:${mId}`).emit('remote-control:mouse', {
+        io.to(`user:${activeSession.presenterId}`).emit(eventName, {
             ...payload,
+            controllerId: userId,
             meetingId: mId
         })
+    }
+
+    socket.on('remote-control:mouse', (payload: { meetingId: string; controllerId: string; type: string; x: number; y: number; button?: number; deltaY?: number }) => {
+        relayRemoteControlInput('remote-control:mouse', payload)
     })
 
     socket.on('remote-control:key', (payload: { meetingId: string; controllerId: string; type: string; key: string; code: string; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }) => {
-        const mId = payload?.meetingId || authSocket.meetingId
-        if (!mId) return
-        const authorizedController = activeRemoteControllers.get(mId)
-        if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
-            return
-        }
-        socket.to(`meeting:${mId}`).emit('remote-control:key', {
-            ...payload,
-            meetingId: mId
-        })
+        relayRemoteControlInput('remote-control:key', payload)
     })
 
     socket.on('remote-control:hotkey', (payload: { meetingId: string; controllerId: string; hotkey: string }) => {
-        const mId = payload?.meetingId || authSocket.meetingId
-        if (!mId || !payload?.hotkey) return
-        const authorizedController = activeRemoteControllers.get(mId)
-        if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
-            return
-        }
-        socket.to(`meeting:${mId}`).emit('remote-control:hotkey', {
-            ...payload,
-            meetingId: mId
-        })
+        relayRemoteControlInput('remote-control:hotkey', payload, Boolean(payload?.hotkey))
     })
 
     socket.on('remote-control:text', (payload: { meetingId: string; controllerId: string; text: string }) => {
-        const mId = payload?.meetingId || authSocket.meetingId
-        if (!mId || !payload?.text) return
-        const authorizedController = activeRemoteControllers.get(mId)
-        if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
-            return
-        }
-        socket.to(`meeting:${mId}`).emit('remote-control:text', {
-            ...payload,
-            meetingId: mId
-        })
+        relayRemoteControlInput('remote-control:text', payload, Boolean(payload?.text))
     })
 
     socket.on('remote-control:launch', (payload: { meetingId: string; controllerId: string; app: string }) => {
-        const mId = payload?.meetingId || authSocket.meetingId
-        if (!mId || !payload?.app) return
-        const authorizedController = activeRemoteControllers.get(mId)
-        if (!authorizedController || (authorizedController !== userId && authorizedController !== payload.controllerId)) {
-            return
-        }
-        socket.to(`meeting:${mId}`).emit('remote-control:launch', {
-            ...payload,
-            meetingId: mId
-        })
+        relayRemoteControlInput('remote-control:launch', payload, Boolean(payload?.app))
     })
 
     // Presenter Backstage / Virtual Green Room (Enterprise Tier)
-    socket.on(SocketEvents.STAGE_STATUS_CHANGE, (payload: { meetingId: string; targetUserId: string; isBackstage: boolean }) => {
-        if (!payload?.meetingId || !payload?.targetUserId) return
+    socket.on(SocketEvents.STAGE_STATUS_CHANGE, async (payload: { meetingId: string; targetUserId: string; isBackstage: boolean }) => {
+        if (!userId || !payload?.meetingId || !payload?.targetUserId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) return
         let backstageSet = meetingBackstageMap.get(payload.meetingId)
         if (!backstageSet) {
             backstageSet = new Set<string>()
@@ -987,7 +1205,9 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
 
     // Webinar Mode (1000+ View-Only Stage & Hand-Raise Engine)
     socket.on('webinar:toggle-mode', async (payload: { meetingId: string; enabled: boolean }) => {
-        if (!payload?.meetingId) return
+        if (!userId || !payload?.meetingId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) return
         await liveBroadcastService.toggleWebinarMode(payload.meetingId, payload.enabled)
     })
 
@@ -997,12 +1217,16 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
     })
 
     socket.on('webinar:promote-speaker', async (payload: { meetingId: string; targetUserId: string; hostName?: string }) => {
-        if (!payload?.meetingId || !payload?.targetUserId) return
+        if (!userId || !payload?.meetingId || !payload?.targetUserId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) return
         await liveBroadcastService.promoteSpeaker(payload.meetingId, payload.targetUserId, payload.hostName)
     })
 
     socket.on('webinar:demote-speaker', async (payload: { meetingId: string; targetUserId: string }) => {
-        if (!payload?.meetingId || !payload?.targetUserId) return
+        if (!userId || !payload?.meetingId || !payload?.targetUserId) return
+        const baseMeetId = payload.meetingId.includes('__sub_') ? payload.meetingId.split('__sub_')[0] : payload.meetingId
+        if (!(await verifyIsHostOrCoHost(baseMeetId, userId))) return
         await liveBroadcastService.demoteSpeaker(payload.meetingId, payload.targetUserId)
     })
 
@@ -1011,15 +1235,24 @@ export function registerMeetingHandlers(io: Server, socket: Socket) {
         liveBroadcastService.broadcastReaction(payload.meetingId, payload.reaction, payload.userName)
     })
 
-    // Disconnect cleanup for active RTMP livestream
-    socket.on('disconnect', async () => {
+    // Disconnect cleanup for active RTMP livestream (with 15s grace window so page refresh doesn't kill stream)
+    socket.on('disconnect', () => {
         if (userId) {
-            for (const [mId, session] of liveStreamService.getSessions().entries()) {
-                if (session.userId === userId) {
-                    console.log(`[LiveStream] Host ${userId} disconnected. Stopping active stream for meeting ${mId}.`)
-                    await liveStreamService.stopStream(mId).catch(() => {})
+            setTimeout(async () => {
+                for (const [mId, session] of liveStreamService.getSessions().entries()) {
+                    if (session.userId === userId) {
+                        const roomSockets = io.sockets.adapter.rooms.get(`meeting:${mId}`)
+                        const hostReconnected = roomSockets && Array.from(roomSockets).some(sId => {
+                            const s = io.sockets.sockets.get(sId) as AuthenticatedSocket | undefined
+                            return s && String(s.userId) === String(userId)
+                        })
+                        if (!hostReconnected) {
+                            console.log(`[LiveStream] Host ${userId} did not reconnect within grace period. Stopping active stream for meeting ${mId}.`)
+                            await liveStreamService.stopStream(mId).catch(() => { })
+                        }
+                    }
                 }
-            }
+            }, 15000)
         }
     })
 }

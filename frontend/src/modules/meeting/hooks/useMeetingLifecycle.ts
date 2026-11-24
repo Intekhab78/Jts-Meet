@@ -140,6 +140,8 @@ export const useMeetingLifecycle = ({
         try {
             sessionStorage.removeItem('jts_active_meeting_id')
             sessionStorage.removeItem('jts_meeting_joined')
+            sessionStorage.removeItem('jts_meeting_start_ts')
+            if (currentMid) sessionStorage.removeItem(`jts_meeting_start_${currentMid}`)
             sessionStorage.removeItem('jts_initial_camera_off')
             sessionStorage.removeItem('jts_initial_mic_muted')
             if (isPermanentEnd) {
@@ -194,8 +196,8 @@ export const useMeetingLifecycle = ({
 
             const finalNotes = [meetingNotes.trim(), panelNotes.trim()].filter(Boolean).join('\n\n')
 
-            // Compile attendees with display names and talk times
-            const attendeeIds = participants && participants.length > 0 ? participants : ['me']
+            // Compile attendees with display names and talk times (always include 'me' + all remote participants)
+            const attendeeIds = Array.from(new Set(['me', ...(participants || [])]))
             const compiledAttendees = attendeeIds.map(pId => {
                 const isMe = pId === 'me'
                 const name = isMe ? (myDisplayName || 'Host (You)') : (getUserDisplayName ? getUserDisplayName(pId) : pId)
@@ -254,9 +256,9 @@ export const useMeetingLifecycle = ({
         }
     }, [leaveMeeting, onLeave, timerStr, talkTimeMap, meetingNotes, meetingInfo, meetingId, meetingInput, isGuest, token, setMeetingInput, setPostMeetingCapsule, participants, myDisplayName, getUserDisplayName, messages, transcripts, isCloudRecording])
 
-    // Direct autoJoin trigger: Only auto-joins ONCE upon entry, never if user has left!
+    // Direct autoJoin trigger: Only auto-joins ONCE upon entry (after local media finishes loading), never if user has left!
     useEffect(() => {
-        if (autoJoin && connected && !joined && !hasLeftRef.current && !hasAutoJoinedRef.current) {
+        if (autoJoin && connected && !joined && !mediaLoading && !hasLeftRef.current && !hasAutoJoinedRef.current) {
             const target = (initialMeetingId || meetingInput || sessionStorage.getItem('jts_active_meeting_id') || '').trim()
             if (target) {
                 hasAutoJoinedRef.current = true
@@ -264,7 +266,7 @@ export const useMeetingLifecycle = ({
                 handleJoinMeeting(target)
             }
         }
-    }, [autoJoin, connected, joined, initialMeetingId, meetingInput, handleJoinMeeting])
+    }, [autoJoin, connected, joined, mediaLoading, initialMeetingId, meetingInput, handleJoinMeeting])
 
     useEffect(() => {
         // If user has left or auto-rejoin was already handled, never auto-join!

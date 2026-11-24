@@ -256,6 +256,15 @@ export function useMediaDevices(): UseMediaDevicesResult {
     }, [])
 
     const replaceLocalStream = useCallback((stream: MediaStream) => {
+        if (stream.getVideoTracks().length === 0 && cameraStreamRef.current) {
+            cameraStreamRef.current.getVideoTracks().forEach(t => {
+                try {
+                    t.enabled = false
+                    t.stop()
+                    cameraStreamRef.current?.removeTrack(t)
+                } catch {}
+            })
+        }
         localStreamRef.current = stream
         setLocalStream(new MediaStream(stream.getTracks()))
     }, [])
@@ -403,7 +412,7 @@ export function useMediaDevices(): UseMediaDevicesResult {
                                 googTypingNoiseDetection: true,
                                 googAudioMirroring: false
                             } as any) : false,
-                            video: (videoTracks.length > 0 && !videoEnded) ? {
+                            video: (videoTracks.length > 0 && videoEnded) ? {
                                 width: { ideal: 1280 },
                                 height: { ideal: 720 },
                                 aspectRatio: 1.7777777778

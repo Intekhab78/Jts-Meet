@@ -15,7 +15,7 @@ async function isTeamOwnerOrAdmin(team: ITeam, userId: string): Promise<boolean>
     try {
         const user = await User.findById(userId).select('email isSuperAdmin').exec()
         if (user?.isSuperAdmin || (ADMIN_EMAIL && user?.email?.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim())) return true
-    } catch (_) {}
+    } catch (_) { }
 
     const member = team.members.find((m) => m.userId.equals(new Types.ObjectId(userId)))
     if (member && ['owner', 'admin'].includes(member.role)) return true
@@ -25,7 +25,7 @@ async function isTeamOwnerOrAdmin(team: ITeam, userId: string): Promise<boolean>
         const orgMember = org?.members?.find((m: any) => m.userId.equals(new Types.ObjectId(userId)) && m.status === 'active')
         if (orgMember && ['owner', 'admin'].includes(orgMember.role)) return true
         if (org && org.ownerId && org.ownerId.equals(new Types.ObjectId(userId))) return true
-    } catch (_) {}
+    } catch (_) { }
 
     return false
 }
@@ -101,7 +101,7 @@ export async function createTeam(userId: string, payload: {
                             archived: false
                         })
                         await newCh.save(session ? { session } : undefined)
-                    } catch (_) {}
+                    } catch (_) { }
                 }
             }
         }
@@ -244,7 +244,7 @@ export async function inviteTeamMember(teamId: string, inviterId: string, payloa
                 }
             }
         )
-    } catch (_) {}
+    } catch (_) { }
 
     // Trigger invitation notifications asynchronously
     if (savedTeam) {
@@ -252,7 +252,7 @@ export async function inviteTeamMember(teamId: string, inviterId: string, payloa
             try {
                 const inviter = await User.findById(inviterId)
                 const inviterName = inviter ? inviter.fullName : 'A team manager'
-                
+
                 const targetUser = await User.findById(targetUserId)
                 const teamLink = `${FRONTEND_URL || 'http://localhost:3000'}/#team`
 
@@ -292,7 +292,19 @@ export async function joinPublicTeam(teamId: string, userId: string): Promise<IT
         throw new Error('Team is private')
     }
 
-    const alreadyMember = team.members.some((member) => member.userId.equals(new Types.ObjectId(userId)))
+    const org = await getOrganizationById(team.organizationId.toString())
+    const isOrgMember = Boolean(org && (
+        String((org.ownerId as any)?._id || org.ownerId) === String(userId) ||
+        org.members.some((m: any) => String((m.userId as any)?._id || m.userId) === String(userId) && m.status === 'active')
+    ))
+    if (!isOrgMember) {
+        throw { status: 403, message: 'Forbidden: You must be a member of the organization to join this team' }
+    }
+
+    const alreadyMember = team.members.some((member) => {
+        const mId = (member.userId as any)?._id ? String((member.userId as any)._id) : String(member.userId)
+        return mId === String(userId)
+    })
     if (!alreadyMember) {
         team.members.push({
             userId: new Types.ObjectId(userId),

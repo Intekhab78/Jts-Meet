@@ -17,7 +17,7 @@ interface TenantsTabProps {
     fetchTenants: () => void
     handleImpersonateTenant: (t: TenantItem) => void
     setEditingTenant: (t: TenantItem) => void
-    setEditTier: (tier: 'free' | 'starter' | 'enterprise') => void
+    setEditTier: (tier: string) => void
     setEditSeats: (seats: number) => void
     setEditStorageGb: (storage: number) => void
     handleToggleTenantStatus: (t: TenantItem) => void

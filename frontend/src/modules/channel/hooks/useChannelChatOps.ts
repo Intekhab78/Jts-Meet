@@ -219,7 +219,7 @@ export function useChannelChatOps({
         const clipUrl = `${API_BASE}${clip.videoUrl}`
         const clipContent = `[Video Clip] ${clip.title} (${Math.round(clip.duration)}s)\n${clipUrl}`
         try {
-            await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
+            const res = await fetch(`${API_BASE}/api/channel/${selectedChannel._id}/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -227,6 +227,19 @@ export function useChannelChatOps({
                 },
                 body: JSON.stringify({ content: clipContent, messageType: 'text' })
             })
+            const data = await res.json()
+            if (data.success && data.data) {
+                if (data.data._id) {
+                    sentByCurrentTabIds.current.add(data.data._id.toString())
+                }
+                if (socketInstance) {
+                    socketInstance.emit('channel:message:send', data.data)
+                }
+                setMessages(prev => {
+                    if (prev.some(m => m._id === data.data._id)) return prev
+                    return [...prev, data.data]
+                })
+            }
         } catch (e) {
             console.error('Failed to post clip in channel:', e)
         }

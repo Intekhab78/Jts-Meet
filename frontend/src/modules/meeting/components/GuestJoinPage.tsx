@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { API_BASE } from '../../../config'
+import { PreJoinDiagnosticsStrip } from './PreJoinDiagnosticsStrip'
 import {
     IconInfo,
     IconShield,
@@ -206,20 +207,7 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
     }, [cameraOn, micOn, selectedVideoId, selectedAudioId])
 
     useEffect(() => {
-        const initDevices = async () => {
-            try {
-                const tempMedia = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-                // Stop the temporary stream tracks immediately so hardware LED turns off
-                tempMedia.getTracks().forEach(t => {
-                    try { t.stop() } catch {}
-                })
-                await getDevices()
-            } catch (err) {
-                await getDevices()
-            }
-        }
-        initDevices()
-
+        getDevices()
         return () => {
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(t => {
@@ -230,20 +218,28 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
         }
     }, [])
 
+    const isValidEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())
+
     const handleJoinRequest = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!guestName.trim()) return
+        if (!email.trim() || !isValidEmail(email)) {
+            alert('Please enter a valid email address to join the meeting.')
+            return
+        }
 
         setRequesting(true)
         try {
+            const existingUserId = localStorage.getItem('jts_guest_user_id') || undefined
             const response = await fetch(`${API_BASE}/api/guest/request`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     meetingId,
                     guestName: guestName.trim(),
-                    email: email.trim() || undefined,
-                    company: company.trim() || undefined
+                    email: email.trim().toLowerCase(),
+                    company: company.trim() || undefined,
+                    existingUserId
                 })
             })
             const data = await response.json()
@@ -251,6 +247,8 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                 const { token, userId, isPending } = data.data
                 try {
                     localStorage.setItem('jts_guest_name', guestName.trim())
+                    localStorage.setItem('jts_guest_email', email.trim().toLowerCase())
+                    if (userId) localStorage.setItem('jts_guest_user_id', userId)
                     sessionStorage.setItem('jts_active_meeting_id', meetingId)
                     sessionStorage.setItem('jts_meeting_joined', 'true')
                     if (!cameraOn) {
@@ -496,6 +494,30 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                             <button
                                 onClick={() => {
                                     const next = !cameraOn
+                                    if (!next) {
+                                        if (videoRef.current) {
+                                            videoRef.current.pause()
+                                            videoRef.current.srcObject = null
+                                        }
+                                        if (streamRef.current) {
+                                            streamRef.current.getVideoTracks().forEach(t => {
+                                                try {
+                                                    t.enabled = false
+                                                    t.stop()
+                                                    streamRef.current?.removeTrack(t)
+                                                } catch {}
+                                            })
+                                        }
+                                        if (stream) {
+                                            stream.getVideoTracks().forEach(t => {
+                                                try {
+                                                    t.enabled = false
+                                                    t.stop()
+                                                    stream.removeTrack(t)
+                                                } catch {}
+                                            })
+                                        }
+                                    }
                                     setCameraOn(next)
                                     try {
                                         if (!next) {
@@ -598,6 +620,8 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                             </select>
                         </div>
                     </div>
+
+                    <PreJoinDiagnosticsStrip stream={stream} isMicMuted={!micOn} />
                 </div>
 
                 {/* Right Side: Welcome Details and Join form */}
@@ -642,15 +666,32 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
                             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
                                 <div>
                                     <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 6 }}>
-                                        Email <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>(Optional)</span>
+                                        Email Address <span style={{ color: '#ef4444' }}>*</span>
                                     </label>
                                     <input
                                         type="email"
+                                        required
                                         placeholder="your@email.com"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
-                                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: 10, color: '#fff', fontSize: '0.875rem', outline: 'none' }}
+                                        style={{
+                                            width: '100%',
+                                            background: 'rgba(0,0,0,0.2)',
+                                            border: email.trim() && !isValidEmail(email)
+                                                ? '1px solid rgba(239, 68, 68, 0.65)'
+                                                : '1px solid rgba(255,255,255,0.08)',
+                                            borderRadius: 8,
+                                            padding: 10,
+                                            color: '#fff',
+                                            fontSize: '0.875rem',
+                                            outline: 'none'
+                                        }}
                                     />
+                                    {email.trim() && !isValidEmail(email) && (
+                                        <span style={{ fontSize: '0.6875rem', color: '#f87171', display: 'block', marginTop: 4 }}>
+                                            Enter a valid email address
+                                        </span>
+                                    )}
                                 </div>
 
                                 <div>
@@ -669,9 +710,18 @@ export const GuestJoinPage: React.FC<GuestJoinPageProps> = ({ meetingId, onNavig
 
                             <button
                                 type="submit"
-                                disabled={requesting || !guestName.trim()}
+                                disabled={requesting || !guestName.trim() || !isValidEmail(email)}
                                 className="btn btn-primary"
-                                style={{ width: '100%', padding: '12px', borderRadius: 8, fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', marginTop: 10 }}
+                                style={{
+                                    width: '100%',
+                                    padding: '12px',
+                                    borderRadius: 8,
+                                    fontSize: '0.875rem',
+                                    fontWeight: 700,
+                                    cursor: (requesting || !guestName.trim() || !isValidEmail(email)) ? 'not-allowed' : 'pointer',
+                                    opacity: (!guestName.trim() || !isValidEmail(email)) ? 0.6 : 1,
+                                    marginTop: 10
+                                }}
                             >
                                 {requesting ? 'Requesting Admission...' : 'Ask to Join'}
                             </button>

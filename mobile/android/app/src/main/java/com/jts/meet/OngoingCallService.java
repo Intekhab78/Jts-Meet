@@ -78,17 +78,20 @@ public class OngoingCallService extends Service {
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    stopSelf();
+                    return START_NOT_STICKY;
+                }
                 startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
             } else {
                 startForeground(NOTIF_ID, notification);
             }
         } catch (Throwable t) {
-            try {
-                startForeground(NOTIF_ID, notification);
-            } catch (Throwable ignored) {}
+            stopSelf();
+            return START_NOT_STICKY;
         }
 
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     @Override

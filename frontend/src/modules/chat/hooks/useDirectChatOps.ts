@@ -113,12 +113,14 @@ export function useDirectChatOps({
     const handleToggleReaction = async (messageId: string, emoji: string) => {
         if (!activeContact) return
 
+        let wasRemoved = false
         setMessages(prev => prev.map(m => {
             if (m._id === messageId) {
                 const current = m.reactions || []
                 const existingIdx = current.findIndex(r => r.userId === currentUserId && r.emoji === emoji)
                 let updated
                 if (existingIdx >= 0) {
+                    wasRemoved = true
                     updated = current.filter((_, idx) => idx !== existingIdx)
                 } else {
                     updated = [...current, { userId: currentUserId, emoji, createdAt: new Date() }]
@@ -137,14 +139,25 @@ export function useDirectChatOps({
         }
 
         try {
-            await fetch(`${API_BASE}/api/chat/message/${messageId}/react`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ emoji })
-            })
+            if (wasRemoved) {
+                await fetch(`${API_BASE}/api/chat/message/${messageId}/react?emoji=${encodeURIComponent(emoji)}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ emoji })
+                })
+            } else {
+                await fetch(`${API_BASE}/api/chat/message/${messageId}/react`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ emoji })
+                })
+            }
         } catch (err) {
             console.warn('[DM Hub] Failed to persist reaction:', err)
         }
@@ -276,6 +289,8 @@ export function useDirectChatOps({
                     isSeen: false,
                     reactions: []
                 }
+
+                setMessages(prev => [...prev, optimisticMsg])
 
                 setRecentChats(prev => {
                     const activeId = String(activeContact._id)

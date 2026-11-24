@@ -109,53 +109,68 @@ export function useMeetingMediaControls({
         }
 
         if (!isVideoOff) {
-            // 1. Physically stop all hardware video tracks on localStream so webcam LED turns OFF completely
+            // 0. Immediately detach video elements bound to local camera tracks so Chromium releases UVC handle in 0ms
+            try {
+                document.querySelectorAll('video').forEach((v) => {
+                    const src = v.srcObject as MediaStream | null
+                    if (src && (src === localStream || src === cameraStream || src === activeLocalStream)) {
+                        v.pause()
+                        v.srcObject = null
+                    }
+                })
+            } catch {}
+
+            // 1. Stop sending video to WebRTC peers FIRST (replaces RTP sender track with null)
+            replaceTrackOnPeers(null, 'video')
+
+            // 2. Physically stop all hardware video tracks on localStream so webcam LED turns OFF completely
             localStream.getVideoTracks().forEach(track => {
                 try {
+                    track.enabled = false
                     track.stop()
                 } catch { }
                 localStream.removeTrack(track)
             })
 
-            // 1.1 Also stop any active camera tracks on cameraStream backup
+            // 2.1 Also stop any active camera tracks on cameraStream backup
             if (cameraStream) {
                 cameraStream.getVideoTracks().forEach(track => {
                     try {
+                        track.enabled = false
                         track.stop()
                     } catch { }
                     cameraStream.removeTrack(track)
                 })
             }
 
-            // 2. Stop and release virtual background or wallpaper preview stream
+            // 3. Stop and release virtual background or wallpaper preview stream
             if (activeLocalStream) {
                 activeLocalStream.getVideoTracks().forEach(track => {
                     try {
+                        track.enabled = false
                         track.stop()
                     } catch { }
                 })
                 setActiveLocalStream(null)
             }
 
-            // 3. Stop raw physical camera track backup ref to ensure laptop LED turns off completely
+            // 4. Stop raw physical camera track backup ref to ensure laptop LED turns off completely
             if (rawCameraTrackRef.current) {
                 try {
+                    rawCameraTrackRef.current.enabled = false
                     rawCameraTrackRef.current.stop()
                 } catch { }
                 rawCameraTrackRef.current = null
             }
 
-            // 4. Cleanup processing loop & offscreen canvas/video in virtualBackgroundService
+            // 5. Cleanup processing loop & offscreen canvas/video in virtualBackgroundService
             try {
                 virtualBackgroundService.cleanup()
             } catch { }
 
-            // 5. Update localStream state with audio only
+            // 6. Update localStream state with audio only
             const cleanAudioStream = new MediaStream(localStream.getAudioTracks())
             replaceLocalStream(cleanAudioStream)
-
-            // 6. Stop sending video to WebRTC peers (replaces sender track with null)
-            replaceTrackOnPeers(null, 'video')
 
             setIsVideoOff(true)
             try { sessionStorage.setItem('jts_initial_camera_off', 'true') } catch {}

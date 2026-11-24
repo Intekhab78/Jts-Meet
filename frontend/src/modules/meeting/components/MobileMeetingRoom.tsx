@@ -159,9 +159,19 @@ export const MobileMeetingRoom: React.FC<MobileMeetingRoomProps> = ({
         }
     }, [activeSheet, messages.length])
 
-    // List of active remote peer IDs
+    // List of active remote peer IDs (deduplicated case-insensitively & by stream reference)
     const remotePeerIds = useMemo(() => {
-        return Object.keys(remoteStreams).filter(id => id !== localUserId && remoteStreams[id] !== null)
+        const seenLower = new Set<string>()
+        const seenStreams = new Set<MediaStream>()
+        const localLower = (localUserId || '').trim().toLowerCase()
+        return Object.keys(remoteStreams).filter(id => {
+            const stream = remoteStreams[id]
+            const lower = id.trim().toLowerCase()
+            if (!stream || lower === localLower || seenLower.has(lower) || seenStreams.has(stream)) return false
+            seenLower.add(lower)
+            seenStreams.add(stream)
+            return true
+        })
     }, [remoteStreams, localUserId])
 
     const totalParticipantsCount = remotePeerIds.length + 1

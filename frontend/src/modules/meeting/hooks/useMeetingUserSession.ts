@@ -66,6 +66,21 @@ export function useMeetingUserSession({
     }, [meetingInfo?.screenSharePolicy])
 
     useEffect(() => {
+        if (!socket) return
+        const handlePolicyChange = (payload: { policy?: 'everyone' | 'host_only' }) => {
+            if (payload?.policy === 'everyone' || payload?.policy === 'host_only') {
+                setScreenSharePolicy(payload.policy)
+            }
+        }
+        socket.on('meeting:screen-share-permission-changed', handlePolicyChange)
+        socket.on('meeting:screen-share-policy', handlePolicyChange)
+        return () => {
+            socket.off('meeting:screen-share-permission-changed', handlePolicyChange)
+            socket.off('meeting:screen-share-policy', handlePolicyChange)
+        }
+    }, [socket])
+
+    useEffect(() => {
         if (initialToken && initialToken !== token) {
             setToken(initialToken)
         }

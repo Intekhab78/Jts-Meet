@@ -2,6 +2,7 @@ import React from 'react'
 import { UserStatusSelectorPopover } from '../../../components/common/UserStatusSelectorPopover'
 import { UserAvatar } from '../../../components/common/UserAvatar'
 import { WorkspaceTab } from '../workspace.types'
+import { useSocketContext } from '../../meeting/context/SocketContext'
 
 interface WorkspaceHeaderProps {
     token: string
@@ -30,6 +31,7 @@ export function WorkspaceHeader({
     currentOrgId,
     setCurrentOrgId
 }: WorkspaceHeaderProps) {
+    const { socket } = useSocketContext()
     if (activeTab === 'meeting') return null
 
     return (
@@ -87,6 +89,7 @@ export function WorkspaceHeader({
                     token={token}
                     currentUserId={userId}
                     userName={profileName}
+                    socket={socket}
                 />
                 {organizations.length > 0 && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

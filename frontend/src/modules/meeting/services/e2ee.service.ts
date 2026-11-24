@@ -20,13 +20,13 @@ export class E2EEService {
     }
 
     /**
-     * Check if the current browser environment supports WebRTC Insertable Streams
+     * Check if the current browser environment supports WebRTC Encoded Transform / Insertable Streams
      */
     public isSupported(): boolean {
         return typeof window !== 'undefined' &&
             Boolean(
                 (window as any).RTCRtpSender?.prototype?.createEncodedStreams ||
-                (window as any).TransformStream
+                (window as any).RTCRtpScriptTransform
             )
     }
 
@@ -94,7 +94,8 @@ export class E2EEService {
             return this.keyFingerprint
         } catch (err) {
             console.warn('[E2EE] Key derivation error:', err)
-            this.keyFingerprint = '8492 1039 5821 9402'
+            this.keyFingerprint = '0000 0000 0000 0000'
+            this.cryptoKey = null
             return this.keyFingerprint
         }
     }

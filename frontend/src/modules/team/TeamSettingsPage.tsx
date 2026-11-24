@@ -184,24 +184,30 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
     // Fallback effective user ID from token if not explicitly passed
     const effectiveUserId = useMemo(() => {
         if (currentUserId) return currentUserId
-        try {
-            if (token) {
-                const payload = JSON.parse(atob(token.split('.')[1]))
-                return payload?.userId || payload?.id || payload?._id || ''
-            }
-        } catch (_) {}
+        if (token) {
+            try {
+                const parts = token.split('.')
+                if (parts.length >= 2) {
+                    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+                    const pad = b64.length % 4
+                    if (pad) b64 += '='.repeat(4 - pad)
+                    const payload = JSON.parse(atob(b64))
+                    return payload?.userId || payload?.id || payload?._id || ''
+                }
+            } catch (_) {}
+        }
         return ''
     }, [currentUserId, token])
 
     // Check if user is Organization Owner or Admin
     const isOrgAdminOrOwner = useMemo(() => {
-        if (!effectiveUserId || !orgMembers || orgMembers.length === 0) return true
+        if (!effectiveUserId || !orgMembers || orgMembers.length === 0) return false
         const currentMember = orgMembers.find(m => {
             if (!m) return false
             const uId = typeof m.userId === 'object' && m.userId ? (m.userId as any)._id : String(m.userId)
             return uId === effectiveUserId
         })
-        return currentMember ? (currentMember.role === 'owner' || currentMember.role === 'admin') : true
+        return currentMember ? (currentMember.role === 'owner' || currentMember.role === 'admin') : false
     }, [orgMembers, effectiveUserId])
 
     // Check if user is Member of the active team
@@ -217,13 +223,13 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
     const isOwnerOrAdmin = useMemo(() => {
         if (!selectedTeam) return false
         if (isOrgAdminOrOwner) return true
-        if (!effectiveUserId) return true
+        if (!effectiveUserId) return false
         if (selectedTeam.ownerId === effectiveUserId) return true
         const m = selectedTeam.members.find((item) => {
             const uId = typeof item.userId === 'object' && item.userId ? (item.userId as any)._id : String(item.userId)
             return uId === effectiveUserId
         })
-        if (!m) return true
+        if (!m) return false
         return m?.role === 'owner' || m?.role === 'admin'
     }, [selectedTeam, effectiveUserId, isOrgAdminOrOwner])
 
@@ -420,7 +426,7 @@ export function TeamSettingsPage({ token, organizationId, currentUserId }: TeamS
     }
 
     const handleOpenChannel = (channel: Channel) => {
-        localStorage.setItem('jts_active_channel_id', channel._id)
+        localStorage.setItem('jts_current_channel_id', channel._id)
         window.location.hash = '#channel'
     }
 

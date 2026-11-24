@@ -30,12 +30,12 @@ function checkIpWhitelist(clientIp: string, allowedRanges: string[]): boolean {
 
 export const isSuperAdminUser = (user: any): boolean => {
     if (!user) return false
-    if (user.isSuperAdmin) return true
-    if ((user as any).role === 'superadmin' || (user as any).role === 'admin') return true
+    if (user.isSuperAdmin === true) return true
+    if ((user as any).role === 'superadmin') return true
     const adminEmail = (process.env.ADMIN_EMAIL || 'admin@jtsmeet.com').toLowerCase().trim()
     if (user.email) {
         const email = user.email.toLowerCase().trim()
-        if (email === adminEmail || email === 'admin@jtsmeet.com' || email.endsWith('@jtsmiddleeast.com')) {
+        if (email === adminEmail || email === 'admin@jtsmeet.com') {
             return true
         }
     }
@@ -62,26 +62,6 @@ export const requireSuperAdmin = async (req: AuthRequest, res: Response, next: N
                     return sendError(res, 403, `Access denied: Client IP ${clientIp} is not authorized by the platform IP whitelist policy.`)
                 }
             }
-            return next()
-        }
-
-        // Fallback: Check if user is an organization owner or admin
-        const hasOrgAdminRole = await Organization.exists({
-            $or: [
-                { ownerId: user._id },
-                {
-                    members: {
-                        $elemMatch: {
-                            userId: user._id,
-                            role: { $in: ['owner', 'admin'] },
-                            status: 'active'
-                        }
-                    }
-                }
-            ]
-        })
-
-        if (hasOrgAdminRole) {
             return next()
         }
 

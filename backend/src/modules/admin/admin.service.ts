@@ -12,6 +12,8 @@ import { Team } from '../team/team.model'
 import { AuditLog, IAuditLog } from './audit.model'
 import { getIO } from '../../socket'
 import { PlatformSettings } from './platformSettings.model'
+import { getPlanByPlanId } from '../plan/plan.service'
+import { isSuperAdminUser } from '../../middleware/adminMiddleware'
 
 // Configurable in-memory retention policy with default 30 days
 let globalRetentionPolicyDays = 30
@@ -26,11 +28,14 @@ export async function logActivity(userId: string, action: string, details: strin
     })
 }
 
-export async function getDashboardStats() {
-    const totalUsers = await User.countDocuments().exec()
-    const totalMeetings = await Meeting.countDocuments().exec()
-    const activeMeetings = await Meeting.countDocuments({ status: 'active' }).exec()
-    const endedMeetings = await Meeting.countDocuments({ status: 'ended' }).exec()
+export async function getDashboardStats(scopedOrgIds?: string[], scopedUserIds?: string[]) {
+    const meetingMatch: any = Array.isArray(scopedOrgIds) ? { organizationId: { $in: scopedOrgIds } } : {}
+    const totalUsers = Array.isArray(scopedUserIds)
+        ? scopedUserIds.length
+        : await User.countDocuments().exec()
+    const totalMeetings = await Meeting.countDocuments(meetingMatch).exec()
+    const activeMeetings = await Meeting.countDocuments({ ...meetingMatch, status: 'active' }).exec()
+    const endedMeetings = await Meeting.countDocuments({ ...meetingMatch, status: 'ended' }).exec()
 
     // Aggregate daily meetings count for the last 7 days (Trends)
     const sevenDaysAgo = new Date()
@@ -39,6 +44,7 @@ export async function getDashboardStats() {
     const trends = await Meeting.aggregate([
         {
             $match: {
+                ...meetingMatch,
                 createdAt: { $gte: sevenDaysAgo }
             }
         },
@@ -67,12 +73,16 @@ export async function getRecentMeetings(payload: {
     limit?: number
     search?: string
     status?: string
+    scopedOrgIds?: string[]
 }) {
     const page = payload.page || 1
     const limit = payload.limit || 20
     const skip = (page - 1) * limit
 
     const query: any = {}
+    if (Array.isArray(payload.scopedOrgIds)) {
+        query.organizationId = { $in: payload.scopedOrgIds }
+    }
     if (payload.status) {
         query.status = payload.status
     }
@@ -104,9 +114,12 @@ export async function getRecentMeetings(payload: {
     }
 }
 
-export async function getAuditLogs(page = 1, limit = 20, action = '', search = '') {
+export async function getAuditLogs(page = 1, limit = 20, action = '', search = '', scopedUserIds?: string[]) {
     const skip = (page - 1) * limit
     const query: any = {}
+    if (Array.isArray(scopedUserIds)) {
+        query.userId = { $in: scopedUserIds }
+    }
 
     if (action && action !== 'ALL') {
         query.action = action
@@ -171,8 +184,16 @@ async function resolveTargetOrganization(orgId?: string, targetUserId?: string, 
         })
     }
 
-    if (!org) {
-        org = await Organization.findOne({ status: { $ne: 'deleted' } })
+    if (org && adminUserId) {
+        const adminUser = await User.findById(adminUserId).select('isSuperAdmin email role').lean()
+        const isSuper = !!adminUser?.isSuperAdmin || (adminUser as any)?.role === 'superadmin' || (adminUser?.email?.toLowerCase().trim() === 'admin@jtsmeet.com')
+        if (!isSuper) {
+            const isOwnerOrAdmin = String(org.ownerId) === String(adminUserId) ||
+                org.members?.some((m: any) => String(m.userId) === String(adminUserId) && ['owner', 'admin'].includes(m.role) && m.status === 'active')
+            if (!isOwnerOrAdmin) {
+                throw { status: 403, message: 'Forbidden: You do not have admin access to this organization' }
+            }
+        }
     }
 
     return org
@@ -303,8 +324,26 @@ export async function updateUserRole(adminUserId: string, targetUserId: string, 
 export async function updateUserStatus(adminUserId: string, targetUserId: string, status: string, orgId?: string) {
     if (!targetUserId) throw new Error('Target user ID is required')
 
+    const [adminUser, targetUser] = await Promise.all([
+        User.findById(adminUserId).select('isSuperAdmin role email').lean(),
+        User.findById(targetUserId)
+    ])
+    const isSuperAdmin = isSuperAdminUser(adminUser)
+
+    if (!isSuperAdmin && targetUser && isSuperAdminUser(targetUser)) {
+        throw new Error('Forbidden: Cannot modify a SuperAdmin account')
+    }
+
     const org = await resolveTargetOrganization(orgId, targetUserId, adminUserId)
     if (org) {
+        if (!isSuperAdmin) {
+            const isCallerOrgAdmin = String(org.ownerId) === String(adminUserId) ||
+                (Array.isArray(org.members) && org.members.some((m: any) => String(m.userId?._id || m.userId) === String(adminUserId) && ['owner', 'admin'].includes(m.role) && m.status === 'active'))
+            if (!isCallerOrgAdmin) {
+                throw new Error('Forbidden: Only organization admins can modify members')
+            }
+        }
+
         const targetUserIdStr = targetUserId.toString()
         let memberFound = false
 
@@ -324,6 +363,9 @@ export async function updateUserStatus(adminUserId: string, targetUserId: string
         }
 
         if (!memberFound) {
+            if (!isSuperAdmin) {
+                throw new Error('Forbidden: Target user is not a member of your organization')
+            }
             if (!Array.isArray(org.members)) {
                 org.members = []
             }
@@ -338,10 +380,11 @@ export async function updateUserStatus(adminUserId: string, targetUserId: string
 
         org.markModified('members')
         await org.save()
+    } else if (!isSuperAdmin) {
+        throw new Error('Forbidden: Organization context required')
     }
 
-    const targetUser = await User.findById(targetUserId)
-    if (targetUser) {
+    if (targetUser && isSuperAdmin) {
         if (status === 'active') {
             targetUser.emailVerified = true
             await targetUser.save()
@@ -559,6 +602,11 @@ export async function getOrganizationRecordings(orgId?: string) {
 
 export async function updateStorageRetentionPolicy(adminUserId: string, days: number) {
     globalRetentionPolicyDays = days
+    await PlatformSettings.findOneAndUpdate(
+        {},
+        { $set: { storageRetentionDays: days } },
+        { upsert: true, new: true }
+    ).exec()
     await logActivity(
         adminUserId,
         'STORAGE_POLICY_CHANGE',
@@ -572,8 +620,35 @@ export async function deleteRecording(adminUserId: string, meetingId: string) {
         ? { $or: [{ meetingId }, { _id: new Types.ObjectId(meetingId) }] }
         : { meetingId }
 
-    const meeting = await Meeting.findOne(filter)
-    if (meeting && meeting.recordingUrl) {
+    const [meeting, adminUser] = await Promise.all([
+        Meeting.findOne(filter),
+        User.findById(adminUserId).select('isSuperAdmin role email').lean()
+    ])
+    if (!meeting) {
+        throw new Error('Meeting recording not found')
+    }
+
+    if (!isSuperAdminUser(adminUser)) {
+        const isHost = String(meeting.host) === String(adminUserId)
+        let isOrgAdmin = false
+        if (meeting.organizationId) {
+            const adminObjId = Types.ObjectId.isValid(adminUserId) ? new Types.ObjectId(adminUserId) : null
+            if (adminObjId) {
+                isOrgAdmin = Boolean(await Organization.exists({
+                    _id: meeting.organizationId,
+                    $or: [
+                        { ownerId: adminObjId },
+                        { members: { $elemMatch: { userId: adminObjId, role: { $in: ['owner', 'admin'] }, status: 'active' } } }
+                    ]
+                }))
+            }
+        }
+        if (!isHost && !isOrgAdmin) {
+            throw new Error('Forbidden: You do not have permission to delete this recording')
+        }
+    }
+
+    if (meeting.recordingUrl) {
         try {
             // Delete physical local file from uploads directory if exists
             if (meeting.recordingUrl.startsWith('/uploads/')) {
@@ -705,14 +780,32 @@ export async function updateTenantStatus(adminUserId: string, orgId: string, sta
     return org
 }
 
-export async function updateTenantQuota(adminUserId: string, orgId: string, payload: { planTier?: 'free' | 'starter' | 'enterprise'; maxSeats?: number; maxStorageGb?: number }) {
+export async function updateTenantQuota(adminUserId: string, orgId: string, payload: { planTier?: string; maxSeats?: number; maxStorageGb?: number }) {
     const updateData: any = {}
-    if (payload.planTier) updateData.planTier = payload.planTier
+    if (payload.planTier) {
+        const slug = payload.planTier.toLowerCase().trim()
+        updateData.planTier = slug
+        if (!payload.maxSeats || !payload.maxStorageGb) {
+            const plan = await getPlanByPlanId(slug).catch(() => null)
+            if (plan?.limits) {
+                if (!payload.maxSeats) updateData.maxSeats = plan.limits.maxSeats
+                if (!payload.maxStorageGb) updateData.maxStorageGb = plan.limits.maxStorageGb
+            }
+        }
+    }
     if (payload.maxSeats) updateData.maxSeats = payload.maxSeats
     if (payload.maxStorageGb) updateData.maxStorageGb = payload.maxStorageGb
 
     const org = await Organization.findByIdAndUpdate(orgId, { $set: updateData }, { new: true })
     if (!org) throw new Error('Organization not found')
+
+    try {
+        await Meeting.updateMany(
+            { organizationId: org._id },
+            { $set: { planTier: org.planTier } }
+        ).exec()
+    } catch (_) {}
+
     await logActivity(adminUserId, 'TENANT_QUOTA_UPDATE', `Updated plan & quota for organization "${org.name}"`)
     return org
 }
@@ -806,18 +899,46 @@ export async function getPlatformSettings() {
     return settings
 }
 
+const ALLOWED_PLATFORM_SETTINGS_KEYS = [
+    'forceE2EE', 'allowGuestAccess', 'defaultScreenShare', 'mandatoryWatermark',
+    'waitingRoomDefault', 'maintenanceMode', 'maintenanceNotice',
+    'aiGlobalEnabled', 'aiProvider', 'aiMaxTokensPerCall', 'aiDailyQuotaPerTenant', 'aiAllowFreeTier',
+    'ipWhitelistEnabled', 'allowedIpRanges', 'geoBlockEnabled', 'blockedCountries', 'enforceIpOnAdminOnly',
+    'storageRetentionDays', 'autoPurgeRecordings', 'storageProvider', 'storageBucketName',
+    'smtpEnabled', 'smtpHost', 'smtpPort', 'smtpSecure', 'smtpUser', 'smtpPass', 'smtpFrom',
+    'smsGatewayEnabled', 'smsProvider'
+]
+
 export async function updatePlatformSettings(adminUserId: string, updateData: Record<string, any>) {
+    const sanitizedUpdate: Record<string, any> = {}
+    for (const key of ALLOWED_PLATFORM_SETTINGS_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(updateData, key) && updateData[key] !== undefined) {
+            sanitizedUpdate[key] = updateData[key]
+        }
+    }
+
     const settings = await PlatformSettings.findOneAndUpdate(
         { key: 'global_config' },
-        { $set: updateData },
+        { $set: sanitizedUpdate },
         { new: true, upsert: true }
     )
 
     await logActivity(adminUserId, 'PLATFORM_POLICY_UPDATE', `Updated global platform policies & governance configuration`)
 
     const io = getIO()
-    if (io) {
-        io.emit('platform:policies-updated', settings)
+    if (io && settings) {
+        io.emit('platform:policies-updated', {
+            aiGlobalEnabled: settings.aiGlobalEnabled,
+            aiAllowFreeTier: settings.aiAllowFreeTier,
+            maintenanceMode: settings.maintenanceMode,
+            maintenanceNotice: settings.maintenanceNotice,
+            forceE2EE: settings.forceE2EE,
+            allowGuestAccess: settings.allowGuestAccess,
+            defaultScreenShare: settings.defaultScreenShare,
+            mandatoryWatermark: settings.mandatoryWatermark,
+            waitingRoomDefault: settings.waitingRoomDefault,
+            storageRetentionDays: settings.storageRetentionDays
+        })
     }
 
     return settings
@@ -959,22 +1080,44 @@ export async function purgeExpiredRecordings(adminUserId: string, retentionDaysO
     const retentionDays = retentionDaysOverride !== undefined ? retentionDaysOverride : (settings.storageRetentionDays || 60)
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
 
-    // Find and update meetings older than retention policy
+    // Find meetings older than retention policy and delete local recording files if stored on disk
+    const expiredMeetings = await Meeting.find({
+        createdAt: { $lt: cutoffDate },
+        status: 'ended',
+        isRecordingPurged: { $ne: true }
+    }).select('_id recordingUrl').lean().exec()
+
+    let freedBytes = 0
+    const uploadsDir = path.join(process.cwd(), 'uploads')
+    for (const m of expiredMeetings) {
+        if (m.recordingUrl && typeof m.recordingUrl === 'string' && m.recordingUrl.includes('/uploads/')) {
+            try {
+                const fileName = path.basename(m.recordingUrl.split('?')[0])
+                const filePath = path.join(uploadsDir, fileName)
+                if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {
+                    const stat = fs.statSync(filePath)
+                    freedBytes += stat.size
+                    fs.unlinkSync(filePath)
+                }
+            } catch (_) {}
+        }
+    }
+
     const purgeResult = await Meeting.updateMany(
         {
-            createdAt: { $lt: cutoffDate },
-            status: 'ended'
+            _id: { $in: expiredMeetings.map((m) => m._id) }
         },
         {
             $set: {
                 isRecordingPurged: true,
-                recordingPurgedAt: new Date()
+                recordingPurgedAt: new Date(),
+                recordingUrl: ''
             }
         }
     ).exec()
 
     const purgedCount = purgeResult.modifiedCount || 0
-    const estimatedFreedMb = Math.round(purgedCount * 45.2)
+    const estimatedFreedMb = Math.round((freedBytes / (1024 * 1024)) * 100) / 100
 
     await logActivity(
         adminUserId,
@@ -1022,8 +1165,14 @@ export async function exportAuditLogs(adminUserId: string, format = 'csv', start
         }
     }
 
-    // RFC-4180 CSV Export
-    const escapeCsv = (val: any) => `"${String(val || '').replace(/"/g, '""')}"`
+    // RFC-4180 CSV Export with formula-injection neutralization
+    const escapeCsv = (val: any) => {
+        let str = String(val ?? '')
+        if (/^[=+\-@\t\r]/.test(str)) {
+            str = `'${str}`
+        }
+        return `"${str.replace(/"/g, '""')}"`
+    }
     const header = ['"Event ID"', '"Timestamp (UTC)"', '"Action Category"', '"Actor Name"', '"Actor Email"', '"IP Address"', '"Details & Parameters"'].join(',')
 
     const rows = logs.map(log => {

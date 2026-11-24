@@ -37,6 +37,8 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
     const streamRef = useRef<MediaStream | null>(null)
     const audioCtxRef = useRef<AudioContext | null>(null)
     const animFrameRef = useRef<number | null>(null)
+    const isCameraOnRef = useRef(isCameraOn)
+    isCameraOnRef.current = isCameraOn
 
     // Socket listener for approval/denial and host presence
     useEffect(() => {
@@ -57,7 +59,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
             // Stop preview stream before moving into room
             stopMediaStream()
             try {
-                if (!isCameraOn) {
+                if (!isCameraOnRef.current) {
                     sessionStorage.setItem('jts_initial_camera_off', 'true')
                 } else {
                     sessionStorage.removeItem('jts_initial_camera_off')

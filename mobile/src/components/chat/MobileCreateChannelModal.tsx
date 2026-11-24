@@ -52,11 +52,9 @@ export const MobileCreateChannelModal: React.FC<MobileCreateChannelModalProps> =
   onClose,
   onChannelCreated,
 }) => {
-  // CRITICAL: Return null immediately when modal is not open
-  if (!isOpen) return null;
-
   // Intercept Android hardware back button
   useEffect(() => {
+    if (!isOpen) return;
     let handle: any = null;
     try {
       CapacitorApp.addListener('backButton', () => {
@@ -68,7 +66,7 @@ export const MobileCreateChannelModal: React.FC<MobileCreateChannelModalProps> =
     return () => {
       handle?.remove();
     };
-  }, [onClose]);
+  }, [isOpen, onClose]);
 
   const [activeTab, setActiveTab] = useState<'channel' | 'member'>('channel');
 
@@ -95,7 +93,7 @@ export const MobileCreateChannelModal: React.FC<MobileCreateChannelModalProps> =
 
   // Fetch real org and teams on open
   useEffect(() => {
-    if (!token) return;
+    if (!isOpen || !token) return;
     const fetchOrgAndTeams = async () => {
       try {
         const orgRes = await fetch(`${API_BASE}/api/organization/mine`, {
@@ -127,7 +125,9 @@ export const MobileCreateChannelModal: React.FC<MobileCreateChannelModalProps> =
       } catch (_) {}
     };
     fetchOrgAndTeams();
-  }, [token]);
+  }, [isOpen, token]);
+
+  if (!isOpen) return null;
 
   // Clean and sanitize channel slug
   const cleanName = channelName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '');
@@ -203,55 +203,57 @@ export const MobileCreateChannelModal: React.FC<MobileCreateChannelModalProps> =
     e.preventDefault();
     const cleanEmail = inviteEmail.trim();
     if (!cleanEmail) {
-      setInviteFeedback('Please enter an email address or user ID.');
+      setInviteFeedback('Please enter an email address.');
+      return;
+    }
+
+    if (!token || !activeOrgId) {
+      setInviteSuccess(false);
+      setInviteFeedback('Please sign in and select an active organization first.');
       return;
     }
 
     setIsSubmitting(true);
+    setInviteSuccess(false);
     setInviteFeedback('');
 
-    if (token && activeOrgId) {
-      try {
-        const res = await fetch(`${API_BASE}/api/organization/${activeOrgId}/invite`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            email: cleanEmail,
-            role: inviteRole,
-            teamId: selectedTeamId || undefined,
-          }),
-        });
+    try {
+      const res = await fetch(`${API_BASE}/api/organization/invite`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          organizationId: activeOrgId,
+          email: cleanEmail,
+          role: inviteRole,
+        }),
+      });
 
-        if (res.ok) {
-          setInviteSuccess(true);
-          setInviteFeedback(`Invitation sent successfully to ${cleanEmail}!`);
-        } else {
-          const err = await res.json().catch(() => ({}));
-          setInviteFeedback(err.message || 'Invitation sent! (Pending verification)');
-          setInviteSuccess(true);
-        }
-      } catch (_) {
+      if (res.ok) {
         setInviteSuccess(true);
-        setInviteFeedback(`Invitation sent to ${cleanEmail}!`);
+        setInviteFeedback(`Invitation sent successfully to ${cleanEmail}!`);
+        setTimeout(() => {
+          setInviteSuccess(false);
+          setInviteEmail('');
+          setInviteFeedback('');
+          onClose();
+        }, 1800);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setInviteSuccess(false);
+        setInviteFeedback(err.message || 'Failed to invite member.');
       }
-    } else {
-      setInviteSuccess(true);
-      setInviteFeedback(`Invitation sent to ${cleanEmail}!`);
-    }
-
-    setIsSubmitting(false);
-    setTimeout(() => {
+    } catch (_) {
       setInviteSuccess(false);
-      setInviteEmail('');
-      setInviteFeedback('');
-      onClose();
-    }, 1800);
+      setInviteFeedback('Network error sending invitation. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const inviteLink = `${window.location.origin}/join-org?orgId=${activeOrgId || 'general'}`;
+  const inviteLink = `https://meet.jtsmiddleeast.com/join-org?orgId=${activeOrgId || 'general'}`;
 
   const handleCopyInviteLink = () => {
     if (navigator.clipboard) {

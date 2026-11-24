@@ -1,10 +1,12 @@
 import { Response } from 'express'
 import fs from 'fs'
 import path from 'path'
+import { Types } from 'mongoose'
 import { AuthRequest } from '../../middleware/authMiddleware'
 import { Clip } from './clip.model'
+import { Channel } from '../channel/channel.model'
 import { sendError, sendSuccess } from '../../utils/responseHelper'
-import { Organization } from '../organization/organization.model'
+import { getEffectivePlanForUser, getStorageUsedBytes } from '../plan/planEntitlements'
 
 export class ClipController {
     static uploadClip = async (req: AuthRequest & { file?: Express.Multer.File }, res: Response) => {
@@ -19,24 +21,23 @@ export class ClipController {
                 return sendError(res, 400, 'No video file provided')
             }
 
-            const { title, duration, channelId, recipientId } = req.body
+            const { title, duration, channelId, recipientId, organizationId } = req.body
             const durationSec = Number(duration) || 0
 
-            // Check plan limits (Free: max 120s & 3 clips/month; Pro/Enterprise: 600s & unlimited)
-            let userPlan = 'free'
-            const userOrg = await Organization.findOne({
-                $or: [{ ownerId: userId }, { 'members.userId': userId }]
-            }).lean()
-            if (userOrg && userOrg.planTier) {
-                userPlan = userOrg.planTier.toLowerCase()
-            }
+            const effectivePlan = await getEffectivePlanForUser(userId, organizationId)
+            const isPaid = effectivePlan.isPaid
 
-            const isPaid = userPlan === 'pro' || userPlan === 'enterprise'
+            const maxBytes = effectivePlan.limits.maxStorageGb * 1024 * 1024 * 1024
+            const usedBytes = await getStorageUsedBytes(userId, organizationId)
+            if (usedBytes + file.size > maxBytes) {
+                try { fs.unlinkSync(file.path) } catch (_) { }
+                return sendError(res, 403, `Cloud storage quota (${effectivePlan.limits.maxStorageGb} GB) exceeded for your ${effectivePlan.planTier.toUpperCase()} plan.`)
+            }
 
             if (!isPaid) {
                 if (durationSec > 125) { // 2 mins with small buffer
                     // cleanup uploaded file
-                    try { fs.unlinkSync(file.path) } catch (_) {}
+                    try { fs.unlinkSync(file.path) } catch (_) { }
                     return sendError(res, 403, 'Free tier clips are limited to 2 minutes. Upgrade to Pro or Enterprise for up to 10 minutes HD recording.')
                 }
 
@@ -49,12 +50,12 @@ export class ClipController {
                     createdAt: { $gte: startOfMonth }
                 })
                 if (monthlyCount >= 3) {
-                    try { fs.unlinkSync(file.path) } catch (_) {}
+                    try { fs.unlinkSync(file.path) } catch (_) { }
                     return sendError(res, 403, 'Free tier limit reached (3 clips/month). Upgrade to Pro or Enterprise for unlimited Zoom Clips.')
                 }
             } else {
                 if (durationSec > 610) {
-                    try { fs.unlinkSync(file.path) } catch (_) {}
+                    try { fs.unlinkSync(file.path) } catch (_) { }
                     return sendError(res, 400, 'Video clips exceed maximum length of 10 minutes.')
                 }
             }
@@ -84,6 +85,29 @@ export class ClipController {
     static getClip = async (req: AuthRequest, res: Response) => {
         try {
             const { clipId } = req.params
+            const userId = req.userId
+            if (!clipId || !Types.ObjectId.isValid(String(clipId))) {
+                return sendError(res, 400, 'Invalid clip ID')
+            }
+            const existing = await Clip.findById(clipId).lean()
+            if (!existing) {
+                return sendError(res, 404, 'Video clip not found')
+            }
+
+            const isSender = existing.senderId && String(existing.senderId) === String(userId)
+            const isRecipient = existing.recipientId && String(existing.recipientId) === String(userId)
+            let isChannelMember = false
+            if (!isSender && !isRecipient && existing.channelId) {
+                const channel = await Channel.findById(existing.channelId).select('ownerId members.userId').lean()
+                if (channel) {
+                    isChannelMember = String(channel.ownerId) === String(userId) ||
+                        (channel.members || []).some((m: any) => String(m.userId) === String(userId))
+                }
+            }
+            if (!isSender && !isRecipient && !isChannelMember) {
+                return sendError(res, 403, 'Forbidden: You do not have access to this video clip')
+            }
+
             const clip = await Clip.findByIdAndUpdate(
                 clipId,
                 { $inc: { views: 1 } },
@@ -91,10 +115,6 @@ export class ClipController {
             )
                 .populate('senderId', 'fullName email profileImage')
                 .lean()
-
-            if (!clip) {
-                return sendError(res, 404, 'Video clip not found')
-            }
 
             return sendSuccess(res, clip)
         } catch (error: any) {
@@ -135,7 +155,7 @@ export class ClipController {
             if (clip.videoUrl) {
                 const filePath = path.join(process.cwd(), clip.videoUrl.replace(/^\//, ''))
                 if (fs.existsSync(filePath)) {
-                    try { fs.unlinkSync(filePath) } catch (_) {}
+                    try { fs.unlinkSync(filePath) } catch (_) { }
                 }
             }
 

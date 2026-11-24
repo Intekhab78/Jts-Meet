@@ -93,6 +93,7 @@ class PaymentService {
         }
 
         const { stripe } = await this.getStripeClient()
+        const planCurrency = (plan.currency || 'USD').toUpperCase()
         const price = billingCycle === 'yearly' ? plan.priceYearly : plan.priceMonthly
         const amountCents = Math.round(price * 100)
 
@@ -106,7 +107,7 @@ class PaymentService {
             line_items: [
                 {
                     price_data: {
-                        currency: 'usd',
+                        currency: planCurrency.toLowerCase(),
                         product_data: {
                             name: `JTS-Meet ${plan.name} Plan (${billingCycle})`,
                             description: `Upgrade ${org.name} to ${plan.name} (${plan.limits.maxSeats} seats, ${plan.limits.maxStorageGb} GB cloud recording)`
@@ -136,7 +137,7 @@ class PaymentService {
             billingCycle,
             provider: 'stripe',
             amount: price,
-            currency: 'USD',
+            currency: planCurrency,
             status: 'pending',
             orderId: session.id,
             customerEmail: user.email,
@@ -157,13 +158,10 @@ class PaymentService {
     public async handleStripeWebhook(signature: string, rawBody: Buffer): Promise<{ received: boolean; event: string }> {
         const { stripe, webhookSecret } = await this.getStripeClient()
 
-        let event: any
-        if (webhookSecret) {
-            event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret)
-        } else {
-            // In dev without secret, parse JSON payload safely
-            event = JSON.parse(rawBody.toString('utf8'))
+        if (!webhookSecret) {
+            throw new Error('Stripe webhook secret is not configured. Rejecting unverified webhook.')
         }
+        const event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret)
 
         console.log(`[PaymentService][Stripe] Webhook event received: ${event.type}`)
 
@@ -220,9 +218,10 @@ class PaymentService {
         }
 
         const { razorpay, keyId } = await this.getRazorpayClient()
-        const priceUsd = billingCycle === 'yearly' ? plan.priceYearly : plan.priceMonthly
-        const exchangeRate = 83
-        const amountInr = Math.round(priceUsd * exchangeRate)
+        const planCurrency = (plan.currency || 'USD').toUpperCase()
+        const rawPrice = billingCycle === 'yearly' ? plan.priceYearly : plan.priceMonthly
+        const exchangeRate = planCurrency === 'INR' ? 1 : 83
+        const amountInr = Math.round(rawPrice * exchangeRate)
         const amountPaise = amountInr * 100
 
         const receipt = `rcpt_${Date.now().toString().slice(-8)}`
@@ -235,7 +234,8 @@ class PaymentService {
                 userId,
                 planId,
                 billingCycle,
-                priceUsd: String(priceUsd),
+                rawPrice: String(rawPrice),
+                planCurrency,
                 exchangeRate: String(exchangeRate)
             }
         })
@@ -264,7 +264,8 @@ class PaymentService {
                 razorpayOrderId: order.id,
                 amountPaise,
                 amountInr,
-                priceUsd,
+                rawPrice,
+                planCurrency,
                 exchangeRate
             }
         })
@@ -301,18 +302,24 @@ class PaymentService {
             throw new Error('Invalid payment signature. Verification failed.')
         }
 
+        // Verify transaction exists and matches the requested organizationId & planId
+        const existingTx = await PaymentTransaction.findOne({ orderId })
+        if (!existingTx) {
+            throw new Error('Payment order record not found.')
+        }
+        if (String(existingTx.organizationId) !== String(organizationId) || existingTx.planId !== planId) {
+            throw new Error('Order mismatch: Transaction does not match requested organization or plan.')
+        }
+        if (existingTx.status === 'completed') {
+            throw new Error('Payment order has already been processed.')
+        }
+
         // Update transaction log
-        await PaymentTransaction.findOneAndUpdate(
-            { orderId },
-            {
-                $set: {
-                    status: 'completed',
-                    paymentId,
-                    signature,
-                    completedAt: new Date()
-                }
-            }
-        )
+        existingTx.status = 'completed'
+        existingTx.paymentId = paymentId
+        existingTx.signature = signature
+        existingTx.completedAt = new Date()
+        await existingTx.save()
 
         // Upgrade organization plan
         const upgradedOrg = await upgradeOrganizationPlan(organizationId, userId, planId, paymentId)

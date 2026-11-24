@@ -1,7 +1,10 @@
+import crypto from 'crypto'
+import jwt from 'jsonwebtoken'
 import { WebSocketServer, WebSocket } from 'ws'
 import { IncomingMessage } from 'http'
 import { Socket } from 'net'
 import { getIO } from '../socket'
+import { JWT_SECRET } from '../config'
 
 interface ActivePstnCall {
     callSid: string
@@ -23,7 +26,44 @@ class TelephonyMediaService {
 
     private setupWebSocketServer() {
         this.wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-            const url = new URL(req.url || '', `http://${req.headers.host}`)
+            let url: URL
+            try {
+                url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`)
+            } catch {
+                ws.close(4001, 'Unauthorized')
+                return
+            }
+
+            const streamToken = url.searchParams.get('streamToken') || ''
+            const expectedStreamSecret = process.env.TWILIO_STREAM_SECRET || process.env.TWILIO_AUTH_TOKEN || ''
+            const authHeader = req.headers['authorization']
+            const bearerToken =
+                url.searchParams.get('token') ||
+                (typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '')
+
+            let authorized = false
+            if (streamToken && expectedStreamSecret) {
+                const providedBuf = Buffer.from(streamToken)
+                const expectedBuf = Buffer.from(expectedStreamSecret)
+                if (providedBuf.length === expectedBuf.length && crypto.timingSafeEqual(providedBuf, expectedBuf)) {
+                    authorized = true
+                }
+            }
+
+            if (!authorized && bearerToken) {
+                try {
+                    jwt.verify(bearerToken, JWT_SECRET)
+                    authorized = true
+                } catch {
+                    authorized = false
+                }
+            }
+
+            if (!authorized) {
+                ws.close(4001, 'Unauthorized')
+                return
+            }
+
             const pathParts = url.pathname.split('/')
             const meetingId = pathParts[pathParts.length - 1] || 'default'
             const caller = url.searchParams.get('caller') || 'PSTN Caller'

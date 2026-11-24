@@ -23,7 +23,8 @@ export function useSpeakingDetector({
 
     let audioCtx: AudioContext | null = null;
     let analyser: AnalyserNode | null = null;
-    let animFrame: number | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let clonedTrack: MediaStreamTrack | null = null;
 
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -32,7 +33,8 @@ export function useSpeakingDetector({
       if (audioTracks.length === 0) return;
 
       audioCtx = new AudioCtx();
-      const rawTrackStream = new MediaStream([audioTracks[0].clone()]);
+      clonedTrack = audioTracks[0].clone();
+      const rawTrackStream = new MediaStream([clonedTrack]);
       const source = audioCtx.createMediaStreamSource(rawTrackStream);
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 128;
@@ -52,7 +54,7 @@ export function useSpeakingDetector({
         if (isMuted) {
           if (avg > 24) {
             speakingFrames++;
-            if (speakingFrames > 8) {
+            if (speakingFrames > 2) {
               setShowMutedSpeakingToast(true);
               if (mutedToastTimeoutRef.current) clearTimeout(mutedToastTimeoutRef.current);
               mutedToastTimeoutRef.current = setTimeout(() => {
@@ -76,7 +78,7 @@ export function useSpeakingDetector({
             });
           } else {
             quietFrames++;
-            if (quietFrames > 14) {
+            if (quietFrames > 4) {
               setSpeakingUsers((prev) => {
                 if (prev['local']) {
                   socketRef.current?.emit('meeting:speaking', { meetingId, isSpeaking: false });
@@ -87,14 +89,14 @@ export function useSpeakingDetector({
             }
           }
         }
-        animFrame = requestAnimationFrame(checkVolume);
       };
 
-      animFrame = requestAnimationFrame(checkVolume);
+      pollTimer = setInterval(checkVolume, 100);
     } catch (_) {}
 
     return () => {
-      if (animFrame) cancelAnimationFrame(animFrame);
+      if (pollTimer) clearInterval(pollTimer);
+      try { clonedTrack?.stop(); } catch (_) {}
       if (audioCtx) audioCtx.close().catch(() => {});
     };
   }, [localStream, isMuted, meetingId, socketRef]);

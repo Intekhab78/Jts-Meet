@@ -159,6 +159,41 @@ button:active {
   50% { height: 14px; }
 }
 
+@keyframes floatUpAndFade {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.7);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(-30px) scale(1.15);
+  }
+  80% {
+    opacity: 0.85;
+    transform: translateY(-240px) scale(0.95);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-340px) scale(0.75);
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.06);
+  }
+}
+
 @keyframes pulseRing {
   0% { transform: scale(0.95); opacity: 0.8; }
   50% { transform: scale(1.18); opacity: 0.35; }

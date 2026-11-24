@@ -10,9 +10,6 @@ export async function authorizeMeetingJoin(
     const baseMeetingId = meetingId.includes('__sub_') ? meetingId.split('__sub_')[0] : meetingId
 
     if (isGuest) {
-        if (baseMeetingId.startsWith('room-')) {
-            return true
-        }
         return !isPending && (guestMeetingId === meetingId || guestMeetingId === baseMeetingId)
     }
 

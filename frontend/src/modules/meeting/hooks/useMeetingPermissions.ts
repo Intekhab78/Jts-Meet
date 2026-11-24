@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 
 interface UseMeetingPermissionsProps {
     meetingId: string
@@ -19,6 +19,7 @@ interface UseMeetingPermissionsProps {
     showWhiteboard: boolean
     backstageUserIds: string[]
     currentPlanTier: string
+    canAccessWhiteboard?: boolean
     canManageRef: React.MutableRefObject<boolean>
 }
 
@@ -41,9 +42,25 @@ export const useMeetingPermissions = ({
     showWhiteboard,
     backstageUserIds,
     currentPlanTier,
+    canAccessWhiteboard = true,
     canManageRef
 }: UseMeetingPermissionsProps) => {
     const activeRoomKey = meetingId || meetingInput.trim()
+
+    const [serverAssignedIsHost, setServerAssignedIsHost] = useState<boolean | null>(null)
+
+    useEffect(() => {
+        if (!socket) return
+        const handleMeetingRole = (payload: { role?: string; isHost?: boolean }) => {
+            if (typeof payload?.isHost === 'boolean') {
+                setServerAssignedIsHost(payload.isHost)
+            }
+        }
+        socket.on('meeting:role', handleMeetingRole)
+        return () => {
+            socket.off('meeting:role', handleMeetingRole)
+        }
+    }, [socket])
 
     const isRoomCreator = useMemo(() => {
         try {
@@ -54,15 +71,15 @@ export const useMeetingPermissions = ({
     }, [activeRoomKey])
 
     const isLocalHost = useMemo(() => {
+        if (serverAssignedIsHost !== null) {
+            return serverAssignedIsHost
+        }
         if (meetingInfo && meetingInfo.host) {
             return (meetingInfo.host._id === localUserId || meetingInfo.host === localUserId)
         }
-        // Fallback for ad-hoc generated rooms (e.g. room-xxxx):
-        // If room was created in this session, or if user is authenticated and not a guest
         if (isRoomCreator) return true
-        if (!isGuest && !meetingInfo) return true
         return false
-    }, [meetingInfo, localUserId, isRoomCreator, isGuest])
+    }, [serverAssignedIsHost, meetingInfo, localUserId, isRoomCreator])
 
     const isCoHost = coHostIds.includes(localUserId)
     const canManageParticipants = isLocalHost || isCoHost || isAdminOrOwner
@@ -89,7 +106,7 @@ export const useMeetingPermissions = ({
     }, [isWebinarAttendee, localStream, socket, meetingId, meetingInput, setIsMuted, setIsVideoOff])
 
     const canRecord = canManageParticipants || recordingAllowedUserIds.includes(localUserId)
-    const canUseWhiteboard = canManageParticipants || showWhiteboard || whiteboardAllowedUserIds.includes(localUserId)
+    const canUseWhiteboard = canAccessWhiteboard !== false && (canManageParticipants || showWhiteboard || whiteboardAllowedUserIds.includes(localUserId))
 
     // Virtual Green Room derived state
     const isCurrentUserBackstage = backstageUserIds.includes(localUserId || '')

@@ -35,6 +35,7 @@ public class MainActivity extends BridgeActivity {
     private Handler backgroundHandler;
     private HandlerThread backgroundThread;
     private boolean isCapturingScreen = false;
+    private boolean isAutoPipEnabled = false;
     private static String pendingCallDataJson = null;
     private static String lastDispatchedMeetingId = null;
     private static MainActivity activeInstance = null;
@@ -47,11 +48,6 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         activeInstance = this;
-
-        // Keep the phone screen awake during meetings
-        try {
-            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        } catch (Throwable ignored) {}
 
         // Handle incoming call if launched with call intent
         try {
@@ -69,6 +65,11 @@ public class MainActivity extends BridgeActivity {
                 }
                 if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                     neededPerms.add(android.Manifest.permission.RECORD_AUDIO);
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    neededPerms.add(android.Manifest.permission.BLUETOOTH_CONNECT);
                 }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -90,7 +91,7 @@ public class MainActivity extends BridgeActivity {
                 settings.setMediaPlaybackRequiresUserGesture(false);
                 settings.setDomStorageEnabled(true);
                 settings.setDatabaseEnabled(true);
-                settings.setAllowFileAccess(true);
+                settings.setAllowFileAccess(false);
 
             webView.addJavascriptInterface(new Object() {
                 @android.webkit.JavascriptInterface
@@ -139,20 +140,21 @@ public class MainActivity extends BridgeActivity {
                             if (audioManager == null) return;
 
                             audioManager.setMode(android.media.AudioManager.MODE_IN_COMMUNICATION);
+                            boolean handledByCommunicationDevice = false;
 
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                 java.util.List<android.media.AudioDeviceInfo> devices = audioManager.getAvailableCommunicationDevices();
                                 if ("speaker".equalsIgnoreCase(mode)) {
                                     for (android.media.AudioDeviceInfo device : devices) {
                                         if (device.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-                                            audioManager.setCommunicationDevice(device);
+                                            handledByCommunicationDevice = audioManager.setCommunicationDevice(device);
                                             break;
                                         }
                                     }
                                 } else if ("earpiece".equalsIgnoreCase(mode)) {
                                     for (android.media.AudioDeviceInfo device : devices) {
                                         if (device.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
-                                            audioManager.setCommunicationDevice(device);
+                                            handledByCommunicationDevice = audioManager.setCommunicationDevice(device);
                                             break;
                                         }
                                     }
@@ -160,17 +162,27 @@ public class MainActivity extends BridgeActivity {
                                     for (android.media.AudioDeviceInfo device : devices) {
                                         if (device.getType() == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                                             device.getType() == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET) {
-                                            audioManager.setCommunicationDevice(device);
+                                            handledByCommunicationDevice = audioManager.setCommunicationDevice(device);
                                             break;
                                         }
                                     }
                                 }
                             }
 
-                            if ("speaker".equalsIgnoreCase(mode)) {
-                                audioManager.setSpeakerphoneOn(true);
-                            } else {
-                                audioManager.setSpeakerphoneOn(false);
+                            if (!handledByCommunicationDevice) {
+                                if ("bluetooth".equalsIgnoreCase(mode)) {
+                                    audioManager.setSpeakerphoneOn(false);
+                                    audioManager.startBluetoothSco();
+                                    audioManager.setBluetoothScoOn(true);
+                                } else if ("speaker".equalsIgnoreCase(mode)) {
+                                    audioManager.setBluetoothScoOn(false);
+                                    audioManager.stopBluetoothSco();
+                                    audioManager.setSpeakerphoneOn(true);
+                                } else {
+                                    audioManager.setBluetoothScoOn(false);
+                                    audioManager.stopBluetoothSco();
+                                    audioManager.setSpeakerphoneOn(false);
+                                }
                             }
                         } catch (Throwable ignored) {}
                     });
@@ -186,6 +198,8 @@ public class MainActivity extends BridgeActivity {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                 audioManager.clearCommunicationDevice();
                             }
+                            audioManager.setBluetoothScoOn(false);
+                            audioManager.stopBluetoothSco();
                             audioManager.setSpeakerphoneOn(false);
                             audioManager.setMode(android.media.AudioManager.MODE_NORMAL);
                         } catch (Throwable ignored) {}
@@ -194,17 +208,32 @@ public class MainActivity extends BridgeActivity {
 
                 @android.webkit.JavascriptInterface
                 public void downloadFileSilently(String url, String fileName) {
+                    downloadFileSilently(url, fileName, null);
+                }
+
+                @android.webkit.JavascriptInterface
+                public void downloadFileSilently(String url, String fileName, String authToken) {
                     runOnUiThread(() -> {
                         try {
                             if (url == null || url.trim().isEmpty()) return;
-                            android.net.Uri uri = android.net.Uri.parse(url);
+                            android.net.Uri uri = android.net.Uri.parse(url.trim());
+                            String scheme = uri.getScheme();
+                            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                                showToast("Unsupported download URL");
+                                return;
+                            }
                             android.app.DownloadManager.Request request = new android.app.DownloadManager.Request(uri);
-                            
-                            String finalName = (fileName != null && !fileName.trim().isEmpty()) 
-                                ? fileName 
+                            if (authToken != null && !authToken.trim().isEmpty()) {
+                                request.addRequestHeader("Authorization", "Bearer " + authToken.trim());
+                            }
+
+                            String rawName = (fileName != null && !fileName.trim().isEmpty())
+                                ? fileName
                                 : uri.getLastPathSegment();
-                            if (finalName == null || finalName.isEmpty()) finalName = "downloaded_file";
-                            
+                            if (rawName == null || rawName.isEmpty()) rawName = "downloaded_file";
+                            String finalName = rawName.replaceAll("[^a-zA-Z0-9._-]", "_");
+                            if (finalName.isEmpty()) finalName = "downloaded_file";
+
                             request.setTitle(finalName);
                             request.setDescription("Downloading via JTS Meet");
                             request.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
@@ -218,7 +247,7 @@ public class MainActivity extends BridgeActivity {
                                 showToast("Downloading " + finalName + " to Downloads folder...");
                             }
                         } catch (Exception e) {
-                            showToast("Download started: " + e.getMessage());
+                            showToast("Download failed: " + e.getMessage());
                         }
                     });
                 }
@@ -272,6 +301,7 @@ public class MainActivity extends BridgeActivity {
                 public void startOngoingCallNotification(String meetingId, String title) {
                     runOnUiThread(() -> {
                         try {
+                            setKeepScreenOn(true);
                             Intent serviceIntent = new Intent(MainActivity.this, OngoingCallService.class);
                             serviceIntent.setAction(OngoingCallService.ACTION_START);
                             serviceIntent.putExtra(OngoingCallService.EXTRA_MEETING_ID, meetingId != null ? meetingId : "");
@@ -289,16 +319,17 @@ public class MainActivity extends BridgeActivity {
                 public void stopOngoingCallNotification() {
                     runOnUiThread(() -> {
                         try {
-                            Intent serviceIntent = new Intent(MainActivity.this, OngoingCallService.class);
-                            serviceIntent.setAction(OngoingCallService.ACTION_STOP);
-                            startService(serviceIntent);
+                            setKeepScreenOn(false);
+                            stopService(new Intent(MainActivity.this, OngoingCallService.class));
                         } catch (Throwable ignored) {}
                     });
                 }
 
                 @android.webkit.JavascriptInterface
                 public void enableAutoPip(boolean enable) {
+                    isAutoPipEnabled = enable;
                     runOnUiThread(() -> {
+                        setKeepScreenOn(enable);
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                             try {
                                 PictureInPictureParams params = new PictureInPictureParams.Builder()
@@ -510,10 +541,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onDestroy() {
         try {
+            setKeepScreenOn(false);
             setProximitySensorEnabled(false);
-            Intent stopService = new Intent(this, OngoingCallService.class);
-            stopService.setAction(OngoingCallService.ACTION_STOP);
-            startService(stopService);
+            stopService(new Intent(this, OngoingCallService.class));
         } catch (Throwable ignored) {}
         if (activeInstance == this) {
             activeInstance = null;
@@ -524,8 +554,8 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onBackPressed() {
-        // If Android 8.0+ (Oreo and above), enter native Android PiP mode on Back button!
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        // Only enter native Android PiP mode on Back button when an active meeting has enabled auto-PiP
+        if (isAutoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder();
                 Rational aspectRatio = new Rational(9, 16);
@@ -541,8 +571,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
-        // Enter PiP when home button is pressed
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        // Enter PiP when home button is pressed only during an active meeting
+        if (isAutoPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder();
                 Rational aspectRatio = new Rational(9, 16);
@@ -550,6 +580,19 @@ public class MainActivity extends BridgeActivity {
                 enterPictureInPictureMode(builder.build());
             } catch (Exception ignored) {}
         }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, android.content.res.Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        final String js = "try { if (typeof window.__onNativePiPModeChanged === 'function') { window.__onNativePiPModeChanged(" + isInPictureInPictureMode + "); } } catch (e) {}";
+        runOnUiThread(() -> {
+            if (bridge != null && bridge.getWebView() != null) {
+                try {
+                    bridge.getWebView().evaluateJavascript(js, null);
+                } catch (Exception ignored) {}
+            }
+        });
     }
 
     @Override
@@ -573,20 +616,27 @@ public class MainActivity extends BridgeActivity {
                 }
             } catch (Exception ignored) {}
 
-            final String rejectScript = String.format(
-                "try { " +
-                "  var payload = { meetingId: '%s', callerId: '%s', actionId: 'decline' }; " +
-                "  window.dispatchEvent(new CustomEvent('jts:notification-action', { detail: payload })); " +
-                "} catch (e) {} ",
-                meetingId != null ? meetingId : "",
-                intent.getStringExtra("callerId") != null ? intent.getStringExtra("callerId") : ""
-            );
-            runOnUiThread(() -> {
-                if (bridge != null && bridge.getWebView() != null) {
-                    bridge.getWebView().evaluateJavascript(rejectScript, null);
-                }
-            });
-            finish();
+            try {
+                org.json.JSONObject rejectPayload = new org.json.JSONObject();
+                rejectPayload.put("meetingId", meetingId != null ? meetingId : "");
+                rejectPayload.put("callerId", intent.getStringExtra("callerId") != null ? intent.getStringExtra("callerId") : "");
+                String rId = intent.getStringExtra("recipientId");
+                String rTok = intent.getStringExtra("rejectToken");
+                if (rId != null) rejectPayload.put("recipientId", rId);
+                if (rTok != null) rejectPayload.put("rejectToken", rTok);
+                rejectPayload.put("actionId", "decline");
+
+                final String rejectScript = "try { window.dispatchEvent(new CustomEvent('jts:notification-action', { detail: " + rejectPayload.toString() + " })); } catch (e) {}";
+                runOnUiThread(() -> {
+                    if (bridge != null && bridge.getWebView() != null) {
+                        bridge.getWebView().evaluateJavascript(rejectScript, value -> finish());
+                    } else {
+                        finish();
+                    }
+                });
+            } catch (Exception ignored) {
+                finish();
+            }
             return;
         }
 
@@ -645,43 +695,41 @@ public class MainActivity extends BridgeActivity {
             String callerAvatar = intent.getStringExtra("callerAvatar");
             String callType = intent.getStringExtra("callType");
             String callerId = intent.getStringExtra("callerId");
+            String recipientId = intent.getStringExtra("recipientId");
+            String rejectToken = intent.getStringExtra("rejectToken");
             String autoAccept = intent.getStringExtra("autoAccept");
 
+            org.json.JSONObject obj = new org.json.JSONObject();
             try {
-                org.json.JSONObject obj = new org.json.JSONObject();
                 obj.put("meetingId", meetingId);
                 obj.put("callerName", callerName != null ? callerName : "Colleague");
                 obj.put("callerAvatar", callerAvatar != null ? callerAvatar : "");
                 obj.put("callType", callType != null ? callType : "audio");
                 obj.put("callerId", callerId != null ? callerId : "");
+                if (recipientId != null) obj.put("recipientId", recipientId);
+                if (rejectToken != null) obj.put("rejectToken", rejectToken);
                 obj.put("autoAccept", "true".equals(autoAccept) ? "true" : "false");
-                obj.put("timestamp", now);
+                obj.put("timestamp", callTimestamp > 0 ? callTimestamp : now);
                 pendingCallDataJson = obj.toString();
             } catch (Exception ignored) {}
 
-            // Deduplicate: If this meetingId was already dispatched to WebView in this session, do not repeat
-            if (meetingId != null && meetingId.equals(lastDispatchedMeetingId)) {
+            // Deduplicate only non-autoAccept re-dispatches so tapping "Accept" is never dropped
+            if (!"true".equals(autoAccept) && meetingId != null && meetingId.equals(lastDispatchedMeetingId)) {
                 resetIntent(intent);
                 return;
             }
             lastDispatchedMeetingId = meetingId;
 
-            final String script = String.format(
-                "try { " +
-                "  var mId = '%s'; " +
+            final String quotedMeetingId = org.json.JSONObject.quote(meetingId);
+            final String payloadLiteral = obj.toString();
+            final String script =
+                "(function() { try { " +
+                "  var mId = " + quotedMeetingId + "; " +
                 "  if (localStorage.getItem('jts_accepted_call_' + mId) === 'true' || localStorage.getItem('jts_declined_call_' + mId) === 'true') { return; } " +
-                "  var payload = { meetingId: mId, callerName: '%s', callerAvatar: '%s', callType: '%s', callerId: '%s', autoAccept: '%s', timestamp: %d }; " +
+                "  var payload = " + payloadLiteral + "; " +
                 "  localStorage.setItem('jts_pending_notification', JSON.stringify(payload)); " +
                 "  window.dispatchEvent(new CustomEvent('jts:incoming-call-push', { detail: payload })); " +
-                "} catch (e) { console.error(e); }",
-                meetingId,
-                callerName != null ? callerName.replace("'", "\\'") : "Colleague",
-                callerAvatar != null ? callerAvatar.replace("'", "\\'") : "",
-                callType != null ? callType : "audio",
-                callerId != null ? callerId : "",
-                "true".equals(autoAccept) ? "true" : "false",
-                now
-            );
+                "} catch (e) { console.error(e); } })();";
 
             // Reset intent extras so opening the app normally does not re-trigger an old call
             resetIntent(intent);
@@ -710,16 +758,52 @@ public class MainActivity extends BridgeActivity {
                 if (activeInstance.bridge != null && activeInstance.bridge.getWebView() != null) {
                     try {
                         String mId = meetingId != null ? meetingId : "";
+                        String quotedMId = org.json.JSONObject.quote(mId);
                         String js = "try { " +
                                     "  localStorage.removeItem('jts_pending_notification'); " +
-                                    (mId.isEmpty() ? "" : "  localStorage.setItem('jts_declined_call_" + mId + "', 'true'); ") +
-                                    "  window.dispatchEvent(new CustomEvent('jts:call-declined-native', { detail: { meetingId: '" + mId + "' } })); " +
+                                    (mId.isEmpty() ? "" : "  localStorage.setItem('jts_declined_call_' + " + quotedMId + ", 'true'); ") +
+                                    "  window.dispatchEvent(new CustomEvent('jts:call-declined-native', { detail: { meetingId: " + quotedMId + " } })); " +
                                     "} catch(e) {}";
                         activeInstance.bridge.getWebView().evaluateJavascript(js, null);
                     } catch (Exception ignored) {}
                 }
             });
         }
+    }
+
+    public static void notifyCallCancelled(String meetingId) {
+        pendingCallDataJson = null;
+        lastDispatchedMeetingId = null;
+        if (activeInstance != null) {
+            if (activeInstance.getIntent() != null) {
+                activeInstance.resetIntent(activeInstance.getIntent());
+            }
+            activeInstance.runOnUiThread(() -> {
+                if (activeInstance.bridge != null && activeInstance.bridge.getWebView() != null) {
+                    try {
+                        String mId = meetingId != null ? meetingId : "";
+                        String quotedMId = org.json.JSONObject.quote(mId);
+                        String js = "try { " +
+                                    "  localStorage.removeItem('jts_pending_notification'); " +
+                                    "  window.dispatchEvent(new CustomEvent('jts:call-cancelled-native', { detail: { meetingId: " + quotedMId + " } })); " +
+                                    "} catch(e) {}";
+                        activeInstance.bridge.getWebView().evaluateJavascript(js, null);
+                    } catch (Exception ignored) {}
+                }
+            });
+        }
+    }
+
+    private void setKeepScreenOn(boolean enable) {
+        runOnUiThread(() -> {
+            try {
+                if (enable) {
+                    getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                } else {
+                    getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+            } catch (Throwable ignored) {}
+        });
     }
 
     private void resetIntent(Intent intent) {
@@ -731,6 +815,8 @@ public class MainActivity extends BridgeActivity {
             intent.removeExtra("callerAvatar");
             intent.removeExtra("callType");
             intent.removeExtra("callerId");
+            intent.removeExtra("recipientId");
+            intent.removeExtra("rejectToken");
             intent.removeExtra("autoAccept");
             intent.removeExtra("callTimestamp");
         } catch (Exception ignored) {}
@@ -767,7 +853,8 @@ public class MainActivity extends BridgeActivity {
             activeInstance.runOnUiThread(() -> {
                 if (activeInstance.bridge != null && activeInstance.bridge.getWebView() != null) {
                     try {
-                        String js = "try { window.dispatchEvent(new CustomEvent('jts:native-hangup', { detail: { meetingId: '" + (meetingId != null ? meetingId : "") + "' } })); } catch(e) {}";
+                        String quotedMId = org.json.JSONObject.quote(meetingId != null ? meetingId : "");
+                        String js = "try { window.dispatchEvent(new CustomEvent('jts:native-hangup', { detail: { meetingId: " + quotedMId + " } })); } catch(e) {}";
                         activeInstance.bridge.getWebView().evaluateJavascript(js, null);
                     } catch (Exception ignored) {}
                 }
@@ -779,8 +866,5 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         activeInstance = this;
-        try {
-            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        } catch (Throwable ignored) {}
     }
 }

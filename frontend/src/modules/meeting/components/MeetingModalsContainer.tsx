@@ -1,33 +1,34 @@
-import React from 'react'
+import React, { Suspense, useMemo } from 'react'
 import {
     IconCheck,
     IconMail,
     IconBuilding
 } from '../../../components/common/Icons'
-import { MeetingWhiteboard } from './MeetingWhiteboard'
-import { MeetingPollsModal } from './MeetingPollsModal'
-import { DeviceSettingsModal } from './DeviceSettingsModal'
-import { MeetingSummaryModal } from './MeetingSummaryModal'
-import { KeyboardShortcutsModal } from './KeyboardShortcutsModal'
-import { TalkTimeAnalyticsModal } from './TalkTimeAnalyticsModal'
-import { LayoutSwitcherModal } from './LayoutSwitcherModal'
-import { VirtualBackgroundModal } from './VirtualBackgroundModal'
-import { E2EESecurityModal } from './E2EESecurityModal'
 import { e2eeService } from '../services/e2ee.service'
-import { DialInModal } from './DialInModal'
-import { BreakoutRoomsModal } from './BreakoutRoomsModal'
 import { BreakoutActiveBanner } from './BreakoutActiveBanner'
 import { NetworkStatusBanners } from './NetworkStatusBanners'
 import { ReactionsFloatingLayer } from './ReactionsFloatingLayer'
-import { MinutesOfMeetingModal } from './MinutesOfMeetingModal'
-import { InviteParticipantsModal } from './InviteParticipantsModal'
-import { LiveStreamModal } from './LiveStreamModal'
-import { UpgradePlanModal } from './UpgradePlanModal'
-import { FreePlanLimitModal } from './FreePlanLimitModal'
-import { MeetingAttendanceModal } from './MeetingAttendanceModal'
-import { TakeoverPresentationModal } from './TakeoverPresentationModal'
-import { ScreenPickerModal } from './ScreenPickerModal'
 import { parseJwt } from '../utils/meetingHelpers'
+
+const MeetingWhiteboard = React.lazy(() => import('./MeetingWhiteboard').then(m => ({ default: m.MeetingWhiteboard })))
+const MeetingPollsModal = React.lazy(() => import('./MeetingPollsModal').then(m => ({ default: m.MeetingPollsModal })))
+const DeviceSettingsModal = React.lazy(() => import('./DeviceSettingsModal').then(m => ({ default: m.DeviceSettingsModal })))
+const MeetingSummaryModal = React.lazy(() => import('./MeetingSummaryModal').then(m => ({ default: m.MeetingSummaryModal })))
+const KeyboardShortcutsModal = React.lazy(() => import('./KeyboardShortcutsModal').then(m => ({ default: m.KeyboardShortcutsModal })))
+const TalkTimeAnalyticsModal = React.lazy(() => import('./TalkTimeAnalyticsModal').then(m => ({ default: m.TalkTimeAnalyticsModal })))
+const LayoutSwitcherModal = React.lazy(() => import('./LayoutSwitcherModal').then(m => ({ default: m.LayoutSwitcherModal })))
+const VirtualBackgroundModal = React.lazy(() => import('./VirtualBackgroundModal').then(m => ({ default: m.VirtualBackgroundModal })))
+const E2EESecurityModal = React.lazy(() => import('./E2EESecurityModal').then(m => ({ default: m.E2EESecurityModal })))
+const DialInModal = React.lazy(() => import('./DialInModal').then(m => ({ default: m.DialInModal })))
+const BreakoutRoomsModal = React.lazy(() => import('./BreakoutRoomsModal').then(m => ({ default: m.BreakoutRoomsModal })))
+const MinutesOfMeetingModal = React.lazy(() => import('./MinutesOfMeetingModal').then(m => ({ default: m.MinutesOfMeetingModal })))
+const InviteParticipantsModal = React.lazy(() => import('./InviteParticipantsModal').then(m => ({ default: m.InviteParticipantsModal })))
+const LiveStreamModal = React.lazy(() => import('./LiveStreamModal').then(m => ({ default: m.LiveStreamModal })))
+const UpgradePlanModal = React.lazy(() => import('./UpgradePlanModal').then(m => ({ default: m.UpgradePlanModal })))
+const FreePlanLimitModal = React.lazy(() => import('./FreePlanLimitModal').then(m => ({ default: m.FreePlanLimitModal })))
+const MeetingAttendanceModal = React.lazy(() => import('./MeetingAttendanceModal').then(m => ({ default: m.MeetingAttendanceModal })))
+const TakeoverPresentationModal = React.lazy(() => import('./TakeoverPresentationModal').then(m => ({ default: m.TakeoverPresentationModal })))
+const ScreenPickerModal = React.lazy(() => import('./ScreenPickerModal').then(m => ({ default: m.ScreenPickerModal })))
 
 export interface MeetingModalsContainerProps {
     showWhiteboard: boolean
@@ -294,15 +295,25 @@ export function MeetingModalsContainer({
     handleScreenPickerClosed,
     handleScreenSourceSelected
 }: MeetingModalsContainerProps) {
+    const breakoutParticipants = useMemo(() => [
+        { id: localUserId || 'me', name: `${myDisplayName} (You)` },
+        ...participants.map(p => ({
+            id: p,
+            name: getUserDisplayName(p)
+        }))
+    ], [localUserId, myDisplayName, participants, getUserDisplayName])
+
     return (
-        <>
+        <Suspense fallback={null}>
             {/* Collaborative Whiteboard Canvas */}
-            <MeetingWhiteboard
-                isOpen={showWhiteboard}
-                onClose={() => setShowWhiteboard(false)}
-                meetingId={meetingId || meetingInput}
-                socket={socket}
-            />
+            {showWhiteboard && (
+                <MeetingWhiteboard
+                    isOpen={showWhiteboard}
+                    onClose={() => setShowWhiteboard(false)}
+                    meetingId={meetingId || meetingInput}
+                    socket={socket}
+                />
+            )}
 
             {/* In-Call Live Polls Modal */}
             <MeetingPollsModal
@@ -513,21 +524,17 @@ export function MeetingModalsContainer({
             />
 
             {/* Breakout Rooms Management Modal */}
-            <BreakoutRoomsModal
-                isOpen={isBreakoutModalOpen}
-                onClose={() => setIsBreakoutModalOpen(false)}
-                meetingId={meetingId || meetingInput.trim()}
-                socket={socket}
-                participants={[
-                    { id: 'me', name: `${myDisplayName} (You)` },
-                    ...participants.map(p => ({
-                        id: p,
-                        name: getUserDisplayName(p)
-                    }))
-                ]}
-                isHost={canManageParticipants || isLocalHost}
-                activeBreakoutSession={activeBreakoutSession}
-            />
+            {isBreakoutModalOpen && (
+                <BreakoutRoomsModal
+                    isOpen={isBreakoutModalOpen}
+                    onClose={() => setIsBreakoutModalOpen(false)}
+                    meetingId={meetingId || meetingInput.trim()}
+                    socket={socket}
+                    participants={breakoutParticipants}
+                    isHost={canManageParticipants || isLocalHost}
+                    activeBreakoutSession={activeBreakoutSession}
+                />
+            )}
 
             {/* Active Breakout Session Floating Banner */}
             <BreakoutActiveBanner
@@ -816,11 +823,13 @@ export function MeetingModalsContainer({
             />
 
             {/* Electron Screen & Application Window Source Picker Modal */}
-            <ScreenPickerModal
-                isOpen={showScreenPicker}
-                onClose={handleScreenPickerClosed}
-                onSelectSource={handleScreenSourceSelected}
-            />
-        </>
+            {showScreenPicker && (
+                <ScreenPickerModal
+                    isOpen={showScreenPicker}
+                    onClose={handleScreenPickerClosed}
+                    onSelectSource={handleScreenSourceSelected}
+                />
+            )}
+        </Suspense>
     )
 }

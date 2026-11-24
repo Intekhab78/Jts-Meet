@@ -49,7 +49,8 @@ export const useMeetingBreakoutRooms = ({
                 r.participantIds?.includes(socket.id) ||
                 (localUserId && r.participantIds?.includes(localUserId))
             )
-            const activeMain = meetingId || meetingInput.trim()
+            const rawMain = meetingId || meetingInput.trim()
+            const activeMain = rawMain.includes('__sub_') ? rawMain.split('__sub_')[0] : rawMain
             if (myRoom) {
                 setCurrentBreakoutSubRoomId(myRoom.id)
                 addToast(`Moving to ${myRoom.name}...`, 'info')
@@ -69,7 +70,8 @@ export const useMeetingBreakoutRooms = ({
         const handleBreakoutEnded = () => {
             setActiveBreakoutSession(null)
             setCurrentBreakoutSubRoomId(null)
-            const activeMain = meetingId || meetingInput.trim()
+            const rawMain = meetingId || meetingInput.trim()
+            const activeMain = rawMain.includes('__sub_') ? rawMain.split('__sub_')[0] : rawMain
             addToast('Breakout session ended. Returning to main room...', 'info')
             connectToMeeting(activeMain, myDisplayName, false)
         }

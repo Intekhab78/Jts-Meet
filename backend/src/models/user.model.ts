@@ -27,6 +27,7 @@ export interface IUser extends Document {
     otpCode?: string | null
     otpExpires?: Date | null
     isSuperAdmin?: boolean
+    twoFactorEnabled?: boolean
     tokenVersion: number
     refreshTokens?: IRefreshToken[]
     createdAt: Date
@@ -47,6 +48,7 @@ const UserSchema = new Schema<IUser>(
         customStatus: { type: String, default: '', maxlength: 100 },
         emailVerified: { type: Boolean, default: false },
         isSuperAdmin: { type: Boolean, default: false },
+        twoFactorEnabled: { type: Boolean, default: false },
         tokenVersion: { type: Number, default: 0 },
         refreshTokens: [
             {
@@ -87,6 +89,9 @@ UserSchema.pre('save', async function (next) {
 UserSchema.methods.toJSON = function () {
     const obj = this.toObject()
     delete obj.password
+    delete obj.otpCode
+    delete obj.otpExpires
+    delete obj.refreshTokens
     return obj
 }
 

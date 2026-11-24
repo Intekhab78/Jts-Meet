@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useMemo, useCallback, Suspense } from 'react'
 import { useSocketContext } from '../context/SocketContext'
 import { useMeetingContext } from '../context/MeetingContext'
 import { useWebRTCContext } from '../context/WebRTCContext'
@@ -9,12 +9,14 @@ import { MeetingHeader } from './MeetingHeader'
 import { MeetingBottomControls } from './MeetingBottomControls'
 import { MeetingModalsContainer } from './MeetingModalsContainer'
 import { MeetingStageSection } from './MeetingStageSection'
-import { PostMeetingCapsuleModal } from './PostMeetingCapsuleModal'
 import { MeetingHostOverlays } from './MeetingHostOverlays'
 import { FreeTierWarningPill } from './FreeTierWarningPill'
 import { MeetingOverlayBanners } from './MeetingOverlayBanners'
 import { WebinarAttendeeExperience } from './WebinarAttendeeExperience'
 import { LateJoinerCatchUpSection } from './LateJoinerCatchUpSection'
+
+const PostMeetingCapsuleModal = React.lazy(() => import('./PostMeetingCapsuleModal').then(m => ({ default: m.PostMeetingCapsuleModal })))
+const MobileMeetingRoom = React.lazy(() => import('./MobileMeetingRoom').then(m => ({ default: m.MobileMeetingRoom })))
 import { useMeetingUserSession } from '../hooks/useMeetingUserSession'
 import { useMeetingAudioVideoPipeline } from '../hooks/useMeetingAudioVideoPipeline'
 import { useMeetingKeyboardShortcuts } from '../hooks/useMeetingKeyboardShortcuts'
@@ -43,7 +45,6 @@ import { useMeetingHands } from '../hooks/useMeetingHands'
 import { useMeetingFreeTierTimer } from '../hooks/useMeetingFreeTierTimer'
 import { useMeetingPolls } from '../hooks/useMeetingPolls'
 import { calculateMeetingStageLayout } from '../utils/stageLayout'
-import { MobileMeetingRoom } from './MobileMeetingRoom'
 
 type ActivePanel = 'participants' | 'chat' | 'files' | 'settings' | 'notes' | 'qa' | null
 
@@ -100,9 +101,11 @@ export function MeetingRoom({
     const {
         fetchedOrgPlanTier,
         currentPlanTier,
+        maxMeetingDurationMins,
         canAccessRecording,
         canAccessCloudRecording,
         canAccessAI,
+        canAccessWhiteboard,
         canAccessRTMP,
         canAccessBreakout,
         canAccessDialIn,
@@ -116,7 +119,8 @@ export function MeetingRoom({
         initialToken,
         isGuest,
         meetingInfo,
-        planTier
+        planTier,
+        socket
     })
 const {
         localStream, cameraStream, remoteStreams, connectToMeeting, leaveMeeting,
@@ -256,7 +260,8 @@ const [activePanel, setActivePanel] = useState<ActivePanel>(null)
         formatRemainingTime
     } = useMeetingFreeTierTimer({
         currentPlanTier,
-        isGuest
+        isGuest,
+        maxMeetingDurationMins
     })
 
     // Audio/Video Hardware, Constraints, Hot-Swap, VAD & Active Speaker Pipeline Hook
@@ -408,6 +413,22 @@ const [activePanel, setActivePanel] = useState<ActivePanel>(null)
         isWatermarkEnabled, setIsWatermarkEnabled
     } = useMeetingModalStates()
 
+    // Auto Large-Room Smart Optimization: when 15+ users are in the room,
+    // automatically enable low-bandwidth mode and cap grid tiles to 9 so CPU/GPU stay smooth.
+    const autoLargeRoomAppliedRef = useRef(false)
+    useEffect(() => {
+        const totalUsers = participants.length + 1
+        if (totalUsers >= 15 && !autoLargeRoomAppliedRef.current) {
+            autoLargeRoomAppliedRef.current = true
+            setLowBandwidthMode(true)
+            setMaxGridTiles((prev: number) => (prev > 9 ? 9 : prev))
+            addToast('Large room (15+ users): Auto-enabled Low-Bandwidth & 9-Tile Grid for smooth performance.', 'info')
+        } else if (totalUsers < 12 && autoLargeRoomAppliedRef.current) {
+            autoLargeRoomAppliedRef.current = false
+            setLowBandwidthMode(false)
+        }
+    }, [participants.length, setLowBandwidthMode, setMaxGridTiles, addToast])
+
     // AI Extensions & In-Meeting Analytics Hook (Catch Me Up, Action Items, Talk Time, Watermark, Voice Dubbing)
     const {
         showCatchUpPrompt,
@@ -439,7 +460,9 @@ const [activePanel, setActivePanel] = useState<ActivePanel>(null)
         messages,
         activeSpeaker,
         isMuted,
-        myDisplayName
+        myDisplayName,
+        socket,
+        meetingId: meetingId || meetingInput
     })
 
 
@@ -735,6 +758,7 @@ const activeRoomKey = meetingId || meetingInput.trim()
         backstageUserIds,
         setBackstageUserIds,
         currentPlanTier,
+        canAccessWhiteboard,
         canManageRef,
         token,
         isLocked,
@@ -776,24 +800,26 @@ const activeRoomKey = meetingId || meetingInput.trim()
     /* ── If the user has left the meeting and there is a capsule, show it ── */
     if (postMeetingCapsule) {
         return (
-            <PostMeetingCapsuleModal
-                capsule={postMeetingCapsule}
-                isOpen={true}
-                onRejoin={() => {
-                    setPostMeetingCapsule(null)
-                    const targetId = postMeetingCapsule.meetingId || meetingId || meetingInput
-                    if (targetId) {
-                        setMeetingInput(targetId)
-                        setMeetingId(targetId)
-                        handleJoinMeeting(targetId)
-                    }
-                }}
-                onClose={() => {
-                    setPostMeetingCapsule(null)
-                    if (onLeave) onLeave()
-                    else window.location.href = '/'
-                }}
-            />
+            <Suspense fallback={null}>
+                <PostMeetingCapsuleModal
+                    capsule={postMeetingCapsule}
+                    isOpen={true}
+                    onRejoin={() => {
+                        setPostMeetingCapsule(null)
+                        const targetId = postMeetingCapsule.meetingId || meetingId || meetingInput
+                        if (targetId) {
+                            setMeetingInput(targetId)
+                            setMeetingId(targetId)
+                            handleJoinMeeting(targetId)
+                        }
+                    }}
+                    onClose={() => {
+                        setPostMeetingCapsule(null)
+                        if (onLeave) onLeave()
+                        else window.location.href = '/'
+                    }}
+                />
+            </Suspense>
         )
     }
 
@@ -859,39 +885,41 @@ const activeRoomKey = meetingId || meetingInput.trim()
 
     if (isMobile) {
         return (
-            <MobileMeetingRoom
-                meetingId={meetingId}
-                meetingInput={meetingInput}
-                myDisplayName={myDisplayName}
-                localUserId={localUserId || ''}
-                isLocalHost={isLocalHost}
-                isRoomCreator={isRoomCreator}
-                participants={participants}
-                remoteStreams={remoteStreams}
-                localStream={localStream}
-                cameraStream={cameraStream}
-                isMuted={isMuted}
-                isVideoOff={isVideoOff}
-                toggleMute={toggleMute}
-                toggleVideo={toggleVideo}
-                replaceLocalStream={replaceLocalStream}
-                replaceTrackOnPeers={replaceTrackOnPeers}
-                leaveMeeting={leaveMeeting}
-                onLeave={onLeave}
-                messages={messages}
-                sendMessage={sendMessage}
-                activeSpeaker={activeSpeaker}
-                isHandRaised={handRaised}
-                toggleHandRaise={handleToggleHandRaise}
-                handsRaisedMap={handsRaisedMap}
-                remoteMuteStates={remoteMuteStates}
-                screenSharingUserId={screenSharingUserId}
-                screenSharingUserIds={screenSharingUserIds}
-                handleToggleNoiseSuppression={handleToggleNoiseSuppression}
-                isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
-                addToast={addToast}
-                socket={socket}
-            />
+            <Suspense fallback={null}>
+                <MobileMeetingRoom
+                    meetingId={meetingId}
+                    meetingInput={meetingInput}
+                    myDisplayName={myDisplayName}
+                    localUserId={localUserId || ''}
+                    isLocalHost={isLocalHost}
+                    isRoomCreator={isRoomCreator}
+                    participants={participants}
+                    remoteStreams={remoteStreams}
+                    localStream={localStream}
+                    cameraStream={cameraStream}
+                    isMuted={isMuted}
+                    isVideoOff={isVideoOff}
+                    toggleMute={toggleMute}
+                    toggleVideo={toggleVideo}
+                    replaceLocalStream={replaceLocalStream}
+                    replaceTrackOnPeers={replaceTrackOnPeers}
+                    leaveMeeting={leaveMeeting}
+                    onLeave={onLeave}
+                    messages={messages}
+                    sendMessage={sendMessage}
+                    activeSpeaker={activeSpeaker}
+                    isHandRaised={handRaised}
+                    toggleHandRaise={handleToggleHandRaise}
+                    handsRaisedMap={handsRaisedMap}
+                    remoteMuteStates={remoteMuteStates}
+                    screenSharingUserId={screenSharingUserId}
+                    screenSharingUserIds={screenSharingUserIds}
+                    handleToggleNoiseSuppression={handleToggleNoiseSuppression}
+                    isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
+                    addToast={addToast}
+                    socket={socket}
+                />
+            </Suspense>
         )
     }
 
@@ -1151,6 +1179,7 @@ const activeRoomKey = meetingId || meetingInput.trim()
                 screenSharePolicy={screenSharePolicy}
                 handleToggleScreenSharePolicy={handleToggleScreenSharePolicy}
                 meetingInput={meetingInput}
+                isToolbarActuallyVisible={isToolbarActuallyVisible}
             />
 
             {/* ── Bottom Control Bar & More Options Menu ── */}

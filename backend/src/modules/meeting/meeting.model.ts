@@ -30,6 +30,7 @@ export interface IMeeting extends Document {
     planTier?: string
     screenSharePolicy?: 'everyone' | 'host_only'
     allowMultiShare?: boolean
+    sharedNotes?: string
     organizationId?: Types.ObjectId | null
     teamId?: Types.ObjectId | null
     notifyByEmail?: boolean
@@ -71,6 +72,7 @@ const MeetingSchema = new Schema<IMeeting>(
         planTier: { type: String, default: 'free' },
         screenSharePolicy: { type: String, enum: ['everyone', 'host_only'], default: 'everyone' },
         allowMultiShare: { type: Boolean, default: false },
+        sharedNotes: { type: String, default: '' },
         organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null },
         teamId: { type: Schema.Types.ObjectId, ref: 'Team', default: null },
         notifyByEmail: { type: Boolean, default: true },

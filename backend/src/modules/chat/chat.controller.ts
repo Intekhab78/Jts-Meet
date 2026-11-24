@@ -225,8 +225,16 @@ export const chatController = {
         }
 
         const parentMessageId = req.params.parentMessageId
-        if (!parentMessageId) {
+        if (!parentMessageId || !Types.ObjectId.isValid(String(parentMessageId))) {
             return sendError(res, 400, 'parentMessageId is required')
+        }
+
+        const parentMsg = await Message.findById(parentMessageId).select('sender receiver').lean().exec()
+        if (!parentMsg) {
+            return sendError(res, 404, 'Parent message not found')
+        }
+        if (String(parentMsg.sender) !== String(userId) && String(parentMsg.receiver) !== String(userId)) {
+            return sendError(res, 403, 'Forbidden: You do not have access to this conversation thread')
         }
 
         const params = parseCursorQuery(req.query)
@@ -266,6 +274,9 @@ export const chatController = {
             if (!parentMsg) {
                 return sendError(res, 404, 'Parent message not found')
             }
+            if (parentMsg.sender.toString() !== userId && parentMsg.receiver.toString() !== userId) {
+                return sendError(res, 403, 'Forbidden: You do not have access to this conversation thread')
+            }
 
             const receiverId = parentMsg.sender.toString() === userId 
                 ? parentMsg.receiver.toString() 
@@ -293,15 +304,22 @@ export const chatController = {
     },
 
     getThreadCount: async (req: AuthRequest, res: Response) => {
+        const userId = req.userId
+        if (!userId) {
+            return sendError(res, 401, 'Unauthorized access')
+        }
         const parentMessageId = req.params.parentMessageId as any
         if (!parentMessageId || !/^[a-fA-F0-9]{24}$/.test(parentMessageId)) {
             return sendError(res, 400, 'parentMessageId is required and must be a valid ID')
         }
 
         try {
-            const parentMsg = await Message.findById(parentMessageId).select('threadCount').exec()
+            const parentMsg = await Message.findById(parentMessageId).select('threadCount sender receiver').exec()
             if (!parentMsg) {
                 return sendError(res, 404, 'Parent message not found')
+            }
+            if (parentMsg.sender.toString() !== userId && parentMsg.receiver.toString() !== userId) {
+                return sendError(res, 403, 'Forbidden: You do not have access to this conversation thread')
             }
 
             return sendSuccess(res, { threadCount: parentMsg.threadCount || 0 }, 'Thread count retrieved')
@@ -326,6 +344,13 @@ export const chatController = {
         }
 
         try {
+            const targetMsg = await Message.findById(messageId).select('sender receiver').lean().exec()
+            if (!targetMsg) {
+                return sendError(res, 404, 'Message not found')
+            }
+            if (String(targetMsg.sender) !== String(userId) && String(targetMsg.receiver) !== String(userId)) {
+                return sendError(res, 403, 'Forbidden: You cannot react to messages outside your conversations')
+            }
             const result = await addReactionToMessage(messageId, userId, emoji)
             if (!result) {
                 return sendError(res, 404, 'Message not found')
@@ -352,7 +377,7 @@ export const chatController = {
 
     removeReaction: async (req: AuthRequest, res: Response) => {
         const messageId = req.params.messageId as string
-        const { emoji } = req.body
+        const emoji = (req.body?.emoji || req.query?.emoji) as string
         const userId = req.userId
 
         if (!userId) {
@@ -366,6 +391,13 @@ export const chatController = {
         }
 
         try {
+            const targetMsg = await Message.findById(messageId).select('sender receiver').lean().exec()
+            if (!targetMsg) {
+                return sendError(res, 404, 'Message not found')
+            }
+            if (String(targetMsg.sender) !== String(userId) && String(targetMsg.receiver) !== String(userId)) {
+                return sendError(res, 403, 'Forbidden: You cannot remove reactions outside your conversations')
+            }
             const result = await removeReactionFromMessage(messageId, userId, emoji)
             if (!result) {
                 return sendError(res, 404, 'Message not found')

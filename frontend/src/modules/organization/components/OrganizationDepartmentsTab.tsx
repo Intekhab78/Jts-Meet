@@ -144,6 +144,7 @@ export function OrganizationDepartmentsTab({
                                     <button
                                         type="button"
                                         onClick={() => {
+                                            if (t._id) localStorage.setItem('jts_current_team_id', t._id)
                                             window.location.hash = '#team'
                                         }}
                                         style={{

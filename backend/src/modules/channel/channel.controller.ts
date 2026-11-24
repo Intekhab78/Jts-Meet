@@ -180,13 +180,13 @@ export const channelController = {
     },
 
     joinChannel: async (req: AuthRequest, res: Response) => {
-        const { valid, errors } = validateChannelMembershipAction(req.body)
-        if (!valid) {
-            return sendError(res, 400, 'Validation failed', { errors })
-        }
-
         if (!req.userId) {
             return sendError(res, 401, 'Unauthorized access')
+        }
+
+        const { valid, errors } = validateChannelMembershipAction({ ...req.body, userId: req.userId })
+        if (!valid) {
+            return sendError(res, 400, 'Validation failed', { errors })
         }
 
         try {
@@ -201,13 +201,13 @@ export const channelController = {
     },
 
     leaveChannel: async (req: AuthRequest, res: Response) => {
-        const { valid, errors } = validateChannelMembershipAction(req.body)
-        if (!valid) {
-            return sendError(res, 400, 'Validation failed', { errors })
-        }
-
         if (!req.userId) {
             return sendError(res, 401, 'Unauthorized access')
+        }
+
+        const { valid, errors } = validateChannelMembershipAction({ ...req.body, userId: req.userId })
+        if (!valid) {
+            return sendError(res, 400, 'Validation failed', { errors })
         }
 
         try {

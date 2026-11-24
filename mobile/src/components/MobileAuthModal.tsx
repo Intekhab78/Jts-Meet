@@ -104,11 +104,13 @@ export const MobileAuthModal: React.FC<MobileAuthModalProps> = ({
     }
   };
 
-  // Quick Google Workspace Auth trigger
+  // Quick Google Workspace Auth trigger (opens system browser and returns via jtsmeet://auth deep link)
   const handleGoogleSso = () => {
-    // Open Google OAuth endpoint or prompt corporate email
-    const googleAuthUrl = `${API_BASE}/api/auth/google`;
-    window.location.href = googleAuthUrl;
+    const googleAuthUrl = `${API_BASE}/api/auth/google?platform=mobile`;
+    const opened = window.open(googleAuthUrl, '_system') || window.open(googleAuthUrl, '_blank');
+    if (!opened) {
+      window.location.href = googleAuthUrl;
+    }
   };
 
   // Quick Microsoft 365 Auth trigger

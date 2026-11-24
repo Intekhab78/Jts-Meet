@@ -45,6 +45,42 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({
     status?: string;
   } | null>(null);
 
+  // Auto-open target conversation if passed from outside (e.g. Teams Hub)
+  React.useEffect(() => {
+    if (!token || !currentUser) return;
+    if (targetConversation) {
+      setActiveSegment(targetConversation.isChannel ? 'channel' : 'dm');
+      setActiveConversation({
+        id: targetConversation.id,
+        name: targetConversation.name,
+        avatar: targetConversation.avatar,
+        isChannel: targetConversation.isChannel,
+      });
+      onClearTargetConversation?.();
+    }
+  }, [token, currentUser, targetConversation, onClearTargetConversation]);
+
+  // Inform root Android back handler when conversation is active
+  React.useEffect(() => {
+    if (!token || !currentUser) {
+      registerCloseConversation?.(null);
+      return;
+    }
+    if (registerCloseConversation) {
+      if (activeConversation) {
+        registerCloseConversation(() => {
+          setActiveConversation(null);
+          return true; // handled
+        });
+      } else {
+        registerCloseConversation(null);
+      }
+    }
+    return () => {
+      registerCloseConversation?.(null);
+    };
+  }, [token, currentUser, activeConversation, registerCloseConversation]);
+
   if (!token || !currentUser) {
     return (
       <div
@@ -103,37 +139,6 @@ export const MessagesTab: React.FC<MessagesTabProps> = ({
       </div>
     );
   }
-
-  // Auto-open target conversation if passed from outside (e.g. Teams Hub)
-  React.useEffect(() => {
-    if (targetConversation) {
-      setActiveSegment(targetConversation.isChannel ? 'channel' : 'dm');
-      setActiveConversation({
-        id: targetConversation.id,
-        name: targetConversation.name,
-        avatar: targetConversation.avatar,
-        isChannel: targetConversation.isChannel,
-      });
-      onClearTargetConversation?.();
-    }
-  }, [targetConversation, onClearTargetConversation]);
-
-  // Inform root Android back handler when conversation is active
-  React.useEffect(() => {
-    if (registerCloseConversation) {
-      if (activeConversation) {
-        registerCloseConversation(() => {
-          setActiveConversation(null);
-          return true; // handled
-        });
-      } else {
-        registerCloseConversation(null);
-      }
-    }
-    return () => {
-      registerCloseConversation?.(null);
-    };
-  }, [activeConversation, registerCloseConversation]);
 
   // If a conversation is active, render the dedicated mobile conversation screen
   if (activeConversation) {

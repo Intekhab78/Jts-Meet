@@ -52,31 +52,12 @@ export const useMeetingNetworkAndToolbar = ({
         return () => window.removeEventListener('resize', handleResize)
     }, [])
 
-    // Toolbar auto-hide listener - never auto-hide when menus, popovers, sidepanels or hover are active
+    // Toolbar stays permanently docked (Google Meet / Teams standard — prevents screen resize jitter & keeps controls 1-click ready)
     useEffect(() => {
-        let timeoutId: number
-        const handleMouseMove = () => {
-            setToolbarVisible(true)
-            clearTimeout(timeoutId)
-            timeoutId = window.setTimeout(() => {
-                if (showMoreMenuRef.current || showReactionsPopoverRef.current || activePanelRef.current !== null || isToolbarHoveredRef.current) {
-                    return // Keep toolbar visible while menus, panels or hover are active
-                }
-                setToolbarVisible(false)
-            }, 3500)
-        }
-        window.addEventListener('mousemove', handleMouseMove)
-        return () => {
-            window.removeEventListener('mousemove', handleMouseMove)
-            clearTimeout(timeoutId)
-        }
+        setToolbarVisible(true)
     }, [])
 
-    useEffect(() => {
-        if (showMoreMenu || showReactionsPopover || activePanel !== null || isToolbarHovered) {
-            setToolbarVisible(true)
-        }
-    }, [showMoreMenu, showReactionsPopover, activePanel, isToolbarHovered])
+    const isToolbarActuallyVisible = true
 
     // Network offline / online reconnection listener
     useEffect(() => {
@@ -116,8 +97,6 @@ export const useMeetingNetworkAndToolbar = ({
             }
         })
     }, [lowBandwidthMode, remoteStreams])
-
-    const isToolbarActuallyVisible = toolbarVisible || showMoreMenu || showReactionsPopover || activePanel !== null || isToolbarHovered
 
     return {
         isNetworkOffline,

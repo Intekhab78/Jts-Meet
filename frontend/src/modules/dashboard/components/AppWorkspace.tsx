@@ -20,6 +20,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useMeetingContext } from '../../meeting/context/MeetingContext'
+import { useWebRTCContext } from '../../meeting/context/WebRTCContext'
 import { pushNotificationService } from '../../../services/pushNotification.service'
 
 // Unified Workspace Types
@@ -85,7 +86,7 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
             if (saved && validTabs.includes(saved as any)) {
                 return saved as WorkspaceTab
             }
-        } catch (_) {}
+        } catch (_) { }
         return 'dashboard'
     })
 
@@ -99,7 +100,7 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
             try {
                 sessionStorage.setItem('jts_active_tab', activeTab)
                 localStorage.setItem('jts_active_tab', activeTab)
-            } catch (_) {}
+            } catch (_) { }
         }
     }, [activeTab])
 
@@ -117,21 +118,22 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
     }, [])
 
     const { joined, setMeetingId, meetingId } = useMeetingContext()
+    const { leaveMeeting, stopMedia } = useWebRTCContext()
 
     const [activeMeetingRoomId, setActiveMeetingRoomId] = useState<string>(() => {
         if (initialMeetingId) return initialMeetingId
         try {
-            const pathnameMatch = window.location.pathname.match(/^\/(?:meet|join)\/([a-zA-Z0-9\-_]+)/)
+            const pathnameMatch = window.location.pathname.match(/^\/(?:meet|meeting|join)\/([a-zA-Z0-9\-_]+)/)
             if (pathnameMatch) return pathnameMatch[1]
 
             const searchParams = new URLSearchParams(window.location.search)
-            const queryId = searchParams.get('id') || searchParams.get('meetingId')
+            const queryId = searchParams.get('id') || searchParams.get('meetingId') || searchParams.get('room')
             if (queryId) return queryId
 
             const hashParts = window.location.hash.split('?')
             if (hashParts.length > 1) {
                 const params = new URLSearchParams(hashParts[1])
-                const qId = params.get('id') || params.get('meetingId')
+                const qId = params.get('id') || params.get('meetingId') || params.get('room')
                 if (qId) return qId
             }
             return sessionStorage.getItem('jts_active_meeting_id') || ''
@@ -184,6 +186,10 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
 
     const handleLeaveMeetingRoom = useCallback(() => {
         userLeftMeetingRef.current = true
+        try {
+            leaveMeeting()
+            stopMedia()
+        } catch (_) { }
         setActiveMeetingRoomId('')
         setMeetingId('')
         if (onClearMeetingUrl) onClearMeetingUrl()
@@ -201,8 +207,8 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
                 sessionStorage.removeItem('jts_pending_logout')
                 if (onLogout) onLogout()
             }
-        } catch (_) {}
-    }, [setMeetingId, onClearMeetingUrl, onLogout])
+        } catch (_) { }
+    }, [leaveMeeting, stopMedia, setMeetingId, onClearMeetingUrl, onLogout])
 
     // Sidebar state
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -221,7 +227,7 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
             const next = !prev
             try {
                 localStorage.setItem('jts_sidebar_collapsed', String(next))
-            } catch (_) {}
+            } catch (_) { }
             return next
         })
     }
@@ -422,8 +428,8 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
                                 initialToken={token}
                                 initialMeetingId={userLeftMeetingRef.current ? undefined : (activeMeetingRoomId || meetingId || undefined)}
                                 autoJoin={Boolean(!userLeftMeetingRef.current && (activeMeetingRoomId || meetingId))}
-                                isAdminOrOwner={data.isOrgAdminOrOwner}
-                                planTier={data.currentOrg?.planTier || localStorage.getItem('jts_active_plan_tier') || 'free'}
+                                isAdminOrOwner={data.isOrgAdminOrOwner || data.isSuperAdmin}
+                                planTier={data.isSuperAdmin ? 'enterprise' : (data.currentOrg?.planTier || localStorage.getItem('jts_active_plan_tier') || 'free')}
                                 onUpgradePlanRequest={() => setActiveTab('organization')}
                                 onLeave={handleLeaveMeetingRoom}
                             />
@@ -556,7 +562,7 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
                     )}
 
                     {/* ENTERPRISE ADMIN CONSOLE HUB */}
-                    {activeTab === 'admin' && (
+                    {activeTab === 'admin' && (data.isOrgAdminOrOwner || data.isSuperAdmin) && (
                         <div className="anim-fade-in" style={{ padding: windowWidth < 768 ? '16px 12px' : 'clamp(20px, 3vw, 32px)', maxWidth: 1320, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
                             <AdminConsoleHub
                                 token={token}
@@ -585,8 +591,8 @@ export function AppWorkspace({ token, initialMeetingId, onClearMeetingUrl, onLog
                                 profileEmail={data.profileEmail}
                                 profileImage={data.profileImage}
                                 onProfileUpdated={(updated) => {
-                                    if (updated.fullName) data.setProfileName(updated.fullName)
-                                    if (updated.profileImage) data.setProfileImage(updated.profileImage)
+                                    if (updated.fullName !== undefined) data.setProfileName(updated.fullName)
+                                    if (updated.profileImage !== undefined) data.setProfileImage(updated.profileImage)
                                 }}
                             />
                         </div>

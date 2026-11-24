@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export function useAudioRouting() {
   const [isSpeaker, setIsSpeaker] = useState(true);
   const [audioRoute, setAudioRoute] = useState<'speaker' | 'bluetooth' | 'earpiece'>('speaker');
   const [bluetoothDeviceName, setBluetoothDeviceName] = useState<string | null>(null);
+  const audioRouteRef = useRef(audioRoute);
+  audioRouteRef.current = audioRoute;
+  const wasBtConnectedRef = useRef(false);
 
   const applyAudioSink = useCallback(async (route: 'speaker' | 'bluetooth' | 'earpiece') => {
     try {
@@ -29,16 +32,16 @@ export function useAudioRouting() {
 
         if (targetDevice) {
           audioEls.forEach((el: any) => {
-            el.setSinkId?.(targetDevice.deviceId).catch(() => {});
+            el.setSinkId?.(targetDevice.deviceId).catch(() => { });
           });
         }
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // Native Android AudioManager switching (speakerphone vs earpiece hardware routing)
     try {
       (window as any).MobileAppBridge?.setAudioMode?.(route);
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   // Auto-detect Bluetooth connect/disconnect
@@ -51,18 +54,22 @@ export function useAudioRouting() {
         );
         if (bt) {
           setBluetoothDeviceName(bt.label || 'Bluetooth Headset');
-          setAudioRoute('bluetooth');
-          setIsSpeaker(false);
-          applyAudioSink('bluetooth');
+          if (!wasBtConnectedRef.current) {
+            wasBtConnectedRef.current = true;
+            setAudioRoute('bluetooth');
+            setIsSpeaker(false);
+            applyAudioSink('bluetooth');
+          }
         } else {
+          wasBtConnectedRef.current = false;
           setBluetoothDeviceName(null);
-          if (audioRoute === 'bluetooth') {
+          if (audioRouteRef.current === 'bluetooth') {
             setAudioRoute('speaker');
             setIsSpeaker(true);
             applyAudioSink('speaker');
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     };
 
     if (navigator.mediaDevices) {
@@ -72,7 +79,7 @@ export function useAudioRouting() {
     return () => {
       navigator.mediaDevices?.removeEventListener('devicechange', handleDeviceChange);
     };
-  }, [audioRoute, applyAudioSink]);
+  }, [applyAudioSink]);
 
   const cycleAudioRoute = useCallback(async () => {
     let nextRoute: 'speaker' | 'bluetooth' | 'earpiece' = 'speaker';

@@ -25,6 +25,7 @@ interface DirectChatMessageComposerProps {
     setShowEmojiPicker: React.Dispatch<React.SetStateAction<boolean>>
     handleInsertEmoji: (emoji: string) => void
     onTriggerFileUpload: () => void
+    onUploadFile?: (file: File) => void
     isUploadingFile: boolean
     onOpenClipModal: () => void
     sendingMessage: boolean
@@ -52,6 +53,7 @@ export function DirectChatMessageComposer({
     setShowEmojiPicker,
     handleInsertEmoji,
     onTriggerFileUpload,
+    onUploadFile,
     isUploadingFile,
     onOpenClipModal,
     sendingMessage,
@@ -60,6 +62,74 @@ export function DirectChatMessageComposer({
     handleEditorKeyDown,
     updateActiveFormats
 }: DirectChatMessageComposerProps) {
+    const [isRecordingVoice, setIsRecordingVoice] = React.useState(false)
+    const [voiceDurationSec, setVoiceDurationSec] = React.useState(0)
+    const mediaRecorderRef = React.useRef<MediaRecorder | null>(null)
+    const voiceChunksRef = React.useRef<Blob[]>([])
+    const voiceTimerRef = React.useRef<any>(null)
+
+    React.useEffect(() => {
+        return () => {
+            if (voiceTimerRef.current) clearInterval(voiceTimerRef.current)
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                try { mediaRecorderRef.current.stop() } catch (_) {}
+            }
+        }
+    }, [])
+
+    const startVoiceRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            const recorder = new MediaRecorder(stream)
+            mediaRecorderRef.current = recorder
+            voiceChunksRef.current = []
+
+            recorder.ondataavailable = (ev) => {
+                if (ev.data && ev.data.size > 0) voiceChunksRef.current.push(ev.data)
+            }
+            recorder.start(200)
+            setIsRecordingVoice(true)
+            setVoiceDurationSec(0)
+            if (voiceTimerRef.current) clearInterval(voiceTimerRef.current)
+            voiceTimerRef.current = setInterval(() => setVoiceDurationSec(s => s + 1), 1000)
+        } catch (err: any) {
+            alert('Microphone access denied: ' + (err?.message || 'Permission required'))
+        }
+    }
+
+    const stopVoiceRecording = (send: boolean) => {
+        if (voiceTimerRef.current) {
+            clearInterval(voiceTimerRef.current)
+            voiceTimerRef.current = null
+        }
+        const recorder = mediaRecorderRef.current
+        if (!recorder) {
+            setIsRecordingVoice(false)
+            setVoiceDurationSec(0)
+            return
+        }
+        recorder.onstop = () => {
+            recorder.stream?.getTracks().forEach(t => t.stop())
+            const chunks = voiceChunksRef.current
+            voiceChunksRef.current = []
+            setIsRecordingVoice(false)
+            setVoiceDurationSec(0)
+            if (!send || chunks.length === 0 || !onUploadFile) return
+            const blob = new Blob(chunks, { type: 'audio/webm' })
+            if (blob.size === 0) return
+            const file = new File([blob], `voice-note-${Date.now()}.webm`, { type: 'audio/webm' })
+            onUploadFile(file)
+        }
+        if (recorder.state !== 'inactive') {
+            recorder.stop()
+        } else {
+            setIsRecordingVoice(false)
+            setVoiceDurationSec(0)
+        }
+    }
+
+    const formatVoiceTime = (sec: number) => `${Math.floor(sec / 60)}:${(sec % 60).toString().padStart(2, '0')}`
+
     return (
         <div style={{
             borderTop: '1px solid rgba(255, 255, 255, 0.08)',
@@ -178,6 +248,52 @@ export function DirectChatMessageComposer({
                 </div>
             )}
 
+            {/* Active Voice Recording Banner */}
+            {isRecordingVoice && (
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: 'rgba(239, 68, 68, 0.14)',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    borderRadius: 8,
+                    padding: '6px 12px'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 8px #ef4444' }} />
+                        <span style={{ color: '#f87171', fontSize: '0.78125rem', fontWeight: 700 }}>
+                            Recording Voice Note... ({formatVoiceTime(voiceDurationSec)})
+                        </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                            type="button"
+                            onClick={() => stopVoiceRecording(false)}
+                            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.75rem', padding: '4px 8px' }}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => stopVoiceRecording(true)}
+                            style={{
+                                height: 28,
+                                padding: '0 12px',
+                                borderRadius: 6,
+                                border: 'none',
+                                background: '#10b981',
+                                color: '#fff',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Send Audio
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Main Input WYSIWYG Container */}
             <div style={{ position: 'relative', width: '100%', minHeight: isFormatBarOpen ? 80 : 42, display: 'flex' }}>
                 {isEditorEmpty && (
@@ -202,6 +318,21 @@ export function DirectChatMessageComposer({
                     onKeyDown={handleEditorKeyDown}
                     onKeyUp={updateActiveFormats}
                     onMouseUp={updateActiveFormats}
+                    onPaste={(e) => {
+                        if (!onUploadFile) return
+                        const items = e.clipboardData?.items
+                        if (!items) return
+                        for (let i = 0; i < items.length; i++) {
+                            if (items[i].type.startsWith('image/')) {
+                                const file = items[i].getAsFile()
+                                if (file) {
+                                    e.preventDefault()
+                                    onUploadFile(file)
+                                    return
+                                }
+                            }
+                        }
+                    }}
                     style={{
                         width: '100%',
                         minHeight: isFormatBarOpen ? 80 : 42,
@@ -324,6 +455,27 @@ export function DirectChatMessageComposer({
                             <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                         </svg>
                     </button>
+
+                    {/* Voice Note Mic Button */}
+                    {onUploadFile && (
+                        <button
+                            type="button"
+                            onClick={isRecordingVoice ? () => stopVoiceRecording(true) : startVoiceRecording}
+                            disabled={isUploadingFile}
+                            title={isRecordingVoice ? 'Stop & Send Voice Note' : 'Record Voice Note'}
+                            style={{
+                                ...composerActionIconBtn,
+                                color: isRecordingVoice ? '#ef4444' : '#34d399',
+                                background: isRecordingVoice ? 'rgba(239, 68, 68, 0.2)' : 'transparent'
+                            }}
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                <line x1="12" x2="12" y1="19" y2="22" />
+                            </svg>
+                        </button>
+                    )}
 
                     {/* Urgent Delivery Priority Toggle */}
                     <button

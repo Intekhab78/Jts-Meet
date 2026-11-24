@@ -19,30 +19,18 @@ export function authenticateSocket(socket: AuthenticatedSocket): boolean {
     }
 
     try {
-        let payload: { 
-            userId: string; 
+        const payload = jwt.verify(token, JWT_SECRET) as {
+            userId: string;
             id?: string;
             _id?: string;
-            isGuest?: boolean; 
-            guestName?: string; 
+            isGuest?: boolean;
+            guestName?: string;
             fullName?: string;
             name?: string;
             email?: string;
             company?: string;
-            meetingId?: string; 
-            isPending?: boolean; 
-        }
-
-        try {
-            payload = jwt.verify(token, JWT_SECRET) as any
-        } catch (err: any) {
-            // If token expired, verify cryptographic signature without expiration check so ongoing
-            // meetings or active real-time sessions are never abruptly disconnected.
-            if (err?.name === 'TokenExpiredError') {
-                payload = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true }) as any
-            } else {
-                throw err
-            }
+            meetingId?: string;
+            isPending?: boolean;
         }
 
         socket.userId = payload.userId || payload.id || payload._id

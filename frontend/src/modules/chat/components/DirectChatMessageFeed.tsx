@@ -35,6 +35,63 @@ interface DirectChatMessageFeedProps {
     onPreviewFile: (file: { name: string; url: string; size: string }) => void
 }
 
+interface ChatImageAttachmentProps {
+    fileName: string
+    fileUrl: string
+    fileSize: string
+    onPreview: () => void
+    fallback: React.ReactNode
+}
+
+function ChatImageAttachment({ fileName, fileUrl, fileSize, onPreview, fallback }: ChatImageAttachmentProps) {
+    const [imgFailed, setImgFailed] = React.useState(false)
+    if (imgFailed) return <>{fallback}</>
+    return (
+        <div
+            onClick={onPreview}
+            style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                cursor: 'pointer',
+                maxWidth: 280
+            }}
+            title="Click to preview image"
+        >
+            <img
+                src={fileUrl}
+                alt={fileName}
+                loading="lazy"
+                onError={() => setImgFailed(true)}
+                style={{
+                    maxWidth: '100%',
+                    maxHeight: 220,
+                    borderRadius: 8,
+                    objectFit: 'cover',
+                    display: 'block',
+                    border: '1px solid rgba(255, 255, 255, 0.14)'
+                }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.72)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {fileName} &bull; {fileSize}
+                </span>
+                <a
+                    href={fileUrl}
+                    download={fileName}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    title="Download image"
+                    style={{ color: '#c7c9ff', fontSize: '0.75rem', textDecoration: 'none', flexShrink: 0 }}
+                >
+                    ⬇
+                </a>
+            </div>
+        </div>
+    )
+}
+
 export function DirectChatMessageFeed({
     messages,
     loadingMessages,
@@ -59,8 +116,10 @@ export function DirectChatMessageFeed({
         const [, fileName, rawFileUrl, fileSize] = match
         const fileUrl = normalizeMediaUrl(rawFileUrl)
         const fileExt = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() || 'FILE' : 'FILE'
+        const isImage = ['JPG', 'JPEG', 'PNG', 'GIF', 'WEBP', 'SVG'].includes(fileExt)
+        const isAudio = ['MP3', 'WAV', 'OGG', 'M4A', 'WEBM'].includes(fileExt) && !fileName.toLowerCase().includes('clip')
 
-        return (
+        const renderDocCard = () => (
             <div
                 onClick={() => onPreviewFile({ name: fileName, url: fileUrl, size: fileSize })}
                 style={{
@@ -163,6 +222,31 @@ export function DirectChatMessageFeed({
                 </div>
             </div>
         )
+
+        if (isImage) {
+            return (
+                <ChatImageAttachment
+                    fileName={fileName}
+                    fileUrl={fileUrl}
+                    fileSize={fileSize}
+                    onPreview={() => onPreviewFile({ name: fileName, url: fileUrl, size: fileSize })}
+                    fallback={renderDocCard()}
+                />
+            )
+        }
+
+        if (isAudio) {
+            return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 240 }}>
+                    <audio controls src={fileUrl} style={{ width: '100%', height: 34 }} />
+                    <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.65)' }}>
+                        🎙️ {fileName} &bull; {fileSize}
+                    </span>
+                </div>
+            )
+        }
+
+        return renderDocCard()
     }
 
     function renderTeamsMessageRow(msg: ChatMessage, isMe: boolean, senderName: string) {
@@ -201,8 +285,8 @@ export function DirectChatMessageFeed({
                 {isHovered && !msg.isDeleted && (
                     <div style={{
                         position: 'absolute',
-                        top: -14,
-                        [isMe ? 'right' : 'left']: isMe ? 0 : 38,
+                        top: -4,
+                        [isMe ? 'right' : 'left']: isMe ? 90 : 150,
                         zIndex: 20,
                         display: 'flex',
                         alignItems: 'center',

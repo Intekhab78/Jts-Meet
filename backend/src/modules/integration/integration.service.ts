@@ -2,8 +2,54 @@ import crypto from 'crypto'
 import https from 'https'
 import http from 'http'
 import dns from 'dns'
+import { Types } from 'mongoose'
 import { Integration, IIntegration, IntegrationEvent, IntegrationType } from './integration.model'
 import { Organization } from '../organization/organization.model'
+import { User } from '../../models/user.model'
+import { isSuperAdminUser } from '../../middleware/adminMiddleware'
+import { getDynamicEmailConfig } from '../../services/email.service'
+import { getEffectivePlanForOrg } from '../plan/planEntitlements'
+
+function makeForbiddenError(message: string) {
+    const err: any = new Error(message)
+    err.status = 403
+    return err
+}
+
+async function verifyOrgAdminOrMember(userId: string, orgId?: string | null, requireAdmin: boolean = false): Promise<void> {
+    if (!orgId) return
+    if (!Types.ObjectId.isValid(orgId)) {
+        throw makeForbiddenError('Forbidden: Invalid organization ID')
+    }
+    const org = await Organization.findById(orgId).select('ownerId members').lean()
+    if (!org) {
+        throw makeForbiddenError('Forbidden: Organization not found')
+    }
+    if (String(org.ownerId) === String(userId)) {
+        return
+    }
+    const member = org.members?.find((m: any) => String(m.userId) === String(userId))
+    if (member && (!requireAdmin || ['owner', 'admin'].includes(member.role))) {
+        return
+    }
+    const user = Types.ObjectId.isValid(userId) ? await User.findById(userId).select('email isSuperAdmin').lean() : null
+    if (user && isSuperAdminUser(user)) {
+        return
+    }
+    throw makeForbiddenError('Forbidden: Insufficient organization permissions for this integration')
+}
+
+async function assertCanManageIntegration(userId: string, existing: any, action: string): Promise<void> {
+    const ownerId = existing.userId || existing.createdBy
+    if (ownerId && String(ownerId) === String(userId)) {
+        return
+    }
+    if (existing.organizationId) {
+        await verifyOrgAdminOrMember(userId, String(existing.organizationId), true)
+        return
+    }
+    throw makeForbiddenError(`Forbidden: You do not have permission to ${action} this integration`)
+}
 
 export interface CreateIntegrationDto {
     name: string
@@ -94,6 +140,10 @@ export async function validateWebhookUrl(urlStr: string): Promise<{ valid: boole
 const memoryIntegrations: any[] = []
 
 export async function listIntegrations(userId: string, orgId?: string) {
+    if (orgId) {
+        await verifyOrgAdminOrMember(userId, orgId, false)
+    }
+
     try {
         const query: any = orgId ? { organizationId: orgId } : { userId }
         const docs = await Integration.find(query).sort({ createdAt: -1 }).lean()
@@ -109,17 +159,32 @@ export async function listIntegrations(userId: string, orgId?: string) {
 }
 
 export async function createIntegration(userId: string, orgId: string | undefined, dto: CreateIntegrationDto) {
-    const urlValidation = await validateWebhookUrl(dto.url)
-    if (!urlValidation.valid) {
-        throw { status: 400, message: urlValidation.reason || 'Invalid webhook URL' }
+    if (orgId) {
+        await verifyOrgAdminOrMember(userId, orgId, true)
+    }
+
+    let normalizedUrl = (dto.url || '').trim()
+
+    if (dto.type === 'email' && !/^https?:\/\//i.test(normalizedUrl)) {
+        const rawList = normalizedUrl.replace(/^mailto:/i, '').split(',').map(s => s.trim()).filter(Boolean)
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (rawList.length === 0 || !rawList.every(e => emailRegex.test(e))) {
+            throw { status: 400, message: 'Please enter valid recipient email address(es) or an HTTP(S) webhook URL' }
+        }
+        normalizedUrl = `mailto:${rawList.join(',')}`
+    } else {
+        const urlValidation = await validateWebhookUrl(normalizedUrl)
+        if (!urlValidation.valid) {
+            throw { status: 400, message: urlValidation.reason || 'Invalid webhook URL' }
+        }
     }
 
     // Dynamic Plan-Based Quota Check
     if (orgId) {
         try {
-            const org = await Organization.findById(orgId).select('planTier').lean()
-            const planTier = org?.planTier?.toLowerCase() || 'enterprise'
-            const maxAllowed = planTier === 'free' ? 2 : planTier === 'starter' ? 10 : 999999
+            const effectivePlan = await getEffectivePlanForOrg(orgId)
+            const planTier = effectivePlan.planTier
+            const maxAllowed = !effectivePlan.isPaid ? 2 : effectivePlan.limits.maxSeats >= 200 ? 999999 : 10
 
             let currentCount = 0
             try {
@@ -144,7 +209,7 @@ export async function createIntegration(userId: string, orgId: string | undefine
         userId,
         name: dto.name,
         type: dto.type,
-        url: dto.url,
+        url: normalizedUrl,
         secret: dto.secret || crypto.randomBytes(16).toString('hex'),
         events: dto.events || ['meeting.started', 'meeting.ended', 'recording.ready'],
         status: 'active' as const,
@@ -166,12 +231,19 @@ export async function createIntegration(userId: string, orgId: string | undefine
 
 export async function deleteIntegration(userId: string, id: string) {
     try {
-        const res = await Integration.deleteOne({ _id: id })
-        if (res.deletedCount > 0) return true
-    } catch (err) {}
+        const existing = await Integration.findById(id).lean()
+        if (existing) {
+            await assertCanManageIntegration(userId, existing, 'delete')
+            const res = await Integration.deleteOne({ _id: id })
+            if (res.deletedCount > 0) return true
+        }
+    } catch (err: any) {
+        if (err?.status === 403 || err?.message?.startsWith('Forbidden')) throw err
+    }
 
     const idx = memoryIntegrations.findIndex(i => i._id === id || i.id === id)
     if (idx !== -1) {
+        await assertCanManageIntegration(userId, memoryIntegrations[idx], 'delete')
         memoryIntegrations.splice(idx, 1)
         return true
     }
@@ -180,16 +252,23 @@ export async function deleteIntegration(userId: string, id: string) {
 
 export async function toggleIntegration(userId: string, id: string, status: 'active' | 'paused') {
     try {
-        const doc = await Integration.findOneAndUpdate(
-            { _id: id },
-            { $set: { status, updatedAt: new Date() } },
-            { new: true }
-        )
-        if (doc) return doc
-    } catch (err) {}
+        const existing = await Integration.findById(id).lean()
+        if (existing) {
+            await assertCanManageIntegration(userId, existing, 'modify')
+            const doc = await Integration.findOneAndUpdate(
+                { _id: id },
+                { $set: { status, updatedAt: new Date() } },
+                { new: true }
+            )
+            if (doc) return doc
+        }
+    } catch (err: any) {
+        if (err?.status === 403 || err?.message?.startsWith('Forbidden')) throw err
+    }
 
     const item = memoryIntegrations.find(i => i._id === id || i.id === id)
     if (item) {
+        await assertCanManageIntegration(userId, item, 'modify')
         item.status = status
         item.updatedAt = new Date()
         return item
@@ -373,6 +452,75 @@ function formatPayload(type: IntegrationType, eventType: IntegrationEvent, paylo
     })
 }
 
+async function deliverIntegrationEvent(
+    integration: any,
+    eventType: IntegrationEvent,
+    payloadData: any
+): Promise<{ statusCode: number; responseBody: string; durationMs: number }> {
+    const start = Date.now()
+    const targetUrl = String(integration.url || '').trim()
+
+    if (integration.type === 'email' && !/^https?:\/\//i.test(targetUrl)) {
+        const recipients = targetUrl.replace(/^mailto:/i, '').split(',').map(s => s.trim()).filter(Boolean)
+        if (recipients.length === 0) {
+            return { statusCode: 400, responseBody: 'No recipient email configured', durationMs: Date.now() - start }
+        }
+        try {
+            const { transporter, from } = await getDynamicEmailConfig()
+            const title = payloadData.title || payloadData.meetingId || 'JTS Meet Session'
+            const subject = `[JTS Meet] ${eventType}: ${title}`
+            const html = `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
+                    <h2 style="color: #4f46e5; margin: 0 0 12px;">JTS Meet Enterprise Alert</h2>
+                    <p style="color: #0f172a; font-size: 14px; margin: 0 0 12px;">
+                        <strong>Event:</strong> ${eventType}<br/>
+                        <strong>Session:</strong> ${title}<br/>
+                        <strong>Host:</strong> ${payloadData.hostName || 'Organizer'}<br/>
+                        <strong>Time:</strong> ${new Date().toLocaleString()}
+                    </p>
+                </div>
+            `
+            const info = await transporter.sendMail({
+                from,
+                to: recipients.join(', '),
+                subject,
+                html
+            })
+            return {
+                statusCode: 200,
+                responseBody: `Email delivered to ${recipients.join(', ')} (id: ${info.messageId || 'sent'})`,
+                durationMs: Date.now() - start
+            }
+        } catch (err: any) {
+            return {
+                statusCode: 500,
+                responseBody: `SMTP delivery failed: ${err?.message || 'Check SMTP settings in Admin Console'}`,
+                durationMs: Date.now() - start
+            }
+        }
+    }
+
+    if (integration.type === 'calendar' && targetUrl.includes('/api/calendar/feed/')) {
+        return {
+            statusCode: 200,
+            responseBody: `ICS Calendar Feed active (${targetUrl}). Subscribe in Google Calendar / Outlook via URL.`,
+            durationMs: Date.now() - start
+        }
+    }
+
+    const body = formatPayload(integration.type, eventType, payloadData)
+    const timestamp = Date.now().toString()
+    const signature = integration.secret
+        ? crypto.createHmac('sha256', integration.secret).update(timestamp + '.' + body).digest('hex')
+        : ''
+
+    return sendHttpRequest(targetUrl, body, {
+        'x-jts-signature': signature,
+        'x-jts-timestamp': timestamp,
+        'x-jts-event': eventType
+    })
+}
+
 export async function testIntegration(userId: string, id: string) {
     let integration: any = null
     try {
@@ -387,22 +535,13 @@ export async function testIntegration(userId: string, id: string) {
         throw new Error('Integration not found')
     }
 
-    const testPayload = formatPayload(integration.type, 'meeting.started', {
+    await assertCanManageIntegration(userId, integration, 'test')
+
+    const result = await deliverIntegrationEvent(integration, 'meeting.started', {
         meetingId: 'room-demo-test',
         title: 'Q3 Enterprise Product Review (Test Simulation)',
         hostName: 'Test Administrator',
         participantsCount: 4
-    })
-
-    const timestamp = Date.now().toString()
-    const signature = integration.secret 
-        ? crypto.createHmac('sha256', integration.secret).update(timestamp + '.' + testPayload).digest('hex')
-        : ''
-
-    const result = await sendHttpRequest(integration.url, testPayload, {
-        'x-jts-signature': signature,
-        'x-jts-timestamp': timestamp,
-        'x-jts-event': 'meeting.started'
     })
 
     const logEntry = {
@@ -439,13 +578,12 @@ export async function testIntegration(userId: string, id: string) {
 }
 
 export async function dispatchWebhookEvent(orgId: string | undefined, eventType: IntegrationEvent, payloadData: any) {
+    if (!orgId) return
     try {
         const query: any = {
             events: eventType,
-            status: 'active'
-        }
-        if (orgId) {
-            query.organizationId = orgId
+            status: 'active',
+            organizationId: orgId
         }
 
         let targets: any[] = []
@@ -462,18 +600,8 @@ export async function dispatchWebhookEvent(orgId: string | undefined, eventType:
         }
 
         for (const item of targets) {
-            const body = formatPayload(item.type, eventType, payloadData)
-            const timestamp = Date.now().toString()
-            const signature = item.secret 
-                ? crypto.createHmac('sha256', item.secret).update(timestamp + '.' + body).digest('hex')
-                : ''
-
             // Dispatch in background
-            sendHttpRequest(item.url, body, {
-                'x-jts-signature': signature,
-                'x-jts-timestamp': timestamp,
-                'x-jts-event': eventType
-            }).then(res => {
+            deliverIntegrationEvent(item, eventType, payloadData).then(res => {
                 const log = {
                     eventId: 'evt_' + Date.now(),
                     eventType,

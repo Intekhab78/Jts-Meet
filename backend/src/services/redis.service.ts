@@ -113,4 +113,33 @@ export class RedisService {
             return false
         }
     }
+
+    public async setJson(key: string, value: any, ttlSeconds?: number): Promise<void> {
+        try {
+            if (!this.client || !this.client.isOpen || !this.client.isReady) return
+            const serialized = JSON.stringify(value)
+            if (ttlSeconds && ttlSeconds > 0) {
+                await this.client.set(key, serialized, { EX: ttlSeconds })
+            } else {
+                await this.client.set(key, serialized)
+            }
+        } catch (_) {}
+    }
+
+    public async getJson<T = any>(key: string): Promise<T | null> {
+        try {
+            if (!this.client || !this.client.isOpen || !this.client.isReady) return null
+            const raw = await this.client.get(key)
+            return raw ? (JSON.parse(raw) as T) : null
+        } catch (_) {
+            return null
+        }
+    }
+
+    public async delKey(key: string): Promise<void> {
+        try {
+            if (!this.client || !this.client.isOpen || !this.client.isReady) return
+            await this.client.del(key)
+        } catch (_) {}
+    }
 }
